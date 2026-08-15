@@ -19,9 +19,11 @@ Managed installations live below the chat workspace's hidden `.agent-home/`. The
 | `flutter` | Stable/beta/explicit Flutter SDK on Linux x64 | checksum from the official Flutter release manifest |
 | `kubectl` | Stable or explicit Kubernetes client | official `.sha256` sidecar |
 | `terraform` | Latest or explicit Terraform CLI | HashiCorp `SHA256SUMS` |
-| `portable` | A CLI outside the catalog | caller must supply trusted HTTPS URL + exact SHA-256 |
+| `aws` | Latest AWS CLI v2 | official AWS CLI Team PGP signature + pinned signer fingerprint |
+| `gcloud` | Latest Google Cloud CLI | caller/model supplies the current SHA-256 from the official Google Cloud download page |
+| `portable` | A CLI outside the catalog | trusted HTTPS URL + exact SHA-256 supplied to the permission-gated tool |
 
-The `portable` mode is intentionally not an arbitrary installer script. It can expose one executable from a raw file, ZIP, `tar.gz`, or `tar.xz` archive only after the supplied SHA-256 matches. Archive paths are validated and the final command is installed below `.agent-home/toolchains/portable/...`.
+The `portable` mode is intentionally not an arbitrary installer script. It can expose one executable from a raw file, ZIP, `tar.gz`, or `tar.xz` archive only after the supplied SHA-256 matches. For archives it reads only the requested regular-file member rather than extracting the archive tree, so traversal paths and symlink members cannot become installed commands.
 
 ## Agent flow
 
@@ -35,7 +37,7 @@ A strong default flow is:
 6. Continue the original task instead of ending with a generic "no root" response.
 7. Build/test locally and verify requested artifacts before reporting them.
 
-`bash` also detects common `command not found` failures with exit code 127. For known commands such as `cargo`, `mvn`, `terraform`, `flutter`, `kubectl`, `go`, `java`, `gradle`, `adb`, or `node`, the tool result includes an `environmentHint` mapping the missing command to the corresponding provisioner.
+`bash` also detects common `command not found` failures with exit code 127. For known commands such as `cargo`, `mvn`, `terraform`, `flutter`, `kubectl`, `aws`, `gcloud`, `go`, `java`, `gradle`, `adb`, or `node`, the tool result includes an `environmentHint` mapping the missing command to the corresponding provisioner.
 
 ## Android example
 
@@ -64,8 +66,28 @@ python -c "import paramiko; print(paramiko.__version__)"
 
 Tool installation and service credentials remain separate capabilities. Provisioning a CLI/library does not expose credentials, provider secrets, or privileged host resources.
 
+## Cloud CLI examples
+
+AWS CLI v2 uses the official signed Linux bundle and a session-local install directory:
+
+```text
+ensure_environment(kind="aws")
+aws --version
+```
+
+The runtime verifies the installer signature with the embedded AWS CLI Team public key and checks the expected signer fingerprint before installation. AWS credentials are not provisioned by this action.
+
+The Google Cloud rapid Linux archive publishes a checksum on the official download page. The model must obtain the current checksum from that official source and pass it explicitly:
+
+```text
+ensure_environment(kind="gcloud", version="latest", sha256="<official-current-sha256>")
+gcloud --version
+```
+
+That design avoids silently trusting a moving `latest` archive. A pinned older gcloud archive can be installed through `portable` when an official versioned archive URL and checksum are available.
+
 ## Base image
 
-The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js, Python/venv/pip, OpenJDK 17, build-essential, CMake, Ninja, SSH/rsync/curl, PostgreSQL and SQLite clients, DNS/network diagnostics, `jq`, `ffmpeg`, `procps`, and `lsof`.
+The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js, Python/venv/pip, OpenJDK 17, build-essential, CMake, Ninja, SSH/rsync/curl, PostgreSQL and SQLite clients, DNS/network diagnostics, `jq`, `ffmpeg`, `procps`, `lsof`, and GnuPG for signed installer verification.
 
 System packages that genuinely require host/container administration are still not available to model shell commands. If a task depends on a kernel feature, privileged device, system daemon, unsupported architecture, or unavailable secret, the agent must report that concrete limitation rather than asking for unrestricted root.
