@@ -1,3 +1,5 @@
+import { shellSandboxAvailable } from './sandbox.mjs';
+
 const DEFAULT_CONTEXT_CHARS = 360_000;
 const DEFAULT_TOOL_OBSERVATION_CHARS = 32_000;
 const MIN_CONTEXT_CHARS = 24_000;
@@ -163,7 +165,7 @@ export function observeTool(strategy, call, result) {
 }
 
 export function completionGate(strategy) {
-  if (!strategy?.needsVerification) return null;
+  if (!strategy?.needsVerification || !shellSandboxAvailable()) return null;
   return [
     '[Runtime completion gate]',
     'The workspace may have changed, but no successful verification has happened after the latest change.',
@@ -180,7 +182,8 @@ export function strategyGuidance(strategy) {
     lines.push('Current plan:');
     for (const todo of strategy.plan.slice(0, 20)) lines.push(`- [${todo.status}] ${todo.content}`);
   }
-  if (strategy?.needsVerification) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion.');
+  if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion.');
+  else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
   else if (strategy?.changed && strategy?.lastVerificationOk) lines.push('Workspace state: latest known changes have a successful verification signal.');
   return lines.join('\n');
 }
