@@ -33,6 +33,20 @@ function isDanglingTool(frames, index) {
   return true;
 }
 
+function makeToolPairsCoherent(frames) {
+  const resultIds = new Set(frames.filter((frame) => frame?.role === 'tool' && frame.callId).map((frame) => frame.callId));
+  const out = [];
+  for (const frame of frames) {
+    if (frame?.role !== 'assistant' || !frame.toolCalls?.length) {
+      out.push(frame);
+      continue;
+    }
+    const toolCalls = frame.toolCalls.filter((call) => resultIds.has(call.id));
+    if (frame.content || toolCalls.length) out.push({ ...frame, toolCalls });
+  }
+  return out;
+}
+
 /**
  * Bound provider context on every model step, not only when a turn starts.
  * Tool observations are compacted independently before oldest context is
@@ -42,8 +56,8 @@ export function compactFrames(input, options = {}) {
   const maxChars = Math.max(MIN_CONTEXT_CHARS, Number(options.maxChars || process.env.Z_AGENT_CONTEXT_CHARS) || DEFAULT_CONTEXT_CHARS);
   const maxObservationChars = Math.max(4_000, Number(options.maxObservationChars || process.env.Z_AGENT_TOOL_OBSERVATION_CHARS) || DEFAULT_TOOL_OBSERVATION_CHARS);
   const frames = (Array.isArray(input) ? input : []).map((frame) => compactObservation(frame, maxObservationChars));
-  let weight = frames.reduce((sum, frame) => sum + frameWeight(frame), 0);
-  if (weight <= maxChars) return frames;
+  const weight = frames.reduce((sum, frame) => sum + frameWeight(frame), 0);
+  if (weight <= maxChars) return makeToolPairsCoherent(frames);
 
   const keep = new Array(frames.length).fill(false);
   let used = 0;
@@ -55,8 +69,8 @@ export function compactFrames(input, options = {}) {
     used += w;
   }
 
-  // If a retained tool result needs its assistant call, retain that assistant
-  // frame as well and accept a small deterministic budget overrun.
+  // A retained tool result must keep the assistant frame that introduced its
+  // call. Calls whose results were dropped are filtered out below.
   for (let i = 0; i < frames.length; i++) {
     if (!keep[i] || frames[i]?.role !== 'tool') continue;
     for (let j = i - 1; j >= 0; j--) {
@@ -66,8 +80,9 @@ export function compactFrames(input, options = {}) {
     }
   }
 
-  const out = frames.filter((_, i) => keep[i]);
+  let out = makeToolPairsCoherent(frames.filter((_, i) => keep[i]));
   while (out.length && isDanglingTool(out, 0)) out.shift();
+  out = makeToolPairsCoherent(out);
   return out;
 }
 
@@ -75,7 +90,8 @@ const VERIFY_PATTERNS = [
   /\b(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+(?:test|lint|typecheck|check|build))\b/i,
   /\b(?:pytest|python\s+-m\s+pytest|go\s+test|cargo\s+(?:test|check)|mvn\s+test|gradle\s+test|\.\/gradlew\s+test)\b/i,
   /\b(?:tsc\b|eslint\b|biome\s+check\b|ruff\s+check\b|mypy\b)/i,
-  /\bgit\s+(?:diff|status)\b/i,
+  /\bnode\s+--check\b/i,
+  /\bpython3?\s+-m\s+(?:compileall|json\.tool)\b/i,
 ];
 
 const READ_ONLY_BASH_PATTERNS = [
@@ -151,7 +167,8 @@ export function completionGate(strategy) {
   return [
     '[Runtime completion gate]',
     'The workspace may have changed, but no successful verification has happened after the latest change.',
-    'Do not finish yet. Inspect the resulting diff/state and run the most relevant available test, build, typecheck, lint, or targeted verification.',
+    'Do not finish yet. Inspect the resulting diff/state and run the most relevant available test, build, typecheck, lint, syntax check, or another executable validation of the changed behavior.',
+    'A read-only command such as git diff/status is useful inspection but does not by itself satisfy verification.',
     'If verification cannot be run, investigate why and explicitly report the limitation only after reasonable attempts.',
   ].join('\n');
 }
@@ -163,7 +180,7 @@ export function strategyGuidance(strategy) {
     lines.push('Current plan:');
     for (const todo of strategy.plan.slice(0, 20)) lines.push(`- [${todo.status}] ${todo.content}`);
   }
-  if (strategy?.needsVerification) lines.push('Workspace state: changed since the last successful verification; verification is required before completion.');
+  if (strategy?.needsVerification) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion.');
   else if (strategy?.changed && strategy?.lastVerificationOk) lines.push('Workspace state: latest known changes have a successful verification signal.');
   return lines.join('\n');
 }
