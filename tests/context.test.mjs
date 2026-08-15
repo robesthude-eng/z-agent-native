@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from '../server/native/context.mjs';
+
+process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
+const { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } = await import('../server/native/context.mjs');
 
 test('compactFrames bounds large tool observations and preserves recent tool coherence', () => {
   const frames = [
@@ -41,6 +43,7 @@ test('failed verification keeps the completion gate active', () => {
   observeTool(strategy, { name: 'bash', arguments: { command: 'npm run typecheck' } }, { isError: false, metadata: { exit: 2 }, mutatedPaths: ['.'] });
   assert.equal(strategy.lastVerificationOk, false);
   assert.equal(strategy.needsVerification, true);
+  assert.match(completionGate(strategy) || '', /verification/i);
 });
 
 test('todowrite becomes pinned strategy guidance', () => {
