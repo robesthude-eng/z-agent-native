@@ -6,6 +6,7 @@ import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
 import {
   commitEnvironmentRequirement, describeManagedEnvironment, managedShellEnvironment, prepareEnvironmentRequirement,
 } from './environment.mjs';
+import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
@@ -13,6 +14,8 @@ import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
 const IGNORED_WALK_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
+const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
+const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
 
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
@@ -86,18 +89,28 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'ensure_environment',
-    description: 'Provision a missing development runtime or package set inside this session without sudo. Supports Python virtualenv packages, Eclipse Temurin Java, Gradle distributions, and Android SDK command-line/packages. Use this instead of giving up when a required SDK or library is missing.',
+    description: 'Provision a missing development runtime or CLI inside this session without sudo, then keep it on PATH for later bash/terminal calls. Supports Python packages, Java, Gradle, Android SDK, Go, Rust, Node.js, Maven, Flutter, kubectl, Terraform, and checksum-pinned portable binaries.',
     inputSchema: object({
-      kind: { type: 'string', enum: ['python', 'java', 'gradle', 'android'] },
-      version: { type: 'string', description: 'Java major version (for example 21) or Gradle version (for example 8.14.5).' },
+      kind: { type: 'string', enum: ENVIRONMENT_KINDS },
+      version: { type: 'string', description: 'Requested tool version/channel. Many toolchains accept latest/stable/lts/current as documented by the tool.' },
       packages: { type: 'array', maxItems: 30, items: { type: 'string' }, description: 'pip package specs for python, or sdkmanager package IDs for android.' },
       acceptLicenses: { type: 'boolean', description: 'For Android SDK packages, explicitly accept Android SDK licenses. The permission dialog will show this value.' },
+      name: { type: 'string', description: 'For kind=portable, command name to expose on PATH.' },
+      url: { type: 'string', description: 'For kind=portable, official HTTPS download URL.' },
+      sha256: { type: 'string', description: 'For kind=portable, expected SHA-256 of the downloaded artifact.' },
+      archiveType: { type: 'string', enum: ['raw', 'zip', 'tar.gz', 'tar.xz'], description: 'For kind=portable, downloaded artifact format.' },
+      binaryPath: { type: 'string', description: 'For archived kind=portable artifacts, relative path to the executable inside the archive.' },
       timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
     }, ['kind']),
   },
   {
+    name: 'environment_status',
+    description: 'Inspect the managed session environment and check whether named commands are currently available on PATH. Use before provisioning when tool availability is unclear.',
+    inputSchema: object({ commands: { type: 'array', maxItems: 40, items: { type: 'string' } } }),
+  },
+  {
     name: 'bash',
-    description: 'Run a shell command in the current workspace. Use for tests, git, package managers, ssh/scp/rsync and project tooling.',
+    description: 'Run a shell command in the current workspace. Use for tests, builds, git, package managers, ssh/scp/rsync and project tooling.',
     inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 } }, ['command']),
   },
   {
@@ -299,6 +312,37 @@ async function applyGitPatch(root, patchText, signal, ctx) {
   });
 }
 
+function environmentCommandStatus(root, commands) {
+  const env = managedShellEnvironment(root, { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin' });
+  const paths = String(env.PATH || '').split(':').filter(Boolean);
+  const out = {};
+  for (const raw of Array.isArray(commands) ? commands.slice(0, 40) : []) {
+    const command = String(raw || '').trim();
+    if (!/^[A-Za-z0-9._+-]{1,80}$/.test(command)) continue;
+    let found = null;
+    for (const dir of paths) {
+      const candidate = path.join(dir, command);
+      try {
+        fs.accessSync(candidate, fs.constants.X_OK);
+        if (fs.statSync(candidate).isFile()) { found = candidate; break; }
+      } catch { /* unavailable */ }
+    }
+    out[command] = found;
+  }
+  return out;
+}
+
+function missingCommandHint(result) {
+  if (result?.code !== 127) return null;
+  const text = `${result.stderr || ''}\n${result.stdout || ''}`;
+  const matches = [...text.matchAll(/(?:^|\n)(?:[^\n]*?:\s*)?([A-Za-z0-9._+-]+): command not found\b/gm)];
+  for (const match of matches) {
+    const hint = suggestToolchainForCommand(match[1]);
+    if (hint) return hint;
+  }
+  return null;
+}
+
 export async function executeTool(name, input, ctx) {
   const tool = String(name || '').toLowerCase();
   const root = ctx.workspace;
@@ -407,7 +451,10 @@ export async function executeTool(name, input, ctx) {
   if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
 
   if (tool === 'ensure_environment') {
-    const plan = prepareEnvironmentRequirement(root, input || {});
+    const kind = String(input?.kind || '').trim().toLowerCase();
+    const plan = BASE_ENVIRONMENT_KINDS.includes(kind)
+      ? prepareEnvironmentRequirement(root, input || {})
+      : prepareToolchainRequirement(root, input || {});
     const result = await execBash(root, plan.script, Number(input?.timeoutMs) || 600_000, ctx.signal, ctx);
     const body = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     if (result.code !== 0) throw new Error(body || `${plan.title} provisioning exited ${result.code}`);
@@ -420,10 +467,31 @@ export async function executeTool(name, input, ctx) {
     };
   }
 
+  if (tool === 'environment_status') {
+    const environment = describeManagedEnvironment(root);
+    const commands = environmentCommandStatus(root, input?.commands || []);
+    return {
+      output: JSON.stringify({ environment, commands }, null, 2),
+      title: 'Environment status',
+      metadata: { environmentStatus: true },
+    };
+  }
+
   if (tool === 'bash') {
     const result = await execBash(root, String(input?.command || ''), Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
-    const body = [`exit=${result.code}`, result.stdout && `stdout:\n${result.stdout}`, result.stderr && `stderr:\n${result.stderr}`].filter(Boolean).join('\n');
-    return { output: body, title: String(input?.command || ''), mutatedPaths: ['.'], metadata: { exit: result.code } };
+    const hint = missingCommandHint(result);
+    const body = [
+      `exit=${result.code}`,
+      result.stdout && `stdout:\n${result.stdout}`,
+      result.stderr && `stderr:\n${result.stderr}`,
+      hint && `Environment hint: command "${hint.command}" is missing. Use ensure_environment with kind="${hint.kind}" and then continue the original task; lack of sudo/root is not a reason to stop.`,
+    ].filter(Boolean).join('\n');
+    return {
+      output: body,
+      title: String(input?.command || ''),
+      mutatedPaths: ['.'],
+      metadata: { exit: result.code, ...(hint ? { environmentHint: hint } : {}) },
+    };
   }
 
   if (tool === 'websearch') {
