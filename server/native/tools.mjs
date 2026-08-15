@@ -3,6 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
+import {
+  commitEnvironmentRequirement, describeManagedEnvironment, managedShellEnvironment, prepareEnvironmentRequirement,
+} from './environment.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
@@ -82,6 +85,17 @@ export const TOOL_DEFINITIONS = [
     }, ['prompt']),
   },
   {
+    name: 'ensure_environment',
+    description: 'Provision a missing development runtime or package set inside this session without sudo. Supports Python virtualenv packages, Eclipse Temurin Java, Gradle distributions, and Android SDK command-line/packages. Use this instead of giving up when a required SDK or library is missing.',
+    inputSchema: object({
+      kind: { type: 'string', enum: ['python', 'java', 'gradle', 'android'] },
+      version: { type: 'string', description: 'Java major version (for example 21) or Gradle version (for example 8.14.5).' },
+      packages: { type: 'array', maxItems: 30, items: { type: 'string' }, description: 'pip package specs for python, or sdkmanager package IDs for android.' },
+      acceptLicenses: { type: 'boolean', description: 'For Android SDK packages, explicitly accept Android SDK licenses. The permission dialog will show this value.' },
+      timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
+    }, ['kind']),
+  },
+  {
     name: 'bash',
     description: 'Run a shell command in the current workspace. Use for tests, git, package managers, ssh/scp/rsync and project tooling.',
     inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 } }, ['command']),
@@ -113,12 +127,12 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
-const risky = new Set(['write', 'edit', 'apply_patch', 'bash', 'webfetch', 'websearch']);
+const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch']);
 export function requiresPermission(name) { return risky.has(String(name).toLowerCase()); }
 export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash'].includes(String(name).toLowerCase()); }
 export function availableToolDefinitions() {
   if (shellSandboxAvailable()) return TOOL_DEFINITIONS;
-  return TOOL_DEFINITIONS.filter((tool) => !['bash', 'apply_patch'].includes(tool.name));
+  return TOOL_DEFINITIONS.filter((tool) => !['bash', 'apply_patch', 'ensure_environment'].includes(tool.name));
 }
 
 function rel(root, full) { return path.relative(root, full).split(path.sep).join('/'); }
@@ -208,17 +222,18 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
   const identity = externalSpawnOptions(ctx, root);
+  const env = managedShellEnvironment(root, {
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    HOME: home,
+    USER: 'agent',
+    LANG: process.env.LANG || 'C.UTF-8',
+    LC_ALL: process.env.LC_ALL || '',
+    TERM: 'xterm-256color',
+  });
   return new Promise((resolve, reject) => {
     const child = spawn('/bin/bash', ['--noprofile', '--norc', '-c', command], {
       cwd: root,
-      env: {
-        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-        HOME: home,
-        USER: process.env.USER || 'agent',
-        LANG: process.env.LANG || 'C.UTF-8',
-        LC_ALL: process.env.LC_ALL || '',
-        TERM: 'xterm-256color',
-      },
+      env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
       ...identity,
@@ -390,6 +405,20 @@ export async function executeTool(name, input, ctx) {
   }
 
   if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
+
+  if (tool === 'ensure_environment') {
+    const plan = prepareEnvironmentRequirement(root, input || {});
+    const result = await execBash(root, plan.script, Number(input?.timeoutMs) || 600_000, ctx.signal, ctx);
+    const body = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
+    if (result.code !== 0) throw new Error(body || `${plan.title} provisioning exited ${result.code}`);
+    const manifest = commitEnvironmentRequirement(root, plan);
+    if (ctx.sessionId) syncSandboxOwnership(ctx.sessionId, root, path.join(root, '.agent-home'));
+    return {
+      output: [body || `${plan.title} ready`, '', 'Managed environment:', JSON.stringify(describeManagedEnvironment(root), null, 2)].join('\n'),
+      title: plan.title,
+      metadata: { environment: { kind: plan.kind, installed: manifest.installed } },
+    };
+  }
 
   if (tool === 'bash') {
     const result = await execBash(root, String(input?.command || ''), Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
