@@ -18,7 +18,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip python3-dev \
     build-essential cmake ninja-build pkg-config libffi-dev libssl-dev \
     openjdk-17-jdk-headless \
-    sqlite3 postgresql-client dnsutils netcat-openbsd iputils-ping \
+    sqlite3 postgresql-client dnsutils netcat-openbsd iputils-ping procps lsof ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
