@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Z Agent — нет сети</title>
+    <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+    <style>
+      :root { color-scheme: dark light; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: #111214;
+        color: #a3a3a3;
+        font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, sans-serif;
+        padding: 24px;
+      }
+      .box { max-width: 420px; text-align: center; }
+      h1 { font-size: 17px; color: #e7e7e7; margin: 0 0 10px; }
+      p { margin: 0 0 10px; }
+      button {
+        margin-top: 14px;
+        padding: 8px 16px;
+        border-radius: 10px;
+        border: 1px solid #333;
+        background: #1b1c1f;
+        color: #e7e7e7;
+        font: inherit;
+        cursor: pointer;
+      }
+      button:hover { background: #24262a; }
+      @media (prefers-color-scheme: light) {
+        body { background: #ffffff; color: #52525b; }
+        h1 { color: #18181b; }
+        button { background: #f4f4f5; border-color: #e4e4e7; color: #18181b; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="box">
+      <h1>Нет подключения к серверу</h1>
+      <p>
+        Z Agent работает через собственный runtime: агент, файлы workspace и терминал
+        живут на нём, поэтому офлайн чат недоступен.
+      </p>
+      <p>Проверьте сеть и попробуйте снова.</p>
+      <button type="button" onclick="location.reload()">Повторить</button>
+    </div>
+  </body>
+</html>

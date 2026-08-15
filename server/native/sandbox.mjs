@@ -1,0 +1,91 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import { ALLOW_UNISOLATED_SHELL, DATA_DIR, WORKSPACES_DIR } from './config.mjs';
+import { getSandboxUid } from './store.mjs';
+
+function isRootRuntime() {
+  return typeof process.getuid === 'function' && process.getuid() === 0;
+}
+
+export function shellSandboxAvailable() {
+  return isRootRuntime() || ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
+}
+
+export function sandboxIdentity(sessionId) {
+  if (isRootRuntime()) {
+    const uid = getSandboxUid(sessionId);
+    if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error(`No sandbox identity for session ${sessionId}`);
+    return { uid, gid: uid, isolated: true };
+  }
+  if (ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') return { isolated: false };
+  throw new Error('Shell sandbox is unavailable. Run Z Agent in Docker, or explicitly set Z_AGENT_ALLOW_UNISOLATED_SHELL=1 for an unsafe single-user development fallback.');
+}
+
+function chownTree(full, uid, gid) {
+  const st = fs.lstatSync(full);
+  try { fs.lchownSync(full, uid, gid); } catch {}
+  if (!st.isDirectory() || st.isSymbolicLink()) return;
+  for (const name of fs.readdirSync(full)) chownTree(path.join(full, name), uid, gid);
+}
+
+export function prepareWorkspaceSandbox(sessionId, workspace) {
+  const identity = sandboxIdentity(sessionId);
+  if (!identity.isolated) return identity;
+  const root = path.resolve(workspace);
+  const parent = path.resolve(WORKSPACES_DIR);
+  if (root !== parent && !root.startsWith(`${parent}${path.sep}`)) throw new Error('Workspace is outside the configured sandbox root');
+  fs.mkdirSync(root, { recursive: true });
+  chownTree(root, identity.uid, identity.gid);
+  try { fs.chmodSync(root, 0o700); } catch {}
+  return identity;
+}
+
+export function syncSandboxOwnership(sessionId, workspace, target = workspace) {
+  if (!isRootRuntime()) return;
+  const identity = sandboxIdentity(sessionId);
+  const root = path.resolve(workspace);
+  let full = path.resolve(target);
+  if (full !== root && !full.startsWith(`${root}${path.sep}`)) throw new Error('Sandbox ownership target escaped workspace');
+  if (fs.existsSync(full)) chownTree(full, identity.uid, identity.gid);
+  while (full !== root) {
+    full = path.dirname(full);
+    try { fs.lchownSync(full, identity.uid, identity.gid); } catch {}
+  }
+  try { fs.lchownSync(root, identity.uid, identity.gid); } catch {}
+  try { fs.chmodSync(root, 0o700); } catch {}
+}
+
+export function sandboxSpawnOptions(sessionId, workspace) {
+  const identity = prepareWorkspaceSandbox(sessionId, workspace);
+  return identity.isolated ? { uid: identity.uid, gid: identity.gid } : {};
+}
+
+
+export function killSandboxProcesses(sessionId) {
+  if (!isRootRuntime()) return 0;
+  const uid = getSandboxUid(sessionId);
+  if (!Number.isInteger(uid)) return 0;
+  let killed = 0;
+  let entries = [];
+  try { entries = fs.readdirSync('/proc'); } catch { return 0; }
+  for (const entry of entries) {
+    if (!/^\d+$/.test(entry)) continue;
+    const pid = Number(entry);
+    if (!pid || pid === process.pid) continue;
+    try {
+      const status = fs.readFileSync(`/proc/${pid}/status`, 'utf8');
+      const realUid = Number(/^Uid:\s+(\d+)/m.exec(status)?.[1]);
+      if (realUid !== uid) continue;
+      process.kill(pid, 'SIGTERM');
+      killed += 1;
+      setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }, 750).unref?.();
+    } catch {}
+  }
+  return killed;
+}
+
+export function assertRuntimeSecretsPrivate() {
+  if (!isRootRuntime()) return;
+  try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
+  try { fs.chmodSync(WORKSPACES_DIR, 0o711); } catch {}
+}

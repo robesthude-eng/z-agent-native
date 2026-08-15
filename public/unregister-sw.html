@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><title>Unregister SW</title></head>
+<body style="font-family:system-ui;padding:20px;background:#0b0b0f;color:#eee">
+<h1>Cleaning Service Worker & caches…</h1>
+<pre id="log"></pre>
+<script>
+const log = document.getElementById('log');
+function say(s){ log.textContent += `${s}\n`; }
+(async () => {
+  try {
+    if ('serviceWorker' in navigator) {
+      const regs = await navigator.serviceWorker.getRegistrations();
+      for (const r of regs) { await r.unregister(); say(`✓ unregistered: ${r.scope||'?'}`); }
+      if (regs.length === 0) say("(no service workers found)");
+    }
+    if ('caches' in window) {
+      const keys = await caches.keys();
+      for (const k of keys) { await caches.delete(k); say(`✓ deleted cache: ${k}`); }
+      if (keys.length === 0) say("(no caches found)");
+    }
+    say("\nDone. Reloading in 2 seconds…");
+    setTimeout(() => location.href = "/", 2000);
+  } catch (e) {
+    say(`ERROR: ${e.message}`);
+  }
+})();
+</script></body></html>

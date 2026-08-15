@@ -1,0 +1,15 @@
+services:
+  z-agent:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env
+    volumes:
+      - z-agent-data:/data
+      - z-agent-workspaces:/workspaces
+
+volumes:
+  z-agent-data:
+  z-agent-workspaces:

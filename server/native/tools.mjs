@@ -1,0 +1,367 @@
+import { spawn } from 'node:child_process';
+import fs from 'node:fs';
+import path from 'node:path';
+import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
+import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
+import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+
+const MAX_READ_BYTES = 512 * 1024;
+const MAX_TOOL_OUTPUT = 512 * 1024;
+
+const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
+
+export const TOOL_DEFINITIONS = [
+  {
+    name: 'read',
+    description: 'Read a UTF-8 text file from the current workspace. Use relative paths only.',
+    inputSchema: object({ path: { type: 'string', description: 'Relative file path' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 4000 } }, ['path']),
+  },
+  {
+    name: 'list',
+    description: 'List files/directories in the current workspace.',
+    inputSchema: object({ path: { type: 'string', description: 'Relative directory, default .' }, depth: { type: 'integer', minimum: 1, maximum: 6 } }),
+  },
+  {
+    name: 'glob',
+    description: 'Find workspace files by a simple glob such as **/*.ts, src/**, *.json.',
+    inputSchema: object({ pattern: { type: 'string' }, path: { type: 'string' } }, ['pattern']),
+  },
+  {
+    name: 'grep',
+    description: 'Search UTF-8 workspace files for text or a regular expression.',
+    inputSchema: object({ query: { type: 'string' }, path: { type: 'string' }, regex: { type: 'boolean' }, maxResults: { type: 'integer', minimum: 1, maximum: 300 } }, ['query']),
+  },
+  {
+    name: 'write',
+    description: 'Create or replace a UTF-8 file in the workspace.',
+    inputSchema: object({ path: { type: 'string' }, content: { type: 'string' } }, ['path', 'content']),
+  },
+  {
+    name: 'edit',
+    description: 'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file.',
+    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText', 'newText']),
+  },
+  {
+    name: 'apply_patch',
+    description: 'Apply a unified diff to files in the current workspace. Paths must be relative and stay inside the workspace.',
+    inputSchema: object({ patch: { type: 'string', description: 'Unified diff / git diff text' } }, ['patch']),
+  },
+  {
+    name: 'todowrite',
+    description: 'Track the plan for a multi-step task. Keep the list concise and update statuses as work progresses.',
+    inputSchema: object({
+      todos: {
+        type: 'array', maxItems: 30,
+        items: object({
+          content: { type: 'string' },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'] },
+          priority: { type: 'string', enum: ['low', 'medium', 'high'] },
+        }, ['content', 'status']),
+      },
+    }, ['todos']),
+  },
+  {
+    name: 'task',
+    description: 'Delegate a focused read-only workspace investigation to a subagent using the same model. The subagent can inspect project files but cannot modify the workspace or access the network.',
+    inputSchema: object({ description: { type: 'string' }, prompt: { type: 'string' } }, ['prompt']),
+  },
+  {
+    name: 'bash',
+    description: 'Run a shell command in the current workspace. Use for tests, git, package managers, ssh/scp/rsync and project tooling.',
+    inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 } }, ['command']),
+  },
+  {
+    name: 'webfetch',
+    description: 'Fetch a public HTTP(S) URL. Private, loopback and link-local destinations are blocked.',
+    inputSchema: object({ url: { type: 'string' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000 } }, ['url']),
+  },
+  {
+    name: 'websearch',
+    description: 'Search the public web with the server-configured Brave Search API. Returns titles, URLs and snippets.',
+    inputSchema: object({ query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']),
+  },
+  {
+    name: 'question',
+    description: 'Ask the user one or more questions and wait for the answer in the same agent turn. Use only when user input is genuinely required.',
+    inputSchema: object({
+      questions: {
+        type: 'array', minItems: 1, maxItems: 8,
+        items: object({
+          question: { type: 'string' },
+          header: { type: 'string' },
+          options: { type: 'array', items: object({ label: { type: 'string' }, description: { type: 'string' } }, ['label']), maxItems: 12 },
+          allowCustomResponse: { type: 'boolean' },
+        }, ['question']),
+      },
+    }, ['questions']),
+  },
+];
+
+const risky = new Set(['write', 'edit', 'apply_patch', 'bash', 'webfetch', 'websearch']);
+export function requiresPermission(name) { return risky.has(String(name).toLowerCase()); }
+export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash'].includes(String(name).toLowerCase()); }
+export function availableToolDefinitions() {
+  if (shellSandboxAvailable()) return TOOL_DEFINITIONS;
+  return TOOL_DEFINITIONS.filter((tool) => !['bash', 'apply_patch'].includes(tool.name));
+}
+
+function rel(root, full) { return path.relative(root, full).split(path.sep).join('/'); }
+function textResult(value) { return typeof value === 'string' ? value : JSON.stringify(value, null, 2); }
+function truncate(text, max = MAX_TOOL_OUTPUT) {
+  const s = String(text ?? '');
+  return s.length <= max ? s : `${s.slice(0, max)}\n\n[output truncated: ${s.length - max} chars omitted]`;
+}
+
+function walk(root, start, depth, out, baseDepth = 0) {
+  if (baseDepth > depth) return;
+  let entries;
+  try { entries = fs.readdirSync(start, { withFileTypes: true }); } catch { return; }
+  entries.sort((a,b) => a.name.localeCompare(b.name));
+  for (const entry of entries) {
+    if (['.git', 'node_modules', '.next', 'dist'].includes(entry.name) && baseDepth > 0) continue;
+    const full = path.join(start, entry.name);
+    const relative = rel(root, full);
+    out.push({ path: relative, type: entry.isDirectory() ? 'directory' : 'file' });
+    if (entry.isDirectory()) walk(root, full, depth, out, baseDepth + 1);
+  }
+}
+
+function globRegex(glob) {
+  let s = '';
+  for (let i = 0; i < glob.length; i++) {
+    const ch = glob[i];
+    if (ch === '*' && glob[i + 1] === '*') { s += '.*'; i++; }
+    else if (ch === '*') s += '[^/]*';
+    else if (ch === '?') s += '[^/]';
+    else s += ch.replace(/[\\^$+?.()|{}\[\]]/g, '\\$&');
+  }
+  return new RegExp(`^${s}$`);
+}
+
+function readUtf8(full) {
+  const buf = fs.readFileSync(full);
+  if (buf.length > MAX_READ_BYTES) throw new Error(`File is too large to read directly (${buf.length} bytes)`);
+  if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
+  return buf.toString('utf8');
+}
+
+function externalSpawnOptions(ctx, root) {
+  if (ctx?.sessionId) return sandboxSpawnOptions(ctx.sessionId, root);
+  if (process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') return {};
+  throw new Error('External tool execution requires a session sandbox');
+}
+
+async function execBash(root, command, timeoutMs, signal, ctx) {
+  const home = path.join(root, '.agent-home');
+  fs.mkdirSync(home, { recursive: true });
+  const identity = externalSpawnOptions(ctx, root);
+  return new Promise((resolve, reject) => {
+    const child = spawn('/bin/bash', ['--noprofile', '--norc', '-c', command], {
+      cwd: root,
+      env: {
+        PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+        HOME: home,
+        USER: process.env.USER || 'agent',
+        LANG: process.env.LANG || 'C.UTF-8',
+        LC_ALL: process.env.LC_ALL || '',
+        TERM: 'xterm-256color',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      detached: true,
+      ...identity,
+    });
+    let stdout = '';
+    let stderr = '';
+    const push = (which, chunk) => {
+      const next = Buffer.from(chunk).toString('utf8');
+      if (which === 'out') stdout = truncate(stdout + next);
+      else stderr = truncate(stderr + next);
+    };
+    child.stdout.on('data', (c) => push('out', c));
+    child.stderr.on('data', (c) => push('err', c));
+    const killGroup = (signalName) => {
+      try { process.kill(-child.pid, signalName); } catch { try { child.kill(signalName); } catch {} }
+    };
+    const timeout = setTimeout(() => {
+      killGroup('SIGTERM');
+      setTimeout(() => killGroup('SIGKILL'), 1000).unref?.();
+    }, Math.min(Math.max(timeoutMs || DEFAULT_TOOL_TIMEOUT_MS, 1000), 600000));
+    timeout.unref?.();
+    const abort = () => killGroup('SIGTERM');
+    signal?.addEventListener('abort', abort, { once: true });
+    child.on('error', (err) => { clearTimeout(timeout); signal?.removeEventListener('abort', abort); reject(err); });
+    child.on('close', (code, sig) => {
+      clearTimeout(timeout);
+      signal?.removeEventListener('abort', abort);
+      killGroup('SIGTERM');
+      resolve({ code: code ?? (sig ? 130 : 1), stdout, stderr, signal: sig || null });
+    });
+  });
+}
+
+function validatePatchPaths(patchText) {
+  for (const line of String(patchText || '').split('\n')) {
+    if (!(line.startsWith('--- ') || line.startsWith('+++ '))) continue;
+    let value = line.slice(4).trim().split('\t')[0];
+    if (!value || value === '/dev/null') continue;
+    value = value.replace(/^[ab]\//, '');
+    if (path.isAbsolute(value) || value.split(/[\\/]+/).includes('..') || value.includes('\0')) throw new Error(`Unsafe patch path: ${value}`);
+  }
+}
+
+async function applyGitPatch(root, patchText, signal, ctx) {
+  validatePatchPaths(patchText);
+  const home = path.join(root, '.agent-home');
+  fs.mkdirSync(home, { recursive: true });
+  const identity = externalSpawnOptions(ctx, root);
+  return await new Promise((resolve, reject) => {
+    const child = spawn('git', ['apply', '--no-index', '--whitespace=nowarn', '-'], { cwd: root, env: { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home }, stdio: ['pipe', 'pipe', 'pipe'], ...identity });
+    let stdout = ''; let stderr = '';
+    child.stdout.on('data', (d) => { stdout = truncate(stdout + d.toString('utf8')); });
+    child.stderr.on('data', (d) => { stderr = truncate(stderr + d.toString('utf8')); });
+    const abort = () => child.kill('SIGTERM');
+    signal?.addEventListener('abort', abort, { once: true });
+    child.on('error', (err) => { signal?.removeEventListener('abort', abort); reject(err); });
+    child.on('close', (code) => {
+      signal?.removeEventListener('abort', abort);
+      if (code === 0) resolve({ stdout, stderr });
+      else reject(new Error(stderr || stdout || `git apply exited ${code}`));
+    });
+    child.stdin.end(String(patchText || ''));
+  });
+}
+
+export async function executeTool(name, input, ctx) {
+  const tool = String(name || '').toLowerCase();
+  const root = ctx.workspace;
+  if (tool === 'question') return { kind: 'question', questions: Array.isArray(input?.questions) ? input.questions : [] };
+
+  if (tool === 'read') {
+    const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
+    const text = readUtf8(full);
+    const lines = text.split('\n');
+    const offset = Math.max(0, Number(input?.offset) || 0);
+    const limit = Math.min(Math.max(1, Number(input?.limit) || 500), 4000);
+    const body = lines.slice(offset, offset + limit).map((line, i) => `${offset + i + 1}: ${line}`).join('\n');
+    return { output: body, title: rel(root, full) };
+  }
+
+  if (tool === 'list') {
+    const full = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
+    const st = fs.statSync(full);
+    if (!st.isDirectory()) return { output: rel(root, full), title: rel(root, full) };
+    const out = [];
+    walk(root, full, Math.min(Math.max(Number(input?.depth) || 2, 1), 6), out);
+    return { output: out.map((x) => `${x.type === 'directory' ? 'd' : 'f'} ${x.path}`).join('\n'), title: rel(root, full) || '.' };
+  }
+
+  if (tool === 'glob') {
+    const start = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
+    const all = [];
+    walk(root, start, 10, all);
+    const rx = globRegex(String(input?.pattern || '**/*'));
+    const baseRel = rel(root, start);
+    const hits = all.filter((x) => rx.test(baseRel ? path.posix.relative(baseRel, x.path) : x.path)).map((x) => x.path).slice(0, 1000);
+    return { output: hits.join('\n'), title: String(input?.pattern || '') };
+  }
+
+  if (tool === 'grep') {
+    const start = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
+    const all = [];
+    const st = fs.statSync(start);
+    if (st.isDirectory()) walk(root, start, 10, all); else all.push({ path: rel(root, start), type: 'file' });
+    const max = Math.min(Math.max(Number(input?.maxResults) || 100, 1), 300);
+    let matcher;
+    if (input?.regex) matcher = new RegExp(String(input?.query || ''), 'i');
+    const needle = String(input?.query || '').toLowerCase();
+    const hits = [];
+    for (const item of all) {
+      if (item.type !== 'file' || hits.length >= max) continue;
+      try {
+        const full = safeWorkspacePath(root, item.path, { allowMissing: false });
+        const buf = fs.readFileSync(full);
+        if (buf.length > MAX_READ_BYTES || buf.includes(0)) continue;
+        const lines = buf.toString('utf8').split('\n');
+        for (let i=0; i<lines.length && hits.length<max; i++) {
+          const ok = matcher ? matcher.test(lines[i]) : lines[i].toLowerCase().includes(needle);
+          if (ok) hits.push(`${item.path}:${i+1}: ${lines[i]}`);
+          if (matcher) matcher.lastIndex = 0;
+        }
+      } catch { /* unreadable */ }
+    }
+    return { output: hits.join('\n'), title: String(input?.query || '') };
+  }
+
+  if (tool === 'write') {
+    const full = safeWorkspacePath(root, input?.path, { allowMissing: true });
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, String(input?.content ?? ''), 'utf8');
+    if (ctx.sessionId) syncSandboxOwnership(ctx.sessionId, root, full);
+    return { output: `Wrote ${Buffer.byteLength(String(input?.content ?? ''))} bytes to ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
+  }
+
+  if (tool === 'edit') {
+    const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
+    const before = readUtf8(full);
+    const oldText = String(input?.oldText ?? '');
+    if (!oldText) throw new Error('oldText must not be empty');
+    if (!before.includes(oldText)) throw new Error('oldText was not found in file');
+    const after = input?.all ? before.split(oldText).join(String(input?.newText ?? '')) : before.replace(oldText, String(input?.newText ?? ''));
+    fs.writeFileSync(full, after, 'utf8');
+    if (ctx.sessionId) syncSandboxOwnership(ctx.sessionId, root, full);
+    return { output: `Edited ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
+  }
+
+  if (tool === 'apply_patch') {
+    const patchText = String(input?.patch || '');
+    if (!patchText.trim()) throw new Error('patch must not be empty');
+    const result = await applyGitPatch(root, patchText, ctx.signal, ctx);
+    return { output: result.stderr || result.stdout || 'Patch applied', title: 'Applied patch', mutatedPaths: ['.'] };
+  }
+
+  if (tool === 'todowrite') {
+    const todos = Array.isArray(input?.todos) ? input.todos.slice(0, 30) : [];
+    const lines = todos.map((todo, i) => `${i + 1}. [${todo.status || 'pending'}] ${String(todo.content || '')}`);
+    return { output: lines.join('\n') || 'Todo list cleared', title: 'Updated todos', metadata: { todos } };
+  }
+
+  if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
+
+  if (tool === 'bash') {
+    const result = await execBash(root, String(input?.command || ''), Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
+    const body = [`exit=${result.code}`, result.stdout && `stdout:\n${result.stdout}`, result.stderr && `stderr:\n${result.stderr}`].filter(Boolean).join('\n');
+    return { output: body, title: String(input?.command || ''), mutatedPaths: ['.'], metadata: { exit: result.code } };
+  }
+
+  if (tool === 'websearch') {
+    const apiKey = process.env.BRAVE_SEARCH_API_KEY || '';
+    if (!apiKey) throw new Error('BRAVE_SEARCH_API_KEY is not configured on the runtime');
+    const query = String(input?.query || '').trim();
+    if (!query) throw new Error('query must not be empty');
+    const count = Math.min(Math.max(Number(input?.count) || 5, 1), 10);
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', query);
+    url.searchParams.set('count', String(count));
+    const res = await fetch(url, { headers: { accept: 'application/json', 'x-subscription-token': apiKey, 'user-agent': 'Z-Agent-Native/1.0' }, signal: ctx.signal });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
+    let body; try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
+    const rows = (body?.web?.results || []).slice(0, count).map((row, i) => `${i + 1}. ${row.title || row.url}\n${row.url}\n${row.description || ''}`);
+    return { output: rows.join('\n\n'), title: query };
+  }
+
+  if (tool === 'webfetch') {
+    const url = await assertSafeExternalUrl(input?.url);
+    const maxChars = Math.min(Math.max(Number(input?.maxChars) || 50000, 1000), 200000);
+    const res = await fetch(url, { headers: { 'user-agent': 'Z-Agent-Native/1.0', accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.5' }, signal: ctx.signal, redirect: 'error' });
+    const text = await res.text();
+    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
+    return { output: text.slice(0, maxChars), title: String(url) };
+  }
+
+  throw new Error(`Unknown tool: ${name}`);
+}
+
+export function toolOutputText(result) {
+  return truncate(textResult(result?.output ?? result));
+}

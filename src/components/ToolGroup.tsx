@@ -1,0 +1,99 @@
+import { ChevronRight } from "lucide-react";
+import { memo, useState } from "react";
+import { cn } from "@/lib/utils";
+import { isInterruptedQuestionPart } from "../api/interruptions";
+import type { ToolPart } from "../api/types";
+import { toolIcon } from "../utils/toolUtils";
+import ToolCard from "./ToolCard";
+
+function getState(part: ToolPart): string {
+  const s = part.state;
+  if (typeof s === "string") return s === "pending" ? "running" : s;
+  if (s && typeof s === "object") {
+    const status = (s as { status?: string }).status ?? "running";
+    return status === "pending" ? "running" : status;
+  }
+  return "running";
+}
+
+/**
+ * Идентичность вызова инструмента. Индекс как ключ здесь опасен: группа
+ * дорисовывается в реальном времени, и при вставке нового вызова состояние
+ * карточки (раскрыта/свёрнута) переезжало бы на соседний вызов.
+ * id/callID приходят с сервера; title — последний рубеж для старых версий.
+ */
+function partKey(part: ToolPart): string {
+  if (part.id) return part.id;
+  if (part.callID) return part.callID;
+  const s = part.state;
+  const title = s && typeof s === "object" ? s.title : undefined;
+  return title || `tool:${part.tool ?? ""}`;
+}
+
+function groupLabel(tool: string | undefined, count: number): string {
+  const safeTool = typeof tool === "string" && tool ? tool : "tool";
+  const t = safeTool.toLowerCase();
+  if (t === "bash" || t === "shell" || t === "cmd") {
+    return count === 1 ? "Ran command" : `Ran commands ${count}`;
+  }
+  if (t === "edit" || t === "write" || t === "applypatch" || t === "apply_patch") {
+    return count === 1 ? "Edited file" : `Edited files ${count}`;
+  }
+  if (t === "read") return count === 1 ? "Read file" : `Read files ${count}`;
+  return `${safeTool} ×${count}`;
+}
+
+const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
+  const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
+  const anyRunning = parts.some((p) => getState(p) === "running");
+  // Условие то же, что в шапке цепочки (`MessageItem`), и берётся из одной
+  // функции: оборванный вопрос — не ошибка группы, а способ доставить ответ.
+  const anyError = parts.some(
+    (p) => getState(p) === "error" && !isInterruptedQuestionPart(p),
+  );
+  // Reference behavior: group stays open in real time while any item is running.
+  const expanded = manuallyToggled ?? anyRunning;
+  const toolName = typeof tool === "string" ? tool : "tool";
+
+  return (
+    <div className="not-prose my-1">
+      <button
+        type="button"
+        className="group/toolgrp flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
+        // Один клик переключает относительно видимого состояния (фикс двойного клика).
+        onClick={() => setManuallyToggled(!expanded)}
+      >
+        <span className="text-muted-foreground/50 shrink-0">
+          <ChevronRight
+            className={cn(
+              "h-3.5 w-3.5 transition-transform",
+              expanded && "rotate-90",
+            )}
+          />
+        </span>
+        <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
+          {toolIcon(toolName)}
+        </span>
+        <span className="text-[13px] font-medium text-foreground/85">
+          {groupLabel(toolName, parts.length)}
+        </span>
+        {anyRunning && (
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
+        )}
+        {!anyRunning && anyError && (
+          <span className="text-[11px] font-medium text-red-400">error</span>
+        )}
+        <span className="flex-1" />
+      </button>
+      {expanded && (
+        <div className="oc-card-open mt-1 ml-4 pl-3 border-l border-border/40 space-y-0.5">
+          {parts.map((part) => (
+            <ToolCard key={partKey(part)} part={part} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+export default memo(ToolGroup);

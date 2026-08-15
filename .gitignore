@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+workspaces/
+.env
+.env.local
+*.log
+*.tsbuildinfo
+coverage/
+.playwright/

@@ -1,0 +1,530 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'highlight.js/styles/github-dark.css';
+@plugin '@tailwindcss/typography';
+
+@theme {
+  --color-background: #111214;
+  --color-foreground: #f2f3f4;
+  --color-card: #191b1e;
+  --color-card-foreground: #f2f3f4;
+  --color-popover: #1b1d20;
+  --color-popover-foreground: #f2f3f4;
+  --color-border: #26282c;
+  --color-input: #26282c;
+  /* Основное действие — светлый тон на тёмном фоне, а не цветная заливка.
+     Акцент несёт «сюда нажимают», и для этого хватает контраста; оттенок
+     добавлял к этому только шум. */
+  --color-primary: #f2f3f4;
+  --color-primary-foreground: #111214;
+  --color-secondary: #1b1d20;
+  --color-secondary-foreground: #f2f3f4;
+  --color-muted: #1b1d20;
+  --color-muted-foreground: #8b8f93;
+  --color-accent: #1e2124;
+  --color-accent-foreground: #f2f3f4;
+  --color-destructive: #e98a80;
+  --color-destructive-foreground: #16090a;
+  --color-ring: #f2f3f4;
+  /* «Успех» больше не зелёный: состояние читается текстом и значком, а не
+     цветом. Оттенок остаётся только там, где он предупреждает
+     (`warning`, `destructive`), — то есть там, где он что-то значит. */
+  --color-success: #f2f3f4;
+  --color-warning: #dfc07a;
+  --color-info: #6db4f2;
+  --radius: 0.75rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  /* ── Движение ────────────────────────────────────────────────────────
+     Было: 50 мест с `transition`, длительность задана явно только в семи
+     (четыре по 150 мс, три по 200) — остальные ехали на умолчании Tailwind.
+     Из-за этого интерфейс отзывался по-разному в разных углах, хотя нигде
+     это не было решением: просто никто не выбирал.
+
+     Стало: одно замедление на всё и три длительности. Умолчание — микро,
+     потому что подавляющее большинство этих мест это наведение и нажатие;
+     панели и окна помечаются явно.
+
+     `cubic-bezier(.2,0,0,1)` — быстрый старт, долгая мягкая остановка.
+     Ускорения в конце нет намеренно: отскок читается как игривость, а от
+     инструмента ждут точности. */
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  --default-transition-duration: 120ms;
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  /** Наведение, нажатие, смена тона. */
+  --duration-micro: 120ms;
+  /** Меню, подсказка, раскрытие. */
+  --duration-panel: 200ms;
+  /** Окно, смена экрана. */
+  --duration-scene: 320ms;
+
+  /* ── Высота ──────────────────────────────────────────────────────────
+     Тень означает «ближе к человеку», а не «красивее»: подсказка ниже
+     меню, меню ниже окна. Три ступени, больше не нужно. */
+  --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-e2: 0 1px 3px rgb(0 0 0 / 0.4), 0 8px 24px rgb(0 0 0 / 0.35);
+  --shadow-e3: 0 2px 8px rgb(0 0 0 / 0.5), 0 16px 48px rgb(0 0 0 / 0.45);
+  --font-sans:
+    ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI',
+    Roboto, 'Helvetica Neue', Arial, 'Noto Sans', 'Apple Color Emoji',
+    'Segoe UI Emoji', sans-serif;
+  --font-mono:
+    ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono',
+    monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100dvh;
+    max-height: 100dvh;
+    margin: 0;
+    overflow: hidden;
+    width: 100%;
+    max-width: 100vw;
+  }
+
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-family: var(--font-sans);
+    font-size: 14.5px;
+    line-height: 1.6;
+    letter-spacing: -0.01em;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .safe-top {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Минимальная цель нажатия на касании. `h-8 w-8` добавлены вместе с
+     уменьшением кнопок композера: 32 пикселя на пальце — это ниже нормы 44,
+     и без этой строки правка «сделать кнопку пропорциональнее» тихо
+     ухудшила бы телефон. */
+  @media (hover: none) and (pointer: coarse) {
+    button.h-9.w-9:not(.oc-tap),
+    button.h-8.w-8:not(.oc-tap),
+    button.h-7.w-7:not(.oc-tap),
+    button[class*='h-9'][class*='w-9']:not(.oc-tap),
+    button[class*='h-8'][class*='w-8']:not(.oc-tap),
+    button[class*='h-7'][class*='w-7']:not(.oc-tap) {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    /* Кнопка отправки и остановки: цель нажатия 44, видимый круг прежний.
+       Правило выше растит саму коробку, и у кнопки БЕЗ заливки это незаметно
+       — виден только значок. У отправки залит весь круг, поэтому все 44
+       пикселя видны диском: я трижды уменьшал `h-*`, и на телефоне не
+       менялось ничего, потому что размер задавал минимум, а не класс.
+
+       Здесь зона нажатия вынесена в псевдоэлемент: он невидим, лежит поверх
+       кнопки и принимает касание за неё. Так пальцу по-прежнему 44, а глазу
+       — 28.
+
+       Приём применён точечно, а не ко всем значкам: в строке чата кнопки
+       стоят вплотную, и расширенные зоны там наложились бы друг на друга —
+       палец попадал бы не в ту. Там растить коробку правильно: соседей
+       раздвигает раскладка. */
+    button.oc-tap {
+      position: relative;
+    }
+    button.oc-tap::after {
+      content: '';
+      position: absolute;
+      inset: -8px;
+    }
+  }
+
+  [data-theme='light'] {
+    --color-background: #f7f7f5;
+    --color-foreground: #26282a;
+    --color-card: #ffffff;
+    --color-card-foreground: #26282a;
+    --color-popover: #ffffff;
+    --color-popover-foreground: #26282a;
+    --color-border: #e4e4e0;
+    --color-input: #e4e4e0;
+    /* Зеркало тёмной темы: там акцент светлый на тёмном, здесь тёмный на
+       светлом. Контраст под белым текстом 12.6:1 — прежний зелёный #0e9d6e
+       давал 3.46:1 при норме 4.5:1, то есть основное действие читалось хуже
+       всего именно там, где важнее всего. */
+    --color-primary: #26282a;
+    --color-primary-foreground: #ffffff;
+    --color-secondary: #efefec;
+    --color-secondary-foreground: #26282a;
+    --color-muted: #efefec;
+    --color-muted-foreground: #6f7275;
+    --color-accent: #efefec;
+    --color-accent-foreground: #26282a;
+    --color-destructive: #c4473b;
+    --color-destructive-foreground: #ffffff;
+    /* Тот же тон, что и primary: кольцо фокуса рисуется и через
+       `ring-primary` (кнопки, поля), и через `ring-ring` (переключатели,
+       бейджи). Разъедься эти два токена — фокус подсвечивался бы двумя
+       разными цветами в зависимости от того, какой компонент в фокусе. */
+    --color-ring: #26282a;
+    --color-success: #26282a;
+    /* Тени светлой темы мягче: на почти белом та же плотность читалась бы
+       грязью, а не высотой. */
+    --shadow-e1: 0 1px 2px rgb(0 0 0 / 0.05);
+    --shadow-e2: 0 1px 3px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.07);
+    --shadow-e3: 0 2px 8px rgb(0 0 0 / 0.08), 0 16px 48px rgb(0 0 0 / 0.12);
+    --color-warning: #a97e18;
+    --color-info: #2a6fb8;
+  }
+
+  /* средняя тема — между светлой и тёмной */
+  [data-theme='mid'] {
+    --color-background: #26282c;
+    --color-foreground: #eceded;
+    --color-card: #2c2f33;
+    --color-card-foreground: #eceded;
+    --color-popover: #303338;
+    --color-popover-foreground: #eceded;
+    --color-border: #3a3d42;
+    --color-input: #3a3d42;
+    --color-primary: #eceded;
+    --color-primary-foreground: #26282c;
+    --color-secondary: #2e3135;
+    --color-secondary-foreground: #eceded;
+    --color-muted: #2e3135;
+    --color-muted-foreground: #9a9da1;
+    --color-accent: #33363b;
+    --color-accent-foreground: #eceded;
+    --color-destructive: #e98a80;
+    --color-destructive-foreground: #16090a;
+    --color-ring: #eceded;
+    --color-success: #eceded;
+    --color-warning: #dfc07a;
+    --color-info: #6db4f2;
+  }
+
+  [data-theme='light'] .hljs {
+    color: #24292e;
+    background: transparent;
+  }
+  [data-theme='light'] .hljs-comment,
+  [data-theme='light'] .hljs-punctuation {
+    color: #6a737d;
+  }
+  [data-theme='light'] .hljs-deletion,
+  [data-theme='light'] .hljs-name,
+  [data-theme='light'] .hljs-quote,
+  [data-theme='light'] .hljs-selector-tag,
+  [data-theme='light'] .hljs-selector-pseudo,
+  [data-theme='light'] .hljs-tag {
+    color: #22863a;
+  }
+  [data-theme='light'] .hljs-link,
+  [data-theme='light'] .hljs-operator,
+  [data-theme='light'] .hljs-regexp,
+  [data-theme='light'] .hljs-selector-attr,
+  [data-theme='light'] .hljs-selector-class,
+  [data-theme='light'] .hljs-variable,
+  [data-theme='light'] .hljs-title {
+    color: #6f42c1;
+  }
+  [data-theme='light'] .hljs-number,
+  [data-theme='light'] .hljs-meta,
+  [data-theme='light'] .hljs-built_in,
+  [data-theme='light'] .hljs-builtin-name,
+  [data-theme='light'] .hljs-literal,
+  [data-theme='light'] .hljs-type,
+  [data-theme='light'] .hljs-params,
+  [data-theme='light'] .hljs-attribute {
+    color: #005cc5;
+  }
+  [data-theme='light'] .hljs-string,
+  [data-theme='light'] .hljs-symbol,
+  [data-theme='light'] .hljs-bullet,
+  [data-theme='light'] .hljs-addition {
+    color: #032f62;
+  }
+  [data-theme='light'] .hljs-keyword,
+  [data-theme='light'] .hljs-selector-id {
+    color: #d73a49;
+  }
+  [data-theme='light'] .hljs-emphasis {
+    font-style: italic;
+  }
+  [data-theme='light'] .hljs-strong {
+    font-weight: 700;
+  }
+
+  ::-webkit-scrollbar {
+    width: 9px;
+    height: 9px;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: color-mix(in srgb, var(--color-border) 100%, transparent);
+    border-radius: 9px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: color-mix(
+      in srgb,
+      var(--color-muted-foreground) 60%,
+      transparent
+    );
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+}
+
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+@keyframes blink-caret {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+.streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: var(--color-primary);
+  animation: blink-caret 1s step-end infinite;
+}
+
+@keyframes live-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    box-shadow: 0 0 0 0
+      color-mix(in srgb, var(--color-success) 50%, transparent);
+  }
+  50% {
+    opacity: 0.55;
+    box-shadow: 0 0 0 4px transparent;
+  }
+}
+.live-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 9999px;
+  background: var(--color-success);
+  animation: live-pulse 2s infinite;
+}
+
+/* ==== действия, проявляющиеся по наведению ====
+
+   Значки строки чата и кнопки под ответом агента висели всегда. Из десяти
+   чатов это сорок значков, из которых в данную секунду нужен ноль, — а в
+   длинном разговоре ряды одинаковых кнопок идут вдоль всего экрана.
+
+   Всё правило заперто в `@media (hover: hover)`, и это не осторожность:
+   на сенсорном экране наведения не существует, спрятанная там кнопка
+   недостижима навсегда. Поэтому по умолчанию — видимы, и только там, где
+   есть чем наводить, они прячутся.
+
+   `:focus-within` на строке и `:focus-visible` на самой кнопке обязательны
+   по той же причине: с клавиатуры до кнопки доходят табом, а не курсором,
+   и без них фокус уезжал бы на невидимый элемент. */
+@media (hover: hover) {
+  .oc-reveal {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+  .group:hover .oc-reveal,
+  .group:focus-within .oc-reveal,
+  .oc-reveal-open .oc-reveal {
+    opacity: 0.6;
+  }
+  .oc-reveal:hover,
+  .oc-reveal:focus-visible {
+    opacity: 1;
+  }
+}
+
+/* ==== agent work indicator (aura >_ ) ==== */
+@property --oc-a {
+  syntax: '<angle>';
+  initial-value: 0deg;
+  inherits: false;
+}
+.oc-thinking {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 4px 0;
+}
+.oc-aura {
+  position: relative;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+}
+.oc-aura-glow {
+  position: absolute;
+  inset: -5px;
+  border-radius: 12px;
+  /* Аура вращается, а не переливается цветом. Раньше здесь по кругу шли
+     зелёный, синий и фиолетовый — три оттенка, которые ничего не сообщали:
+     «агент работает» уже сказано движением, текстом фазы и таймером.
+     Теперь тот же оборот собран из тона темы, поэтому индикатор одинаково
+     уместен и на тёмном фоне, и на светлом. */
+  background: conic-gradient(
+    from var(--oc-a, 0deg),
+    var(--color-foreground),
+    var(--color-muted-foreground),
+    var(--color-border),
+    var(--color-foreground)
+  );
+  filter: blur(9px);
+  opacity: 0.55;
+  animation:
+    oc-spin 3.6s linear infinite,
+    oc-breathe 2.6s ease-in-out infinite;
+}
+.oc-aura-mark {
+  position: absolute;
+  inset: 0;
+  border-radius: 9px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-foreground);
+}
+@keyframes oc-spin {
+  to {
+    --oc-a: 360deg;
+  }
+}
+@keyframes oc-breathe {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.95);
+  }
+  50% {
+    opacity: 0.85;
+    transform: scale(1.07);
+  }
+}
+.oc-sheen-text {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  font-weight: 500;
+  /* Блик идёт от приглушённого тона к основному и обратно. Середина взята
+     от `foreground`, а не от акцента: акцент — это «сюда нажимают», а здесь
+     ничего нажимать не нужно, и связывать их значило бы, что смена цвета
+     кнопки молча перекрашивает надпись «думает…». */
+  background: linear-gradient(
+    90deg,
+    var(--color-muted-foreground) 0%,
+    var(--color-foreground) 35%,
+    var(--color-foreground) 50%,
+    var(--color-foreground) 65%,
+    var(--color-muted-foreground) 100%
+  );
+  background-size: 220% 100%;
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  animation: oc-sheen 2.2s linear infinite;
+}
+@keyframes oc-sheen {
+  to {
+    background-position: -220% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oc-aura-glow,
+  .oc-sheen-text {
+    animation: none;
+  }
+  .oc-sheen-text {
+    color: var(--color-muted-foreground);
+    background: none;
+  }
+}
+
+/* --- Плавность чата: fade/slide-анимации появления --- */
+@keyframes oc-fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@keyframes oc-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+/* Появление сообщений и tool-карточек в ленте.
+   Замедление общее со всем интерфейсом: до этого здесь стояла своя кривая
+   `cubic-bezier(.22,1,.36,1)` с лёгким перелётом, и лента отзывалась не так,
+   как остальные панели. */
+.oc-msg-in {
+  animation: oc-fade-up var(--duration-scene) var(--ease-standard) both;
+}
+/* Плавное открытие/переключение чата */
+.oc-chat-in {
+  animation: oc-fade-in var(--duration-panel) var(--ease-standard) both;
+}
+
+/* Раскрытие карточки: содержимое действия, размышления, группы вызовов.
+   Содержимое монтируется только раскрытым и размонтируется при сворачивании
+   — держать в DOM вывод всех карточек длинного чата дорого. Поэтому
+   анимируется появление, а не высота: высоту без монтирования не измерить,
+   а измерять её ради анимации значило бы платить за неё всегда. */
+@keyframes oc-card-open {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.oc-card-open {
+  animation: oc-card-open var(--duration-panel) var(--ease-standard) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .oc-msg-in,
+  .oc-chat-in,
+  .oc-card-open {
+    animation: none;
+  }
+}
