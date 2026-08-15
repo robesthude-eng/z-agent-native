@@ -1,6 +1,7 @@
 import path from 'node:path';
+import { CLOUD_TOOLCHAIN_KINDS, prepareCloudToolchainRequirement } from './cloud-toolchains.mjs';
 
-export const EXTENDED_TOOLCHAIN_KINDS = ['go', 'rust', 'node', 'maven', 'flutter', 'kubectl', 'terraform', 'portable'];
+export const EXTENDED_TOOLCHAIN_KINDS = ['go', 'rust', 'node', 'maven', 'flutter', 'kubectl', 'terraform', ...CLOUD_TOOLCHAIN_KINDS, 'portable'];
 
 function agentHome(root) { return path.join(root, '.agent-home'); }
 function shellQuote(value) { return `'${String(value).replace(/'/g, `'"'"'`)}'`; }
@@ -173,11 +174,10 @@ function portablePlan(root, input) {
   let extract;
   if (archiveType === 'raw') {
     extract = `install -m 0755 ${shellQuote(download)} ${shellQuote(output)}`;
+  } else if (archiveType === 'zip') {
+    extract = `python3 - ${shellQuote(download)} ${shellQuote(binaryPath)} ${shellQuote(output)} <<'PY'\nimport os, stat, sys, zipfile\narchive, member_name, output = sys.argv[1:]\nwith zipfile.ZipFile(archive) as zf:\n    info = zf.getinfo(member_name)\n    mode = (info.external_attr >> 16) & 0xffff\n    if info.is_dir() or stat.S_ISLNK(mode):\n        raise SystemExit('portable binaryPath is not a regular file')\n    data = zf.read(info)\nos.makedirs(os.path.dirname(output), exist_ok=True)\nwith open(output, 'wb') as fh: fh.write(data)\nos.chmod(output, 0o755)\nPY`;
   } else {
-    const unpack = archiveType === 'zip'
-      ? `unzip -q ${shellQuote(download)} -d "$TMP"`
-      : `tar -xf ${shellQuote(download)} -C "$TMP"`;
-    extract = `TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP"\n  mkdir -p "$TMP"\n  ${unpack}\n  test -f "$TMP/${binaryPath}"\n  install -m 0755 "$TMP/${binaryPath}" ${shellQuote(output)}\n  rm -rf "$TMP"`;
+    extract = `python3 - ${shellQuote(download)} ${shellQuote(binaryPath)} ${shellQuote(output)} <<'PY'\nimport os, sys, tarfile\narchive, member_name, output = sys.argv[1:]\nwith tarfile.open(archive, 'r:*') as tf:\n    member = tf.getmember(member_name)\n    if not member.isfile():\n        raise SystemExit('portable binaryPath is not a regular file')\n    src = tf.extractfile(member)\n    if src is None: raise SystemExit('portable binaryPath cannot be read')\n    data = src.read()\nos.makedirs(os.path.dirname(output), exist_ok=True)\nwith open(output, 'wb') as fh: fh.write(data)\nos.chmod(output, 0o755)\nPY`;
   }
   const script = `set -euo pipefail\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(output))}\nif [ ! -x ${shellQuote(output)} ]; then\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(url)} -o ${shellQuote(download)}\n  printf '%s  %s\\n' ${shellQuote(sha256)} ${shellQuote(download)} | sha256sum -c -\n  ${extract}\nfi\n${shellQuote(output)} --version || ${shellQuote(output)} version || true`;
   return {
@@ -195,6 +195,7 @@ export function prepareToolchainRequirement(root, input = {}) {
   if (kind === 'flutter') return flutterPlan(root, input);
   if (kind === 'kubectl') return kubectlPlan(root, input);
   if (kind === 'terraform') return terraformPlan(root, input);
+  if (CLOUD_TOOLCHAIN_KINDS.includes(kind)) return prepareCloudToolchainRequirement(root, input);
   if (kind === 'portable') return portablePlan(root, input);
   throw new Error(`Unsupported extended toolchain kind: ${kind || '(empty)'}`);
 }
@@ -211,6 +212,8 @@ const COMMAND_HINTS = new Map([
   ['flutter', 'flutter'], ['dart', 'flutter'],
   ['kubectl', 'kubectl'],
   ['terraform', 'terraform'],
+  ['aws', 'aws'],
+  ['gcloud', 'gcloud'], ['gsutil', 'gcloud'], ['bq', 'gcloud'],
 ]);
 
 export function suggestToolchainForCommand(command) {
