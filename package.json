@@ -16,6 +16,7 @@
     "start": "node server/index.mjs",
     "test": "vitest run",
     "test:native": "node --test tests/*.test.mjs",
+    "eval:validate": "node scripts/validate-agent-evals.mjs",
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "format": "biome format --write .",

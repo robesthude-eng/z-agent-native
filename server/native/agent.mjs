@@ -11,6 +11,7 @@ import { buildCatalog, callModel } from './providers.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, requiresPermission, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
+import { getSubagentProfile } from './subagents.mjs';
 
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
 let cachedSystem = null;
@@ -247,23 +248,40 @@ async function requestPermission(sessionId, tool, input, signal) {
   return response;
 }
 
-const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['read', 'list', 'glob', 'grep'].includes(tool.name));
+const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
 
 async function runSubagent(ownerId, model, input, workspace, signal) {
   const prompt = String(input?.prompt || '').trim();
   if (!prompt) throw new Error('Subagent prompt must not be empty');
-  const frames = [{ role: 'user', content: prompt }];
-  const maxSteps = Math.min(16, Math.max(2, Number(process.env.Z_AGENT_SUBAGENT_STEPS) || 10));
+  const profile = getSubagentProfile(input?.agent);
+  let repositorySnapshot = '';
+  try {
+    const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
+    repositorySnapshot = toolOutputText(map).slice(0, 60_000);
+  } catch { /* repository map is an accelerator, not a hard dependency */ }
+  const frames = [{
+    role: 'user',
+    content: [prompt, repositorySnapshot && `[Automatic repository snapshot]\n${repositorySnapshot}`].filter(Boolean).join('\n\n'),
+  }];
+  const configuredSteps = Number(process.env.Z_AGENT_SUBAGENT_STEPS) || profile.maxSteps;
+  const maxSteps = Math.min(20, Math.max(2, configuredSteps));
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
     const response = await callModel(ownerId, model, {
-      system: 'You are a focused read-only subagent. Investigate the requested problem using workspace inspection tools. Prefer targeted glob/grep/read calls, cite concrete paths/lines in your report, and do not modify files or ask the user questions.',
-      frames: compactFrames(frames, { maxChars: 140_000, maxObservationChars: 20_000 }),
+      system: profile.system,
+      frames: compactFrames(frames, { maxChars: 160_000, maxObservationChars: 20_000 }),
       tools: SUBAGENT_SAFE_TOOLS,
       signal,
     });
     const calls = response.toolCalls || [];
-    if (calls.length === 0) return response.text || 'Subagent completed without a written report.';
+    if (calls.length === 0) {
+      return {
+        report: response.text || `${profile.name} subagent completed without a written report.`,
+        kind: profile.name,
+        steps: step + 1,
+        repositorySnapshot: Boolean(repositorySnapshot),
+      };
+    }
     frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
     for (const call of calls) {
       if (!SUBAGENT_SAFE_TOOLS.some((tool) => tool.name === call.name)) {
@@ -278,7 +296,12 @@ async function runSubagent(ownerId, model, input, workspace, signal) {
       }
     }
   }
-  return `Subagent reached its ${maxSteps}-step investigation limit.`;
+  return {
+    report: `${profile.name} subagent reached its ${maxSteps}-step investigation limit.`,
+    kind: profile.name,
+    steps: maxSteps,
+    repositorySnapshot: Boolean(repositorySnapshot),
+  };
 }
 
 function toolPart(call) {
@@ -297,9 +320,17 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
   try {
     if (requiresPermission(call.name)) await requestPermission(sessionId, call.name, call.arguments, controller.signal);
     const workspace = workspaceFor(sessionId);
-    const result = String(call.name || '').toLowerCase() === 'task'
-      ? { output: await runSubagent(runtime.ownerId, runtime.model, call.arguments || {}, workspace, controller.signal), title: call.arguments?.description || 'Subagent report', metadata: { subagent: true } }
-      : await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal });
+    let result;
+    if (String(call.name || '').toLowerCase() === 'task') {
+      const subagent = await runSubagent(runtime.ownerId, runtime.model, call.arguments || {}, workspace, controller.signal);
+      result = {
+        output: subagent.report,
+        title: call.arguments?.description || `${subagent.kind} subagent report`,
+        metadata: { subagent: true, agent: subagent.kind, steps: subagent.steps, repositorySnapshot: subagent.repositorySnapshot },
+      };
+    } else {
+      result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal });
+    }
     if (result?.kind === 'question') {
       const q = await askQuestion(sessionId, result.questions, controller.signal);
       part.state = {

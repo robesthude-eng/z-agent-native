@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
+import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 
@@ -32,6 +33,15 @@ export const TOOL_DEFINITIONS = [
     name: 'grep',
     description: 'Search UTF-8 workspace files for text or a regular expression.',
     inputSchema: object({ query: { type: 'string' }, path: { type: 'string' }, regex: { type: 'boolean' }, maxResults: { type: 'integer', minimum: 1, maximum: 300 } }, ['query']),
+  },
+  {
+    name: 'repo_map',
+    description: 'Build a bounded high-signal map of a repository or subtree: languages, manifests/scripts, likely entrypoints, important directories, import hubs, symbols, configs and tests. Use before broad codebase investigation.',
+    inputSchema: object({
+      path: { type: 'string', description: 'Relative repository/subtree path, default .' },
+      maxFiles: { type: 'integer', minimum: 100, maximum: 8000 },
+      maxSymbolsPerFile: { type: 'integer', minimum: 0, maximum: 20 },
+    }),
   },
   {
     name: 'write',
@@ -64,8 +74,12 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'task',
-    description: 'Delegate a focused read-only workspace investigation to a subagent using the same model. The subagent can inspect project files but cannot modify the workspace or access the network.',
-    inputSchema: object({ description: { type: 'string' }, prompt: { type: 'string' } }, ['prompt']),
+    description: 'Delegate a focused read-only repository investigation to a specialized subagent using the same model. Choose explore for architecture/navigation, debug for root-cause tracing, or review for defect-focused code review.',
+    inputSchema: object({
+      agent: { type: 'string', enum: ['explore', 'debug', 'review'], description: 'Specialized read-only subagent role; defaults to explore.' },
+      description: { type: 'string' },
+      prompt: { type: 'string' },
+    }, ['prompt']),
   },
   {
     name: 'bash',
@@ -327,6 +341,19 @@ export async function executeTool(name, input, ctx) {
       } catch { /* unreadable */ }
     }
     return { output: hits.join('\n'), title: String(input?.query || '') };
+  }
+
+  if (tool === 'repo_map') {
+    const scope = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
+    const map = buildRepoMap(root, scope, {
+      maxFiles: Math.min(Math.max(Number(input?.maxFiles) || 2500, 100), 8000),
+      maxSymbolsPerFile: Math.min(Math.max(Number(input?.maxSymbolsPerFile) || 8, 0), 20),
+    });
+    return {
+      output: formatRepoMap(map),
+      title: `Repository map: ${rel(root, scope) || '.'}`,
+      metadata: { repoMap: { scope: map.scope, fileCount: map.fileCount, truncated: map.truncated } },
+    };
   }
 
   if (tool === 'write') {

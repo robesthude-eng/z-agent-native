@@ -17,6 +17,7 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - run: npm run eval:validate
       - run: npm run test:native
       - run: npm test
       - if: always()
