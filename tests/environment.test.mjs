@@ -147,14 +147,20 @@ test('AWS CLI provisioner verifies the official PGP signature and installs below
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('Google Cloud CLI provisioner requires an official SHA-256 and installs below agent home', () => {
+test('Google Cloud CLI resolves its current checksum from the official download page and permits an explicit checksum', () => {
   const root = workspace();
-  assert.throws(() => prepareToolchainRequirement(root, { kind: 'gcloud' }), /requires sha256/);
-  const gcloud = prepareToolchainRequirement(root, { kind: 'gcloud', version: 'latest', sha256: 'a'.repeat(64) });
-  assert.match(gcloud.script, /dl\.google\.com\/dl\/cloudsdk\/channels\/rapid\/downloads\/google-cloud-cli-linux-/);
-  assert.match(gcloud.script, /sha256sum -c/);
-  assert.match(gcloud.script, /google-cloud-sdk\/install\.sh/);
-  assert.ok(gcloud.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+  const automatic = prepareToolchainRequirement(root, { kind: 'gcloud' });
+  assert.match(automatic.script, /cloud\.google\.com\/sdk\/docs\/install/);
+  assert.match(automatic.script, /gcloud SHA-256 not found near archive name/);
+  assert.match(automatic.script, /dl\.google\.com\/dl\/cloudsdk\/channels\/rapid\/downloads\/google-cloud-cli-linux-/);
+  assert.match(automatic.script, /sha256sum -c/);
+  assert.ok(automatic.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+
+  const pinnedAtInstall = prepareToolchainRequirement(root, { kind: 'gcloud', sha256: 'a'.repeat(64) });
+  assert.match(pinnedAtInstall.script, new RegExp('a'.repeat(64)));
+  assert.doesNotMatch(pinnedAtInstall.script, /cloud\.google\.com\/sdk\/docs\/install/);
+  assert.throws(() => prepareToolchainRequirement(root, { kind: 'gcloud', sha256: 'bad' }), /64 hexadecimal/);
+  assert.throws(() => prepareToolchainRequirement(root, { kind: 'gcloud', version: '578.0.0', sha256: 'a'.repeat(64) }), /latest only/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
