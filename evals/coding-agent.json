@@ -1,0 +1,48 @@
+{
+  "version": 1,
+  "description": "Repository-grounded coding-agent evaluation prompts. These tasks are intentionally answerable from the checked-in code and require concrete evidence rather than style opinions.",
+  "cases": [
+    {
+      "id": "explore-native-turn-lifecycle",
+      "agent": "explore",
+      "prompt": "Map the native agent turn from a persisted user message through provider calls, tool execution, final persistence and session.idle. Identify the core functions and state boundaries.",
+      "mustMentionPaths": ["server/native/agent.mjs", "server/native/store.mjs", "server/native/providers.mjs"],
+      "mustMentionAny": ["runTurn", "callModel", "putMessage", "session.idle"]
+    },
+    {
+      "id": "debug-premature-completion",
+      "agent": "debug",
+      "prompt": "A model writes a source file and immediately says it is done without testing. Explain why the runtime should reject that completion, where the gate state is maintained, and what event clears it.",
+      "mustMentionPaths": ["server/native/context.mjs", "server/native/agent.mjs"],
+      "mustMentionAny": ["completionGate", "observeTool", "needsVerification", "verification"]
+    },
+    {
+      "id": "review-shell-isolation",
+      "agent": "review",
+      "prompt": "Review the shell/workspace isolation boundary for ways an agent-controlled command could read runtime secrets or escape into a sibling workspace. Report only concrete findings or explain why the checked paths block the obvious escapes.",
+      "mustMentionPaths": ["server/native/sandbox.mjs", "server/native/security.mjs", "server/native/tools.mjs"],
+      "mustMentionAny": ["sandbox", "workspace", "symlink", "uid"]
+    },
+    {
+      "id": "explore-realtime-message-flow",
+      "agent": "explore",
+      "prompt": "Trace how streamed assistant text/tool updates travel from the native runtime to the browser message state. Identify the server event emitters and the client-side merge/update layer.",
+      "mustMentionPaths": ["server/native/events.mjs", "server/native/agent.mjs", "src/store/helpers.ts"],
+      "mustMentionAny": ["message.part.delta", "message.part.updated", "patchPart", "patchPartDelta"]
+    },
+    {
+      "id": "debug-literal-system-text",
+      "agent": "debug",
+      "prompt": "A user message containing the literal text '[SYSTEM: example]' must remain unchanged in the UI. Find the normalization path and explain why stripping that text client-side would violate the current architecture.",
+      "mustMentionPaths": ["src/store/helpers.ts", "src/store/helpers.test.ts"],
+      "mustMentionAny": ["cleanSysText", "normalizeMessage", "server-owned"]
+    },
+    {
+      "id": "review-question-permission-lifecycle",
+      "agent": "review",
+      "prompt": "Review question and permission suspension/resume for lifecycle bugs: duplicated user turns, unresolved waiters, restart recovery, or stale pending gates. Cite the persistence and in-memory coordination paths.",
+      "mustMentionPaths": ["server/native/agent.mjs", "server/native/store.mjs"],
+      "mustMentionAny": ["questionWaiters", "permissionWaiters", "recoverInterruptedRuntimeState", "resolvePermission"]
+    }
+  ]
+}
