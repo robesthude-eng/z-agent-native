@@ -29,6 +29,8 @@ test('environment tool is permission-gated and exposes the universal toolchain c
     'python', 'java', 'gradle', 'android',
     ...EXTENDED_TOOLCHAIN_KINDS,
   ]);
+  assert.ok(definition.inputSchema.properties.kind.enum.includes('aws'));
+  assert.ok(definition.inputSchema.properties.kind.enum.includes('gcloud'));
   assert.equal(requiresPermission('ensure_environment'), true);
   assert.ok(availableToolDefinitions().some((tool) => tool.name === 'ensure_environment'));
   assert.ok(TOOL_DEFINITIONS.some((tool) => tool.name === 'environment_status'));
@@ -132,7 +134,31 @@ test('Flutter plan resolves the official Linux SDK archive and verifies SHA-256 
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('portable provisioning requires HTTPS, a pinned SHA-256 and safe archive paths', () => {
+test('AWS CLI provisioner verifies the official PGP signature and installs below agent home', () => {
+  const root = workspace();
+  const aws = prepareToolchainRequirement(root, { kind: 'aws' });
+  assert.match(aws.script, /awscli\.amazonaws\.com\/awscli-exe-linux-/);
+  assert.match(aws.script, /\.zip\.sig/);
+  assert.match(aws.script, /gpg --batch --verify/);
+  assert.match(aws.script, /FB5DB77FD5C118B80511ADA8A6310ACC4672475C/);
+  assert.match(aws.script, /--install-dir/);
+  assert.ok(aws.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+  assert.throws(() => prepareToolchainRequirement(root, { kind: 'aws', version: '2.99.0' }), /latest only/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('Google Cloud CLI provisioner requires an official SHA-256 and installs below agent home', () => {
+  const root = workspace();
+  assert.throws(() => prepareToolchainRequirement(root, { kind: 'gcloud' }), /requires sha256/);
+  const gcloud = prepareToolchainRequirement(root, { kind: 'gcloud', version: 'latest', sha256: 'a'.repeat(64) });
+  assert.match(gcloud.script, /dl\.google\.com\/dl\/cloudsdk\/channels\/rapid\/downloads\/google-cloud-cli-linux-/);
+  assert.match(gcloud.script, /sha256sum -c/);
+  assert.match(gcloud.script, /google-cloud-sdk\/install\.sh/);
+  assert.ok(gcloud.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('portable provisioning requires HTTPS, a pinned SHA-256 and extracts only the requested regular file', () => {
   const root = workspace();
   assert.throws(() => prepareToolchainRequirement(root, {
     kind: 'portable', name: 'tool', url: 'http://example.com/tool', sha256: 'a'.repeat(64),
@@ -143,19 +169,29 @@ test('portable provisioning requires HTTPS, a pinned SHA-256 and safe archive pa
   assert.throws(() => prepareToolchainRequirement(root, {
     kind: 'portable', name: 'tool', url: 'https://example.com/tool.zip', sha256: 'a'.repeat(64), archiveType: 'zip', binaryPath: '../tool',
   }), /Unsafe portable binaryPath/);
-  const plan = prepareToolchainRequirement(root, {
+  const zip = prepareToolchainRequirement(root, {
     kind: 'portable', name: 'tool', version: '1.2.3', url: 'https://example.com/tool.zip', sha256: 'a'.repeat(64), archiveType: 'zip', binaryPath: 'release/tool',
   });
-  assert.match(plan.script, /sha256sum -c/);
-  assert.match(plan.script, /release\/tool/);
-  assert.ok(plan.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+  assert.match(zip.script, /sha256sum -c/);
+  assert.match(zip.script, /zipfile\.ZipFile/);
+  assert.match(zip.script, /stat\.S_ISLNK/);
+  assert.doesNotMatch(zip.script, /unzip -q/);
+  assert.ok(zip.pathPrepend[0].startsWith(path.join(root, '.agent-home')));
+
+  const tar = prepareToolchainRequirement(root, {
+    kind: 'portable', name: 'tool2', version: '1', url: 'https://example.com/tool.tar.gz', sha256: 'b'.repeat(64), archiveType: 'tar.gz', binaryPath: 'bin/tool2',
+  });
+  assert.match(tar.script, /tarfile\.open/);
+  assert.match(tar.script, /member\.isfile/);
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('missing-command hints map common build CLIs to provisioner kinds', () => {
+test('missing-command hints map common build and cloud CLIs to provisioner kinds', () => {
   assert.deepEqual(suggestToolchainForCommand('cargo'), { command: 'cargo', kind: 'rust' });
   assert.deepEqual(suggestToolchainForCommand('mvn'), { command: 'mvn', kind: 'maven' });
   assert.deepEqual(suggestToolchainForCommand('terraform'), { command: 'terraform', kind: 'terraform' });
   assert.deepEqual(suggestToolchainForCommand('adb'), { command: 'adb', kind: 'android' });
+  assert.deepEqual(suggestToolchainForCommand('aws'), { command: 'aws', kind: 'aws' });
+  assert.deepEqual(suggestToolchainForCommand('gcloud'), { command: 'gcloud', kind: 'gcloud' });
   assert.equal(suggestToolchainForCommand('totally-custom-cli'), null);
 });
