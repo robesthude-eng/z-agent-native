@@ -12,13 +12,14 @@ process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const events = await import('../server/native/events.mjs');
 
 const ownerId = 'verification@example.com';
 store.createUser(ownerId, 'hash');
 store.setProviderKey(ownerId, 'openai', 'sk-verification-test');
 
-function sse(events) {
-  return new Response(events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
+function sse(items) {
+  return new Response(items.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
     status: 200,
     headers: { 'content-type': 'text/event-stream' },
   });
@@ -36,11 +37,16 @@ async function waitFor(fn, timeout = 2000) {
 
 test('runtime completion gate forces executable verification after a workspace edit', async () => {
   agent.resetAgentStateForTests();
+  events.resetEventsForTests();
   const sid = 'ses_verificationgate1';
   store.createChat(sid, ownerId, 'Новый чат');
   const original = globalThis.fetch;
   let streamCall = 0;
   let sawCompletionGate = false;
+  const permissionEvents = [];
+  const unsubscribe = events.subscribe(sid, (frame) => {
+    if (frame.event?.type === 'permission.asked') permissionEvents.push(frame.event.properties);
+  });
 
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(init.body);
@@ -90,11 +96,10 @@ test('runtime completion gate forces executable verification after a workspace e
       system: '',
     });
 
-    const firstPermission = await waitFor(() => store.listPendingPermissions(sid)[0]);
-    assert.equal(firstPermission.tool, 'write');
+    const firstPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'write'));
     assert.equal(agent.answerPermission(sid, firstPermission.id, 'once'), true);
 
-    const secondPermission = await waitFor(() => store.listPendingPermissions(sid).find((permission) => permission.tool === 'bash'));
+    const secondPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'bash'));
     assert.equal(agent.answerPermission(sid, secondPermission.id, 'once'), true);
 
     const assistant = await turn;
@@ -105,7 +110,9 @@ test('runtime completion gate forces executable verification after a workspace e
     assert.equal(assistant.info.strategy?.lastVerificationOk, true);
     assert.equal(fs.readFileSync(path.join(store.workspaceFor(sid), 'hello.mjs'), 'utf8'), 'export const ok = true;\n');
   } finally {
+    unsubscribe();
     globalThis.fetch = original;
     agent.resetAgentStateForTests();
+    events.resetEventsForTests();
   }
 });
