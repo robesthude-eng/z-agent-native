@@ -4,7 +4,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends python3 make g+
 COPY package.json package-lock.json ./
 RUN npm ci
 COPY . .
-RUN npm run build && npm prune --omit=dev
+# npm prune re-resolves peer dependencies; preserve the lockfile's known-good
+# dependency graph instead of failing on the optional React compiler peer range.
+RUN npm run build && npm prune --omit=dev --legacy-peer-deps
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app
