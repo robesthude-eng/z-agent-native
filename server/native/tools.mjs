@@ -1,29 +1,31 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import readline from 'node:readline';
 import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
+const IGNORED_WALK_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
 
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export const TOOL_DEFINITIONS = [
   {
     name: 'read',
-    description: 'Read a UTF-8 text file from the current workspace. Use relative paths only.',
+    description: 'Read a numbered UTF-8 line window from a workspace file. Supports large text files via offset/limit without loading the whole file.',
     inputSchema: object({ path: { type: 'string', description: 'Relative file path' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 4000 } }, ['path']),
   },
   {
     name: 'list',
-    description: 'List files/directories in the current workspace.',
+    description: 'List files/directories in the current workspace. Heavy generated/vendor directories are skipped.',
     inputSchema: object({ path: { type: 'string', description: 'Relative directory, default .' }, depth: { type: 'integer', minimum: 1, maximum: 6 } }),
   },
   {
     name: 'glob',
-    description: 'Find workspace files by a simple glob such as **/*.ts, src/**, *.json.',
+    description: 'Find workspace files by a simple glob such as **/*.ts, src/**, *.json. **/ also matches the workspace root.',
     inputSchema: object({ pattern: { type: 'string' }, path: { type: 'string' } }, ['pattern']),
   },
   {
@@ -118,7 +120,7 @@ function walk(root, start, depth, out, baseDepth = 0) {
   try { entries = fs.readdirSync(start, { withFileTypes: true }); } catch { return; }
   entries.sort((a,b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
-    if (['.git', 'node_modules', '.next', 'dist'].includes(entry.name) && baseDepth > 0) continue;
+    if (entry.isDirectory() && IGNORED_WALK_DIRS.has(entry.name)) continue;
     const full = path.join(start, entry.name);
     const relative = rel(root, full);
     out.push({ path: relative, type: entry.isDirectory() ? 'directory' : 'file' });
@@ -127,11 +129,19 @@ function walk(root, start, depth, out, baseDepth = 0) {
 }
 
 function globRegex(glob) {
+  const input = String(glob || '').replace(/\\/g, '/');
   let s = '';
-  for (let i = 0; i < glob.length; i++) {
-    const ch = glob[i];
-    if (ch === '*' && glob[i + 1] === '*') { s += '.*'; i++; }
-    else if (ch === '*') s += '[^/]*';
+  for (let i = 0; i < input.length; i++) {
+    const ch = input[i];
+    if (ch === '*' && input[i + 1] === '*') {
+      if (input[i + 2] === '/') {
+        s += '(?:.*/)?';
+        i += 2;
+      } else {
+        s += '.*';
+        i += 1;
+      }
+    } else if (ch === '*') s += '[^/]*';
     else if (ch === '?') s += '[^/]';
     else s += ch.replace(/[\\^$+?.()|{}\[\]]/g, '\\$&');
   }
@@ -140,9 +150,38 @@ function globRegex(glob) {
 
 function readUtf8(full) {
   const buf = fs.readFileSync(full);
-  if (buf.length > MAX_READ_BYTES) throw new Error(`File is too large to read directly (${buf.length} bytes)`);
+  if (buf.length > MAX_READ_BYTES) throw new Error(`File is too large for whole-file editing (${buf.length} bytes); use read with offset/limit to inspect it`);
   if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
   return buf.toString('utf8');
+}
+
+async function readUtf8Window(full, offset, limit) {
+  const stat = fs.statSync(full);
+  if (!stat.isFile()) throw new Error('Path is not a file');
+  const fd = fs.openSync(full, 'r');
+  try {
+    const probe = Buffer.alloc(Math.min(8192, stat.size));
+    if (probe.length) fs.readSync(fd, probe, 0, probe.length, 0);
+    if (probe.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
+  } finally {
+    fs.closeSync(fd);
+  }
+
+  const stream = fs.createReadStream(full, { encoding: 'utf8' });
+  const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
+  const rows = [];
+  let lineNo = 0;
+  try {
+    for await (const line of rl) {
+      if (lineNo >= offset && rows.length < limit) rows.push(`${lineNo + 1}: ${line}`);
+      lineNo += 1;
+      if (rows.length >= limit) break;
+    }
+  } finally {
+    rl.close();
+    stream.destroy();
+  }
+  return rows.join('\n');
 }
 
 function externalSpawnOptions(ctx, root) {
@@ -238,12 +277,10 @@ export async function executeTool(name, input, ctx) {
 
   if (tool === 'read') {
     const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
-    const text = readUtf8(full);
-    const lines = text.split('\n');
     const offset = Math.max(0, Number(input?.offset) || 0);
     const limit = Math.min(Math.max(1, Number(input?.limit) || 500), 4000);
-    const body = lines.slice(offset, offset + limit).map((line, i) => `${offset + i + 1}: ${line}`).join('\n');
-    return { output: body, title: rel(root, full) };
+    const body = await readUtf8Window(full, offset, limit);
+    return { output: body, title: rel(root, full), metadata: { offset, limit } };
   }
 
   if (tool === 'list') {
