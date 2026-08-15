@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { authFromRequest } from './auth.mjs';
+import { managedShellEnvironment } from './environment.mjs';
 import { ownsChat, workspaceFor } from './store.mjs';
 import { prepareWorkspaceSandbox, shellSandboxAvailable } from './sandbox.mjs';
 import { ensureWorkspaceWatcher } from './watcher.mjs';
@@ -23,13 +24,13 @@ export function sameOrigin(req) {
 function shellEnv(workspace) {
   const home = `${workspace}/.agent-home`;
   fs.mkdirSync(home, { recursive: true });
-  return {
+  return managedShellEnvironment(workspace, {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
-    USER: process.env.USER || 'agent',
+    USER: 'agent',
     LANG: process.env.LANG || 'C.UTF-8',
     TERM: 'xterm-256color',
-  };
+  });
 }
 
 export async function initTerminal(httpServer) {
