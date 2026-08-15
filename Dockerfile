@@ -14,7 +14,7 @@ WORKDIR /app
 # still run as unprivileged per-session UIDs; language packages and extra SDKs
 # are provisioned below HOME by ensure_environment rather than with sudo/apt.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash git openssh-client rsync curl ca-certificates unzip zip xz-utils util-linux file jq gnupg \
+    bash git openssh-client rsync curl ca-certificates unzip zip xz-utils util-linux file jq gnupg groff less \
     python3 python3-venv python3-pip python3-dev \
     build-essential cmake ninja-build pkg-config libffi-dev libssl-dev \
     openjdk-17-jdk-headless \
