@@ -79,19 +79,19 @@ function awsPlan(root, input) {
 
 function gcloudPlan(root, input) {
   const sha256 = requireSha256(input, 'Google Cloud CLI provisioning');
-  const version = String(input?.version || 'latest').trim();
-  if (!/^(?:latest|\d+\.\d+\.\d+)$/.test(version)) throw new Error('Google Cloud CLI version must be latest or x.y.z');
+  const version = String(input?.version || 'latest').trim().toLowerCase();
+  if (version !== 'latest') throw new Error('Google Cloud CLI managed provisioning currently supports version=latest only; use portable for a pinned versioned archive');
   const arch = gcloudArch();
   const home = agentHome(root);
   const downloads = path.join(home, 'downloads');
-  const install = path.join(home, 'toolchains', 'gcloud', version);
-  const archive = path.join(downloads, `google-cloud-cli-${arch}-${version}.tar.gz`);
+  const install = path.join(home, 'toolchains', 'gcloud', 'latest');
+  const archive = path.join(downloads, `google-cloud-cli-${arch}-latest.tar.gz`);
   const filename = `google-cloud-cli-linux-${arch}.tar.gz`;
   const url = `https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/${filename}`;
   const script = `set -euo pipefail\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'google-cloud-sdk', 'bin', 'gcloud'))} ]; then\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(url)} -o ${shellQuote(archive)}\n  printf '%s  %s\\n' ${shellQuote(sha256)} ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  tar -xzf ${shellQuote(archive)} -C "$TMP"\n  test -x "$TMP/google-cloud-sdk/bin/gcloud"\n  mv "$TMP" ${shellQuote(install)}\n  ${shellQuote(path.join(install, 'google-cloud-sdk', 'install.sh'))} --quiet --path-update=false --command-completion=false --usage-reporting=false >/dev/null\nfi\n${shellQuote(path.join(install, 'google-cloud-sdk', 'bin', 'gcloud'))} --version`;
   return {
-    kind: 'gcloud', title: `Google Cloud CLI ${version}`, script, env: {}, pathPrepend: [path.join(install, 'google-cloud-sdk', 'bin')],
-    installedKey: `gcloud:${version}`, installedValue: { kind: 'gcloud', version, source: 'dl.google.com', sha256 },
+    kind: 'gcloud', title: 'Google Cloud CLI latest', script, env: {}, pathPrepend: [path.join(install, 'google-cloud-sdk', 'bin')],
+    installedKey: 'gcloud:latest', installedValue: { kind: 'gcloud', version: 'latest', source: 'dl.google.com', sha256 },
   };
 }
 
