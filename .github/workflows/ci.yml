@@ -9,7 +9,7 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -24,3 +24,5 @@ jobs:
         run: npm run typecheck
       - if: always()
         run: npm run build
+      - if: always()
+        run: docker build -t z-agent-native:ci .
