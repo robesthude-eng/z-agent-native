@@ -72,7 +72,7 @@ describe("helpers.ts — Token & Message Processing Architecture", () => {
       const res = normalizeMessages(input);
       expect(res).toHaveLength(2);
       expect(res[0]?.id).toBe("m1");
-      expect((res[0]?.parts[0] as any)?.text).toBe("Hi");
+      expect((res[0]?.parts[0] as any)?.text).toBe("Hi\n\n[SYSTEM: Режим саморазвития тест]");
       expect(res[1]?.id).toBe("m2");
     });
   });
