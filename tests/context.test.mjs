@@ -8,7 +8,7 @@ test('compactFrames bounds large tool observations and preserves recent tool coh
     { role: 'assistant', content: '', toolCalls: [{ id: 'call_old', name: 'read', arguments: { path: 'old.txt' } }] },
     { role: 'tool', callId: 'call_old', name: 'read', content: 'x'.repeat(80_000) },
     { role: 'user', content: 'current request' },
-    { role: 'assistant', content: '', toolCalls: [{ id: 'call_new', name: 'grep', arguments: { query: 'needle' } }] },
+    { role: 'assistant', content: '', toolCalls: [{ id: 'call_new', name: 'grep', arguments: { query: 'needle' } }, { id: 'call_dropped', name: 'read', arguments: { path: 'huge.txt' } }] },
     { role: 'tool', callId: 'call_new', name: 'grep', content: 'y'.repeat(80_000) },
   ];
 
@@ -17,7 +17,9 @@ test('compactFrames bounds large tool observations and preserves recent tool coh
   assert.ok(recentTool);
   assert.ok(recentTool.content.length <= 8_000);
   assert.match(recentTool.content, /observation compacted/);
-  assert.ok(compacted.some((frame) => frame.role === 'assistant' && frame.toolCalls?.some((call) => call.id === 'call_new')));
+  const recentAssistant = compacted.find((frame) => frame.role === 'assistant' && frame.toolCalls?.some((call) => call.id === 'call_new'));
+  assert.ok(recentAssistant);
+  assert.deepEqual(recentAssistant.toolCalls.map((call) => call.id), ['call_new']);
 });
 
 test('turn strategy requires verification after edits and clears after a successful check', () => {
@@ -55,9 +57,10 @@ test('todowrite becomes pinned strategy guidance', () => {
   assert.match(guidance, /\[in_progress\] Implement fix/);
 });
 
-test('bash classification separates checks from likely mutations', () => {
+test('bash classification separates checks, inspection, and likely mutations', () => {
   assert.equal(classifyBash('npm test'), 'verification');
-  assert.equal(classifyBash('git diff --check'), 'verification');
+  assert.equal(classifyBash('node --check server/native/agent.mjs'), 'verification');
+  assert.equal(classifyBash('git diff --check'), 'read_only');
   assert.equal(classifyBash('git log -5 --oneline'), 'read_only');
   assert.equal(classifyBash('npm install foo'), 'may_mutate');
 });
