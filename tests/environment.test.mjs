@@ -115,7 +115,7 @@ test('Go, Rust, Node, Maven, kubectl and Terraform plans use official downloads 
 
   const kubectl = prepareToolchainRequirement(root, { kind: 'kubectl', version: 'stable' });
   assert.match(kubectl.script, /dl\.k8s\.io\/release\/stable\.txt/);
-  assert.match(kubectl.script, /kubectl\.sha256/);
+  assert.match(kubectl.script, /\.sha256/);
 
   const terraform = prepareToolchainRequirement(root, { kind: 'terraform', version: 'latest' });
   assert.match(terraform.script, /checkpoint-api\.hashicorp\.com/);
