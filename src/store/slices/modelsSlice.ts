@@ -30,9 +30,9 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
           modelName: model.modelName || model.modelID,
           free: Boolean(model.free),
           sourceProviderID,
-          source: model.source,
+          ...(model.source ? { source: model.source } : {}),
           endpoint: model.endpoint ?? null,
-          status: model.status,
+          ...(model.status ? { status: model.status } : {}),
         });
       }
     } catch {

@@ -56,8 +56,8 @@ describe("native model catalog", () => {
     vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
       hidden: { openai: ["hidden-model"] },
       models: [
-        { providerID: "openai", modelID: "hidden-model", modelName: "Hidden", free: false },
-        { providerID: "openai", modelID: "visible-model", modelName: "Visible", free: false },
+        { providerID: "openai", providerName: "OpenAI", modelID: "hidden-model", modelName: "Hidden", free: false },
+        { providerID: "openai", providerName: "OpenAI", modelID: "visible-model", modelName: "Visible", free: false },
       ],
     });
     const store = makeStore();
