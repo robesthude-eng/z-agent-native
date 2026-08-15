@@ -13,6 +13,7 @@ Native runtime
   ├─ session + turn state
   ├─ agent loop + context/turn strategy
   ├─ repository intelligence + specialized subagents
+  ├─ managed development environment provisioning
   ├─ direct provider streaming
   ├─ tool executor + permission gate
   ├─ question suspension/resume
@@ -39,11 +40,12 @@ There is no external agent daemon and no protocol adapter between the UI and the
 6. `todowrite` updates the live turn strategy so the original goal and current plan remain pinned in model guidance across long tool loops.
 7. On broad/unfamiliar codebases, `repo_map` can provide a bounded structural index before targeted reads.
 8. `task` can delegate focused read-only investigation to an `explore`, `debug`, or `review` subagent.
-9. `question` suspends the current turn and resumes that same turn with the answer.
-10. Tool results are fed back to the same model loop until a final model response or the step limit.
-11. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
-12. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
-13. Final turn state is persisted and `session.idle` is emitted.
+9. When a required supported SDK/runtime is missing, `ensure_environment` can provision it below the session's hidden `.agent-home` after the normal permission gate; later shell/tool calls inherit the managed environment.
+10. `question` suspends the current turn and resumes that same turn with the answer.
+11. Tool results are fed back to the same model loop until a final model response or the step limit.
+12. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
+13. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
+14. Final turn state is persisted and `session.idle` is emitted.
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.
 
@@ -96,6 +98,23 @@ Each session has an in-memory replay ring with monotonic event IDs. Durable UI s
 Every conversation owns one `workspaces/<session-id>/` directory. In the supplied production container every chat receives a unique monotonically allocated Unix UID. Arbitrary external processes (`bash`, `git apply`, terminal and Git status) run under that UID with a minimal environment. Runtime data and sibling workspaces are not traversable by tool processes.
 
 First-party file tools still execute in the trusted runtime, but every path is resolved through the workspace boundary and symlink/traversal checks. Repository traversal tools skip heavy generated/vendor directories such as `.git`, `node_modules`, build outputs and caches. The `read` tool reads numbered line windows so large text files can be inspected without loading the entire file into memory/context.
+
+## Managed development environment
+
+The production image deliberately contains a useful development substrate (Node.js, Python/venv/pip, OpenJDK 17, native build tooling, SSH/rsync/curl, database/network clients), but agent shells never receive `sudo` or root package-manager access.
+
+`ensure_environment` fills the gap between a fixed base image and project-specific needs while preserving session isolation:
+
+- `python` creates/reuses a virtualenv below `.agent-home/venvs/python` and installs requested pip package specs there;
+- `java` downloads a requested Eclipse Temurin JDK major release from the Adoptium API, verifies the release SHA-256 sidecar, and extracts it below `.agent-home/toolchains/java/<version>`;
+- `gradle` downloads an explicit Gradle distribution, verifies its SHA-256 sidecar, and installs it below `.agent-home/toolchains/gradle/<version>`;
+- `android` installs a pinned/checksummed Google command-line-tools archive below `.agent-home/toolchains/android-sdk` and can invoke `sdkmanager` for requested SDK package IDs. SDK package installation requires `acceptLicenses=true`, which remains visible in the permission request.
+
+The runtime persists only allowlisted managed variables (`JAVA_HOME`, `GRADLE_HOME`, `VIRTUAL_ENV`, `ANDROID_HOME`, `ANDROID_SDK_ROOT`) and workspace-local PATH prefixes. The manifest is revalidated before every shell/terminal environment is built, so editing it cannot inject arbitrary variables or external PATH prefixes. Provider secrets are still never copied into tool environments.
+
+`.agent-home` is hidden from repository traversal/UI trees and watcher events. That keeps SDK downloads, Gradle/npm/pip caches and Python environments out of repository context and avoids watcher storms. The cache is session/workspace-local: it persists across turns in the same chat, but disappears when that workspace is removed.
+
+This design intentionally prefers trusted user-local provisioning over runtime `apt install`: the model can make itself productive without becoming an administrator of the server container or host.
 
 ## Provider layer
 
