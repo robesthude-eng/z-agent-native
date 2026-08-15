@@ -61,7 +61,7 @@ describe("SettingsPanel", () => {
     render(<SettingsPanel />);
     fireEvent.click(within(desktopNav()).getByText("О системе"));
     expect(screen.getByText("Z Agent Native")).toBeInTheDocument();
-    expect(screen.getByText(/собственного runtime/i)).toBeInTheDocument();
+    expect(screen.getByText(/с собственным runtime/i)).toBeInTheDocument();
   });
 
   test("filters nav and loads account state when opened", () => {
