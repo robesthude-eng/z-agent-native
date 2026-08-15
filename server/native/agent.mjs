@@ -10,6 +10,7 @@ import { messageId, partId, permissionId, questionId, turnId } from './ids.mjs';
 import { buildCatalog, callModel } from './providers.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, requiresPermission, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
+import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
 let cachedSystem = null;
@@ -60,7 +61,6 @@ function messageMedia(message, workspace) {
     try {
       const full = safeWorkspacePath(workspace, String(part.path || ''), { allowMissing: false });
       const st = fs.statSync(full);
-      // Keep provider requests bounded; large assets remain available via tools.
       if (!st.isFile() || st.size > 20 * 1024 * 1024) continue;
       const mime = String(part.mime || (part.kind === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
       const dataUrl = `data:${mime};base64,${fs.readFileSync(full).toString('base64')}`;
@@ -70,10 +70,6 @@ function messageMedia(message, workspace) {
   return out;
 }
 
-/**
- * Reconstruct native provider frames from persisted chat history. Tool calls
- * stay tool calls; their results never get flattened into assistant prose.
- */
 function framesFromMessages(messages, workspace) {
   const frames = [];
   for (const msg of messages) {
@@ -107,32 +103,6 @@ function framesFromMessages(messages, workspace) {
     }
   }
   return frames;
-}
-
-function frameWeight(frame) {
-  let n = String(frame.content || '').length;
-  for (const media of frame.media || []) n += Math.min(String(media.dataUrl || '').length, 250_000);
-  for (const call of frame.toolCalls || []) n += JSON.stringify(call.arguments || {}).length + 256;
-  return n;
-}
-
-/** Keep the newest coherent context under a deterministic budget. */
-function trimContext(frames) {
-  const maxChars = Math.max(24_000, Number(process.env.Z_AGENT_CONTEXT_CHARS) || 360_000);
-  if (frames.reduce((sum, frame) => sum + frameWeight(frame), 0) <= maxChars) return frames;
-  const kept = [];
-  let used = 0;
-  for (let i = frames.length - 1; i >= 0; i--) {
-    const frame = frames[i];
-    const weight = frameWeight(frame);
-    if (kept.length > 0 && used + weight > maxChars) break;
-    kept.unshift(frame);
-    used += weight;
-  }
-  // Never begin with a dangling tool result: providers require the matching
-  // assistant tool call to precede it.
-  while (kept[0]?.role === 'tool') kept.shift();
-  return kept;
 }
 
 function userPartsFromPrompt(parts, workspace) {
@@ -287,8 +257,8 @@ async function runSubagent(ownerId, model, input, workspace, signal) {
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
     const response = await callModel(ownerId, model, {
-      system: 'You are a focused read-only subagent. Investigate the requested problem using workspace inspection tools. Do not ask the user questions and do not modify files. Return a concise evidence-based report to the parent agent.',
-      frames,
+      system: 'You are a focused read-only subagent. Investigate the requested problem using workspace inspection tools. Prefer targeted glob/grep/read calls, cite concrete paths/lines in your report, and do not modify files or ask the user questions.',
+      frames: compactFrames(frames, { maxChars: 140_000, maxObservationChars: 20_000 }),
       tools: SUBAGENT_SAFE_TOOLS,
       signal,
     });
@@ -340,7 +310,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
         time: { ...part.state.time, end: Date.now() },
       };
       emitPart(assistant, part);
-      return { content: JSON.stringify({ answers: q.answers }), isError: false };
+      return { content: JSON.stringify({ answers: q.answers }), isError: false, metadata: part.state.metadata, mutatedPaths: [] };
     }
     part.state = {
       ...part.state,
@@ -352,7 +322,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     };
     emitPart(assistant, part);
     if (mutatesWorkspace(call.name) || result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result?.mutatedPaths || ['.'] });
-    return { content: toolOutputText(result), isError: false };
+    return { content: toolOutputText(result), isError: false, metadata: result?.metadata || {}, mutatedPaths: result?.mutatedPaths || [] };
   } catch (err) {
     part.state = {
       ...part.state,
@@ -362,10 +332,9 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     };
     emitPart(assistant, part);
     if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
-    return { content: `Error: ${err?.message || String(err)}`, isError: true };
+    return { content: `Error: ${err?.message || String(err)}`, isError: true, metadata: {}, mutatedPaths: [] };
   }
 }
-
 
 export function submitTurn(args) {
   const actionId = String(args.actionId || '').trim();
@@ -423,17 +392,18 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
     const selected = await pickModel(ownerId, model);
     assistant.info.model = `${selected.providerID}/${selected.modelID}`;
     const history = listMessages(sessionId).filter((m) => m.id !== assistant.id);
-    const frames = trimContext(framesFromMessages(history, workspace));
-    // Current user message is already in history, so no second insertion here.
+    const frames = framesFromMessages(history, workspace);
+    const strategy = createTurnStrategy(promptText(parts));
     const maxSteps = Math.max(1, Number(process.env.Z_AGENT_MAX_STEPS) || 32);
     let lastUsage = null;
+    let gateReminders = 0;
 
     for (let step = 0; step < maxSteps; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
       const live = liveTextSink(assistant);
       const response = await callModel(ownerId, selected, {
-        system: [systemPrompt(), system || ''].filter(Boolean).join('\n\n'),
-        frames,
+        system: [systemPrompt(), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+        frames: compactFrames(frames),
         tools: availableToolDefinitions(),
         signal: controller.signal,
         onTextDelta: (delta) => live.push(delta),
@@ -442,6 +412,13 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
       lastUsage = response.usage || lastUsage;
       const calls = response.toolCalls || [];
       if (calls.length === 0) {
+        const gate = completionGate(strategy);
+        if (gate) {
+          gateReminders += 1;
+          frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+          frames.push({ role: 'user', content: `${gate}\nReminder attempt: ${gateReminders}.` });
+          continue;
+        }
         if (!streamedText) await emitText(assistant, response.text || 'Готово.', 'text');
         assistant.time.completed = Date.now();
         assistant.info.finish = response.finish || 'stop';
@@ -449,6 +426,12 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
           input: lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? lastUsage.inputTokens ?? lastUsage.promptTokenCount,
           output: lastUsage.completion_tokens ?? lastUsage.output_tokens ?? lastUsage.outputTokens ?? lastUsage.candidatesTokenCount,
         } : undefined;
+        assistant.info.strategy = {
+          changed: strategy.changed,
+          verificationAttempts: strategy.verificationAttempts,
+          lastVerificationOk: strategy.lastVerificationOk,
+          toolErrors: strategy.toolErrors,
+        };
         assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
         persistAssistant(assistant);
         updateTurn(sessionId, { lifecycle: 'completed', verdict: 'completed', since: Date.now(), reason: 'model_final' });
@@ -460,6 +443,7 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
       for (const call of calls) {
         const result = await executeCall(sessionId, assistant, call, controller, { ownerId, model: selected });
+        observeTool(strategy, call, result);
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
       }
     }
@@ -478,7 +462,6 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
     return assistant;
   } finally {
     activeTurns.delete(sessionId);
-    // Keep terminal turn projection for a short observable window, then clear.
     setTimeout(() => {
       if (!activeTurns.has(sessionId)) clearTurn(sessionId);
     }, 1500).unref?.();
