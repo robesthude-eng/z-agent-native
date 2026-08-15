@@ -12,6 +12,7 @@ React browser
 Native runtime
   ├─ session + turn state
   ├─ agent loop + context/turn strategy
+  ├─ repository intelligence + specialized subagents
   ├─ direct provider streaming
   ├─ tool executor + permission gate
   ├─ question suspension/resume
@@ -36,11 +37,13 @@ There is no external agent daemon and no protocol adapter between the UI and the
 4. The selected model is called directly and text deltas are streamed to the UI.
 5. Tool calls are persisted as assistant tool parts; risky tools stop at a permission gate.
 6. `todowrite` updates the live turn strategy so the original goal and current plan remain pinned in model guidance across long tool loops.
-7. `question` suspends the current turn and resumes that same turn with the answer.
-8. Tool results are fed back to the same model loop until a final model response or the step limit.
-9. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
-10. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
-11. Final turn state is persisted and `session.idle` is emitted.
+7. On broad/unfamiliar codebases, `repo_map` can provide a bounded structural index before targeted reads.
+8. `task` can delegate focused read-only investigation to an `explore`, `debug`, or `review` subagent.
+9. `question` suspends the current turn and resumes that same turn with the answer.
+10. Tool results are fed back to the same model loop until a final model response or the step limit.
+11. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
+12. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
+13. Final turn state is persisted and `session.idle` is emitted.
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.
 
@@ -52,6 +55,21 @@ The context manager runs on every model step, including nested read-only subagen
 - oldest frames are dropped when the total budget is exceeded, while matching assistant tool calls and retained tool results stay coherent.
 
 The live turn strategy is injected separately from conversation history, so the current user goal and `todowrite` plan do not disappear merely because old observations are compacted.
+
+## Repository intelligence
+
+`repo_map` is a trusted, read-only runtime tool intended to replace blind recursive browsing with one bounded high-signal scan. It never executes project code. The mapper skips vendor/generated/cache trees and caps the number and size of source files it inspects.
+
+The map includes:
+
+- language/file distribution and top-level repository areas;
+- manifests, package scripts and common configuration/CI files;
+- declared/common entrypoint candidates;
+- relative-import hubs for JS/TS code;
+- a bounded symbol index for common JS/TS, Python, Go and Rust declarations;
+- detected tests.
+
+The output is a navigation index, not semantic truth. The parent agent and subagents are instructed to confirm relevant details with `grep`/`read` before making conclusions or edits.
 
 ## Attachments
 
@@ -89,6 +107,18 @@ The provider layer talks directly to:
 
 Provider adapters normalize text, tool calls, usage and finish reasons into the native agent loop. Provider API keys remain server-side and are encrypted at rest.
 
-## Subagents
+## Specialized subagents
 
-`task` creates a nested model loop with a deliberately restricted tool set (`read`, `list`, `glob`, `grep`). The child cannot mutate the workspace, use the network, or ask the user. Its context is independently bounded, and it is instructed to return a concise evidence-based report with concrete file/line references to the parent turn.
+`task` creates a nested model loop with a deliberately restricted tool set (`repo_map`, `read`, `list`, `glob`, `grep`). The child cannot mutate the workspace, execute shell commands, use the network, or ask the user.
+
+Each subagent receives an automatic bounded repository snapshot and then follows a role-specific policy:
+
+- `explore` maps architecture, entrypoints, ownership boundaries, data/control flow, tests and local conventions before edits;
+- `debug` traces symptoms toward a root cause, separates facts from hypotheses, names alternative explanations and proposes concrete verification targets without pretending it reproduced anything;
+- `review` looks for correctness/security/data-loss/concurrency/compatibility regressions and only reports evidence-backed findings ordered by severity.
+
+Subagent context is independently bounded. Reports are returned to the parent turn with role/step metadata; the parent is still responsible for validating important conclusions and for all mutations/verification.
+
+## Coding-agent eval set
+
+`evals/coding-agent.json` contains repository-grounded `explore`, `debug`, and `review` tasks that require concrete paths and implementation concepts. `npm run eval:validate` checks the manifest structure, referenced paths, stable IDs and profile coverage in CI. This is an eval corpus/contract, not a claim of model quality; scored model execution can be layered on top without making CI depend on external provider credentials.
