@@ -11,6 +11,10 @@ function safeEventPath(value) {
   return normalized;
 }
 
+function shouldIgnoreEvent(eventPath) {
+  return eventPath === '.agent-home' || eventPath.startsWith('.agent-home/');
+}
+
 export function ensureWorkspaceWatcher(sessionId, root) {
   if (watchers.has(sessionId)) return watchers.get(sessionId);
   let timer = null;
@@ -19,26 +23,25 @@ export function ensureWorkspaceWatcher(sessionId, root) {
     timer = null;
     const changed = [...paths];
     paths.clear();
-    emit(sessionId, 'file.watcher.updated', { paths: changed.length ? changed : ['.'], path: changed[0] || '.' });
+    if (!changed.length) return;
+    emit(sessionId, 'file.watcher.updated', { paths: changed, path: changed[0] || '.' });
+  };
+  const observe = (filename) => {
+    const eventPath = safeEventPath(filename);
+    if (shouldIgnoreEvent(eventPath)) return;
+    paths.add(eventPath);
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(flush, 120);
+    timer.unref?.();
   };
   let watcher;
   try {
-    watcher = fs.watch(root, { recursive: true }, (_event, filename) => {
-      paths.add(safeEventPath(filename));
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(flush, 120);
-      timer.unref?.();
-    });
+    watcher = fs.watch(root, { recursive: true }, (_event, filename) => observe(filename));
   } catch {
     // Some filesystems do not support recursive watch. Root-level events plus
     // UI polling still provide a safe fallback; tool operations emit directly.
     try {
-      watcher = fs.watch(root, (_event, filename) => {
-        paths.add(safeEventPath(filename));
-        if (timer) clearTimeout(timer);
-        timer = setTimeout(flush, 120);
-        timer.unref?.();
-      });
+      watcher = fs.watch(root, (_event, filename) => observe(filename));
     } catch {
       return null;
     }
