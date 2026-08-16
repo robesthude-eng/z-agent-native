@@ -1,16 +1,13 @@
 /* Autonomous-agent presentation layer.
    Keep the conversation primary; implementation details remain available on demand. */
 
-/* Safe area belongs to the composer itself. ChatView is a flex sibling above
-   it, so reserving another 130–180px inside the message list only creates dead
-   space instead of preventing overlap. */
-.z-agent-composer-shell {
-  padding-bottom: max(0.75rem, env(safe-area-inset-bottom)) !important;
-}
-
+/* Composer already reserves 1.5rem below itself. On devices with a larger
+   home-indicator inset, add only the missing remainder instead of stacking a
+   second fixed spacer in the chat. */
 section[aria-label="Поле ввода сообщения"] {
   border-radius: 1.35rem !important;
   padding: 0.4rem 0.5rem !important;
+  margin-bottom: max(0px, calc(env(safe-area-inset-bottom) - 1.5rem));
 }
 
 section[aria-label="Поле ввода сообщения"] textarea {
@@ -47,23 +44,6 @@ button[data-z-stopping="true"]::after {
   padding-bottom: 0.2rem !important;
 }
 
-/* Retry/edit remain available, but as secondary chips instead of a second
-   prominent action row below every answer. */
-.z-agent-response-action {
-  height: 30px !important;
-  border: 1px solid var(--color-border) !important;
-  background: color-mix(in srgb, var(--color-card) 82%, transparent) !important;
-  padding-inline: 0.65rem !important;
-  font-size: 11.5px !important;
-  line-height: 1 !important;
-}
-
-.z-agent-response-action:hover {
-  background: var(--color-accent) !important;
-}
-
-/* Localise the workspace's small changed-files caption without expanding
-   the panel or competing with the file tree. */
 .z-agent-workspace-changes {
   font-size: 11px;
   color: var(--color-muted-foreground);
@@ -95,11 +75,5 @@ button[data-z-stopping="true"]::after {
      instead of being discoverable only by accident. */
   .oc-msg-in .group-hover\:opacity-60 {
     opacity: 0.62 !important;
-  }
-
-  .z-agent-response-action {
-    min-height: 40px !important;
-    padding-inline: 0.75rem !important;
-    font-size: 11px !important;
   }
 }
