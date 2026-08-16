@@ -7,7 +7,7 @@ import {
   authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
   loginUser, logoutToken, registerUser, requireAuth,
 } from './native/auth.mjs';
-import { abortTurn, answerPermission, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle } from './native/agent.mjs';
+import { abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle } from './native/agent.mjs';
 import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES } from './native/config.mjs';
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
 import { messageId, sessionId } from './native/ids.mjs';
@@ -221,13 +221,6 @@ async function route(req, res) {
       return sendJson(res, 200, { outcome: enqueueAction(sid, String(body.actionId || ''), body.payload || {}) });
     }
     if (p === `/api/session/${sid}/queue` && req.method === 'DELETE') return sendJson(res, 200, { removed: dequeueAction(sid, url.searchParams.get('actionId') || '') });
-    const perm = new RegExp(`^/api/session/${sid}/permissions/([^/]+)$`).exec(p);
-    if (perm && req.method === 'POST') {
-      const body = await readJson(req, 64 * 1024);
-      if (!['once', 'always', 'reject'].includes(body.response)) return sendJson(res, 400, { error: 'Invalid permission response' });
-      const ok = answerPermission(sid, decodeURIComponent(perm[1]), body.response);
-      return ok ? sendJson(res, 204, null) : sendJson(res, 404, { error: 'Permission request not found' });
-    }
   }
 
   // Question protocol is native: one pending question belongs to one active turn.
