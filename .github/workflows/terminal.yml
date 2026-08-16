@@ -1,0 +1,59 @@
+name: Server Terminal
+
+on:
+  workflow_dispatch:
+    inputs:
+      command:
+        description: 'Команда для выполнения на сервере'
+        required: true
+        default: 'whoami && hostname && uptime'
+      use_sudo:
+        description: 'Выполнить от root (sudo)'
+        type: boolean
+        default: false
+
+jobs:
+  run:
+    name: Execute on server
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: Run command
+        id: exec
+        run: |
+          CMD='${{ inputs.command }}'
+          if [ "${{ inputs.use_sudo }}" = "true" ]; then
+            CMD="sudo bash -c '$CMD'"
+          fi
+
+          echo ">>> $CMD"
+          echo "---"
+
+          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "$CMD" 2>&1 | tee /tmp/output.txt
+
+          # Save output for summary
+          {
+            echo 'result<<EOF'
+            cat /tmp/output.txt
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Summary
+        if: always()
+        run: |
+          echo "### 🖥️ Server Output" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "${{ steps.exec.outputs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      - name: Cleanup
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
