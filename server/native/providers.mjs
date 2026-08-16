@@ -8,7 +8,7 @@ import { listProviderConfigs } from './provider-configs.mjs';
 // transparently routed through the Worker relay (which forwards them via
 // Railway for geo-block bypass). Users enter real provider Base URLs from
 // documentation; the runtime handles the relay wrapping automatically.
-const RELAY_BASE = (process.env.Z_AGENT_RELAY_URL || '').replace(/\/\/+$/, '');
+const RELAY_BASE = (process.env.Z_AGENT_RELAY_URL || '').replace(/\/+$/, '');
 const RELAY_ENABLED = Boolean(RELAY_BASE);
 
 function wrapProviderUrl(url) {
@@ -99,6 +99,7 @@ function providerError(res, text, body = null) {
   const err = new Error(message);
   err.statusCode = res.status;
   err.body = body;
+  err.providerResponse = true;
   return err;
 }
 
@@ -193,13 +194,18 @@ function providerAuth(spec, key) {
   return { authorization: `Bearer ${key}` };
 }
 
-function modelListUrls(spec, key) {
+async function routedProviderUrl(directUrl, trustedBaseURL) {
+  // Validate the user-controlled destination before a trusted relay hides the
+  // original host from the SSRF guard.
+  if (!trustedBaseURL) await assertSafeExternalUrl(directUrl);
+  return wrapProviderUrl(directUrl);
+}
+
+function modelListDirectUrl(spec, key) {
   const base = spec.baseURL.replace(/\/$/, '');
-  const direct = spec.kind === 'google'
+  return spec.kind === 'google'
     ? `${base}/models?key=${encodeURIComponent(key)}`
     : `${base}/models`;
-  const relayed = wrapProviderUrl(direct);
-  return [...new Set([relayed, direct])];
 }
 
 async function fetchModelList(spec, key) {
@@ -209,18 +215,22 @@ async function fetchModelList(spec, key) {
     'user-agent': 'Z-Agent/1.0',
     ...providerAuth(spec, key),
   };
+  const direct = modelListDirectUrl(spec, key);
+  if (!spec.trustedBaseURL) await assertSafeExternalUrl(direct);
+  const urls = [...new Set([wrapProviderUrl(direct), direct])];
   let lastError = null;
-  for (const url of modelListUrls(spec, key)) {
+  for (const url of urls) {
     try {
-      if (!spec.trustedBaseURL) await assertSafeExternalUrl(url);
       return await fetchJson(url, { headers });
     } catch (err) {
       lastError = err;
       const status = Number(err?.statusCode) || 0;
-      // Authentication errors are route-independent. Everything else gets one
-      // alternate-route attempt, because relays/proxies can terminate or alter
-      // otherwise valid GET /models responses while chat POSTs still work.
-      if (status === 401 || status === 403) throw err;
+      // Authentication errors returned by the provider are route-independent.
+      // A local SSRF/security rejection never reaches this block.
+      if ((status === 401 || status === 403) && err?.providerResponse) {
+        err.providerAuthError = true;
+        throw err;
+      }
     }
   }
   throw lastError || new Error('Provider model catalog request failed');
@@ -248,7 +258,7 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
     return { status: 'live', models };
   } catch (err) {
     if (old) return { status: 'cache', models: old.models, error: err.message };
-    return { status: err.statusCode === 401 || err.statusCode === 403 ? 'unauthorized' : 'unavailable', models: [], error: err.message };
+    return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: err.message };
   }
 }
 
@@ -414,8 +424,8 @@ function openAiMessages(frames) {
 }
 
 async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta }) {
-  const url = wrapProviderUrl(`${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`);
-  if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
+  const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
+  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
@@ -494,8 +504,8 @@ function anthropicMessages(frames) {
 }
 
 async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta }) {
-  const url = wrapProviderUrl(`${resolved.spec.baseURL.replace(/\/$/, '')}/messages`);
-  if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
+  const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
+  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
   if (typeof onTextDelta !== 'function') {
@@ -562,7 +572,7 @@ function geminiContents(frames) {
       for (const c of f.toolCalls || []) parts.push({ functionCall: { name: c.name, args: c.arguments || {} } });
       out.push({ role: 'model', parts });
     } else if (f.role === 'tool') {
-      const part = { functionResponse: { name: f.name, response: { result: f.content, ...(f.isError ? { error: true } : {}) } } };
+      const part = { functionResponse: { name: f.name, response: { result: f.content, ...(f.isError ? { error: true } : {}) } };
       const prev = out[out.length - 1];
       if (prev?.role === 'user' && prev.parts?.some((p) => p.functionResponse)) prev.parts.push(part);
       else out.push({ role: 'user', parts: [part] });
@@ -574,8 +584,8 @@ function geminiContents(frames) {
 async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta }) {
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
-  const url = wrapProviderUrl(`${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`);
-  if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
+  const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`;
+  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
   const request = {
     systemInstruction: { parts: [{ text: system }] },
     contents: geminiContents(frames),
