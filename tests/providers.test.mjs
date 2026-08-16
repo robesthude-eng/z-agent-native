@@ -138,3 +138,27 @@ test('model discovery falls back to the direct endpoint after relay transport te
     assert.equal(urls.at(-1), 'https://1.1.1.1/v1/models');
   } finally { globalThis.fetch = original; }
 });
+
+test('provider URL is blocked before relay wrapping can hide a private destination', async () => {
+  providerConfigs.upsertProviderConfig(ownerId, {
+    id: 'blocked-local',
+    name: 'Blocked Local',
+    protocol: 'openai',
+    baseURL: 'http://127.0.0.1:8765/v1',
+    enabled: true,
+  });
+  store.setProviderKey(ownerId, 'blocked-local', 'sk-local');
+
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    throw new Error('network should not be reached');
+  };
+  try {
+    const result = await providers.fetchModels(ownerId, 'blocked-local', { force: true });
+    assert.equal(result.status, 'unavailable');
+    assert.match(result.error, /Локальные|служебные/);
+    assert.equal(calls, 0);
+  } finally { globalThis.fetch = original; }
+});
