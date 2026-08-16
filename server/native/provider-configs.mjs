@@ -1,9 +1,12 @@
 import crypto from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DB_PATH } from './config.mjs';
 
 export const PROVIDER_PROTOCOLS = ['openai', 'anthropic', 'google'];
 
+fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
   PRAGMA foreign_keys=ON;
