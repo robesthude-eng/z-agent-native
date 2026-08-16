@@ -2,15 +2,13 @@ import { readJson, sendJson } from './json.mjs';
 import {
   deleteProviderConfig,
   getProviderConfig,
+  listProviderConfigs,
   newCustomProviderId,
   upsertProviderConfig,
 } from './provider-configs.mjs';
 import {
   fetchModels,
-  isBuiltInProvider,
   probeModel,
-  providerList,
-  providerSpecs,
 } from './providers.mjs';
 import {
   deleteManualModel,
@@ -27,48 +25,53 @@ function reply(res, status, body) {
   return true;
 }
 
-function channelSnapshot(ownerId) {
+/**
+ * Provider management is intentionally user-defined only.
+ * Runtime protocol adapters may know how to speak OpenAI/Anthropic/Gemini,
+ * but they must never materialize branded provider templates in the UI.
+ */
+export function listProviderChannels(ownerId) {
   const connected = new Set(listProviderKeyIds(ownerId));
-  return providerList(ownerId).map((provider) => ({
+  return listProviderConfigs(ownerId).map((provider) => ({
     ...provider,
+    custom: true,
     connected: connected.has(provider.id),
-    overridden: Boolean(getProviderConfig(ownerId, provider.id)),
+    overridden: false,
   }));
 }
 
 function providerExists(ownerId, providerId) {
-  return Boolean(providerSpecs(ownerId)[providerId]);
+  return Boolean(getProviderConfig(ownerId, providerId));
 }
 
 export async function handleProviderChannels(req, res, ownerId, url) {
   const p = url.pathname;
   if (p === '/api/provider-channels' && req.method === 'GET') {
-    return reply(res, 200, { providers: channelSnapshot(ownerId) });
+    return reply(res, 200, { providers: listProviderChannels(ownerId) });
   }
 
   if (p === '/api/provider-channels' && req.method === 'POST') {
     const body = await readJson(req, 256 * 1024);
     const id = String(body.id || '').trim() || newCustomProviderId();
-    const builtin = isBuiltInProvider(id);
     const config = upsertProviderConfig(ownerId, {
       id,
       name: body.name,
       protocol: body.protocol,
       baseURL: body.baseURL,
       enabled: body.enabled !== false,
-    }, { custom: !builtin });
+    }, { custom: true });
     if (typeof body.key === 'string' && body.key.trim()) setProviderKey(ownerId, id, body.key.trim());
     const hasKey = Boolean(getProviderKey(ownerId, id));
     const catalog = hasKey && config.enabled
       ? await fetchModels(ownerId, id, { force: true })
       : { status: hasKey ? 'disabled' : 'unauthorized', models: [] };
     return reply(res, 200, {
-      provider: channelSnapshot(ownerId).find((item) => item.id === id),
+      provider: listProviderChannels(ownerId).find((item) => item.id === id),
       catalog: { status: catalog.status, count: catalog.models.length, error: catalog.error || null },
     });
   }
 
-  const match = /^\/api\/provider-channels\/([^/]+)(?:\/(key|refresh|config|manual-models))?$/.exec(p);
+  const match = /^\/api\/provider-channels\/([^/]+)(?:\/(key|refresh|manual-models))?$/.exec(p);
   if (!match) return false;
   const providerId = decodeURIComponent(match[1]);
   const action = match[2] || '';
@@ -76,15 +79,8 @@ export async function handleProviderChannels(req, res, ownerId, url) {
   if (!providerExists(ownerId, providerId)) return reply(res, 404, { error: 'Unknown provider' });
 
   if (!action && req.method === 'DELETE') {
-    if (isBuiltInProvider(providerId)) return reply(res, 400, { error: 'Встроенный провайдер нельзя удалить; сбросьте его настройки.' });
     deleteProviderConfig(ownerId, providerId, { deleteData: true });
     return reply(res, 200, { status: 'success' });
-  }
-
-  if (action === 'config' && req.method === 'DELETE') {
-    if (!isBuiltInProvider(providerId)) return reply(res, 400, { error: 'Для custom-провайдера используйте удаление провайдера.' });
-    deleteProviderConfig(ownerId, providerId, { deleteData: false });
-    return reply(res, 200, { status: 'success', provider: channelSnapshot(ownerId).find((item) => item.id === providerId) });
   }
 
   if (action === 'key' && req.method === 'DELETE') {
