@@ -57,7 +57,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'edit',
     description: 'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file.',
-    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText']),
+    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText', 'newText']),
   },
   {
     name: 'apply_patch',
