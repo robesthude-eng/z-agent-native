@@ -193,6 +193,39 @@ function providerAuth(spec, key) {
   return { authorization: `Bearer ${key}` };
 }
 
+function modelListUrls(spec, key) {
+  const base = spec.baseURL.replace(/\/$/, '');
+  const direct = spec.kind === 'google'
+    ? `${base}/models?key=${encodeURIComponent(key)}`
+    : `${base}/models`;
+  const relayed = wrapProviderUrl(direct);
+  return [...new Set([relayed, direct])];
+}
+
+async function fetchModelList(spec, key) {
+  const headers = {
+    accept: 'application/json',
+    'accept-language': 'en-US,en;q=0.9',
+    'user-agent': 'Z-Agent/1.0',
+    ...providerAuth(spec, key),
+  };
+  let lastError = null;
+  for (const url of modelListUrls(spec, key)) {
+    try {
+      if (!spec.trustedBaseURL) await assertSafeExternalUrl(url);
+      return await fetchJson(url, { headers });
+    } catch (err) {
+      lastError = err;
+      const status = Number(err?.statusCode) || 0;
+      // Authentication errors are route-independent. Everything else gets one
+      // alternate-route attempt, because relays/proxies can terminate or alter
+      // otherwise valid GET /models responses while chat POSTs still work.
+      if (status === 401 || status === 403) throw err;
+    }
+  }
+  throw lastError || new Error('Provider model catalog request failed');
+}
+
 export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   const spec = effectiveSpecs(ownerId)[providerId];
   const key = getProviderKey(ownerId, providerId);
@@ -202,11 +235,7 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   const old = cache.get(ck);
   if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models };
   try {
-    let url;
-    if (spec.kind === 'google') url = `${spec.baseURL.replace(/\/$/, '')}/models?key=${encodeURIComponent(key)}`;
-    else url = wrapProviderUrl(`${spec.baseURL.replace(/\/$/, '')}/models`);
-    if (!spec.trustedBaseURL) await assertSafeExternalUrl(url);
-    const body = await fetchJson(url, { headers: { accept: 'application/json', ...providerAuth(spec, key) } });
+    const body = await fetchModelList(spec, key);
     let models = [];
     if (spec.kind === 'google') {
       models = (body?.models || []).map((m) => ({ id: String(m.name || '').replace(/^models\//, ''), name: m.displayName || String(m.name || '').replace(/^models\//, '') })).filter((m) => m.id);
