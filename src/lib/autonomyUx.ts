@@ -1,3 +1,5 @@
+import { markStopRequested } from "./stopUx";
+
 const RESPONSE_ACTIONS = new Map<string, string>([
   ["Спросить ещё раз", "↻ Ещё раз"],
   ["Изменить последний запрос", "✎ Изменить"],
@@ -63,6 +65,44 @@ function hideLegacyPermissionUi(root: ParentNode) {
   }
 }
 
+function currentSessionId(): string | null {
+  const match = /^\/chat\/(ses_[A-Za-z0-9]+)/.exec(window.location.pathname);
+  return match?.[1] ?? null;
+}
+
+function installStopFeedback() {
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const button = target.closest<HTMLButtonElement>(
+      'button[aria-label="Остановить генерацию"]',
+    );
+    if (!button || button.dataset.zStopping === "true") return;
+
+    const sid = currentSessionId();
+    if (sid) markStopRequested(sid);
+
+    // Presentation only: React/store still own the actual cancellation. The
+    // dataset drives a CSS label immediately, so a slow network never leaves
+    // the user wondering whether the tap registered.
+    button.dataset.zStopping = "true";
+    button.setAttribute("aria-label", "Останавливаю ответ");
+    button.title = "Останавливаю…";
+    button.disabled = true;
+
+    // If the abort request itself fails and the runtime remains busy, restore
+    // the control so the user can retry. Normally React replaces this button
+    // with Send as soon as the server confirms idle, long before this timer.
+    window.setTimeout(() => {
+      if (!button.isConnected) return;
+      delete button.dataset.zStopping;
+      button.disabled = false;
+      button.setAttribute("aria-label", "Остановить генерацию");
+      button.title = "Остановить генерацию";
+    }, 6000);
+  });
+}
+
 function polish(root: ParentNode) {
   polishComposer(root);
   polishResponseActions(root);
@@ -90,6 +130,7 @@ export function initAutonomyUx() {
     requestAnimationFrame(run);
   };
 
+  installStopFeedback();
   schedule();
   const observer = new MutationObserver(schedule);
   // React streaming mainly mutates text nodes. Presentation hooks only care
