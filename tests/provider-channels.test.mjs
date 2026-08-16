@@ -11,11 +11,22 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 const store = await import('../server/native/store.mjs');
 const configs = await import('../server/native/provider-configs.mjs');
 const providers = await import('../server/native/providers.mjs');
+const { handleProviderChannels } = await import('../server/native/provider-channels.mjs');
 
 const ownerA = 'provider-a@example.com';
 const ownerB = 'provider-b@example.com';
 store.createUser(ownerA, 'test-hash');
 store.createUser(ownerB, 'test-hash');
+
+function captureResponse() {
+  return {
+    status: null,
+    headers: null,
+    body: '',
+    writeHead(status, headers) { this.status = status; this.headers = headers; },
+    end(body = '') { this.body = String(body || ''); },
+  };
+}
 
 test('custom provider channels are owner-scoped and merged into the runtime registry', () => {
   const id = configs.newCustomProviderId();
@@ -53,6 +64,21 @@ test('built-in provider endpoint can be overridden per owner without changing an
   assert.equal(providers.providerSpecs(ownerA).openai.trustedBaseURL, false);
   assert.equal(providers.providerSpecs(ownerB).openai.baseURL, before);
   assert.equal(providers.providerSpecs(ownerB).openai.trustedBaseURL, true);
+});
+
+test('provider channel HTTP handler reports handled routes explicitly', async () => {
+  const res = captureResponse();
+  const handled = await handleProviderChannels(
+    { method: 'GET' },
+    res,
+    ownerA,
+    new URL('http://localhost/api/provider-channels'),
+  );
+  assert.equal(handled, true);
+  assert.equal(res.status, 200);
+  const body = JSON.parse(res.body);
+  assert.ok(Array.isArray(body.providers));
+  assert.ok(body.providers.some((provider) => provider.id === 'openai'));
 });
 
 test('provider config validation rejects unsafe shapes', () => {
