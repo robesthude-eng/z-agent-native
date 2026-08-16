@@ -1,3 +1,4 @@
+import { GitBranch } from "lucide-react";
 import { lazy, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
@@ -28,20 +29,14 @@ import { LazyPanel, PanelBodySkeleton } from "./LazyPanel";
 import ModelSelector from "./ModelSelector";
 import PanelModal from "./PanelModal";
 
-/**
- * Терминал тянет @xterm/xterm с webgl-аддоном и socket.io-client — около
- * 440 КБ, то есть треть всей прежней сборки, ради кнопки, которую на телефоне
- * могут не нажать ни разу. PanelModal возвращает null пока закрыт, поэтому
- * `import()` стартует именно в момент клика по «Терминал», а не на первом
- * рендере. Предпросмотр вынесен по тому же принципу — он тоже открывается
- * только по кнопке.
- */
+/** Heavy/secondary panels are loaded only when the user asks for them. */
 const Terminal = lazy(() =>
   import("./Terminal").then((m) => ({ default: m.Terminal })),
 );
 const PreviewPanel = lazy(() =>
   import("./PreviewPanel").then((m) => ({ default: m.PreviewPanel })),
 );
+const ChangesPanel = lazy(() => import("./ChangesPanel"));
 
 export default function TopBar() {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
@@ -52,19 +47,10 @@ export default function TopBar() {
   const currentID = useStore((s) => s.currentID);
   const [showTerminal, setShowTerminal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
+  const [showChanges, setShowChanges] = useState(false);
   const sessionReady = !!currentID && !isTmpSession(currentID);
 
-  /**
-   * Состояние runtime-возможностей (I-31).
-   *
-   * `sessionReady` знает только то, что чат не черновик, — про окружение он не
-   * знает ничего. Поэтому кнопки открывались вслепую, и о недоступности
-   * пользователь узнавал по красной строке внутри уже открытой панели.
-   *
-   * За флагом `VITE_CAPABILITY_STATE`. Пока он выключен, гейт остаётся прежним:
-   * иначе сбой маршрута сделал бы кнопки неактивными там, где раньше они
-   * работали.
-   */
+  /** Runtime capability state for terminal/preview/workspace. */
   const [caps, setCaps] = useState<
     Record<CapabilityKind, CapabilityState | null>
   >({ terminal: null, preview: null, workspace: null });
@@ -78,9 +64,7 @@ export default function TopBar() {
         const next = parseCapabilities(await api.capabilities(currentID));
         if (alive) setCaps(next);
       } catch {
-        // Сеть отвалилась — состояние остаётся прежним, а не сбрасывается в
-        // «неизвестно»: мигание кнопок при каждой сетевой заминке хуже, чем
-        // слегка устаревшее состояние.
+        // Keep the last known state during a short network interruption.
       }
     };
     read();
@@ -91,12 +75,6 @@ export default function TopBar() {
     };
   }, [capsFromServer, sessionReady, currentID]);
 
-  /**
-   * Можно ли открывать возможность, и что сказать, если нет.
-   *
-   * Само правило — в `capabilityGate` (`src/api/capabilities.ts`), там же оно
-   * и проверяется: внутри компонента его проверял бы только рендер.
-   */
   const gate = (kind: CapabilityKind, fallbackTitle: string) =>
     capabilityGate({
       kind,
@@ -107,7 +85,7 @@ export default function TopBar() {
     });
 
   // Горячие клавиши: Ctrl/Cmd+K — поиск по списку чатов,
-  // Ctrl/Cmd+Shift+O — новый чат. e.code не зависит от раскладки.
+  // Ctrl/Cmd+Shift+O — новый чат.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
@@ -151,8 +129,6 @@ export default function TopBar() {
     toast("success", "Чат сохранён в Markdown-файл");
   };
 
-
-
   return (
     <>
       <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:px-4">
@@ -171,7 +147,7 @@ export default function TopBar() {
         <Button
           variant="ghost"
           size="icon"
-          className="hidden md:flex h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground md:flex"
           onClick={toggleSidebar}
           title={
             sidebarCollapsed
@@ -245,11 +221,18 @@ export default function TopBar() {
           <PreviewIcon size={16} />
         </Button>
 
-        {/* aria-pressed — это кнопка-переключатель, и её состояние должно быть
-            видно скринридеру, а не только по цвету варианта. Заодно даёт e2e
-            надёжный признак: workspaceOpen приезжает с сервера асинхронно
-            (prefsSync), поэтому «нажать, чтобы открыть» без проверки состояния
-            иногда закрывало панель. */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:inline-flex"
+          onClick={() => setShowChanges(true)}
+          disabled={!sessionReady}
+          title="Изменения проекта"
+          aria-label="Показать изменения проекта"
+        >
+          <GitBranch className="h-4 w-4" />
+        </Button>
+
         <Button
           variant={workspaceOpen ? "secondary" : "ghost"}
           size="icon"
@@ -289,6 +272,16 @@ export default function TopBar() {
           <PreviewPanel
             url={currentID ? `/api/sandbox-proxy/${currentID}/` : ""}
           />
+        </LazyPanel>
+      </PanelModal>
+
+      <PanelModal
+        title="Изменения"
+        open={showChanges}
+        onClose={() => setShowChanges(false)}
+      >
+        <LazyPanel label="изменения" skeleton={<PanelBodySkeleton />}>
+          <ChangesPanel />
         </LazyPanel>
       </PanelModal>
     </>
