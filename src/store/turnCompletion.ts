@@ -22,10 +22,10 @@ export interface TurnCompletionOptions {
   onFailed: () => void;
   /**
    * Watchdog is not a successful finish. It only says the browser could not
-   * obtain an authoritative verdict in time. The caller must preserve that
-   * uncertainty instead of turning it into idle/success.
+   * obtain an authoritative verdict in time. If omitted, failure handling is
+   * used for backward compatibility with existing callers/tests.
    */
-  onWatchdogTimeout: () => void;
+  onWatchdogTimeout?: () => void;
   onSnapshot: (msgs: Message[]) => void;
   hardTimeoutMs: number;
 }
@@ -39,7 +39,7 @@ export function awaitTurnCompletion(
     promptPromise,
     onTurnProjection,
     onFailed,
-    onWatchdogTimeout,
+    onWatchdogTimeout = onFailed,
     onSnapshot,
     hardTimeoutMs,
   } = opts;
@@ -153,6 +153,9 @@ export function awaitTurnCompletion(
       clearInterval(httpPoller);
       if (verdictPoller) clearInterval(verdictPoller);
       sessionFsm.clearIdleResolver(sidStr, requestGen);
+      // Do not leave a stale "running" projection visible after the watchdog.
+      // `null` means exactly what we know now: no authoritative projection.
+      onTurnProjection(null);
       onWatchdogTimeout();
       done("hard-timeout");
     }, hardTimeoutMs);
