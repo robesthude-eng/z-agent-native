@@ -11,7 +11,6 @@ import { buildCatalog, callModel } from './providers.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, requiresPermission, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
-import { getSubagentProfile } from './subagents.mjs';
 
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
 let cachedSystem = null;
@@ -260,8 +259,8 @@ async function runSubagent(ownerId, model, input, workspace, signal) {
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
     const response = await callModel(ownerId, model, {
-      system: profile.system,
-      frames: compactFrames(frames, { maxChars: 160_000, maxObservationChars: 20_000 }),
+      system: 'You are a focused read-only subagent. Investigate the requested problem using workspace inspection tools. Prefer targeted glob/grep/read calls, cite concrete paths/lines in your report, and do not modify files or ask the user questions.',
+      frames: compactFrames(frames, { maxChars: 140_000, maxObservationChars: 20_000 }),
       tools: SUBAGENT_SAFE_TOOLS,
       signal,
     });

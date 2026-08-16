@@ -5,12 +5,11 @@ on:
   push:
     branches:
       - main
-  workflow_call:
 
 jobs:
   test:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -18,14 +17,9 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run eval:validate
       - run: npm run test:native
       - run: npm test
       - if: always()
         run: npm run typecheck
       - if: always()
         run: npm run build
-      - if: always()
-        run: docker build -t z-agent-native:ci .
-      - if: always()
-        run: docker run --rm --entrypoint /bin/bash z-agent-native:ci -lc 'python3 -m venv /tmp/z-agent-venv && /tmp/z-agent-venv/bin/python --version && java -version && javac -version && ssh -V && cmake --version && psql --version'

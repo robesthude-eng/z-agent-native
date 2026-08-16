@@ -10,8 +10,6 @@ import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
 const IGNORED_WALK_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
-const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
-const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
 
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 

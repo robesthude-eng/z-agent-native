@@ -7,24 +7,16 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-verification-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
+process.env.OPENAI_BASE_URL = 'http://127.0.0.1:65531/v1';
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
 const events = await import('../server/native/events.mjs');
-const providerConfigs = await import('../server/native/provider-configs.mjs');
 
 const ownerId = 'verification@example.com';
-const providerId = 'test_openai';
 store.createUser(ownerId, 'hash');
-providerConfigs.upsertProviderConfig(ownerId, {
-  id: providerId,
-  name: 'Verification OpenAI',
-  protocol: 'openai',
-  baseURL: 'https://api.example.com/v1',
-  enabled: true,
-});
-store.setProviderKey(ownerId, providerId, 'sk-verification-test');
+store.setProviderKey(ownerId, 'openai', 'sk-verification-test');
 
 function sse(items) {
   return new Response(items.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
@@ -33,7 +25,17 @@ function sse(items) {
   });
 }
 
-test('runtime auto-approves tool calls and still forces executable verification after a workspace edit', async () => {
+async function waitFor(fn, timeout = 2000) {
+  const end = Date.now() + timeout;
+  while (Date.now() < end) {
+    const value = fn();
+    if (value) return value;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  throw new Error('condition timeout');
+}
+
+test('runtime completion gate forces executable verification after a workspace edit', async () => {
   agent.resetAgentStateForTests();
   events.resetEventsForTests();
   const sid = 'ses_verificationgate1';
@@ -86,15 +88,21 @@ test('runtime auto-approves tool calls and still forces executable verification 
   };
 
   try {
-    const assistant = await agent.runTurn({
+    const turn = agent.runTurn({
       sessionId: sid,
       ownerId,
       parts: [{ type: 'text', text: 'Создай корректный модуль hello.mjs' }],
-      model: { providerID: providerId, modelID: 'gpt-test' },
+      model: { providerID: 'openai', modelID: 'gpt-test' },
       system: '',
     });
 
-    assert.deepEqual(permissionEvents, []);
+    const firstPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'write'));
+    assert.equal(agent.answerPermission(sid, firstPermission.id, 'once'), true);
+
+    const secondPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'bash'));
+    assert.equal(agent.answerPermission(sid, secondPermission.id, 'once'), true);
+
+    const assistant = await turn;
     assert.equal(sawCompletionGate, true);
     assert.equal(streamCall, 4);
     assert.equal(assistant.info.strategy?.changed, true);
