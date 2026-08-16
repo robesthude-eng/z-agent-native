@@ -3,9 +3,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
-import {
-  commitEnvironmentRequirement, describeManagedEnvironment, managedShellEnvironment, prepareEnvironmentRequirement,
-} from './environment.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
@@ -85,17 +82,6 @@ export const TOOL_DEFINITIONS = [
       description: { type: 'string' },
       prompt: { type: 'string' },
     }, ['prompt']),
-  },
-  {
-    name: 'ensure_environment',
-    description: 'Provision a missing development runtime or package set inside this session without sudo. Supports Python virtualenv packages, Eclipse Temurin Java, Gradle distributions, and Android SDK command-line/packages. Use this instead of giving up when a required SDK or library is missing.',
-    inputSchema: object({
-      kind: { type: 'string', enum: ['python', 'java', 'gradle', 'android'] },
-      version: { type: 'string', description: 'Java major version (for example 21) or Gradle version (for example 8.14.5).' },
-      packages: { type: 'array', maxItems: 30, items: { type: 'string' }, description: 'pip package specs for python, or sdkmanager package IDs for android.' },
-      acceptLicenses: { type: 'boolean', description: 'For Android SDK packages, explicitly accept Android SDK licenses. The permission dialog will show this value.' },
-      timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
-    }, ['kind']),
   },
   {
     name: 'bash',

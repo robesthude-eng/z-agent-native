@@ -13,7 +13,6 @@ Native runtime
   ├─ session + turn state
   ├─ agent loop + context/turn strategy
   ├─ repository intelligence + specialized subagents
-  ├─ managed development environment provisioning
   ├─ direct provider streaming
   ├─ tool executor + permission gate
   ├─ question suspension/resume
@@ -40,12 +39,11 @@ There is no external agent daemon and no protocol adapter between the UI and the
 6. `todowrite` updates the live turn strategy so the original goal and current plan remain pinned in model guidance across long tool loops.
 7. On broad/unfamiliar codebases, `repo_map` can provide a bounded structural index before targeted reads.
 8. `task` can delegate focused read-only investigation to an `explore`, `debug`, or `review` subagent.
-9. When a required supported SDK/runtime is missing, `ensure_environment` can provision it below the session's hidden `.agent-home` after the normal permission gate; later shell/tool calls inherit the managed environment.
-10. `question` suspends the current turn and resumes that same turn with the answer.
-11. Tool results are fed back to the same model loop until a final model response or the step limit.
-12. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
-13. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
-14. Final turn state is persisted and `session.idle` is emitted.
+9. `question` suspends the current turn and resumes that same turn with the answer.
+10. Tool results are fed back to the same model loop until a final model response or the step limit.
+11. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
+12. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
+13. Final turn state is persisted and `session.idle` is emitted.
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.
 
