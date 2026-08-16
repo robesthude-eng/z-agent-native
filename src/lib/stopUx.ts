@@ -27,7 +27,10 @@ function storage(): Storage | null {
 export function markStopRequested(sessionId: string, messageId?: string): void {
   const s = storage();
   if (!s || !sessionId) return;
-  const marker: StopMarker = { messageId, requestedAt: Date.now() };
+  const marker: StopMarker = {
+    requestedAt: Date.now(),
+    ...(messageId ? { messageId } : {}),
+  };
   try {
     s.setItem(`${PREFIX}${sessionId}`, JSON.stringify(marker));
   } catch {
