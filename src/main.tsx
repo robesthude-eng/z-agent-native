@@ -55,10 +55,13 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import ErrorBoundary from "./components/ErrorBoundary";
+import { initAutonomyUx } from "./lib/autonomyUx";
 import { initSentryBrowser } from "./lib/sentry";
 import "./index.css";
+import "./autonomy-ui.css";
 
 initSentryBrowser();
+initAutonomyUx();
 
 const rootElement = document.getElementById("root");
 if (!rootElement) {
