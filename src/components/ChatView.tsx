@@ -1,10 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
-import { statusText } from "../api/eventGuards";
-import { isInterruptedQuestionPart } from "../api/interruptions";
+import { isAbortedError, statusText } from "../api/eventGuards";
 import { dispositionOf, indicatorFor } from "../api/turnVerdict";
-import type { Message, ToolPart } from "../api/types";
+import type { Message } from "../api/types";
 import { messageText } from "../lib/chatText";
 import { useStore } from "../store/useStore";
 import AgentIndicator from "./AgentIndicator";
@@ -66,7 +65,6 @@ function currentActivityLabel(messages: Message[] | undefined): string {
                 : "running";
         const norm = raw === "pending" ? "running" : raw;
         if (norm === "running") return toolActivityLabel(p.tool);
-        // Инструмент завершён — агент решает следующий шаг.
         return "думает…";
       }
       if (p.type === "reasoning") return "думает…";
@@ -77,7 +75,6 @@ function currentActivityLabel(messages: Message[] | undefined): string {
   return "думает…";
 }
 
-/** «шаг N» — номер текущего действия агента в текущем ответе (как в мокапе). */
 function currentStepMeta(messages: Message[] | undefined): string | undefined {
   const list = messages ?? [];
   const last = list[list.length - 1];
@@ -89,11 +86,6 @@ function currentStepMeta(messages: Message[] | undefined): string | undefined {
   return `шаг ${tools.length}`;
 }
 
-/**
- * Подсказки для пустого экрана. Показывают именно то, чем этот ассистент
- * отличается от обычного чата: он создаёт файлы в workspace и запускает
- * команды, а не только пишет текст в ответ.
- */
 const SUGGESTIONS = [
   {
     title: "Собрать проект",
@@ -139,14 +131,6 @@ export default function ChatView() {
   );
   const status = statusText(rawStatus);
 
-  /**
-   * Индикатор хода по проекции с сервера (I-32, этап 3.2).
-   *
-   * `unknown` означает «проекции нет», а не «скрыть»: поллер вердикта живёт
-   * внутри `send()`, поэтому после перезагрузки страницы записи не будет.
-   * В этом случае решаем по прежнему признаку — иначе индикатор исчезал бы
-   * посреди идущего ответа.
-   */
   const projection = useStore((s) =>
     currentID ? (s.turnProjection[currentID] ?? null) : null,
   );
@@ -158,20 +142,33 @@ export default function ChatView() {
   const unresolved = indicator.kind === "unresolved" ? indicator : null;
 
   const error = useStore((s) => s.error);
-  const send = useStore((s) => s.send);
   const refreshTurnProjection = useStore((s) => s.refreshTurnProjection);
   const prefillComposer = useStore((s) => s.prefillComposer);
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  const unreadAssistantIdsRef = useRef<Set<string>>(new Set());
+  const [newAnswerCount, setNewAnswerCount] = useState(0);
   const [windowSize, setWindowSize] = useState(40);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  const resetNewAnswers = () => {
+    unreadAssistantIdsRef.current.clear();
+    setNewAnswerCount(0);
+  };
 
   const scrollToBottom = () => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     atBottomRef.current = true;
     setIsScrolledUp(false);
+    resetNewAnswers();
   };
+
+  useEffect(() => {
+    atBottomRef.current = true;
+    setIsScrolledUp(false);
+    resetNewAnswers();
+  }, [currentID]);
 
   const scrollRafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
     null,
@@ -184,16 +181,13 @@ export default function ChatView() {
       if (!el) return;
       const isUp = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;
       atBottomRef.current = !isUp;
+      if (!isUp && unreadAssistantIdsRef.current.size > 0) resetNewAnswers();
       if (isScrolledUp !== isUp) setIsScrolledUp(isUp);
     });
   };
 
   const showScrollBtn = isScrolledUp && messages && messages.length > 0;
 
-  // Дешёвый сигнал, меняющийся при любом приросте контента: новое сообщение
-  // ИЛИ дописанные в последнее сообщение токены (растёт суммарная длина текста).
-  // Раньше автоскролл висел в mount-only эффекте ([] deps) и срабатывал один раз,
-  // поэтому во время стрима ответ «уезжал» вниз, а пользователь оставался наверху.
   const streamSignal = useMemo(() => {
     if (!messages || messages.length === 0) return "";
     const last = messages[messages.length - 1];
@@ -203,8 +197,6 @@ export default function ChatView() {
           text?: string;
           state?: { output?: unknown } | string;
         };
-        // P2-fix: учитываем и растущий вывод инструментов — иначе
-        // автоскролл не следует за длинным выводом команд.
         const state =
           typeof anyP.state === "object" && anyP.state !== null
             ? anyP.state
@@ -216,15 +208,6 @@ export default function ChatView() {
     return `${messages.length}:${last?.id ?? ""}:${last?.parts?.length ?? 0}:${textLen}`;
   }, [messages]);
 
-  // Автоскролл к низу по мере стрима — но ТОЛЬКО если пользователь уже внизу.
-  // Если он прокрутил вверх читать историю, позицию не трогаем (появляется
-  // кнопка «вниз»). Programmatic scroll сам поднимет onScroll и обновит
-  // atBottomRef/isScrolledUp консистентно. behavior:"auto" — мгновенно, чтобы
-  // не отставать от токенов.
-  // P2-fix: троттлинг через rAF — стор может обновиться несколько раз
-  // за кадр, а scrollIntoView каждый раз форсирует layout. Коалесцируем
-  // все срабатывания в один скролл на кадр; позицию «внизу»
-  // перепроверяем уже в момент кадра.
   const autoScrollRafRef = useRef<ReturnType<
     typeof requestAnimationFrame
   > | null>(null);
@@ -239,9 +222,23 @@ export default function ChatView() {
     });
   }, [streamSignal]);
 
-  // Отмена pending RAF от onScroll только при размонтировании — держим
-  // отдельно от эффекта выше, иначе cleanup на каждом токене оставил бы
-  // scrollRafRef в устаревшем ненулевом состоянии и заблокировал onScroll.
+  // If the user is reading history, do not drag them to the bottom. Instead,
+  // remember each newly active assistant response once and surface it in the
+  // floating down control. Token deltas for the same response do not inflate
+  // the counter.
+  useEffect(() => {
+    if (!streamSignal || atBottomRef.current || !messages?.length) return;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      const message = messages[i];
+      if (message?.role !== "assistant" || !hasVisibleContent(message)) continue;
+      if (!unreadAssistantIdsRef.current.has(message.id)) {
+        unreadAssistantIdsRef.current.add(message.id);
+        setNewAnswerCount(unreadAssistantIdsRef.current.size);
+      }
+      break;
+    }
+  }, [streamSignal, messages]);
+
   useEffect(() => {
     return () => {
       if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
@@ -253,9 +250,6 @@ export default function ChatView() {
 
   const lastMsg = messages?.[messages.length - 1];
   const lastHasContent = lastMsg ? hasVisibleContent(lastMsg) : false;
-  // По `showWorking`, а не по `status`: при `stuck` анимация печати означала бы
-  // «идёт работа» — то есть выдавала бы неизвестность за работу, ровно против
-  // I-32. Когда проекции нет, `showWorking` сам сводится к прежнему признаку.
   const showTyping = showWorking && !lastHasContent;
 
   const visibleMessages = useMemo(
@@ -266,8 +260,6 @@ export default function ChatView() {
     [messages, showTyping],
   );
 
-  // Group consecutive messages by role (specifically for assistant turns).
-  // Memoizing this avoids rebuilding markdown input on scroll/status-only renders.
   const groupedMessages = useMemo(() => {
     const groups: { role: string; messages: Message[] }[] = [];
     for (const m of visibleMessages) {
@@ -287,7 +279,6 @@ export default function ChatView() {
     [groupedMessages, isWindowed, windowSize],
   );
 
-  // Поиск по сообщениям чата (Ctrl+F или кнопка в верхней панели).
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIdx, setSearchIdx] = useState(0);
@@ -308,7 +299,6 @@ export default function ChatView() {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    // Сообщение за пределами окна — разворачиваем историю и скроллим.
     setWindowSize(100000);
     setTimeout(() => {
       find()?.scrollIntoView({ behavior: "smooth", block: "center" });
@@ -340,43 +330,16 @@ export default function ChatView() {
     };
   }, []);
 
-  // Текст последнего запроса пользователя — для «Спросить ещё раз»
-  // и «Изменить последний запрос».
-  const lastUserText = useMemo(() => {
-    for (let i = (messages?.length ?? 0) - 1; i >= 0; i--) {
-      const m = messages?.[i];
-      if (m?.role === "user") {
-        const t = messageText(m).trim();
-        if (t) return t;
-      }
-    }
-    return null;
-  }, [messages]);
-
-  // Первый инструмент, завершившийся ошибкой, — для чипа перехода к сбою.
-  const failedToolMid = useMemo(() => {
-    for (const m of messages ?? []) {
-      for (const p of m.parts ?? []) {
-        if (p.type !== "tool") continue;
-        const st = (p as ToolPart).state;
-        const status =
-          typeof st === "string"
-            ? st
-            : st && typeof st === "object"
-              ? st.status
-              : undefined;
-        // Оборванный вопрос сбоем не считается — то же условие, что в шапке
-        // цепочки (`MessageItem`) и в шапке группы (`ToolGroup`). Без него
-        // ответ на вопрос выносил наверх ленты красную кнопку «Инструмент
-        // завершился с ошибкой», то есть предлагал идти смотреть поломку,
-        // которой нет.
-        if (status !== "error" && status !== "failed") continue;
-        if (isInterruptedQuestionPart(p)) continue;
-        return m.id;
-      }
-    }
-    return null;
-  }, [messages]);
+  const hasLocalAssistantError = useMemo(
+    () =>
+      (messages || []).some(
+        (m) =>
+          m.role === "assistant" &&
+          m.info?.error &&
+          !isAbortedError(m.info.error),
+      ),
+    [messages],
+  );
 
   if (!currentID) {
     return (
@@ -421,11 +384,11 @@ export default function ChatView() {
     <div className="flex-1 relative min-h-0 overflow-hidden bg-transparent">
       <div
         key={currentID}
-        className="oc-chat-in scrollbar-none h-full overflow-y-auto pb-[180px]"
+        className="oc-chat-in scrollbar-none h-full overflow-y-auto pb-6"
         ref={scrollRef}
         onScroll={onScroll}
       >
-        {error && (
+        {error && !hasLocalAssistantError && (
           <div className="mx-auto max-w-3xl px-3 md:px-6 pt-3">
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
               {typeof error === "string" ? error : JSON.stringify(error)}
@@ -451,18 +414,6 @@ export default function ChatView() {
               </Button>
             </div>
           )}
-          {failedToolMid && status !== "busy" && (
-            <div className="text-center py-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="rounded-full text-red-400 hover:bg-red-500/10 hover:text-red-300"
-                onClick={() => jumpToMessage(failedToolMid)}
-              >
-                Инструмент завершился с ошибкой — показать
-              </Button>
-            </div>
-          )}
           <div>
             {renderedGroups.map((group, i) => {
               const isWorking =
@@ -480,39 +431,14 @@ export default function ChatView() {
                 </div>
               );
             })}
-            {status !== "busy" &&
-              lastUserText &&
-              lastMsg?.role === "assistant" && (
-                <div className="flex flex-wrap gap-2 px-3 pb-3 md:px-6">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full text-muted-foreground hover:text-foreground"
-                    onClick={() => send(lastUserText).catch(() => {})}
-                  >
-                    Спросить ещё раз
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="rounded-full text-muted-foreground hover:text-foreground"
-                    onClick={() => prefillComposer(lastUserText)}
-                  >
-                    Изменить последний запрос
-                  </Button>
-                </div>
-              )}
             {showWorking && (
-              <div className="flex gap-3 py-5 px-3 md:px-6">
+              <div className="flex gap-3 py-3 px-3 md:px-6">
                 <AgentIndicator
                   label={currentActivityLabel(messages)}
                   meta={currentStepMeta(messages)}
                 />
               </div>
             )}
-            {/* Неопределённое состояние названо словами и предлагает действие
-                (I-32). До этого при `stuck` не показывалось ничего: ход не
-                считается завершённым, но и работой уже не выглядел. */}
             {unresolved && (
               <div className="flex flex-wrap items-center gap-3 py-5 px-3 md:px-6">
                 <span className="text-muted-foreground">
@@ -592,12 +518,23 @@ export default function ChatView() {
       {showScrollBtn && (
         <button
           type="button"
-          className="absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-card border border-border shadow-e2 p-2 hover:bg-muted transition"
+          className="absolute bottom-3 left-1/2 flex min-h-10 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-e2 transition hover:bg-muted hover:text-foreground"
           onClick={scrollToBottom}
           title="К последнему сообщению"
-          aria-label="К последнему сообщению"
+          aria-label={
+            newAnswerCount > 0
+              ? newAnswerCount === 1
+                ? "К новому ответу"
+                : `К новым ответам: ${newAnswerCount}`
+              : "К последнему сообщению"
+          }
         >
-          <ChevronDownIcon size={18} />
+          <ChevronDownIcon size={17} />
+          {newAnswerCount > 0 && (
+            <span>
+              {newAnswerCount === 1 ? "Новый ответ" : `${newAnswerCount} новых`}
+            </span>
+          )}
         </button>
       )}
     </div>
