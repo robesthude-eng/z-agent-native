@@ -52,6 +52,17 @@ test('diff shows tracked and untracked changes with line stats', () => {
   assert.equal(fresh.deletions, 0);
 });
 
+test('large untracked files return a bounded truncated preview', () => {
+  const root = repo();
+  fs.writeFileSync(path.join(root, 'large.txt'), '0123456789abcdef\n'.repeat(30_000));
+
+  const diff = diffGitChange(root, 'large.txt');
+  assert.equal(diff.binary, false);
+  assert.equal(diff.truncated, true);
+  assert.match(diff.patch, /diff preview truncated/);
+  assert.ok(diff.patch.length < 250_000, `preview was ${diff.patch.length} chars`);
+});
+
 test('revert restores tracked files and removes untracked files', () => {
   const root = repo();
   fs.writeFileSync(path.join(root, 'tracked.txt'), 'changed\n');
