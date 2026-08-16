@@ -133,7 +133,7 @@ test('task runs a nested read-only subagent loop and returns its report to the p
       system: '',
     });
     const taskPart = assistant.parts.find((p) => p.type === 'tool' && p.tool === 'task');
-    assert.equal(taskPart?.state?.status, 'completed');
+    assert.equal(taskPart?.state?.status, 'completed', String(taskPart?.state?.output || 'task produced no output'));
     assert.match(String(taskPart?.state?.output || ''), /Отчёт подагента/);
     assert.equal(taskPart?.state?.metadata?.subagent, true);
     assert.equal(subagentCalls, 1);
