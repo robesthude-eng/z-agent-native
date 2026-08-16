@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../../api/client";
 import { providerChannelsApi } from "../../api/providerChannels";
+import { AUTO_MODEL } from "../../lib/autopilotModel";
 import type { State } from "../types";
 import { createModelsSlice } from "./modelsSlice";
 
@@ -31,7 +32,7 @@ function mockChannels(ids: string[]) {
 afterEach(() => vi.restoreAllMocks());
 
 describe("native model catalog", () => {
-  it("shows catalog models only for providers the user configured", async () => {
+  it("shows catalog models only for providers the user configured and defaults to Autopilot", async () => {
     const catalog = vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
       default: { anthropic: "claude-sonnet-4-6" },
       models: [
@@ -50,7 +51,20 @@ describe("native model catalog", () => {
       "anymodel/am/glm-5.2",
     ]);
     expect(store.models[0]?.providerName).toBe("My Claude");
-    expect(store.selectedModel).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-6" });
+    expect(store.selectedModel).toEqual(AUTO_MODEL);
+  });
+
+  it("keeps an explicit model selection while it remains available", async () => {
+    vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
+      models: [
+        { providerID: "openai", providerName: "OpenAI", modelID: "chosen", modelName: "Chosen", free: false },
+        { providerID: "openai", providerName: "OpenAI", modelID: "other", modelName: "Other", free: false },
+      ],
+    });
+    mockChannels(["openai"]);
+    const store = makeStore({ selectedModel: { providerID: "openai", modelID: "chosen" } });
+    await store.loadModels();
+    expect(store.selectedModel).toEqual({ providerID: "openai", modelID: "chosen" });
   });
 
   it("preserves source provider metadata for a custom endpoint", async () => {
