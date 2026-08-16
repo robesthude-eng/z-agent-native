@@ -7,16 +7,24 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-verification-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
-process.env.OPENAI_BASE_URL = 'http://127.0.0.1:65531/v1';
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
 const events = await import('../server/native/events.mjs');
+const providerConfigs = await import('../server/native/provider-configs.mjs');
 
 const ownerId = 'verification@example.com';
+const providerId = 'test_openai';
 store.createUser(ownerId, 'hash');
-store.setProviderKey(ownerId, 'openai', 'sk-verification-test');
+providerConfigs.upsertProviderConfig(ownerId, {
+  id: providerId,
+  name: 'Verification OpenAI',
+  protocol: 'openai',
+  baseURL: 'https://api.example.com/v1',
+  enabled: true,
+});
+store.setProviderKey(ownerId, providerId, 'sk-verification-test');
 
 function sse(items) {
   return new Response(items.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
@@ -82,7 +90,7 @@ test('runtime auto-approves tool calls and still forces executable verification 
       sessionId: sid,
       ownerId,
       parts: [{ type: 'text', text: 'Создай корректный модуль hello.mjs' }],
-      model: { providerID: 'openai', modelID: 'gpt-test' },
+      model: { providerID: providerId, modelID: 'gpt-test' },
       system: '',
     });
 
