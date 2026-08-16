@@ -49,7 +49,7 @@ describe("native model catalog", () => {
       "anthropic/claude-sonnet-4-6",
       "anymodel/am/glm-5.2",
     ]);
-    expect(store.models[0].providerName).toBe("My Claude");
+    expect(store.models[0]?.providerName).toBe("My Claude");
     expect(store.selectedModel).toEqual({ providerID: "anthropic", modelID: "claude-sonnet-4-6" });
   });
 
