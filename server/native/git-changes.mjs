@@ -4,6 +4,7 @@ import path from 'node:path';
 import { safeWorkspacePath } from './security.mjs';
 
 const MAX_DIFF_CHARS = 240_000;
+const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;
 
 function gitResult(root, args, options = {}) {
   const result = spawnSync('git', args, {
@@ -34,12 +35,12 @@ function gitOrThrow(root, args, options = {}) {
 function statusKind(code) {
   if (code.includes('?')) return 'untracked';
   if (code.includes('R')) return 'renamed';
-  if (code.includes('A')) return 'added';
+  if (code.includes('A') || code.includes('C')) return 'added';
   if (code.includes('D')) return 'deleted';
   return 'modified';
 }
 
-/** Parse `git status --porcelain=v1 -z`. Rename records contain a second NUL path. */
+/** Parse `git status --porcelain=v1 -z`. Rename/copy records contain a second NUL path. */
 export function parsePorcelainZ(text) {
   const tokens = String(text || '').split('\0');
   const rows = [];
@@ -88,19 +89,32 @@ function clipDiff(text) {
   };
 }
 
-function textFile(full) {
-  const buf = fs.readFileSync(full);
-  if (buf.includes(0)) return null;
-  return buf.toString('utf8');
+function readFilePreview(full) {
+  const stat = fs.statSync(full);
+  if (!stat.isFile()) return { text: null, binary: true, truncated: false, omittedBytes: 0 };
+  const length = Math.min(stat.size, MAX_UNTRACKED_PREVIEW_BYTES);
+  const fd = fs.openSync(full, 'r');
+  try {
+    const buf = Buffer.alloc(length);
+    const bytes = length ? fs.readSync(fd, buf, 0, length, 0) : 0;
+    const sample = buf.subarray(0, bytes);
+    if (sample.includes(0)) return { text: null, binary: true, truncated: stat.size > bytes, omittedBytes: Math.max(0, stat.size - bytes) };
+    return {
+      text: sample.toString('utf8'),
+      binary: false,
+      truncated: stat.size > bytes,
+      omittedBytes: Math.max(0, stat.size - bytes),
+    };
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function untrackedPatch(root, relativePath) {
   const full = safeWorkspacePath(root, relativePath, { allowMissing: false });
-  const stat = fs.statSync(full);
-  if (!stat.isFile()) return { patch: '', binary: true, truncated: false };
-  const text = textFile(full);
-  if (text == null) return { patch: '', binary: true, truncated: false };
-  const lines = text.split('\n');
+  const preview = readFilePreview(full);
+  if (preview.binary || preview.text == null) return { patch: '', binary: true, truncated: preview.truncated };
+  const lines = preview.text.split('\n');
   // Avoid a phantom final + line for the common trailing newline case.
   if (lines.at(-1) === '') lines.pop();
   const header = [
@@ -110,7 +124,10 @@ function untrackedPatch(root, relativePath) {
     `+++ b/${relativePath}`,
     `@@ -0,0 +1,${lines.length} @@`,
   ];
-  return { ...clipDiff([...header, ...lines.map((line) => `+${line}`)].join('\n') + '\n'), binary: false };
+  const body = lines.map((line) => `+${line}`);
+  if (preview.truncated) body.push(`+[diff preview truncated: ${preview.omittedBytes} bytes omitted]`);
+  const clipped = clipDiff([...header, ...body].join('\n') + '\n');
+  return { patch: clipped.patch, binary: false, truncated: preview.truncated || clipped.truncated };
 }
 
 function patchStats(patch) {
