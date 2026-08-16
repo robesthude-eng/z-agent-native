@@ -1,5 +1,6 @@
 import { api } from "../../api/client";
 import { providerChannelsApi } from "../../api/providerChannels";
+import { AUTO_MODEL, isAutoModel } from "../../lib/autopilotModel";
 import { pushPref } from "../prefsSync";
 import type { ModelEntry, ModelsSlice, Slice } from "../types";
 
@@ -12,14 +13,12 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
   loadModels: async (force?: boolean) => {
     if (get().modelsLoaded && !force) return;
     const entries: ModelEntry[] = [];
-    let defaults: Record<string, string> = {};
 
     try {
       const [catalog, channelsResponse] = await Promise.all([
         api.listProviderCatalog(),
         providerChannelsApi.list(),
       ]);
-      defaults = catalog.default ?? {};
       const hiddenByProvider = catalog.hidden ?? {};
       const configured = new Map(
         (channelsResponse.providers ?? []).map((provider) => [provider.id, provider]),
@@ -52,20 +51,19 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
     let selected = get().selectedModel;
     const stillAvailable =
       selected &&
-      entries.some(
-        (entry) =>
-          entry.providerID === selected?.providerID &&
-          entry.modelID === selected?.modelID,
-      );
+      (isAutoModel(selected)
+        ? entries.length > 0
+        : entries.some(
+            (entry) =>
+              entry.providerID === selected?.providerID &&
+              entry.modelID === selected?.modelID,
+          ));
 
     if (!stillAvailable) {
-      const defaultEntry = entries.find(
-        (entry) => defaults[entry.providerID] === entry.modelID,
-      );
-      const first = defaultEntry ?? entries[0];
-      selected = first
-        ? { providerID: first.providerID, modelID: first.modelID }
-        : null;
+      // New users and stale/removed explicit selections fall back to the
+      // server-owned Autopilot. The runtime then applies configured defaults,
+      // model health and provider fallback instead of the browser guessing.
+      selected = entries.length > 0 ? { ...AUTO_MODEL } : null;
     }
 
     set({ models: entries, modelsLoaded: true, selectedModel: selected });
