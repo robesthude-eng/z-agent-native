@@ -1,8 +1,8 @@
-import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { MAX_UPLOAD_BYTES } from './config.mjs';
 import { emit } from './events.mjs';
+import { diffGitChange, listGitChanges, revertGitChange } from './git-changes.mjs';
 import { readBody, sendJson } from './json.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, syncSandboxOwnership } from './sandbox.mjs';
@@ -85,6 +85,26 @@ function uniqueUploadPath(root, name) {
   return candidate;
 }
 
+function gitOptions(sessionId, root) {
+  const home = path.join(root, '.agent-home');
+  fs.mkdirSync(home, { recursive: true });
+  return {
+    spawnOptions: sandboxSpawnOptions(sessionId, root),
+    env: {
+      PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+      HOME: home,
+      USER: 'agent',
+      LANG: process.env.LANG || 'C.UTF-8',
+      TERM: 'dumb',
+    },
+  };
+}
+
+function workspaceError(res, err, fallback) {
+  const status = Number(err?.statusCode) || 400;
+  return sendJson(res, status, { error: err?.message || fallback });
+}
+
 export async function handleWorkspace(req, res, sessionId, url) {
   const root = workspaceFor(sessionId);
   const pathname = url.pathname;
@@ -100,24 +120,30 @@ export async function handleWorkspace(req, res, sessionId, url) {
   }
   if (pathname === '/api/file/status' && req.method === 'GET') {
     try {
-      const home = path.join(root, '.agent-home');
-      fs.mkdirSync(home, { recursive: true });
-      const identity = sandboxSpawnOptions(sessionId, root);
-      const text = execFileSync('git', ['status', '--porcelain=v1'], {
-        cwd: root, encoding: 'utf8', timeout: 5000, ...identity,
-        env: {
-          PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-          HOME: home, USER: 'agent', LANG: process.env.LANG || 'C.UTF-8', TERM: 'dumb',
-        },
-      });
-      const rows = text.split('\n').filter(Boolean).map((line) => {
-        const code = line.slice(0,2); const p = line.slice(3).trim().replace(/^.* -> /, '');
-        let status = 'modified';
-        if (code.includes('?')) status = 'untracked'; else if (code.includes('A')) status='added'; else if (code.includes('D')) status='deleted'; else if (code.includes('R')) status='renamed';
-        return { path: p, status };
-      });
-      return sendJson(res, 200, rows);
-    } catch { return sendJson(res, 200, []); }
+      return sendJson(res, 200, listGitChanges(root, gitOptions(sessionId, root)));
+    } catch {
+      return sendJson(res, 200, []);
+    }
+  }
+  if (pathname === '/api/file/diff' && req.method === 'GET') {
+    try {
+      const relativePath = url.searchParams.get('path') || '';
+      return sendJson(res, 200, diffGitChange(root, relativePath, gitOptions(sessionId, root)));
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось построить diff');
+    }
+  }
+  if (pathname === '/api/file/revert' && req.method === 'POST') {
+    try {
+      const relativePath = String(req.bodyJson?.path || '');
+      const result = revertGitChange(root, relativePath, gitOptions(sessionId, root));
+      syncSandboxOwnership(sessionId, root, root);
+      const paths = [result.path, result.originalPath].filter(Boolean);
+      emit(sessionId, 'file.edited', { paths });
+      return sendJson(res, 200, result);
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось откатить изменение');
+    }
   }
 
   if (pathname === '/api/workspace/file' && req.method === 'PUT') {
