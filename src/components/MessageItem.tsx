@@ -32,6 +32,7 @@ import {
 } from "./messageFlow";
 import PartView from "./PartView";
 import ToolGroup from "./ToolGroup";
+import TurnResultButton from "./TurnResultButton";
 import UserMessageText from "./UserMessageText";
 
 type TaskOutcomeStatus =
@@ -54,6 +55,14 @@ function taskOutcomeStatus(message: Message): TaskOutcomeStatus | null {
     raw === "cancelled"
     ? raw
     : null;
+}
+
+function strategyChanged(message: Message): boolean {
+  return (
+    message.info as
+      | ({ strategy?: { changed?: unknown } } & Record<string, unknown>)
+      | undefined
+  )?.strategy?.changed === true;
 }
 
 function toolStateStatus(part: ToolPart): string | undefined {
@@ -305,6 +314,11 @@ function MessageItem({
       );
     }
   }
+  const hasWorkspaceResultHint =
+    !isUser &&
+    !isWorking &&
+    Boolean(firstMsg?.id && firstMsg?.sessionID) &&
+    ((turnMeta?.changedFileCount ?? 0) > 0 || msgArray.some(strategyChanged));
 
   const lastUserMsg = isUser ? msgArray[msgArray.length - 1] : undefined;
 
@@ -587,6 +601,13 @@ function MessageItem({
             >
               {summaryBits.join(" · ")}
             </span>
+          )}
+          {hasWorkspaceResultHint && firstMsg?.id && firstMsg?.sessionID && (
+            <TurnResultButton
+              sessionId={firstMsg.sessionID}
+              messageId={firstMsg.id}
+              disabled={sessionBusy}
+            />
           )}
           {combinedText && (
             <div className="oc-reveal ml-auto flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
