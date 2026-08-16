@@ -26,3 +26,15 @@ test('assistant replies expose exact turn result action', () => {
   assert.match(modal, /Откатить весь ход/);
   assert.match(modal, /более поздняя задача изменила/);
 });
+
+test('production deploy is gated by successful CI and pins the verified SHA', () => {
+  const deploy = source('.github/workflows/deploy.yml');
+  assert.match(deploy, /workflow_run:/);
+  assert.match(deploy, /workflows:\s*\n\s*- CI/);
+  assert.match(deploy, /workflow_run\.conclusion == 'success'/);
+  assert.match(deploy, /workflow_run\.head_branch == 'main'/);
+  assert.match(deploy, /ref:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(deploy, /DEPLOY_SHA:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
+  assert.match(deploy, /LATEST_SHA=.*origin\/main/);
+  assert.doesNotMatch(deploy, /\n\s*push:\s*\n/);
+});
