@@ -31,15 +31,15 @@ type ManualRow = {
 };
 
 const API_FORMAT_LABELS: Record<ProviderProtocol, string> = {
-  openai: "Chat completions (/chat/completions)",
-  anthropic: "Anthropic messages (/messages)",
-  google: "Google Gemini API",
+  openai: "Chat Completions (/chat/completions)",
+  anthropic: "Messages (/messages)",
+  google: "Generate Content (:generateContent)",
 };
 
 const PROTOCOL_PLACEHOLDERS: Record<ProviderProtocol, string> = {
   openai: "https://api.example.com/v1",
   anthropic: "https://api.example.com/v1",
-  google: "https://generativelanguage.googleapis.com/v1beta",
+  google: "https://api.example.com/v1beta",
 };
 
 function providerColor(id: string) {
@@ -427,7 +427,7 @@ export function ProviderChannelManager() {
                     <option value="google">{API_FORMAT_LABELS.google}</option>
                   </select>
                   <span className="block text-[10px] leading-relaxed text-muted-foreground">
-                    Выберите формат из документации провайдера. Для Chat Completions и Anthropic Z Agent сам добавляет служебный endpoint к Base URL.
+                    Это формат запросов, а не бренд провайдера. Выберите вариант по endpoint из документации; Z Agent сам добавит служебный путь к Base URL.
                   </span>
                 </label>
               </div>
