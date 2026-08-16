@@ -2,20 +2,32 @@ import { assertSafeExternalUrl } from './security.mjs';
 import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
 
-const builtInSpecs = {
-  openai: { name: 'OpenAI', kind: 'openai', baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1' },
-  anthropic: { name: 'Anthropic', kind: 'anthropic', baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1' },
-  google: { name: 'Google Gemini', kind: 'google', baseURL: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta' },
-  zai: { name: 'Z.ai', kind: 'openai', baseURL: process.env.ZAI_BASE_URL || 'https://api.z.ai/api/paas/v4' },
-  deepseek: { name: 'DeepSeek', kind: 'openai', baseURL: process.env.DEEPSEEK_BASE_URL || 'https://api.deepseek.com/v1' },
-  xai: { name: 'xAI', kind: 'openai', baseURL: process.env.XAI_BASE_URL || 'https://api.x.ai/v1' },
-  groq: { name: 'Groq', kind: 'openai', baseURL: process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1' },
-  mistral: { name: 'Mistral', kind: 'openai', baseURL: process.env.MISTRAL_BASE_URL || 'https://api.mistral.ai/v1' },
-  openrouter: { name: 'OpenRouter', kind: 'openai', baseURL: process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1' },
-  together: { name: 'Together', kind: 'openai', baseURL: process.env.TOGETHER_BASE_URL || 'https://api.together.xyz/v1' },
-  anymodel: { name: 'AnyModel', kind: 'openai', baseURL: process.env.ANYMODEL_BASE_URL || 'https://anymodel.org/v1' },
-  kiwi: { name: 'Kiwi LLM', kind: 'openai', baseURL: process.env.KIWI_BASE_URL || 'https://api.kiwillm.in/v1' },
-};
+
+// --- Auto relay wrapper ---
+// If Z_AGENT_RELAY_URL env var is set, ALL external provider URLs are
+// transparently routed through the Worker relay (which forwards them via
+// Railway for geo-block bypass). Users enter real provider Base URLs from
+// documentation; the runtime handles the relay wrapping automatically.
+const RELAY_BASE = (process.env.Z_AGENT_RELAY_URL || '').replace(/\/\/+$/, '');
+const RELAY_ENABLED = Boolean(RELAY_BASE);
+
+function wrapProviderUrl(url) {
+  if (!RELAY_ENABLED) return url;
+  try {
+    const parsed = new URL(url);
+    if (parsed.host === new URL(RELAY_BASE).host) return url;
+    const host = parsed.hostname;
+    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return url;
+    if (/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(host)) return url;
+    const stripped = url.replace(/^https?:\/\//, '');
+    return RELAY_BASE + '/' + stripped;
+  } catch {
+    return url;
+  }
+}
+// --- /Auto relay wrapper ---
+
+const builtInSpecs = {}; // No builtin provider templates — only user-defined (custom) channels.
 
 function effectiveSpecs(ownerId) {
   const specs = Object.fromEntries(Object.entries(builtInSpecs).map(([id, spec]) => [id, {
@@ -192,7 +204,7 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   try {
     let url;
     if (spec.kind === 'google') url = `${spec.baseURL.replace(/\/$/, '')}/models?key=${encodeURIComponent(key)}`;
-    else url = `${spec.baseURL.replace(/\/$/, '')}/models`;
+    else url = wrapProviderUrl(`${spec.baseURL.replace(/\/$/, '')}/models`);
     if (!spec.trustedBaseURL) await assertSafeExternalUrl(url);
     const body = await fetchJson(url, { headers: { accept: 'application/json', ...providerAuth(spec, key) } });
     let models = [];
@@ -373,7 +385,7 @@ function openAiMessages(frames) {
 }
 
 async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta }) {
-  const url = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
+  const url = wrapProviderUrl(`${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`);
   if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
   const request = {
     model: resolved.modelId,
@@ -453,7 +465,7 @@ function anthropicMessages(frames) {
 }
 
 async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta }) {
-  const url = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
+  const url = wrapProviderUrl(`${resolved.spec.baseURL.replace(/\/$/, '')}/messages`);
   if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
@@ -533,7 +545,7 @@ function geminiContents(frames) {
 async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta }) {
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
-  const url = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`;
+  const url = wrapProviderUrl(`${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`);
   if (!resolved.trustedBaseURL) await assertSafeExternalUrl(url);
   const request = {
     systemInstruction: { parts: [{ text: system }] },
