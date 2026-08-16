@@ -15,10 +15,19 @@ import {
   subagentStepBudget,
   taskStepBudget,
 } from './autopilot.mjs';
+import {
+  checkpointDurableJob,
+  clearDurableJob,
+  createDurableJob,
+  getDurableJob,
+  listDurableJobs,
+  markDurableJobFinalizing,
+  markDurableJobResuming,
+} from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
-import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
+import { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
 import {
   classifyTaskOutcome,
@@ -35,6 +44,7 @@ let cachedSystem = null;
 const activeTurns = new Map();
 const activeActions = new Map();
 const questionWaiters = new Map();
+const RECOVERY_INSPECTION_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'repo_map', 'environment_status', 'task']);
 
 function systemPrompt() {
   if (cachedSystem == null) cachedSystem = fs.readFileSync(SYSTEM_FILE, 'utf8');
@@ -296,6 +306,125 @@ async function runSubagent(ownerId, modelPlan, input, workspace, signal, project
   };
 }
 
+function stableValue(value) {
+  if (Array.isArray(value)) return value.map(stableValue);
+  if (!value || typeof value !== 'object') return value;
+  const out = {};
+  for (const key of Object.keys(value).sort()) out[key] = stableValue(value[key]);
+  return out;
+}
+
+function stableString(value) {
+  try { return JSON.stringify(stableValue(value)); } catch { return String(value ?? ''); }
+}
+
+function toolCallSignature(call) {
+  return `${String(call?.name || '').trim().toLowerCase()}:${stableString(call?.arguments || {})}`;
+}
+
+function toolMayHaveSideEffects(name) {
+  const normalized = String(name || '').trim().toLowerCase();
+  return mutatesWorkspace(normalized) || normalized === 'ensure_environment';
+}
+
+function toolCallFromPart(part) {
+  return {
+    id: String(part?.callID || ''),
+    name: String(part?.tool || ''),
+    arguments: part?.state?.input && typeof part.state.input === 'object' ? part.state.input : {},
+  };
+}
+
+function toolResultFromPart(part) {
+  const state = part?.state && typeof part.state === 'object' ? part.state : {};
+  return {
+    content: typeof state.output === 'string' ? state.output : JSON.stringify(state.output ?? ''),
+    isError: state.status === 'error',
+    metadata: state.metadata && typeof state.metadata === 'object' ? state.metadata : {},
+    mutatedPaths: Array.isArray(state.metadata?.mutatedPaths) ? state.metadata.mutatedPaths : [],
+  };
+}
+
+function interruptedToolParts(assistant) {
+  const ambiguous = [];
+  let changed = false;
+  for (const part of assistant.parts || []) {
+    if (part?.type !== 'tool') continue;
+    const state = part.state && typeof part.state === 'object' ? part.state : {};
+    if (!['running', 'pending'].includes(String(state.status || ''))) continue;
+    const call = toolCallFromPart(part);
+    const sideEffects = toolMayHaveSideEffects(call.name);
+    const output = sideEffects
+      ? 'Runtime restarted while this action was in flight. It was not automatically repeated because it may have partially completed. Inspect the current workspace/environment state before deciding whether a new action is needed.'
+      : 'Runtime restarted before this tool result was durably confirmed. The previous call was not automatically repeated; retry it only if it is still needed.';
+    part.state = {
+      ...state,
+      status: 'error',
+      output,
+      metadata: {
+        ...(state.metadata || {}),
+        restartInterrupted: true,
+        restartAmbiguous: sideEffects,
+      },
+      time: { ...(state.time || {}), end: Date.now() },
+    };
+    if (sideEffects) ambiguous.push(toolCallSignature(call));
+    changed = true;
+  }
+  if (changed) persistAssistant(assistant);
+  return ambiguous;
+}
+
+function rebuildStrategy(goal, assistant) {
+  const strategy = createTurnStrategy(goal);
+  for (const part of assistant.parts || []) {
+    if (part?.type !== 'tool') continue;
+    const state = part.state && typeof part.state === 'object' ? part.state : {};
+    if (!['completed', 'error'].includes(String(state.status || ''))) continue;
+    const call = toolCallFromPart(part);
+    const result = toolResultFromPart(part);
+    observeTool(strategy, call, result);
+    if (state.metadata?.restartAmbiguous) {
+      strategy.changed = true;
+      strategy.needsVerification = true;
+      strategy.lastVerificationOk = null;
+    }
+  }
+  return strategy;
+}
+
+function rebuildLoopGuard(assistant) {
+  const guard = createLoopGuard();
+  let stop = null;
+  for (const part of assistant.parts || []) {
+    if (part?.type !== 'tool') continue;
+    const state = part.state && typeof part.state === 'object' ? part.state : {};
+    if (!['completed', 'error'].includes(String(state.status || '')) || state.metadata?.restartInterrupted) continue;
+    stop = observeToolLoop(guard, toolCallFromPart(part), toolResultFromPart(part)) || stop;
+  }
+  return { guard, stop };
+}
+
+function isInspectionResult(call, result) {
+  if (result?.isError) return false;
+  const name = String(call?.name || '').toLowerCase();
+  if (RECOVERY_INSPECTION_TOOLS.has(name)) return true;
+  return name === 'bash' && classifyBash(call?.arguments?.command) === 'read_only';
+}
+
+function recoveryGuidance(recovery) {
+  if (!recovery?.resumed) return '';
+  const lines = [
+    '[Durable runtime recovery]',
+    'This is the same agent turn resumed after a server-process restart.',
+    'Completed tool results already present in context are authoritative checkpoints. Do not repeat them merely to reconstruct state.',
+  ];
+  if (recovery.ambiguousSignatures.size && !recovery.inspected) {
+    lines.push('At least one mutating action was in flight when the process stopped. It may have partially completed. Inspect the current workspace/environment before retrying an equivalent mutating action. The runtime will block an identical retry until a successful inspection occurs.');
+  }
+  return lines.join('\n');
+}
+
 function toolPart(call) {
   return {
     id: partId(),
@@ -329,6 +458,20 @@ function waitForRetry(delayMs, signal) {
 async function executeCall(sessionId, assistant, call, controller, runtime) {
   const part = toolPart(call);
   emitPart(assistant, part);
+  const recovery = runtime?.recovery;
+  const signature = toolCallSignature(call);
+  if (recovery?.resumed && recovery.ambiguousSignatures.has(signature) && !recovery.inspected) {
+    part.state = {
+      ...part.state,
+      status: 'error',
+      output: 'Blocked by durable-recovery safety: this exact mutating action may already have partially executed before the restart. Inspect current state first, then decide whether a new action is required.',
+      metadata: { ...(part.state?.metadata || {}), restartGuardBlocked: true },
+      time: { ...part.state.time, end: Date.now() },
+    };
+    emitPart(assistant, part);
+    return { content: part.state.output, isError: true, metadata: part.state.metadata, mutatedPaths: [] };
+  }
+
   try {
     const workspace = workspaceFor(sessionId);
     let result;
@@ -446,28 +589,10 @@ async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcom
     summary: textParts(assistant).slice(-2_000),
   });
   persistAssistant(assistant);
+  try { markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed }); } catch { /* final message remains authoritative */ }
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
   emit(sessionId, 'session.idle', {});
   return assistant;
-}
-
-export function submitTurn(args) {
-  const actionId = String(args.actionId || '').trim();
-  if (!actionId) return runTurn(args);
-  const key = `${args.sessionId}:${actionId}`;
-  const active = activeActions.get(key);
-  if (active) return active;
-  const prior = getAction(args.sessionId, actionId);
-  if (prior?.state === 'completed' && prior.result) return Promise.resolve(prior.result);
-  if (prior?.state === 'failed') return Promise.reject(new Error(prior.result?.error || 'Previous attempt failed'));
-  if (prior?.state === 'running') return Promise.reject(Object.assign(new Error('This action is already running'), { statusCode: 409 }));
-  claimAction(args.sessionId, actionId);
-  const promise = runTurn(args)
-    .then((result) => { completeAction(args.sessionId, actionId, result); return result; })
-    .catch((err) => { failAction(args.sessionId, actionId, err); throw err; })
-    .finally(() => activeActions.delete(key));
-  activeActions.set(key, promise);
-  return promise;
 }
 
 function safeAttemptInfo(attempt) {
@@ -478,69 +603,81 @@ function safeAttemptInfo(attempt) {
   };
 }
 
-export async function runTurn({ sessionId, ownerId, parts, model, system }) {
-  if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
-  const controller = new AbortController();
-  const tId = turnId();
-  activeTurns.set(sessionId, { controller, turnId: tId, ownerId });
-  updateTurn(sessionId, { turnId: tId, lifecycle: 'running', since: Date.now(), reason: 'user_message' });
-
-  const workspace = workspaceFor(sessionId);
-  const userMessage = {
-    id: messageId(), role: 'user', sessionID: sessionId,
-    parts: userPartsFromPrompt(parts, workspace),
-    time: { created: Date.now(), completed: Date.now() },
-    info: { role: 'user', finish: 'stop', time: { created: Date.now(), completed: Date.now() } },
-  };
-  putMessage(userMessage);
-  emit(sessionId, 'message.updated', { message: userMessage });
-
-  const chat = getChat(sessionId, ownerId);
-  if (chat?.title === 'Новый чат') {
-    const first = promptText(parts).split('\n')[0].trim().slice(0, 72);
-    if (first) {
-      const updated = renameChat(sessionId, ownerId, first);
-      if (updated) emit(sessionId, 'session.updated', { session: updated });
-    }
+function checkpointState(sessionId, runtime, strategy, fields = {}) {
+  try {
+    checkpointDurableJob(sessionId, {
+      phase: fields.phase || 'running',
+      stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
+      gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
+      lastUsage: fields.lastUsage ?? runtime.lastUsage ?? null,
+      strategy: strategy ? {
+        goal: strategy.goal,
+        plan: strategy.plan,
+        changed: strategy.changed,
+        needsVerification: strategy.needsVerification,
+        verificationAttempts: strategy.verificationAttempts,
+        lastVerificationOk: strategy.lastVerificationOk,
+        toolErrors: strategy.toolErrors,
+      } : null,
+      ambiguousCalls: [...(runtime.recovery?.ambiguousSignatures || [])],
+      recoveryInspected: Boolean(runtime.recovery?.inspected),
+    }, { modelPlan: runtime.modelPlan });
+  } catch {
+    // The original job file was written before work started. A transient
+    // checkpoint-write failure must not duplicate a side effect in-process.
   }
+}
 
-  const assistant = {
-    id: messageId(), role: 'assistant', sessionID: sessionId, parts: [],
-    time: { created: Date.now() },
-    info: { role: 'assistant', time: { created: Date.now() } },
-  };
-  persistAssistant(assistant);
-
-  const strategy = createTurnStrategy(promptText(parts));
-  let lastUsage = null;
+async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
+  let strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
+  let lastUsage = job?.checkpoint?.lastUsage || null;
 
   try {
+    const interrupted = resume ? interruptedToolParts(assistant) : [];
+    const persistedAmbiguous = Array.isArray(job?.checkpoint?.ambiguousCalls) ? job.checkpoint.ambiguousCalls : [];
+    const ambiguousSignatures = new Set([...persistedAmbiguous, ...interrupted]);
     const runtime = {
       ownerId,
-      modelPlan: await buildModelPlan(ownerId, model, strategy.goal),
-      projectContext: await getProjectContext(sessionId, workspace, controller.signal),
+      modelPlan: job?.modelPlan?.candidates?.length ? job.modelPlan : await buildModelPlan(ownerId, requestedModel, goal),
+      projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
+      stepsUsed: Math.max(0, Number(job?.checkpoint?.stepsUsed) || 0),
+      gateReminders: Math.max(0, Number(job?.checkpoint?.gateReminders) || 0),
+      lastUsage,
+      recovery: {
+        resumed: resume,
+        ambiguousSignatures,
+        inspected: Boolean(job?.checkpoint?.recoveryInspected) || ambiguousSignatures.size === 0,
+      },
     };
     const initialModel = runtime.modelPlan.candidates[0];
-    assistant.info.model = modelKey(initialModel);
+    assistant.info.model = assistant.info.model || modelKey(initialModel);
     assistant.info.autopilot = {
+      ...(assistant.info.autopilot || {}),
       enabled: true,
-      budget: taskStepBudget(strategy.goal),
+      budget: Number(job?.stepBudget) || taskStepBudget(goal),
       candidates: runtime.modelPlan.candidates.map(modelKey),
-      selected: modelKey(initialModel),
-      fallbackCount: 0,
+      selected: assistant.info.model || modelKey(initialModel),
+      fallbackCount: Number(assistant.info.autopilot?.fallbackCount || 0),
+      ...(resume ? { resumed: true, resumeCount: Number(job?.resumeCount || 0) } : {}),
     };
-    const history = listMessages(sessionId).filter((m) => m.id !== assistant.id);
-    const frames = framesFromMessages(history, workspace);
-    const maxSteps = taskStepBudget(strategy.goal);
-    const loopGuard = createLoopGuard();
-    let gateReminders = 0;
-    let guardedStop = null;
+    checkpointState(sessionId, runtime, strategy, { phase: resume ? 'resumed' : 'prepared' });
 
-    for (let step = 0; step < maxSteps; step++) {
+    const workspace = workspaceFor(sessionId);
+    const messages = listMessages(sessionId);
+    const history = resume ? messages : messages.filter((m) => m.id !== assistant.id);
+    const frames = framesFromMessages(history, workspace);
+    const maxSteps = Math.max(1, Math.min(128, Number(job?.stepBudget) || taskStepBudget(goal)));
+    const rebuilt = resume ? rebuildLoopGuard(assistant) : { guard: createLoopGuard(), stop: null };
+    const loopGuard = rebuilt.guard;
+    let guardedStop = rebuilt.stop ? guardStopError(rebuilt.stop) : null;
+
+    for (let step = runtime.stepsUsed; step < maxSteps && !guardedStop; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
+      runtime.stepsUsed = step;
+      checkpointState(sessionId, runtime, strategy, { phase: 'before_model', stepsUsed: step });
       const live = liveTextSink(assistant);
       const response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-        system: [systemPrompt(), runtime.projectContext, strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+        system: [systemPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
         frames: compactFrames(frames),
         tools: availableToolDefinitions(),
         signal: controller.signal,
@@ -558,13 +695,17 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
         lastAttempts: (response.attempts || []).map(safeAttemptInfo),
       };
       lastUsage = response.usage || lastUsage;
+      runtime.lastUsage = lastUsage;
+      runtime.stepsUsed = step + 1;
+      checkpointState(sessionId, runtime, strategy, { phase: 'after_model', stepsUsed: step + 1, lastUsage });
       const calls = response.toolCalls || [];
       if (calls.length === 0) {
         const gate = completionGate(strategy);
         if (gate) {
-          gateReminders += 1;
+          runtime.gateReminders += 1;
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
-          frames.push({ role: 'user', content: `${gate}\nReminder attempt: ${gateReminders}.` });
+          frames.push({ role: 'user', content: `${gate}\nReminder attempt: ${runtime.gateReminders}.` });
+          checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
           continue;
         }
         if (!streamedText) await emitText(assistant, response.text || 'Готово.', 'text');
@@ -587,14 +728,15 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
       for (const call of calls) {
         const result = await executeCall(sessionId, assistant, call, controller, runtime);
         observeTool(strategy, call, result);
+        if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
+        checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
         const loop = observeToolLoop(loopGuard, call, result);
         if (loop) {
           guardedStop = guardStopError(loop);
           break;
         }
       }
-      if (guardedStop) break;
     }
 
     const stopError = guardedStop || stepLimitError(maxSteps);
@@ -673,6 +815,195 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
   }
 }
 
+export function submitTurn(args) {
+  const actionId = String(args.actionId || '').trim();
+  if (!actionId) return runTurn(args);
+  const key = `${args.sessionId}:${actionId}`;
+  const active = activeActions.get(key);
+  if (active) return active;
+  const prior = getAction(args.sessionId, actionId);
+  if (prior?.state === 'completed' && prior.result) return Promise.resolve(prior.result);
+  if (prior?.state === 'failed') return Promise.reject(new Error(prior.result?.error || 'Previous attempt failed'));
+  if (prior?.state === 'running') return Promise.reject(Object.assign(new Error('This action is already running'), { statusCode: 409 }));
+  claimAction(args.sessionId, actionId);
+  const promise = runTurn({ ...args, actionId })
+    .then((result) => {
+      completeAction(args.sessionId, actionId, result);
+      clearDurableJob(args.sessionId);
+      return result;
+    })
+    .catch((err) => {
+      failAction(args.sessionId, actionId, err);
+      clearDurableJob(args.sessionId);
+      throw err;
+    })
+    .finally(() => activeActions.delete(key));
+  activeActions.set(key, promise);
+  return promise;
+}
+
+export async function runTurn({ sessionId, ownerId, parts, model, system, actionId = '' }) {
+  if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
+  const tId = turnId();
+  const goal = promptText(parts);
+  const stepBudget = taskStepBudget(goal);
+  const userMessageId = messageId();
+  const assistantMessageId = messageId();
+  createDurableJob({
+    sessionId,
+    ownerId,
+    actionId,
+    turnId: tId,
+    userMessageId,
+    assistantMessageId,
+    requestedModel: model,
+    goal,
+    stepBudget,
+  });
+
+  const controller = new AbortController();
+  activeTurns.set(sessionId, { controller, turnId: tId, ownerId });
+  updateTurn(sessionId, { turnId: tId, lifecycle: 'running', since: Date.now(), reason: 'user_message' });
+
+  const workspace = workspaceFor(sessionId);
+  const userMessage = {
+    id: userMessageId, role: 'user', sessionID: sessionId,
+    parts: userPartsFromPrompt(parts, workspace),
+    time: { created: Date.now(), completed: Date.now() },
+    info: { role: 'user', finish: 'stop', time: { created: Date.now(), completed: Date.now() } },
+  };
+  putMessage(userMessage);
+  emit(sessionId, 'message.updated', { message: userMessage });
+
+  const chat = getChat(sessionId, ownerId);
+  if (chat?.title === 'Новый чат') {
+    const first = goal.split('\n')[0].trim().slice(0, 72);
+    if (first) {
+      const updated = renameChat(sessionId, ownerId, first);
+      if (updated) emit(sessionId, 'session.updated', { session: updated });
+    }
+  }
+
+  const assistant = {
+    id: assistantMessageId, role: 'assistant', sessionID: sessionId, parts: [],
+    time: { created: Date.now() },
+    info: { role: 'assistant', time: { created: Date.now() } },
+  };
+  persistAssistant(assistant);
+
+  try {
+    const result = await executeTurnLifecycle({
+      sessionId,
+      ownerId,
+      assistant,
+      requestedModel: model,
+      system,
+      goal,
+      controller,
+      resume: false,
+      job: getDurableJob(sessionId),
+    });
+    if (!actionId) clearDurableJob(sessionId);
+    return result;
+  } catch (err) {
+    if (activeTurns.has(sessionId)) {
+      activeTurns.delete(sessionId);
+      setTurn(sessionId, { turnId: tId, lifecycle: 'failed', verdict: 'failed', reason: err?.message || String(err), since: Date.now() });
+      emit(sessionId, 'session.status', { status: 'error' });
+    }
+    if (!actionId) clearDurableJob(sessionId);
+    throw err;
+  }
+}
+
+function completedAssistant(message) {
+  return Boolean(message?.time?.completed || message?.info?.time?.completed || message?.info?.finish);
+}
+
+function repairFinalizedJob(job, assistant) {
+  const outcome = String(assistant?.info?.outcome?.status || 'completed');
+  const failed = outcome === 'failed';
+  const cancelled = outcome === 'cancelled';
+  if (job.actionId) {
+    if (failed) failAction(job.sessionId, job.actionId, new Error(assistant?.info?.error?.message || 'Recovered turn failed'));
+    else completeAction(job.sessionId, job.actionId, assistant);
+  }
+  const lifecycle = failed ? 'failed' : cancelled ? 'cancelled' : 'completed';
+  const verdict = failed ? 'failed' : cancelled ? 'cancelled' : 'completed';
+  setTurn(job.sessionId, { turnId: job.turnId, lifecycle, verdict, reason: 'runtime_recovered_final', since: Date.now() });
+  emit(job.sessionId, 'session.status', { status: failed ? 'error' : 'idle' });
+  emit(job.sessionId, 'session.idle', { reason: 'runtime_recovered_final' });
+  clearDurableJob(job.sessionId);
+  setTimeout(() => clearTurn(job.sessionId), 1500).unref?.();
+}
+
+async function resumeDurableJob(job, controller, assistant) {
+  const refreshed = markDurableJobResuming(job.sessionId) || job;
+  return executeTurnLifecycle({
+    sessionId: job.sessionId,
+    ownerId: job.ownerId,
+    assistant,
+    requestedModel: refreshed.requestedModel || null,
+    system: '',
+    goal: refreshed.goal || '',
+    controller,
+    resume: true,
+    job: refreshed,
+  });
+}
+
+/**
+ * Prime all recoverable jobs synchronously before the HTTP server starts. The
+ * actual model work continues asynchronously, but activeTurns/activeActions and
+ * the server-owned turn projection are restored immediately so a reconnecting
+ * browser cannot observe a false idle window.
+ */
+export function startDurableRecovery() {
+  let started = 0;
+  for (const job of listDurableJobs()) {
+    const chat = getChat(job.sessionId, job.ownerId);
+    if (!chat) {
+      clearDurableJob(job.sessionId);
+      continue;
+    }
+    const assistant = listMessages(job.sessionId).find((message) => message.id === job.assistantMessageId && message.role === 'assistant');
+    if (!assistant) {
+      if (job.actionId) failAction(job.sessionId, job.actionId, new Error('Durable assistant checkpoint is missing'));
+      clearDurableJob(job.sessionId);
+      continue;
+    }
+    if (completedAssistant(assistant)) {
+      repairFinalizedJob(job, assistant);
+      continue;
+    }
+    if (activeTurns.has(job.sessionId)) continue;
+
+    const controller = new AbortController();
+    activeTurns.set(job.sessionId, { controller, turnId: job.turnId, ownerId: job.ownerId, recovered: true });
+    updateTurn(job.sessionId, { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' });
+    const key = job.actionId ? `${job.sessionId}:${job.actionId}` : '';
+    const promise = Promise.resolve()
+      .then(() => resumeDurableJob(job, controller, assistant))
+      .then((result) => {
+        if (job.actionId) completeAction(job.sessionId, job.actionId, result);
+        clearDurableJob(job.sessionId);
+        return result;
+      })
+      .catch((err) => {
+        if (job.actionId) failAction(job.sessionId, job.actionId, err);
+        clearDurableJob(job.sessionId);
+        console.error('[durable-recovery]', job.sessionId, err);
+        return null;
+      })
+      .finally(() => {
+        if (key) activeActions.delete(key);
+      });
+    if (key) activeActions.set(key, promise);
+    started += 1;
+  }
+  return started;
+}
+
 export function abortTurn(sessionId) {
   const active = activeTurns.get(sessionId);
   if (!active) return false;
@@ -715,6 +1046,7 @@ export function clearAgentSessionState(sessionId) {
   if (activeTurns.has(sessionId)) return false;
   for (const key of activeActions.keys()) if (key.startsWith(`${sessionId}:`)) activeActions.delete(key);
   for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) questionWaiters.delete(id);
+  clearDurableJob(sessionId);
   clearProjectContext(sessionId);
   return true;
 }
