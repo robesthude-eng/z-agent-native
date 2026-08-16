@@ -54,6 +54,17 @@ function errorText(error: unknown) {
   return value.replace(/^\d+\s+\w+\s+/, "");
 }
 
+function draftFromChannel(channel: ProviderChannel): DraftChannel {
+  return {
+    id: channel.id,
+    name: channel.name,
+    protocol: channel.protocol,
+    baseURL: channel.baseURL,
+    enabled: channel.enabled,
+    custom: channel.custom,
+  };
+}
+
 export function ProviderChannelManager() {
   const loadModels = useStore((s) => s.loadModels);
   const loadAuth = useStore((s) => s.loadAuth);
@@ -77,10 +88,10 @@ export function ProviderChannelManager() {
 
   const selected = channels.find((channel) => channel.id === selectedId) ?? null;
 
-  const showNotice = (message: string, isError = false) => {
+  const showNotice = useCallback((message: string, isError = false) => {
     setNotice(message);
     setNoticeError(isError);
-  };
+  }, []);
 
   const syncChannels = useCallback(async (preferId?: string | null) => {
     const response = await providerChannelsApi.list();
@@ -132,7 +143,7 @@ export function ProviderChannelManager() {
     } finally {
       setRefreshing(false);
     }
-  }, []);
+  }, [showNotice]);
 
   useEffect(() => {
     let alive = true;
@@ -143,28 +154,27 @@ export function ProviderChannelManager() {
         setChannels(response.providers);
         setSelectedId(response.providers[0]?.id ?? null);
       })
-      .catch((error) => alive && showNotice(errorText(error), true))
-      .finally(() => alive && setLoading(false));
+      .catch((error) => {
+        if (alive) showNotice(errorText(error), true);
+      })
+      .finally(() => {
+        if (alive) setLoading(false);
+      });
     return () => { alive = false; };
-  }, []);
+  }, [showNotice]);
 
   useEffect(() => {
-    if (!selected || draft?.id === undefined && draft) return;
-    setDraft({
-      id: selected.id,
-      name: selected.name,
-      protocol: selected.protocol,
-      baseURL: selected.baseURL,
-      enabled: selected.enabled,
-      custom: selected.custom,
-    });
+    if (!selected) return;
+    setDraft(draftFromChannel(selected));
     setApiKey("");
     setNotice(null);
     setModelQuery("");
     setManualId("");
     setManualName("");
-    void loadChannelModels(selected, false);
-  }, [selected?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+    // Fetch the raw provider catalog here, rather than the filtered global
+    // catalog, so hidden models remain visible and can be re-enabled.
+    void loadChannelModels(selected, selected.connected && selected.enabled);
+  }, [selected?.id, selected?.baseURL, selected?.connected, selected?.enabled, loadChannelModels]);
 
   const startNew = () => {
     setSelectedId(null);
@@ -207,14 +217,7 @@ export function ProviderChannelManager() {
       const updated = await syncChannels(result.provider.id);
       const channel = updated.find((item) => item.id === result.provider.id) ?? result.provider;
       setSelectedId(channel.id);
-      setDraft({
-        id: channel.id,
-        name: channel.name,
-        protocol: channel.protocol,
-        baseURL: channel.baseURL,
-        enabled: channel.enabled,
-        custom: channel.custom,
-      });
+      setDraft(draftFromChannel(channel));
       await Promise.all([loadAuth(), loadModels(true)]);
       await loadChannelModels(channel, true);
     } catch (error) {
@@ -226,35 +229,47 @@ export function ProviderChannelManager() {
 
   const disconnect = async () => {
     if (!draft?.id) return;
-    await providerChannelsApi.removeKey(draft.id);
-    await Promise.all([loadAuth(), loadModels(true)]);
-    const updated = await syncChannels(draft.id);
-    const channel = updated.find((item) => item.id === draft.id) ?? null;
-    showNotice("API-ключ отключён.");
-    await loadChannelModels(channel, false);
+    try {
+      await providerChannelsApi.removeKey(draft.id);
+      await Promise.all([loadAuth(), loadModels(true)]);
+      const updated = await syncChannels(draft.id);
+      const channel = updated.find((item) => item.id === draft.id) ?? null;
+      showNotice("API-ключ отключён.");
+      await loadChannelModels(channel, false);
+    } catch (error) {
+      showNotice(errorText(error), true);
+    }
   };
 
   const removeProvider = async () => {
     if (!draft?.id || !draft.custom) return;
     if (!window.confirm(`Удалить провайдера ${draft.name}? Ключ и его ручные модели тоже будут удалены.`)) return;
-    await providerChannelsApi.remove(draft.id);
-    await Promise.all([loadAuth(), loadModels(true)]);
-    setDraft(null);
-    setSelectedId(null);
-    const next = await syncChannels(null);
-    setSelectedId(next[0]?.id ?? null);
+    try {
+      await providerChannelsApi.remove(draft.id);
+      await Promise.all([loadAuth(), loadModels(true)]);
+      setDraft(null);
+      setSelectedId(null);
+      const next = await syncChannels(null);
+      setSelectedId(next[0]?.id ?? null);
+    } catch (error) {
+      showNotice(errorText(error), true);
+    }
   };
 
   const resetBuiltin = async () => {
     if (!draft?.id || draft.custom) return;
-    await providerChannelsApi.resetBuiltin(draft.id);
-    const updated = await syncChannels(draft.id);
-    const channel = updated.find((item) => item.id === draft.id) ?? null;
-    if (channel) {
-      setDraft({ id: channel.id, name: channel.name, protocol: channel.protocol, baseURL: channel.baseURL, enabled: channel.enabled, custom: channel.custom });
-      await loadChannelModels(channel, true);
+    try {
+      await providerChannelsApi.resetBuiltin(draft.id);
+      const updated = await syncChannels(draft.id);
+      const channel = updated.find((item) => item.id === draft.id) ?? null;
+      if (channel) {
+        setDraft(draftFromChannel(channel));
+        await loadChannelModels(channel, true);
+      }
+      showNotice("Endpoint и параметры встроенного провайдера сброшены.");
+    } catch (error) {
+      showNotice(errorText(error), true);
     }
-    showNotice("Endpoint и параметры встроенного провайдера сброшены.");
   };
 
   const refreshModels = async () => {
@@ -289,7 +304,7 @@ export function ProviderChannelManager() {
       setManualId("");
       setManualName("");
       showNotice("Модель проверена и добавлена.");
-      await Promise.all([loadModels(true), loadChannelModels(selected, false)]);
+      await Promise.all([loadModels(true), loadChannelModels(selected, selected.connected && selected.enabled)]);
     } catch (error) {
       showNotice(errorText(error), true);
     } finally {
@@ -299,8 +314,12 @@ export function ProviderChannelManager() {
 
   const removeManual = async (modelId: string) => {
     if (!selected) return;
-    await providerChannelsApi.deleteManualModel(selected.id, modelId);
-    await Promise.all([loadModels(true), loadChannelModels(selected, false)]);
+    try {
+      await providerChannelsApi.deleteManualModel(selected.id, modelId);
+      await Promise.all([loadModels(true), loadChannelModels(selected, selected.connected && selected.enabled)]);
+    } catch (error) {
+      showNotice(errorText(error), true);
+    }
   };
 
   const visibleModels = useMemo(() => {
@@ -328,10 +347,10 @@ export function ProviderChannelManager() {
               <button
                 key={channel.id}
                 type="button"
-                onClick={() => { setDraft(null); setSelectedId(channel.id); }}
+                onClick={() => setSelectedId(channel.id)}
                 className={cn(
                   "mb-1 flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2 text-left transition-colors",
-                  selectedId === channel.id && draft?.id !== undefined ? "bg-background shadow-sm" : "hover:bg-muted/70",
+                  selectedId === channel.id ? "bg-background shadow-sm" : "hover:bg-muted/70",
                 )}
               >
                 <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white" style={{ background: providerColor(channel.id) }}>
