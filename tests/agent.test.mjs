@@ -7,14 +7,22 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-loop-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
-process.env.OPENAI_BASE_URL = 'http://127.0.0.1:65530/v1'; // administrator-trusted; fetch is mocked
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const providerConfigs = await import('../server/native/provider-configs.mjs');
 
 const ownerId = 'agent@example.com';
+const providerId = 'openai';
 store.createUser(ownerId, 'hash');
-store.setProviderKey(ownerId, 'openai', 'sk-agent-test');
+providerConfigs.upsertProviderConfig(ownerId, {
+  id: providerId,
+  name: 'Agent Test OpenAI',
+  protocol: 'openai',
+  baseURL: 'https://api.example.com/v1',
+  enabled: true,
+});
+store.setProviderKey(ownerId, providerId, 'sk-agent-test');
 
 function sse(events) {
   return new Response(events.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), {
@@ -63,7 +71,7 @@ test('question suspends and resumes the same native turn without creating a seco
       sessionId: sid,
       ownerId,
       parts: [{ type: 'text', text: 'Настрой проект' }],
-      model: { providerID: 'openai', modelID: 'gpt-test' },
+      model: { providerID: providerId, modelID: 'gpt-test' },
       system: '',
     });
     const question = await waitFor(() => store.listPendingQuestions(sid)[0]);
@@ -121,7 +129,7 @@ test('task runs a nested read-only subagent loop and returns its report to the p
       sessionId: sid,
       ownerId,
       parts: [{ type: 'text', text: 'Изучи документацию' }],
-      model: { providerID: 'openai', modelID: 'gpt-test' },
+      model: { providerID: providerId, modelID: 'gpt-test' },
       system: '',
     });
     const taskPart = assistant.parts.find((p) => p.type === 'tool' && p.tool === 'task');
@@ -166,7 +174,7 @@ test('typed attachments stay separate from user text while model receives worksp
         { type: 'attachment', name: 'notes.txt', path: 'uploads/notes.txt', size: 17, kind: 'text', mime: 'text/plain' },
         { type: 'text', text: 'Посмотри приложенный файл' },
       ],
-      model: { providerID: 'openai', modelID: 'gpt-test' },
+      model: { providerID: providerId, modelID: 'gpt-test' },
       system: '',
     });
     const user = store.listMessages(sid).find((m) => m.role === 'user');
