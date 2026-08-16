@@ -7,6 +7,7 @@ import { readBody, sendJson } from './json.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, syncSandboxOwnership } from './sandbox.mjs';
 import { workspaceFor } from './store.mjs';
+import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
 
 const TEXT_EXTS = new Set(['.txt','.md','.json','.js','.jsx','.ts','.tsx','.css','.scss','.html','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.py','.rb','.go','.rs','.java','.kt','.c','.cpp','.h','.hpp','.cs','.php','.swift','.sh','.bash','.zsh','.sql','.graphql','.vue','.svelte','.astro','.env','.csv','.tsv','.log']);
 const IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg']);
@@ -102,7 +103,22 @@ function gitOptions(sessionId, root) {
 
 function workspaceError(res, err, fallback) {
   const status = Number(err?.statusCode) || 400;
-  return sendJson(res, status, { error: err?.message || fallback });
+  return sendJson(res, status, { error: err?.message || fallback, ...(Array.isArray(err?.conflicts) ? { conflicts: err.conflicts } : {}) });
+}
+
+function publicTurnResult(result) {
+  return {
+    version: result.version,
+    sessionId: result.sessionId,
+    messageId: result.messageId,
+    turnId: result.turnId,
+    startedAt: result.startedAt,
+    completedAt: result.completedAt,
+    reason: result.reason,
+    changeCount: result.changeCount,
+    rolledBackAt: result.rolledBackAt || null,
+    changes: result.changes || [],
+  };
 }
 
 export async function handleWorkspace(req, res, sessionId, url) {
@@ -143,6 +159,34 @@ export async function handleWorkspace(req, res, sessionId, url) {
       return sendJson(res, 200, result);
     } catch (err) {
       return workspaceError(res, err, 'Не удалось откатить изменение');
+    }
+  }
+
+  if (pathname === '/api/workspace/turn-result' && req.method === 'GET') {
+    try {
+      const messageId = url.searchParams.get('messageId') || '';
+      return sendJson(res, 200, publicTurnResult(getTurnResult(sessionId, messageId)));
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось получить результат хода');
+    }
+  }
+  if (pathname === '/api/workspace/turn-result/diff' && req.method === 'GET') {
+    try {
+      const messageId = url.searchParams.get('messageId') || '';
+      const relativePath = url.searchParams.get('path') || '';
+      return sendJson(res, 200, getTurnResultDiff(sessionId, messageId, relativePath));
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось построить diff этого хода');
+    }
+  }
+  if (pathname === '/api/workspace/turn-result/rollback' && req.method === 'POST') {
+    try {
+      const messageId = String(req.bodyJson?.messageId || '');
+      const result = rollbackTurnResult(sessionId, messageId);
+      emit(sessionId, 'file.edited', { paths: result.restored?.length ? result.restored : ['.'] });
+      return sendJson(res, 200, result);
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось откатить работу этого хода');
     }
   }
 
