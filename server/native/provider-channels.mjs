@@ -22,6 +22,11 @@ import {
   upsertManualModel,
 } from './store.mjs';
 
+function reply(res, status, body) {
+  sendJson(res, status, body);
+  return true;
+}
+
 function channelSnapshot(ownerId) {
   const connected = new Set(listProviderKeyIds(ownerId));
   return providerList(ownerId).map((provider) => ({
@@ -38,7 +43,7 @@ function providerExists(ownerId, providerId) {
 export async function handleProviderChannels(req, res, ownerId, url) {
   const p = url.pathname;
   if (p === '/api/provider-channels' && req.method === 'GET') {
-    return sendJson(res, 200, { providers: channelSnapshot(ownerId) });
+    return reply(res, 200, { providers: channelSnapshot(ownerId) });
   }
 
   if (p === '/api/provider-channels' && req.method === 'POST') {
@@ -57,7 +62,7 @@ export async function handleProviderChannels(req, res, ownerId, url) {
     const catalog = hasKey && config.enabled
       ? await fetchModels(ownerId, id, { force: true })
       : { status: hasKey ? 'disabled' : 'unauthorized', models: [] };
-    return sendJson(res, 200, {
+    return reply(res, 200, {
       provider: channelSnapshot(ownerId).find((item) => item.id === id),
       catalog: { status: catalog.status, count: catalog.models.length, error: catalog.error || null },
     });
@@ -68,38 +73,38 @@ export async function handleProviderChannels(req, res, ownerId, url) {
   const providerId = decodeURIComponent(match[1]);
   const action = match[2] || '';
 
-  if (!providerExists(ownerId, providerId)) return sendJson(res, 404, { error: 'Unknown provider' });
+  if (!providerExists(ownerId, providerId)) return reply(res, 404, { error: 'Unknown provider' });
 
   if (!action && req.method === 'DELETE') {
-    if (isBuiltInProvider(providerId)) return sendJson(res, 400, { error: 'Встроенный провайдер нельзя удалить; сбросьте его настройки.' });
+    if (isBuiltInProvider(providerId)) return reply(res, 400, { error: 'Встроенный провайдер нельзя удалить; сбросьте его настройки.' });
     deleteProviderConfig(ownerId, providerId, { deleteData: true });
-    return sendJson(res, 200, { status: 'success' });
+    return reply(res, 200, { status: 'success' });
   }
 
   if (action === 'config' && req.method === 'DELETE') {
-    if (!isBuiltInProvider(providerId)) return sendJson(res, 400, { error: 'Для custom-провайдера используйте удаление провайдера.' });
+    if (!isBuiltInProvider(providerId)) return reply(res, 400, { error: 'Для custom-провайдера используйте удаление провайдера.' });
     deleteProviderConfig(ownerId, providerId, { deleteData: false });
-    return sendJson(res, 200, { status: 'success', provider: channelSnapshot(ownerId).find((item) => item.id === providerId) });
+    return reply(res, 200, { status: 'success', provider: channelSnapshot(ownerId).find((item) => item.id === providerId) });
   }
 
   if (action === 'key' && req.method === 'DELETE') {
     deleteProviderKey(ownerId, providerId);
-    return sendJson(res, 200, { status: 'success' });
+    return reply(res, 200, { status: 'success' });
   }
 
   if (action === 'refresh' && req.method === 'POST') {
     const catalog = await fetchModels(ownerId, providerId, { force: true });
-    return sendJson(res, 200, { status: catalog.status, models: catalog.models, error: catalog.error || null });
+    return reply(res, 200, { status: catalog.status, models: catalog.models, error: catalog.error || null });
   }
 
   if (action === 'manual-models') {
-    if (req.method === 'GET') return sendJson(res, 200, { models: listManualModels(ownerId, providerId) });
+    if (req.method === 'GET') return reply(res, 200, { models: listManualModels(ownerId, providerId) });
     if (req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
       const modelId = String(body.modelId || '').trim();
-      if (!modelId || modelId.length > 200) return sendJson(res, 400, { error: 'Некорректный Model ID' });
+      if (!modelId || modelId.length > 200) return reply(res, 400, { error: 'Некорректный Model ID' });
       const probe = body.probe === false ? null : await probeModel(ownerId, providerId, { modelId });
-      if (probe && !probe.available) return sendJson(res, 400, { error: probe.error || 'Модель недоступна' });
+      if (probe && !probe.available) return reply(res, 400, { error: probe.error || 'Модель недоступна' });
       upsertManualModel(ownerId, providerId, {
         modelId,
         name: body.name || null,
@@ -108,12 +113,12 @@ export async function handleProviderChannels(req, res, ownerId, url) {
         pattern: false,
         enabled: body.enabled !== false,
       });
-      return sendJson(res, 200, { status: 'success', available: probe?.available ?? null });
+      return reply(res, 200, { status: 'success', available: probe?.available ?? null });
     }
     if (req.method === 'DELETE') {
       const body = await readJson(req, 64 * 1024);
       deleteManualModel(ownerId, providerId, body.modelId);
-      return sendJson(res, 200, { status: 'success' });
+      return reply(res, 200, { status: 'success' });
     }
   }
 
