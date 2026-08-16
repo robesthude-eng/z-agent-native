@@ -10,6 +10,7 @@ import {
   messageText as getMessageText,
   visibleMessageText as getVisibleText,
 } from "../lib/chatText";
+import { wasStoppedByUser } from "../lib/stopUx";
 import { toWorkspaceRelPath } from "../lib/workspacePath";
 import { useStore } from "../store/useStore";
 import AgentActivity from "./AgentActivity";
@@ -48,11 +49,111 @@ function toolCompleted(part: ToolPart): boolean {
   );
 }
 
+function pluralRu(n: number, one: string, few: string, many: string): string {
+  const mod10 = n % 10;
+  const mod100 = n % 100;
+  if (mod10 === 1 && mod100 !== 11) return one;
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+  return many;
+}
+
+function formatDuration(ms: number): string {
+  const seconds = Math.max(1, Math.round(ms / 1000));
+  if (seconds < 60) return `${seconds} с`;
+  const minutes = Math.floor(seconds / 60);
+  const rest = seconds % 60;
+  if (minutes < 60) return rest ? `${minutes} мин ${rest} с` : `${minutes} мин`;
+  const hours = Math.floor(minutes / 60);
+  const restMinutes = minutes % 60;
+  return restMinutes ? `${hours} ч ${restMinutes} мин` : `${hours} ч`;
+}
+
+function toolInput(part: ToolPart): Record<string, unknown> | null {
+  const state = part.state;
+  const input =
+    state && typeof state === "object" ? state.input : part.input;
+  return input && typeof input === "object"
+    ? (input as Record<string, unknown>)
+    : null;
+}
+
+function addWorkspacePath(paths: Set<string>, raw: unknown) {
+  if (typeof raw !== "string") return;
+  const path = toWorkspaceRelPath(raw);
+  if (path) paths.add(path);
+}
+
+function assistantTurnSummary(messages: Message[]) {
+  let startedAt: number | null = null;
+  let completedAt: number | null = null;
+  let failed = false;
+  let stopped = false;
+  let anonymousAction = 0;
+  const actions = new Set<string>();
+  const changedFiles = new Set<string>();
+
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    const start = message.time?.created ?? message.info?.time?.created;
+    const end = message.time?.completed ?? message.info?.time?.completed;
+    if (typeof start === "number") {
+      startedAt = startedAt == null ? start : Math.min(startedAt, start);
+    }
+    if (typeof end === "number") {
+      completedAt = completedAt == null ? end : Math.max(completedAt, end);
+    }
+    if (message.info?.error) {
+      if (isAbortedError(message.info.error)) stopped = true;
+      else failed = true;
+    }
+    if (wasStoppedByUser(message)) stopped = true;
+
+    for (const part of message.parts ?? []) {
+      if (part.type !== "tool") continue;
+      const toolPart = part as ToolPart;
+      actions.add(
+        toolPart.callID || toolPart.id || `${message.id}:tool:${anonymousAction++}`,
+      );
+      if (!toolCompleted(toolPart)) continue;
+      const tool = String(toolPart.tool || "").toLowerCase();
+      const input = toolInput(toolPart);
+      if (!input) continue;
+
+      if (tool === "write" || tool === "edit") {
+        addWorkspacePath(changedFiles, input.path ?? input.filePath);
+      }
+      if (tool === "apply_patch" || tool === "applypatch" || tool === "patch") {
+        const patch = input.patch;
+        if (typeof patch === "string") {
+          for (const line of patch.split("\n")) {
+            if (!line.startsWith("+++ ")) continue;
+            let path = line.slice(4).trim().split("\t")[0] || "";
+            if (!path || path === "/dev/null") continue;
+            path = path.replace(/^b\//, "");
+            addWorkspacePath(changedFiles, path);
+          }
+        }
+      }
+    }
+  }
+
+  const durationMs =
+    startedAt != null && completedAt != null && completedAt >= startedAt
+      ? completedAt - startedAt
+      : null;
+
+  return {
+    failed,
+    stopped,
+    durationMs,
+    actionCount: actions.size,
+    changedFileCount: changedFiles.size,
+  };
+}
+
 /**
  * Файлы, созданные стандартным инструментом Write. Это не новая копия:
  * карточка ведёт к тому же объекту в workspace текущей сессии.
- * Артефакты из Bash дополнительно приходят отдельной 📎-строкой по инструкции
- * модели, поэтому также становятся файл-карточками через PartView.
  */
 function GeneratedFiles({ message }: { message: Message }) {
   const pathsInText = new Set<string>();
@@ -70,8 +171,6 @@ function GeneratedFiles({ message }: { message: Message }) {
   for (const p of message.parts || []) {
     if (p.type !== "tool") continue;
     const tool = String((p as ToolPart).tool || "").toLowerCase();
-    // Только write создаёт новый файл гарантированно. edit меняет уже
-    // существующий файл и не должен каждый раз засорять ответ новой карточкой.
     if (tool !== "write" || !toolCompleted(p as ToolPart)) continue;
     const state = (p as ToolPart).state;
     const input =
@@ -109,9 +208,6 @@ function MessageItem({
   messages: Message | Message[];
   isWorking?: boolean;
 }) {
-  // Действия «изменить»/«перегенерировать» берём из стора напрямую: memo-сравнение
-  // сообщений (sameMessageItems) игнорирует остальные пропсы, поэтому колбэки
-  // через props могли бы «застыть» на старой версии.
   const editAndResend = useStore((s) => s.editAndResend);
   const regenerate = useStore((s) => s.regenerate);
   const sessionBusy = useStore(
@@ -119,9 +215,7 @@ function MessageItem({
   );
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editText, setEditText] = useState("");
-  // Правку открывают, чтобы сразу дописать текст, поэтому поле должно быть
-  // в фокусе. Атрибут autoFocus запрещён (a11y), ref-колбэк с постоянной
-  // ссылкой срабатывает ровно при появлении поля, а не на каждый рендер.
+  const [errorDetailsId, setErrorDetailsId] = useState<string | null>(null);
   const focusEditor = useCallback((el: HTMLTextAreaElement | null) => {
     el?.focus();
   }, []);
@@ -134,7 +228,6 @@ function MessageItem({
     "assistant";
   const isUser = role === "user";
 
-  // Служебный блок вложений в буфер обмена не идёт — см. visibleMessageText.
   const combinedText = msgArray
     .map((m) => getVisibleText(m))
     .filter(Boolean)
@@ -143,14 +236,31 @@ function MessageItem({
   const createdAt = firstMsg?.time?.created
     ? new Date(firstMsg.time.created)
     : null;
+  const turnMeta = !isUser ? assistantTurnSummary(msgArray) : null;
+  const summaryBits: string[] = [];
+  if (!isUser && !isWorking && turnMeta) {
+    summaryBits.push(
+      turnMeta.stopped
+        ? "Остановлено пользователем"
+        : turnMeta.failed
+          ? "Не завершено"
+          : "Готово",
+    );
+    if (turnMeta.durationMs != null) summaryBits.push(formatDuration(turnMeta.durationMs));
+    if (turnMeta.actionCount > 0) {
+      summaryBits.push(
+        `${turnMeta.actionCount} ${pluralRu(turnMeta.actionCount, "действие", "действия", "действий")}`,
+      );
+    }
+    if (turnMeta.changedFileCount > 0) {
+      summaryBits.push(
+        `${turnMeta.changedFileCount} ${pluralRu(turnMeta.changedFileCount, "файл", "файла", "файлов")}`,
+      );
+    }
+  }
 
-  // Группа пользователя может содержать несколько сообщений — редактируем
-  // последнее: именно оно и всё после него уйдёт при перезапросе.
   const lastUserMsg = isUser ? msgArray[msgArray.length - 1] : undefined;
 
-  // Подписи над сообщением нет — как и над ответом агента. Выключка вправо и
-  // пузырь уже говорят, чья это реплика. Убрать «АГЕНТ», но оставить «ВЫ»
-  // было бы половиной решения: подписи осмысленны только парой.
   if (isUser) {
     return (
       <div className="group oc-msg-in flex flex-col items-end gap-1 px-3 py-1 md:px-6">
@@ -161,9 +271,6 @@ function MessageItem({
             const realAttParts = (message.parts || []).filter(
               (p) => p.type === "attachment" || p.type === "file",
             );
-            // Файл приходит и структурной attachment/file-частью, и ссылкой
-            // в манифесте (у картинок есть обе: часть — для vision, ссылка —
-            // для пути в workspace). Чип рисуем один.
             const attPartNames = new Set(
               realAttParts
                 .map((p) => {
@@ -199,8 +306,6 @@ function MessageItem({
                       onChange={(e) => setEditText(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === "Escape") setEditingId(null);
-                        // Ctrl/Cmd+Enter отправляет: обычный Enter должен
-                        // оставаться переносом строки в многострочном запросе.
                         if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
                           e.preventDefault();
                           setEditingId(null);
@@ -211,14 +316,14 @@ function MessageItem({
                     <div className="flex justify-end gap-2">
                       <button
                         type="button"
-                        className="rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+                        className="min-h-9 rounded-full border border-border px-3 py-1 text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
                         onClick={() => setEditingId(null)}
                       >
                         Отмена
                       </button>
                       <button
                         type="button"
-                        className="rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
+                        className="min-h-9 rounded-full bg-primary px-3 py-1 text-[11px] font-medium text-primary-foreground disabled:opacity-50"
                         disabled={!editText.trim() || sessionBusy}
                         onClick={() => {
                           setEditingId(null);
@@ -239,7 +344,7 @@ function MessageItem({
             );
           })}
           {combinedText && !editingId && (
-            <div className="mt-0.5 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 group-hover:opacity-60 mr-1">
+            <div className="mt-0.5 mr-1 flex items-center gap-1 opacity-0 transition-opacity focus-within:opacity-100 hover:opacity-100 group-hover:opacity-60">
               {lastUserMsg && (
                 <button
                   type="button"
@@ -248,7 +353,6 @@ function MessageItem({
                   aria-label="Изменить сообщение"
                   disabled={sessionBusy}
                   onClick={() => {
-                    // Строки-вложения (📎 …) — служебные, в поле правки не идут.
                     setEditText(
                       extractAttachments(getMessageText(lastUserMsg)).rest,
                     );
@@ -270,48 +374,69 @@ function MessageItem({
     );
   }
 
-  // Ответ агента идёт свободным текстом: без пузыря, без подписи и без линии
-  // слева. Кто говорит, видно по выключке — пользователь справа в пузыре,
-  // агент слева во всю колонку, — и подпись повторяла уже сказанное. Так же
-  // устроены Gemini и ChatGPT.
   return (
     <div className="group oc-msg-in flex flex-col gap-1.5 px-3 py-1 md:px-6">
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="min-w-0 space-y-1">
-          {/* Ошибка привязана к своему сообщению: она про конкретный ход,
-              а не про весь ответ. */}
-          {msgArray.map((message, msgIdx) =>
-            message.info?.error ? (
-              // `MessageAborted` — не API-ошибка: это пользовательский «Стоп».
-              // В старой истории он встречается и у question fallback; такие
-              // сообщения оставляем читаемыми, но новые ответы question abort
-              // больше не создают.
-              isAbortedError(message.info.error) ? (
+          {msgArray.map((message, msgIdx) => {
+            if (!message.info?.error) return null;
+            const aborted = isAbortedError(message.info.error);
+            if (aborted) {
+              return (
                 <div
                   key={`err:${message.id || msgIdx}`}
                   className="mb-2 text-xs text-muted-foreground"
                 >
                   {hasQuestionPart(message)
                     ? "Старый ход был прерван при ответе на вопрос"
-                    : "Ход остановлен"}
+                    : "Остановлено пользователем"}
                 </div>
-              ) : (
-                <div
-                  key={`err:${message.id || msgIdx}`}
-                  className="rounded-lg bg-red-500/10 px-3 py-2 text-xs text-red-400 mb-2"
-                >
-                  {errorMessage(message.info.error) ??
-                    "Ошибка API: проверьте тариф модели или ключ"}
-                </div>
-              )
-            ) : null,
-          )}
+              );
+            }
 
-          {/* Одна цепочка на весь ход, а не по одной на сообщение. Движок
-              присылает ход порциями, и на каждой границе цепочка обрывалась:
-              в ленте шли подряд «Действия · 2 шага», «Действия · 3 шага» без
-              единого слова текста между ними. Для читателя это один заход
-              агента — см. `flowParts` в messageFlow.ts. */}
+            const detail =
+              errorMessage(message.info.error) ??
+              "Провайдер не смог завершить этот ответ.";
+            const detailsOpen = errorDetailsId === message.id;
+            return (
+              <div
+                key={`err:${message.id || msgIdx}`}
+                className="mb-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-red-300">
+                    Не удалось завершить ответ
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground disabled:opacity-40"
+                      disabled={sessionBusy}
+                      onClick={() => regenerate(message.id).catch(() => {})}
+                    >
+                      Повторить
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground"
+                      aria-expanded={detailsOpen}
+                      onClick={() =>
+                        setErrorDetailsId(detailsOpen ? null : message.id)
+                      }
+                    >
+                      Подробнее
+                    </button>
+                  </div>
+                </div>
+                {detailsOpen && (
+                  <div className="mt-2 break-words rounded-lg bg-background/50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                    {detail}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+
           <div className="text-[14.5px] leading-relaxed text-foreground/95">
             {(() => {
               const items = groupParts(flowParts(msgArray));
@@ -325,8 +450,6 @@ function MessageItem({
                   !("type" in item) ||
                   (item.type !== "attachment" && item.type !== "file"),
               );
-              // Подряд идущие действия (инструменты + размышления)
-              // схлопываются в цепочки; текст между ними виден всегда.
               const flow = groupActivityRuns(otherParts);
               const renderFlowPart = (item: RenderItem, streaming: boolean) => {
                 const g = item as ToolGroupData;
@@ -360,10 +483,6 @@ function MessageItem({
                     </div>
                   )}
                   {flow.map((fi, i) => {
-                    // Хвост последнего сообщения во время генерации:
-                    // сюда идёт стрим-курсор и авто-раскрытие цепочки.
-                    // Цепочка теперь одна на весь ход, поэтому хвост
-                    // — это просто её последний элемент.
                     const isTail = !!isWorking && i === flow.length - 1;
                     if ((fi as ActivityRun).kind === "activity") {
                       const run = fi as ActivityRun;
@@ -373,9 +492,6 @@ function MessageItem({
                         const s = toolStatus(t);
                         return s === "running" || s === "pending";
                       });
-                      // Старые question-fallback части могли остаться в
-                      // `error` после abort. Не красим их как поломку; новые
-                      // ответы через Question API завершаются обычным completed.
                       const hasError = tools.some(
                         (t) =>
                           toolStatus(t) === "error" &&
@@ -412,10 +528,17 @@ function MessageItem({
           ))}
         </div>
 
-        {/* Arena-style Footer: Avatar and Copy Button */}
-        <div className="flex items-center gap-1.5 mt-0.5 pl-1">
+        <div className="mt-1 flex min-h-10 flex-wrap items-center justify-between gap-x-3 gap-y-1 pl-1">
+          {!isWorking && summaryBits.length > 0 && (
+            <span
+              className={`text-[11px] ${turnMeta?.failed && !turnMeta.stopped ? "text-red-400/85" : "text-muted-foreground/70"}`}
+              title={createdAt?.toLocaleString("ru-RU")}
+            >
+              {summaryBits.join(" · ")}
+            </span>
+          )}
           {combinedText && (
-            <div className="oc-reveal flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
+            <div className="oc-reveal ml-auto flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
               <CopyButton
                 text={combinedText}
                 title="Копировать сообщение"
@@ -436,17 +559,6 @@ function MessageItem({
                 </button>
               )}
             </div>
-          )}
-          {createdAt && (
-            <span
-              className="text-[11px] text-muted-foreground/70"
-              title={createdAt.toLocaleString("ru-RU")}
-            >
-              {createdAt.toLocaleTimeString("ru-RU", {
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </span>
           )}
         </div>
       </div>
@@ -488,6 +600,8 @@ function sameMessageItems(
     if (
       pMsg.id !== nMsg.id ||
       pMsg.role !== nMsg.role ||
+      !isValueEqual(pMsg.time, nMsg.time) ||
+      !isValueEqual(pMsg.info, nMsg.info) ||
       (pMsg.parts?.length ?? 0) !== (nMsg.parts?.length ?? 0)
     ) {
       return false;
