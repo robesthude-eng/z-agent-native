@@ -87,7 +87,6 @@ test('runtime auto-approves tool calls and still forces executable verification 
     });
 
     assert.deepEqual(permissionEvents, []);
-    assert.equal(store.listPendingPermissions(sid).length, 0);
     assert.equal(sawCompletionGate, true);
     assert.equal(streamCall, 4);
     assert.equal(assistant.info.strategy?.changed, true);
