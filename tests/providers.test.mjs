@@ -7,17 +7,28 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-provider-test-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
-process.env.OPENAI_BASE_URL = 'https://1.1.1.1/v1';
-process.env.ANTHROPIC_BASE_URL = 'https://1.1.1.1/anthropic';
-process.env.GOOGLE_BASE_URL = 'https://1.1.1.1/google';
 
 const store = await import('../server/native/store.mjs');
 const providers = await import('../server/native/providers.mjs');
+const providerConfigs = await import('../server/native/provider-configs.mjs');
 const ownerId = 'stream@example.com';
 store.createUser(ownerId, 'hash');
-store.setProviderKey(ownerId, 'openai', 'sk-test');
-store.setProviderKey(ownerId, 'anthropic', 'sk-ant-test');
-store.setProviderKey(ownerId, 'google', 'g-test');
+
+const testProviders = [
+  { id: 'openai', name: 'Test OpenAI', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', key: 'sk-test' },
+  { id: 'anthropic', name: 'Test Anthropic', protocol: 'anthropic', baseURL: 'https://1.1.1.1/anthropic', key: 'sk-ant-test' },
+  { id: 'google', name: 'Test Gemini', protocol: 'google', baseURL: 'https://1.1.1.1/google', key: 'g-test' },
+];
+for (const config of testProviders) {
+  providerConfigs.upsertProviderConfig(ownerId, {
+    id: config.id,
+    name: config.name,
+    protocol: config.protocol,
+    baseURL: config.baseURL,
+    enabled: true,
+  });
+  store.setProviderKey(ownerId, config.id, config.key);
+}
 
 function sseResponse(events) {
   const text = events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join('');
