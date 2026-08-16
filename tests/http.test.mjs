@@ -118,12 +118,14 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   });
   assert.equal(unknownProvider.status, 404);
 
-  const invalidPermission = await fetch(`${base}/api/session/${encodeURIComponent(session.id)}/permissions/perm_missing`, {
+  // Browser permission cards no longer exist. The former response route must
+  // stay absent rather than silently reintroducing a second execution gate.
+  const legacyPermission = await fetch(`${base}/api/session/${encodeURIComponent(session.id)}/permissions/perm_missing`, {
     method: 'POST',
     headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
-    body: JSON.stringify({ response: 'allow-everything' }),
+    body: JSON.stringify({ response: 'once' }),
   });
-  assert.equal(invalidPermission.status, 400);
+  assert.equal(legacyPermission.status, 404);
 
   const logout = await fetch(`${base}/api/auth/logout`, {
     method: 'POST',
