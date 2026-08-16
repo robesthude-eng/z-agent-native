@@ -40,6 +40,8 @@ export default function CopyButton({
     });
   };
 
+  const label = copied ? "Скопировано" : (title ?? "Копировать");
+
   return (
     <Button
       type="button"
@@ -52,6 +54,7 @@ export default function CopyButton({
       )}
       onClick={handleCopy}
       title={copied ? "Скопировано!" : (title ?? "Копировать")}
+      aria-label={label}
     >
       {copied ? (
         <Check className="h-3.5 w-3.5" />
