@@ -161,9 +161,11 @@ export function revertGitChange(root, relativePath, options = {}) {
     removeWorkspacePath(root, change.path);
   } else if (change.status === 'renamed') {
     if (!change.originalPath) throw Object.assign(new Error('Не удалось определить исходный путь переименованного файла'), { statusCode: 409 });
-    // Restore the original tracked path from HEAD, then remove the renamed target.
-    gitOrThrow(root, ['restore', '--source=HEAD', '--staged', '--worktree', '--', change.originalPath], options);
+    // A staged rename is represented as old-path deletion + new-path addition.
+    // Clear the destination from the index first, then restore the source from HEAD.
+    gitResult(root, ['rm', '-f', '--cached', '--ignore-unmatch', '--', change.path], options);
     if (change.path !== change.originalPath) removeWorkspacePath(root, change.path);
+    gitOrThrow(root, ['restore', '--source=HEAD', '--staged', '--worktree', '--', change.originalPath], options);
   } else {
     gitOrThrow(root, ['restore', '--source=HEAD', '--staged', '--worktree', '--', change.path], options);
   }
