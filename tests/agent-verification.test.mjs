@@ -25,17 +25,7 @@ function sse(items) {
   });
 }
 
-async function waitFor(fn, timeout = 2000) {
-  const end = Date.now() + timeout;
-  while (Date.now() < end) {
-    const value = fn();
-    if (value) return value;
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
-  throw new Error('condition timeout');
-}
-
-test('runtime completion gate forces executable verification after a workspace edit', async () => {
+test('runtime auto-approves tool calls and still forces executable verification after a workspace edit', async () => {
   agent.resetAgentStateForTests();
   events.resetEventsForTests();
   const sid = 'ses_verificationgate1';
@@ -88,7 +78,7 @@ test('runtime completion gate forces executable verification after a workspace e
   };
 
   try {
-    const turn = agent.runTurn({
+    const assistant = await agent.runTurn({
       sessionId: sid,
       ownerId,
       parts: [{ type: 'text', text: 'Создай корректный модуль hello.mjs' }],
@@ -96,13 +86,8 @@ test('runtime completion gate forces executable verification after a workspace e
       system: '',
     });
 
-    const firstPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'write'));
-    assert.equal(agent.answerPermission(sid, firstPermission.id, 'once'), true);
-
-    const secondPermission = await waitFor(() => permissionEvents.find((permission) => permission.tool === 'bash'));
-    assert.equal(agent.answerPermission(sid, secondPermission.id, 'once'), true);
-
-    const assistant = await turn;
+    assert.deepEqual(permissionEvents, []);
+    assert.equal(store.listPendingPermissions(sid).length, 0);
     assert.equal(sawCompletionGate, true);
     assert.equal(streamCall, 4);
     assert.equal(assistant.info.strategy?.changed, true);
