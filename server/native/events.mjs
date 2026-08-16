@@ -1,4 +1,5 @@
 import { EVENT_RING_SIZE } from './config.mjs';
+import { clearTurnResults, observeTurnResultEvent } from './turn-results.mjs';
 
 const rings = new Map();
 const subscribers = new Map();
@@ -26,6 +27,11 @@ function frameText(frame) {
 }
 
 export function emit(sessionId, type, properties = {}) {
+  // Snapshot observation is synchronous on purpose: the initial `busy` event
+  // happens before the first tool can mutate the workspace, so the baseline is
+  // guaranteed to describe the exact state before this turn.
+  try { observeTurnResultEvent(sessionId, type, properties); } catch { /* result capture must never break realtime delivery */ }
+
   const state = stateFor(sessionId);
   const event = { type, properties: { ...properties, sessionID: properties.sessionID || sessionId } };
   const frame = { id: ++state.seq, event };
@@ -77,6 +83,7 @@ export function openSse(req, res, sessionId, lastEventId = 0) {
 
 export function clearSessionEvents(sessionId) {
   rings.delete(sessionId);
+  clearTurnResults(sessionId);
 }
 
 export function resetEventsForTests() {
