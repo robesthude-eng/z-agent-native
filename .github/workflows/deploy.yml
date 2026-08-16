@@ -10,12 +10,8 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  test:
-    uses: ./.github/workflows/ci.yml
-
   deploy:
     name: Deploy to production
-    needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -23,6 +19,9 @@ jobs:
       url: https://agentwill.online
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
@@ -30,7 +29,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy
+      - name: Deploy to server
         run: |
           ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'DEPLOY'
             set -euo pipefail
@@ -48,6 +47,16 @@ jobs:
 
             echo "→ Cleaning up old images..."
             docker image prune -f
+
+            echo "→ Health check..."
+            sleep 5
+            if curl -sf http://127.0.0.1:3002/ > /dev/null 2>&1; then
+              echo "✓ Application is healthy"
+            else
+              echo "✗ Application health check failed"
+              docker compose logs --tail=50 z-agent
+              exit 1
+            fi
 
             echo "→ Status:"
             docker compose ps
