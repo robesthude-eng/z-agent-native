@@ -11,12 +11,14 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 const store = await import('../server/native/store.mjs');
 const configs = await import('../server/native/provider-configs.mjs');
 const providers = await import('../server/native/providers.mjs');
-const { handleProviderChannels } = await import('../server/native/provider-channels.mjs');
+const { handleProviderChannels, listProviderChannels } = await import('../server/native/provider-channels.mjs');
 
 const ownerA = 'provider-a@example.com';
 const ownerB = 'provider-b@example.com';
+const ownerEmpty = 'provider-empty@example.com';
 store.createUser(ownerA, 'test-hash');
 store.createUser(ownerB, 'test-hash');
+store.createUser(ownerEmpty, 'test-hash');
 
 function captureResponse() {
   return {
@@ -27,6 +29,11 @@ function captureResponse() {
     end(body = '') { this.body = String(body || ''); },
   };
 }
+
+test('provider management starts empty even though protocol adapters exist', () => {
+  assert.ok(Object.keys(providers.providerSpecs(ownerEmpty)).length > 0);
+  assert.deepEqual(listProviderChannels(ownerEmpty), []);
+});
 
 test('custom provider channels are owner-scoped and merged into the runtime registry', () => {
   const id = configs.newCustomProviderId();
@@ -46,39 +53,39 @@ test('custom provider channels are owner-scoped and merged into the runtime regi
   assert.equal(a.custom, true);
   assert.equal(a.trustedBaseURL, false);
   assert.equal(b, undefined);
-  assert.ok(providers.providerList(ownerA).some((item) => item.id === id));
-  assert.ok(!providers.providerList(ownerB).some((item) => item.id === id));
+  assert.deepEqual(listProviderChannels(ownerB), []);
+  assert.deepEqual(listProviderChannels(ownerA).map((item) => item.id), [id]);
 });
 
-test('built-in provider endpoint can be overridden per owner without changing another user', () => {
-  const before = providers.providerSpecs(ownerB).openai.baseURL;
-  configs.upsertProviderConfig(ownerA, {
+test('legacy configured built-in ids are treated as user-owned channels, not templates', () => {
+  configs.upsertProviderConfig(ownerB, {
     id: 'openai',
-    name: 'OpenAI',
+    name: 'My Relay',
     protocol: 'openai',
     baseURL: 'https://relay.example.com/openai/v1',
     enabled: true,
   }, { custom: false });
 
-  assert.equal(providers.providerSpecs(ownerA).openai.baseURL, 'https://relay.example.com/openai/v1');
-  assert.equal(providers.providerSpecs(ownerA).openai.trustedBaseURL, false);
-  assert.equal(providers.providerSpecs(ownerB).openai.baseURL, before);
-  assert.equal(providers.providerSpecs(ownerB).openai.trustedBaseURL, true);
+  const channels = listProviderChannels(ownerB);
+  assert.equal(channels.length, 1);
+  assert.equal(channels[0].id, 'openai');
+  assert.equal(channels[0].name, 'My Relay');
+  assert.equal(channels[0].custom, true);
+  assert.equal(channels[0].overridden, false);
 });
 
-test('provider channel HTTP handler reports handled routes explicitly', async () => {
+test('provider channel HTTP handler returns only saved channels', async () => {
   const res = captureResponse();
   const handled = await handleProviderChannels(
     { method: 'GET' },
     res,
-    ownerA,
+    ownerEmpty,
     new URL('http://localhost/api/provider-channels'),
   );
   assert.equal(handled, true);
   assert.equal(res.status, 200);
   const body = JSON.parse(res.body);
-  assert.ok(Array.isArray(body.providers));
-  assert.ok(body.providers.some((provider) => provider.id === 'openai'));
+  assert.deepEqual(body.providers, []);
 });
 
 test('provider config validation rejects unsafe shapes', () => {
@@ -93,7 +100,7 @@ test('provider config validation rejects unsafe shapes', () => {
   }), /логина\/пароля/);
 });
 
-test('deleting a custom provider can remove its key and model state atomically', () => {
+test('deleting a provider removes its key and model state atomically', () => {
   const id = configs.newCustomProviderId();
   configs.upsertProviderConfig(ownerA, {
     id, name: 'Disposable', protocol: 'anthropic', baseURL: 'https://anthropic.example.com/v1', enabled: true,

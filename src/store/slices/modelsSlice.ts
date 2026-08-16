@@ -1,5 +1,5 @@
 import { api } from "../../api/client";
-import { PROVIDERS } from "../../config/providers";
+import { providerChannelsApi } from "../../api/providerChannels";
 import { pushPref } from "../prefsSync";
 import type { ModelEntry, ModelsSlice, Slice } from "../types";
 
@@ -15,18 +15,26 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
     let defaults: Record<string, string> = {};
 
     try {
-      const catalog = await api.listProviderCatalog();
+      const [catalog, channelsResponse] = await Promise.all([
+        api.listProviderCatalog(),
+        providerChannelsApi.list(),
+      ]);
       defaults = catalog.default ?? {};
       const hiddenByProvider = catalog.hidden ?? {};
+      const configured = new Map(
+        (channelsResponse.providers ?? []).map((provider) => [provider.id, provider]),
+      );
+
       for (const model of catalog.models ?? []) {
         if (!model?.providerID || !model?.modelID) continue;
         const sourceProviderID = model.sourceProviderID || model.providerID;
+        const provider = configured.get(sourceProviderID);
+        if (!provider || !provider.enabled) continue;
         if (catalog.providers?.[sourceProviderID]?.status === "disabled") continue;
         if (hiddenByProvider[sourceProviderID]?.includes(model.modelID)) continue;
-        const provider = PROVIDERS.find((item) => item.id === sourceProviderID);
         entries.push({
           providerID: model.providerID,
-          providerName: provider?.name || model.providerName || sourceProviderID,
+          providerName: provider.name || model.providerName || sourceProviderID,
           modelID: model.modelID,
           modelName: model.modelName || model.modelID,
           free: Boolean(model.free),
