@@ -17,12 +17,16 @@ function workspace(prefix = 'z-agent-env-') {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
 }
 
-test('environment tool is permission-gated and available with a shell sandbox', () => {
+test('environment tools are available with a shell sandbox and retain sensitive classification', () => {
   const definition = TOOL_DEFINITIONS.find((tool) => tool.name === 'ensure_environment');
   assert.ok(definition);
-  assert.deepEqual(definition.inputSchema.properties.kind.enum, ['python', 'java', 'gradle', 'android']);
+  const kinds = definition.inputSchema.properties.kind.enum;
+  for (const kind of ['python', 'java', 'gradle', 'android', 'go', 'rust', 'node', 'maven', 'flutter', 'kubectl', 'terraform', 'aws', 'gcloud', 'portable']) {
+    assert.ok(kinds.includes(kind), `missing environment kind: ${kind}`);
+  }
   assert.equal(requiresPermission('ensure_environment'), true);
   assert.ok(availableToolDefinitions().some((tool) => tool.name === 'ensure_environment'));
+  assert.ok(availableToolDefinitions().some((tool) => tool.name === 'environment_status'));
 });
 
 test('Java plan installs a verified Temurin JDK below the hidden agent home', () => {
@@ -36,7 +40,7 @@ test('Java plan installs a verified Temurin JDK below the hidden agent home', ()
   fs.rmSync(root, { recursive: true, force: true });
 });
 
-test('Android package provisioning requires explicit license acceptance and pins the CLI checksum', () => {
+test('Android package provisioning requires explicit acceptLicenses input and pins the CLI checksum', () => {
   const root = workspace();
   assert.throws(
     () => prepareEnvironmentRequirement(root, { kind: 'android', packages: ['platforms;android-36'] }),
