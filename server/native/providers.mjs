@@ -572,7 +572,7 @@ function geminiContents(frames) {
       for (const c of f.toolCalls || []) parts.push({ functionCall: { name: c.name, args: c.arguments || {} } });
       out.push({ role: 'model', parts });
     } else if (f.role === 'tool') {
-      const part = { functionResponse: { name: f.name, response: { result: f.content, ...(f.isError ? { error: true } : {}) } };
+      const part = { functionResponse: { name: f.name, response: { result: f.content, ...(f.isError ? { error: true } : {}) } } };
       const prev = out[out.length - 1];
       if (prev?.role === 'user' && prev.parts?.some((p) => p.functionResponse)) prev.parts.push(part);
       else out.push({ role: 'user', parts: [part] });
