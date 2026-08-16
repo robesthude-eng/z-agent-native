@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
+import { AUTO_MODEL, isAutoModel } from "../lib/autopilotModel";
 import { type ModelEntry, useStore } from "../store/useStore";
 import { CheckIcon, ChevronDownIcon } from "./icons";
 
@@ -63,11 +64,14 @@ export default function ModelSelector() {
     );
   }
 
-  const current = models.find(
-    (m) =>
-      m.providerID === selectedModel?.providerID &&
-      m.modelID === selectedModel?.modelID,
-  );
+  const automatic = isAutoModel(selectedModel);
+  const current = automatic
+    ? undefined
+    : models.find(
+        (m) =>
+          m.providerID === selectedModel?.providerID &&
+          m.modelID === selectedModel?.modelID,
+      );
 
   const personal = models.filter(
     (m) =>
@@ -147,8 +151,23 @@ export default function ModelSelector() {
         onClick={() => setOpen((value) => !value)}
       >
         <span className="flex min-w-0 items-center gap-2">
-          {current && <StatusDot model={current} />}
-          <span className="truncate">{current?.modelName ?? "Выбрать модель"}</span>
+          {automatic ? (
+            <span
+              className="h-2 w-2 shrink-0 rounded-full bg-primary"
+              title="Autopilot выбирает модель на сервере"
+              aria-label="Autopilot включён"
+            />
+          ) : (
+            current && <StatusDot model={current} />
+          )}
+          <span className="truncate">
+            {automatic ? "Авто" : (current?.modelName ?? "Выбрать модель")}
+          </span>
+          {automatic && (
+            <span className="hidden shrink-0 text-[9px] text-muted-foreground sm:inline">
+              Autopilot
+            </span>
+          )}
           {current?.free && (
             <span className="shrink-0 rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
               FREE
@@ -167,6 +186,33 @@ export default function ModelSelector() {
 
       {open && (
         <div className="absolute left-1/2 top-full z-50 mt-2 max-h-[60dvh] w-[320px] max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-e2 sm:w-[360px]">
+          <div className="mb-2">
+            <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Режим
+            </div>
+            <button
+              type="button"
+              className={cn(
+                "flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left transition",
+                automatic
+                  ? "bg-muted text-foreground"
+                  : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
+              )}
+              onClick={() => {
+                setSelectedModel({ ...AUTO_MODEL });
+                setOpen(false);
+              }}
+            >
+              <span className="min-w-0">
+                <span className="block text-sm font-medium text-foreground">Авто · Autopilot</span>
+                <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
+                  Сервер выбирает модель по доступности и истории успехов и может переключиться до начала ответа при временном сбое.
+                </span>
+              </span>
+              {automatic && <CheckIcon size={14} />}
+            </button>
+          </div>
+
           {personal.length > 0 && (
             <div className="mb-2">
               <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
