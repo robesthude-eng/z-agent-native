@@ -1,13 +1,6 @@
-import { MyModelsSection } from "./MyModelsSection";
-import { ProvidersTabContent } from "./ProvidersTabContent";
+import { ProviderChannelManager } from "./ProviderChannelManager";
 
-/** Native model management: personal models and provider credentials. */
+/** Provider-first model management inspired by ZCode: connect a channel, then sync its models. */
 export function ModelsTabContent() {
-  return (
-    <div className="space-y-8">
-      <MyModelsSection />
-      <div className="border-t border-border" />
-      <ProvidersTabContent />
-    </div>
-  );
+  return <ProviderChannelManager />;
 }
