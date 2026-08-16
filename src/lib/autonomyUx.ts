@@ -92,10 +92,12 @@ export function initAutonomyUx() {
 
   schedule();
   const observer = new MutationObserver(schedule);
+  // React streaming mainly mutates text nodes. Presentation hooks only care
+  // about controls/panels entering or leaving the tree, so observing
+  // characterData would rescan the document on every generated token.
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
-    characterData: true,
   });
 
   window.addEventListener(
