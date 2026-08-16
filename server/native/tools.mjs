@@ -6,7 +6,6 @@ import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
 import {
   commitEnvironmentRequirement, describeManagedEnvironment, managedShellEnvironment, prepareEnvironmentRequirement,
 } from './environment.mjs';
-import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
@@ -89,24 +88,14 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'ensure_environment',
-    description: 'Provision a missing development runtime or CLI inside this session without sudo, then keep it on PATH for later bash/terminal calls. Supports Python packages, Java, Gradle, Android SDK, Go, Rust, Node.js, Maven, Flutter, kubectl, Terraform, and checksum-pinned portable binaries.',
+    description: 'Provision a missing development runtime or package set inside this session without sudo. Supports Python virtualenv packages, Eclipse Temurin Java, Gradle distributions, and Android SDK command-line/packages. Use this instead of giving up when a required SDK or library is missing.',
     inputSchema: object({
-      kind: { type: 'string', enum: ENVIRONMENT_KINDS },
-      version: { type: 'string', description: 'Requested tool version/channel. Many toolchains accept latest/stable/lts/current as documented by the tool.' },
+      kind: { type: 'string', enum: ['python', 'java', 'gradle', 'android'] },
+      version: { type: 'string', description: 'Java major version (for example 21) or Gradle version (for example 8.14.5).' },
       packages: { type: 'array', maxItems: 30, items: { type: 'string' }, description: 'pip package specs for python, or sdkmanager package IDs for android.' },
       acceptLicenses: { type: 'boolean', description: 'For Android SDK packages, explicitly accept Android SDK licenses. The permission dialog will show this value.' },
-      name: { type: 'string', description: 'For kind=portable, command name to expose on PATH.' },
-      url: { type: 'string', description: 'For kind=portable, official HTTPS download URL.' },
-      sha256: { type: 'string', description: 'For kind=portable, expected SHA-256 of the downloaded artifact.' },
-      archiveType: { type: 'string', enum: ['raw', 'zip', 'tar.gz', 'tar.xz'], description: 'For kind=portable, downloaded artifact format.' },
-      binaryPath: { type: 'string', description: 'For archived kind=portable artifacts, relative path to the executable inside the archive.' },
       timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
     }, ['kind']),
-  },
-  {
-    name: 'environment_status',
-    description: 'Inspect the managed session environment and check whether named commands are currently available on PATH. Use before provisioning when tool availability is unclear.',
-    inputSchema: object({ commands: { type: 'array', maxItems: 40, items: { type: 'string' } } }),
   },
   {
     name: 'bash',
@@ -451,10 +440,7 @@ export async function executeTool(name, input, ctx) {
   if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
 
   if (tool === 'ensure_environment') {
-    const kind = String(input?.kind || '').trim().toLowerCase();
-    const plan = BASE_ENVIRONMENT_KINDS.includes(kind)
-      ? prepareEnvironmentRequirement(root, input || {})
-      : prepareToolchainRequirement(root, input || {});
+    const plan = prepareEnvironmentRequirement(root, input || {});
     const result = await execBash(root, plan.script, Number(input?.timeoutMs) || 600_000, ctx.signal, ctx);
     const body = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     if (result.code !== 0) throw new Error(body || `${plan.title} provisioning exited ${result.code}`);
@@ -464,16 +450,6 @@ export async function executeTool(name, input, ctx) {
       output: [body || `${plan.title} ready`, '', 'Managed environment:', JSON.stringify(describeManagedEnvironment(root), null, 2)].join('\n'),
       title: plan.title,
       metadata: { environment: { kind: plan.kind, installed: manifest.installed } },
-    };
-  }
-
-  if (tool === 'environment_status') {
-    const environment = describeManagedEnvironment(root);
-    const commands = environmentCommandStatus(root, input?.commands || []);
-    return {
-      output: JSON.stringify({ environment, commands }, null, 2),
-      title: 'Environment status',
-      metadata: { environmentStatus: true },
     };
   }
 

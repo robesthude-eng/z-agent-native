@@ -28,4 +28,4 @@ jobs:
       - if: always()
         run: docker build -t z-agent-native:ci .
       - if: always()
-        run: docker run --rm --entrypoint /bin/bash z-agent-native:ci -lc 'python3 -m venv /tmp/z-agent-venv && /tmp/z-agent-venv/bin/python --version && java -version && javac -version && ssh -V && cmake --version && psql --version && gpg --version && ffmpeg -version | head -n 1'
+        run: docker run --rm --entrypoint /bin/bash z-agent-native:ci -lc 'python3 -m venv /tmp/z-agent-venv && /tmp/z-agent-venv/bin/python --version && java -version && javac -version && ssh -V && cmake --version && psql --version'
