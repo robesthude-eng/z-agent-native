@@ -37,6 +37,25 @@ test('bash runs in workspace with no provider secrets injected', async () => {
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('bash abort escalates to SIGKILL when a child ignores SIGTERM', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-bash-stop-'));
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  const running = executeTool('bash', {
+    command: `node -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"`,
+    timeoutMs: 8000,
+  }, { workspace: root, signal: controller.signal });
+
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  controller.abort();
+  const result = await running;
+  const elapsed = Date.now() - startedAt;
+
+  assert.equal(result.metadata?.exit, 130);
+  assert.ok(elapsed < 4000, `abort took ${elapsed}ms; expected forced termination well before the 8s tool timeout`);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('apply_patch changes workspace files and rejects traversal paths', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-patch-'));
   fs.writeFileSync(path.join(root, 'a.txt'), 'hello\n');
