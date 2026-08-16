@@ -80,13 +80,33 @@ function findChange(root, relativePath, options = {}) {
   return change;
 }
 
+function boundedWithMarker(text, marker) {
+  const value = String(text || '');
+  const suffix = String(marker || '').endsWith('\n') ? String(marker) : `${marker}\n`;
+  if (value.length + suffix.length <= MAX_DIFF_CHARS) {
+    return `${value}${value && !value.endsWith('\n') ? '\n' : ''}${suffix}`;
+  }
+
+  // Reserve marker space before clipping so the explanation can never be cut
+  // off by the same bound it describes. Prefer a complete diff line.
+  const budget = Math.max(0, MAX_DIFF_CHARS - suffix.length - 1);
+  let cut = value.lastIndexOf('\n', budget);
+  if (cut < 0) cut = budget;
+  const prefix = value.slice(0, cut + (value[cut] === '\n' ? 1 : 0));
+  return `${prefix}${prefix && !prefix.endsWith('\n') ? '\n' : ''}${suffix}`.slice(0, MAX_DIFF_CHARS);
+}
+
 function clipDiff(text) {
   const value = String(text || '');
   if (value.length <= MAX_DIFF_CHARS) return { patch: value, truncated: false };
-  return {
-    patch: `${value.slice(0, MAX_DIFF_CHARS)}\n\n[diff truncated: ${value.length - MAX_DIFF_CHARS} chars omitted]\n`,
-    truncated: true,
-  };
+
+  // Reserve a small fixed budget first, then compute the exact omitted count.
+  const provisionalBudget = Math.max(0, MAX_DIFF_CHARS - 96);
+  let cut = value.lastIndexOf('\n', provisionalBudget);
+  if (cut < 0) cut = provisionalBudget;
+  const omitted = Math.max(0, value.length - cut);
+  const marker = `[diff truncated: ${omitted} chars omitted]`;
+  return { patch: boundedWithMarker(value, marker), truncated: true };
 }
 
 function readFilePreview(full) {
@@ -124,10 +144,19 @@ function untrackedPatch(root, relativePath) {
     `+++ b/${relativePath}`,
     `@@ -0,0 +1,${lines.length} @@`,
   ];
-  const body = lines.map((line) => `+${line}`);
-  if (preview.truncated) body.push(`+[diff preview truncated: ${preview.omittedBytes} bytes omitted]`);
-  const clipped = clipDiff([...header, ...body].join('\n') + '\n');
-  return { patch: clipped.patch, binary: false, truncated: preview.truncated || clipped.truncated };
+  const raw = [...header, ...lines.map((line) => `+${line}`)].join('\n') + '\n';
+
+  if (preview.truncated) {
+    const marker = `+[diff preview truncated: ${preview.omittedBytes} bytes omitted]`;
+    return {
+      patch: boundedWithMarker(raw, marker),
+      binary: false,
+      truncated: true,
+    };
+  }
+
+  const clipped = clipDiff(raw);
+  return { patch: clipped.patch, binary: false, truncated: clipped.truncated };
 }
 
 function patchStats(patch) {
@@ -135,6 +164,7 @@ function patchStats(patch) {
   let deletions = 0;
   for (const line of String(patch || '').split('\n')) {
     if (line.startsWith('+++') || line.startsWith('---')) continue;
+    if (line.startsWith('+[diff preview truncated:')) continue;
     if (line.startsWith('+')) additions += 1;
     else if (line.startsWith('-')) deletions += 1;
   }
