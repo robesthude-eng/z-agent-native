@@ -7,7 +7,15 @@ import {
 } from './store.mjs';
 import { emit } from './events.mjs';
 import { messageId, partId, questionId, turnId } from './ids.mjs';
-import { buildCatalog, callModel } from './providers.mjs';
+import {
+  buildModelPlan,
+  callModelAutopilot,
+  modelKey,
+  promoteModelPlan,
+  subagentStepBudget,
+  taskStepBudget,
+} from './autopilot.mjs';
+import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
@@ -142,18 +150,6 @@ function promptText(parts) {
   return (Array.isArray(parts) ? parts : []).filter((p) => p?.type === 'text' && typeof p.text === 'string').map((p) => p.text).join('\n\n').trim();
 }
 
-async function pickModel(ownerId, requested) {
-  if (requested?.providerID && requested?.modelID) return requested;
-  const env = process.env.Z_AGENT_DEFAULT_MODEL || '';
-  if (env.includes('/')) {
-    const i = env.indexOf('/');
-    return { providerID: env.slice(0, i), modelID: env.slice(i + 1) };
-  }
-  const catalog = await buildCatalog(ownerId);
-  if (catalog.models[0]) return { providerID: catalog.models[0].providerID, modelID: catalog.models[0].modelID };
-  throw Object.assign(new Error('Нет доступной модели. Добавьте API key в Настройки → Провайдеры.'), { statusCode: 400 });
-}
-
 function updateTurn(sessionId, state) {
   const now = Date.now();
   const current = activeTurns.get(sessionId);
@@ -239,36 +235,42 @@ async function askQuestion(sessionId, questions, signal) {
 
 const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
 
-async function runSubagent(ownerId, model, input, workspace, signal) {
+async function runSubagent(ownerId, modelPlan, input, workspace, signal, projectContext = '') {
   const prompt = String(input?.prompt || '').trim();
   if (!prompt) throw new Error('Subagent prompt must not be empty');
   const profile = getSubagentProfile(input?.agent);
   let repositorySnapshot = '';
-  try {
-    const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
-    repositorySnapshot = toolOutputText(map).slice(0, 60_000);
-  } catch { /* repository map is an accelerator, not a hard dependency */ }
+  if (!projectContext) {
+    try {
+      const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
+      repositorySnapshot = toolOutputText(map).slice(0, 60_000);
+    } catch { /* repository map is an accelerator, not a hard dependency */ }
+  }
   const frames = [{
     role: 'user',
     content: [prompt, repositorySnapshot && `[Automatic repository snapshot]\n${repositorySnapshot}`].filter(Boolean).join('\n\n'),
   }];
-  const configuredSteps = Number(process.env.Z_AGENT_SUBAGENT_STEPS) || profile.maxSteps;
-  const maxSteps = Math.min(20, Math.max(2, configuredSteps));
+  const maxSteps = subagentStepBudget(profile, prompt);
+  let plan = modelPlan;
+  let selectedModel = plan?.candidates?.[0] || null;
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
-    const response = await callModel(ownerId, model, {
-      system: profile.system,
-      frames: compactFrames(frames, { maxChars: 160_000, maxObservationChars: 20_000 }),
+    const response = await callModelAutopilot(ownerId, plan, {
+      system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
+      frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
       tools: SUBAGENT_SAFE_TOOLS,
       signal,
     });
+    selectedModel = response.model || selectedModel;
+    plan = promoteModelPlan(plan, selectedModel);
     const calls = response.toolCalls || [];
     if (calls.length === 0) {
       return {
         report: response.text || `${profile.name} subagent completed without a written report.`,
         kind: profile.name,
         steps: step + 1,
-        repositorySnapshot: Boolean(repositorySnapshot),
+        repositorySnapshot: Boolean(repositorySnapshot || projectContext),
+        model: selectedModel ? modelKey(selectedModel) : '',
       };
     }
     frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
@@ -289,7 +291,8 @@ async function runSubagent(ownerId, model, input, workspace, signal) {
     report: `${profile.name} subagent reached its ${maxSteps}-step investigation limit.`,
     kind: profile.name,
     steps: maxSteps,
-    repositorySnapshot: Boolean(repositorySnapshot),
+    repositorySnapshot: Boolean(repositorySnapshot || projectContext),
+    model: selectedModel ? modelKey(selectedModel) : '',
   };
 }
 
@@ -330,11 +333,17 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     const workspace = workspaceFor(sessionId);
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
-      const subagent = await runSubagent(runtime.ownerId, runtime.model, call.arguments || {}, workspace, controller.signal);
+      const subagent = await runSubagent(runtime.ownerId, runtime.modelPlan, call.arguments || {}, workspace, controller.signal, runtime.projectContext);
       result = {
         output: subagent.report,
         title: call.arguments?.description || `${subagent.kind} subagent report`,
-        metadata: { subagent: true, agent: subagent.kind, steps: subagent.steps, repositorySnapshot: subagent.repositorySnapshot },
+        metadata: {
+          subagent: true,
+          agent: subagent.kind,
+          steps: subagent.steps,
+          repositorySnapshot: subagent.repositorySnapshot,
+          model: subagent.model,
+        },
       };
     } else {
       let attempt = 0;
@@ -429,6 +438,13 @@ async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcom
   assistant.info.outcome = outcome;
   assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
   if (error) assistant.info.error = { message: error?.message || String(error), name: error?.name || 'Error' };
+  rememberProjectTurn(sessionId, {
+    goal: strategy?.goal || '',
+    outcome: outcome?.status || verdict,
+    model: assistant.info.model || '',
+    changed: Boolean(strategy?.changed),
+    summary: textParts(assistant).slice(-2_000),
+  });
   persistAssistant(assistant);
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
   emit(sessionId, 'session.idle', {});
@@ -452,6 +468,14 @@ export function submitTurn(args) {
     .finally(() => activeActions.delete(key));
   activeActions.set(key, promise);
   return promise;
+}
+
+function safeAttemptInfo(attempt) {
+  return {
+    model: modelKey(attempt?.model),
+    ok: Boolean(attempt?.ok),
+    latencyMs: Math.max(0, Math.round(Number(attempt?.latencyMs) || 0)),
+  };
 }
 
 export async function runTurn({ sessionId, ownerId, parts, model, system }) {
@@ -491,11 +515,23 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
   let lastUsage = null;
 
   try {
-    const selected = await pickModel(ownerId, model);
-    assistant.info.model = `${selected.providerID}/${selected.modelID}`;
+    const runtime = {
+      ownerId,
+      modelPlan: await buildModelPlan(ownerId, model, strategy.goal),
+      projectContext: await getProjectContext(sessionId, workspace, controller.signal),
+    };
+    const initialModel = runtime.modelPlan.candidates[0];
+    assistant.info.model = modelKey(initialModel);
+    assistant.info.autopilot = {
+      enabled: true,
+      budget: taskStepBudget(strategy.goal),
+      candidates: runtime.modelPlan.candidates.map(modelKey),
+      selected: modelKey(initialModel),
+      fallbackCount: 0,
+    };
     const history = listMessages(sessionId).filter((m) => m.id !== assistant.id);
     const frames = framesFromMessages(history, workspace);
-    const maxSteps = Math.max(1, Number(process.env.Z_AGENT_MAX_STEPS) || 32);
+    const maxSteps = taskStepBudget(strategy.goal);
     const loopGuard = createLoopGuard();
     let gateReminders = 0;
     let guardedStop = null;
@@ -503,14 +539,24 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
     for (let step = 0; step < maxSteps; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
       const live = liveTextSink(assistant);
-      const response = await callModel(ownerId, selected, {
-        system: [systemPrompt(), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+      const response = await callModelAutopilot(ownerId, runtime.modelPlan, {
+        system: [systemPrompt(), runtime.projectContext, strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
         frames: compactFrames(frames),
         tools: availableToolDefinitions(),
         signal: controller.signal,
         onTextDelta: (delta) => live.push(delta),
       });
       const streamedText = live.finish();
+      runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
+      assistant.info.model = modelKey(response.model);
+      const failedAttempts = (response.attempts || []).filter((attempt) => !attempt.ok).length;
+      assistant.info.autopilot = {
+        ...assistant.info.autopilot,
+        candidates: runtime.modelPlan.candidates.map(modelKey),
+        selected: modelKey(response.model),
+        fallbackCount: Number(assistant.info.autopilot?.fallbackCount || 0) + failedAttempts,
+        lastAttempts: (response.attempts || []).map(safeAttemptInfo),
+      };
       lastUsage = response.usage || lastUsage;
       const calls = response.toolCalls || [];
       if (calls.length === 0) {
@@ -539,7 +585,7 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
       if (response.text && !streamedText) await emitText(assistant, response.text, 'text');
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
       for (const call of calls) {
-        const result = await executeCall(sessionId, assistant, call, controller, { ownerId, model: selected });
+        const result = await executeCall(sessionId, assistant, call, controller, runtime);
         observeTool(strategy, call, result);
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
         const loop = observeToolLoop(loopGuard, call, result);
@@ -669,6 +715,7 @@ export function clearAgentSessionState(sessionId) {
   if (activeTurns.has(sessionId)) return false;
   for (const key of activeActions.keys()) if (key.startsWith(`${sessionId}:`)) activeActions.delete(key);
   for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) questionWaiters.delete(id);
+  clearProjectContext(sessionId);
   return true;
 }
 
