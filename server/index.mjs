@@ -12,6 +12,7 @@ import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES } from './native/config.
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
 import { messageId, sessionId } from './native/ids.mjs';
 import { readJson, sendJson } from './native/json.mjs';
+import { handleProviderChannels } from './native/provider-channels.mjs';
 import {
   buildCatalog, fetchModels, probeModel, providerList, providerSpecs,
 } from './native/providers.mjs';
@@ -256,13 +257,16 @@ async function route(req, res) {
     return sendJson(res, 200, { ok: true, prefs });
   }
 
+  // ZCode-style owner-scoped provider channels: provider first, models second.
+  if (await handleProviderChannels(req, res, ownerId, url)) return;
+
   // Provider keys and live model catalog.
-  if (p === '/api/config/providers' && req.method === 'GET') return sendJson(res, 200, { providers: providerList(), default: {} });
-  if (p === '/api/provider' && req.method === 'GET') return sendJson(res, 200, { connected: listProviderKeyIds(ownerId), all: providerList(), default: {} });
+  if (p === '/api/config/providers' && req.method === 'GET') return sendJson(res, 200, { providers: providerList(ownerId), default: {} });
+  if (p === '/api/provider' && req.method === 'GET') return sendJson(res, 200, { connected: listProviderKeyIds(ownerId), all: providerList(ownerId), default: {} });
   if (p === '/api/auth/custom' && req.method === 'GET') return sendJson(res, 200, listProviderKeyIds(ownerId));
   if (p === '/api/auth/custom' && req.method === 'POST') {
     const body = await readJson(req, 256 * 1024);
-    if (!providerSpecs()[body.providerId] || !String(body.key || '').trim()) return sendJson(res, 400, { error: 'providerId/key required' });
+    if (!providerSpecs(ownerId)[body.providerId] || !String(body.key || '').trim()) return sendJson(res, 400, { error: 'providerId/key required' });
     setProviderKey(ownerId, body.providerId, String(body.key).trim());
     return sendJson(res, 200, { status: 'success' });
   }
@@ -275,7 +279,7 @@ async function route(req, res) {
   if (authProvider && !['custom','login','logout','register','me','change-password'].includes(authProvider[1])) {
     const providerId = decodeURIComponent(authProvider[1]);
     if (req.method === 'PUT') {
-      if (!providerSpecs()[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
+      if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
       const body = await readJson(req, 128 * 1024);
       const key = body.key || body.apiKey;
       if (!key) return sendJson(res, 400, { error: 'key required' });
@@ -284,16 +288,16 @@ async function route(req, res) {
     }
     if (req.method === 'DELETE') { deleteProviderKey(ownerId, providerId); return sendJson(res, 204, null); }
   }
-  if (p === '/api/providers/models' && req.method === 'GET') return sendJson(res, 200, await buildCatalog(ownerId));
+  if (p === '/api/providers/models' && req.method === 'GET') return sendJson(res, 200, await buildCatalog(ownerId, { force: url.searchParams.get('refresh') === '1' }));
   if (p === '/api/providers/manual-models' && req.method === 'GET') {
     const grouped = {};
-    for (const item of providerList()) grouped[item.id] = listManualModels(ownerId, item.id);
+    for (const item of providerList(ownerId)) grouped[item.id] = listManualModels(ownerId, item.id);
     return sendJson(res, 200, { providers: grouped });
   }
   const manual = /^\/api\/providers\/([^/]+)\/manual-models(?:\/(probe))?$/.exec(p);
   if (manual) {
     const providerId = decodeURIComponent(manual[1]);
-    if (!providerSpecs()[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
+    if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
     if (manual[2] === 'probe' && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
       return sendJson(res, 200, await probeModel(ownerId, providerId, { modelId: body.modelId, baseUrl: body.baseUrl || null }));
@@ -344,7 +348,7 @@ async function route(req, res) {
   const preview = /^\/api\/sandbox-proxy\/(ses_[A-Za-z0-9]+)\/~\/(.*)$/.exec(p);
   if (preview && req.method === 'GET') {
     const psid = preview[1];
-    if (!ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Session not found' });
+    if (!ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Not found' });
     const relative = preview[2].split('/').map(decodeURIComponent).join('/');
     const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
     const st = fs.statSync(full);
@@ -357,8 +361,6 @@ async function route(req, res) {
     fs.createReadStream(full).pipe(res);
     return;
   }
-
-
 
   return sendJson(res, 404, { error: `Unknown route: ${req.method} ${p}` });
 }
