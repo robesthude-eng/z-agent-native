@@ -131,7 +131,7 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-2 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:px-4">
+      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-1.5 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:gap-2 md:px-4">
         <Button
           variant="ghost"
           size="icon"
@@ -167,8 +167,8 @@ export default function TopBar() {
           )}
         </Button>
 
-        <div className="flex min-w-0 flex-1 items-center gap-3">
-          <div className="mx-auto shrink-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="mx-auto min-w-0 max-w-full">
             <ModelSelector />
           </div>
         </div>
@@ -202,7 +202,7 @@ export default function TopBar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowTerminal(true)}
           {...gate("terminal", "Терминал")}
           aria-label="Открыть терминал"
@@ -213,7 +213,7 @@ export default function TopBar() {
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowPreview(true)}
           {...gate("preview", "Предпросмотр")}
           aria-label="Открыть предпросмотр"
@@ -224,11 +224,11 @@ export default function TopBar() {
         <Button
           variant="ghost"
           size="icon"
-          className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 sm:inline-flex"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowChanges(true)}
           disabled={!sessionReady}
-          title="Изменения проекта"
-          aria-label="Показать изменения проекта"
+          title="Результат и изменения проекта"
+          aria-label="Показать результат и изменения проекта"
         >
           <GitBranch className="h-4 w-4" />
         </Button>
@@ -236,7 +236,7 @@ export default function TopBar() {
         <Button
           variant={workspaceOpen ? "secondary" : "ghost"}
           size="icon"
-          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => setWorkspaceOpen(!workspaceOpen)}
           title="Файлы проекта"
           aria-label="Показать или скрыть файлы проекта"
@@ -276,11 +276,11 @@ export default function TopBar() {
       </PanelModal>
 
       <PanelModal
-        title="Изменения"
+        title="Результат"
         open={showChanges}
         onClose={() => setShowChanges(false)}
       >
-        <LazyPanel label="изменения" skeleton={<PanelBodySkeleton />}>
+        <LazyPanel label="результат" skeleton={<PanelBodySkeleton />}>
           <ChangesPanel />
         </LazyPanel>
       </PanelModal>
