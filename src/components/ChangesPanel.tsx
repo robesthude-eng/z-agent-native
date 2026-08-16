@@ -10,20 +10,29 @@ interface ChangedFile {
   status?: string;
 }
 
+type ChangeKind = "added" | "deleted" | "renamed" | "modified";
+
+function changeKind(status?: string): ChangeKind {
+  const value = String(status || "").trim().toLowerCase();
+  if (value === "added" || value === "untracked" || value === "a" || value === "??") return "added";
+  if (value === "deleted" || value === "d") return "deleted";
+  if (value === "renamed" || value === "r") return "renamed";
+  return "modified";
+}
+
 function statusLabel(status?: string) {
-  const value = String(status || "").trim().toUpperCase();
-  if (value.includes("A") || value === "??") return "Добавлен";
-  if (value.includes("D")) return "Удалён";
-  if (value.includes("R")) return "Переименован";
-  if (value.includes("M")) return "Изменён";
+  const kind = changeKind(status);
+  if (kind === "added") return "Добавлен";
+  if (kind === "deleted") return "Удалён";
+  if (kind === "renamed") return "Переименован";
   return "Изменён";
 }
 
 function statusMark(status?: string) {
-  const value = String(status || "").trim().toUpperCase();
-  if (value === "??" || value.includes("A")) return "+";
-  if (value.includes("D")) return "−";
-  if (value.includes("R")) return "R";
+  const kind = changeKind(status);
+  if (kind === "added") return "+";
+  if (kind === "deleted") return "−";
+  if (kind === "renamed") return "R";
   return "M";
 }
 
@@ -65,9 +74,9 @@ export default function ChangesPanel() {
     let modified = 0;
     let deleted = 0;
     for (const file of files) {
-      const label = statusLabel(file.status);
-      if (label === "Добавлен") added += 1;
-      else if (label === "Удалён") deleted += 1;
+      const kind = changeKind(file.status);
+      if (kind === "added") added += 1;
+      else if (kind === "deleted") deleted += 1;
       else modified += 1;
     }
     return { added, modified, deleted };
