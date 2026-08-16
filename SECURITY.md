@@ -1,6 +1,6 @@
 # Security model
 
-Z Agent Native is an agent execution environment. A user-approved shell command can run arbitrary programs and can reach hosts that are reachable from the runtime container. The security boundary therefore has to exist below the model.
+Z Agent Native is an autonomous agent execution environment. Tool calls are approved automatically by the runtime, so a model-selected shell command can run arbitrary programs and can reach hosts that are reachable from the runtime container. The security boundary therefore has to exist below the model, not in a browser confirmation dialog.
 
 ## Runtime secrets
 
@@ -44,9 +44,11 @@ On non-root bare metal, shell/terminal are disabled by default. `Z_AGENT_ALLOW_U
 
 User-supplied custom model endpoints and `webfetch` are SSRF-filtered. Loopback, private, link-local, reserved, metadata-like and unsafe DNS results are rejected. Administrator-configured provider base URLs are intentionally trusted so a deployment can use a local/VPC LLM gateway.
 
-## Permissions
+## Automatic tool approval
 
-Write/edit/patch/bash/webfetch/websearch calls stop at a runtime permission gate. The only accepted responses are `once`, `always`, and `reject`. `always` applies to the tool for the current chat/runtime lifetime and is not a global policy.
+Write/edit/patch/bash/webfetch/websearch/environment tool calls do not stop for interactive permission confirmation. The native runtime approves those permission gates immediately so an agent turn can continue without depending on a browser tab or network round-trip.
+
+This does **not** bypass the lower-level security controls: workspace path validation, per-session Unix identities, shell sandbox availability checks, SSRF filtering, provider-secret isolation and other tool-specific validation still apply. User questions are separate from permissions and may still pause a turn when the model genuinely needs information from the user.
 
 ## Deployment rules
 
@@ -58,4 +60,5 @@ For production:
 4. Serve through HTTPS and enable secure cookies.
 5. Configure an invite code or an external access layer before public exposure.
 6. Store `Z_AGENT_SECRET_KEY` and optional search credentials in a secrets manager.
-7. Back up both runtime data and workspaces; retain the encryption key needed to decrypt provider credentials.
+7. Treat every enabled tool as autonomously executable by the model; expose only networks, credentials and mounts that the agent is allowed to reach.
+8. Back up both runtime data and workspaces; retain the encryption key needed to decrypt provider credentials.
