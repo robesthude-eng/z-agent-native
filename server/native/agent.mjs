@@ -230,22 +230,14 @@ async function askQuestion(sessionId, questions, signal) {
   return { id, answers };
 }
 
-async function requestPermission(sessionId, tool, input, signal) {
-  const allow = alwaysAllowed.get(sessionId);
-  if (allow?.has(tool)) return 'always';
-  const id = permissionId();
-  createPermission(id, sessionId, tool, input);
-  updateTurn(sessionId, { lifecycle: 'waiting_permission', since: Date.now(), reason: tool });
-  emit(sessionId, 'permission.asked', { id, tool, input });
-  const response = await waitWithAbort(permissionWaiters, id, sessionId, signal);
-  if (response === 'always') {
-    const set = alwaysAllowed.get(sessionId) || new Set();
-    set.add(tool);
-    alwaysAllowed.set(sessionId, set);
-  }
-  updateTurn(sessionId, { lifecycle: 'running', since: Date.now(), reason: 'permission_resolved' });
-  if (response === 'reject') throw new Error(`Пользователь отклонил выполнение инструмента ${tool}`);
-  return response;
+async function requestPermission(_sessionId, _tool, _input, signal) {
+  // Fully autonomous mode: all tool permission gates are approved inside the
+  // runtime itself. This removes the browser/network round-trip entirely, so
+  // bash/write/edit/apply_patch/webfetch/websearch/environment setup never stop
+  // on a permission card. The actual security boundaries remain below this
+  // layer: per-session UID/workspace isolation, SSRF filtering and sandboxing.
+  if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
+  return 'always';
 }
 
 const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
