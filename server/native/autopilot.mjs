@@ -134,15 +134,23 @@ function recordHealth(ownerId, model, ok, latencyMs, error = null) {
 }
 
 export async function buildModelPlan(ownerId, requested = null, goal = '') {
+  const explicit = normalizeCandidate(requested);
+  if (explicit) {
+    // User choice remains the zero-overhead primary path. Alternatives are
+    // discovered only if that request fails before any visible output.
+    return {
+      candidates: [explicit],
+      explicit: true,
+      expandOnFailure: true,
+      goal: String(goal || ''),
+      generatedAt: Date.now(),
+    };
+  }
   const catalog = await buildCatalog(ownerId);
   const configured = configuredModel();
-  const candidates = rankModelCandidates(catalog.models, requested, ownerHealth(ownerId), configured, goal);
+  const candidates = rankModelCandidates(catalog.models, null, ownerHealth(ownerId), configured, goal);
   if (!candidates.length) throw Object.assign(new Error('Нет доступной модели. Добавьте API key в Настройки → Провайдеры.'), { statusCode: 400 });
-  return {
-    candidates,
-    explicit: Boolean(requested?.providerID && requested?.modelID),
-    generatedAt: Date.now(),
-  };
+  return { candidates, explicit: false, expandOnFailure: false, goal: String(goal || ''), generatedAt: Date.now() };
 }
 
 export function fallbackEligible(error, { strict = false } = {}) {
@@ -187,6 +195,7 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       options.onAttempt?.(attempt);
       const strict = Boolean(plan?.explicit && index === 0);
       if (emitted || index >= candidates.length - 1 || !fallbackEligible(error, { strict })) {
+        error.autopilotEmitted = emitted;
         error.autopilotAttempts = attempts.map((item) => ({ model: item.model, ok: item.ok, latencyMs: item.latencyMs, error: item.ok ? '' : String(item.error?.message || item.error || '') }));
         throw error;
       }
@@ -195,17 +204,57 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
   throw lastError || new Error('All Autopilot model candidates failed');
 }
 
-export async function callModelAutopilot(ownerId, plan, request) {
-  return runFallbackPlan(
-    plan,
-    request,
-    (candidate, wrappedRequest) => callProviderModel(ownerId, candidate, wrappedRequest),
-    {
-      onAttempt(attempt) {
-        recordHealth(ownerId, attempt.model, attempt.ok, attempt.latencyMs, attempt.error);
-      },
+async function expandedPlan(ownerId, plan) {
+  const catalog = await buildCatalog(ownerId);
+  const primary = plan.candidates?.[0] || null;
+  const candidates = rankModelCandidates(catalog.models, primary, ownerHealth(ownerId), configuredModel(), plan.goal || '');
+  return {
+    ...plan,
+    explicit: false,
+    expandOnFailure: false,
+    candidates,
+    generatedAt: Date.now(),
+  };
+}
+
+function healthRecorder(ownerId) {
+  return {
+    onAttempt(attempt) {
+      recordHealth(ownerId, attempt.model, attempt.ok, attempt.latencyMs, attempt.error);
     },
-  );
+  };
+}
+
+export async function callModelAutopilot(ownerId, plan, request) {
+  try {
+    return await runFallbackPlan(
+      plan,
+      request,
+      (candidate, wrappedRequest) => callProviderModel(ownerId, candidate, wrappedRequest),
+      healthRecorder(ownerId),
+    );
+  } catch (error) {
+    const canExpand = Boolean(
+      plan?.expandOnFailure &&
+      !error?.autopilotEmitted &&
+      fallbackEligible(error, { strict: true }),
+    );
+    if (!canExpand) throw error;
+    const expanded = await expandedPlan(ownerId, plan);
+    const primaryKey = modelKey(plan.candidates?.[0]);
+    expanded.candidates = expanded.candidates.filter((candidate) => modelKey(candidate) !== primaryKey);
+    if (!expanded.candidates.length) throw error;
+    const fallback = await runFallbackPlan(
+      expanded,
+      request,
+      (candidate, wrappedRequest) => callProviderModel(ownerId, candidate, wrappedRequest),
+      healthRecorder(ownerId),
+    );
+    return {
+      ...fallback,
+      attempts: [...(error.autopilotAttempts || []), ...(fallback.attempts || [])],
+    };
+  }
 }
 
 export function promoteModelPlan(plan, selected) {
@@ -216,6 +265,7 @@ export function promoteModelPlan(plan, selected) {
   return {
     ...plan,
     explicit: false,
+    expandOnFailure: false,
     candidates: [hit, ...candidates.filter((candidate) => modelKey(candidate) !== key)],
   };
 }
