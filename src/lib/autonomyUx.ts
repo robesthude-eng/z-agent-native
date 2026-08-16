@@ -1,3 +1,4 @@
+import { useStore } from "../store/useStore";
 import { markStopRequested } from "./stopUx";
 
 const RESPONSE_ACTIONS = new Map<string, string>([
@@ -65,11 +66,6 @@ function hideLegacyPermissionUi(root: ParentNode) {
   }
 }
 
-function currentSessionId(): string | null {
-  const match = /^\/chat\/(ses_[A-Za-z0-9]+)/.exec(window.location.pathname);
-  return match?.[1] ?? null;
-}
-
 function installStopFeedback() {
   document.addEventListener("click", (event) => {
     const target = event.target;
@@ -79,8 +75,19 @@ function installStopFeedback() {
     );
     if (!button || button.dataset.zStopping === "true") return;
 
-    const sid = currentSessionId();
-    if (sid) markStopRequested(sid);
+    const state = useStore.getState();
+    const sid = state.currentID;
+    if (sid && !sid.startsWith("tmp_")) {
+      const list = state.messages[sid] ?? [];
+      let assistantId: string | undefined;
+      for (let i = list.length - 1; i >= 0; i--) {
+        if (list[i]?.role === "assistant") {
+          assistantId = list[i]?.id;
+          break;
+        }
+      }
+      markStopRequested(sid, assistantId);
+    }
 
     // Presentation only: React/store still own the actual cancellation. The
     // dataset drives a CSS label immediately, so a slow network never leaves
@@ -133,9 +140,6 @@ export function initAutonomyUx() {
   installStopFeedback();
   schedule();
   const observer = new MutationObserver(schedule);
-  // React streaming mainly mutates text nodes. Presentation hooks only care
-  // about controls/panels entering or leaving the tree, so observing
-  // characterData would rescan the document on every generated token.
   observer.observe(document.documentElement, {
     childList: true,
     subtree: true,
