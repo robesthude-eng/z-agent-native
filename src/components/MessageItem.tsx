@@ -34,14 +34,39 @@ import PartView from "./PartView";
 import ToolGroup from "./ToolGroup";
 import UserMessageText from "./UserMessageText";
 
-function toolCompleted(part: ToolPart): boolean {
+type TaskOutcomeStatus =
+  | "completed"
+  | "partial"
+  | "needs_input"
+  | "failed"
+  | "cancelled";
+
+function taskOutcomeStatus(message: Message): TaskOutcomeStatus | null {
+  const raw = (
+    message.info as
+      | ({ outcome?: { status?: unknown } } & Record<string, unknown>)
+      | undefined
+  )?.outcome?.status;
+  return raw === "completed" ||
+    raw === "partial" ||
+    raw === "needs_input" ||
+    raw === "failed" ||
+    raw === "cancelled"
+    ? raw
+    : null;
+}
+
+function toolStateStatus(part: ToolPart): string | undefined {
   const state = part.state;
-  const status =
-    typeof state === "string"
-      ? state
-      : state && typeof state === "object"
-        ? state.status
-        : undefined;
+  return typeof state === "string"
+    ? state
+    : state && typeof state === "object"
+      ? state.status
+      : undefined;
+}
+
+function toolCompleted(part: ToolPart): boolean {
+  const status = toolStateStatus(part);
   return (
     status === "completed" ||
     status === "success" ||
@@ -88,6 +113,8 @@ function assistantTurnSummary(messages: Message[]) {
   let completedAt: number | null = null;
   let failed = false;
   let stopped = false;
+  let needsInput = false;
+  let outcomeStatus: TaskOutcomeStatus | null = null;
   let anonymousAction = 0;
   const actions = new Set<string>();
   const changedFiles = new Set<string>();
@@ -102,6 +129,8 @@ function assistantTurnSummary(messages: Message[]) {
     if (typeof end === "number") {
       completedAt = completedAt == null ? end : Math.max(completedAt, end);
     }
+    const explicitOutcome = taskOutcomeStatus(message);
+    if (explicitOutcome) outcomeStatus = explicitOutcome;
     if (message.info?.error) {
       if (isAbortedError(message.info.error)) stopped = true;
       else failed = true;
@@ -111,11 +140,20 @@ function assistantTurnSummary(messages: Message[]) {
     for (const part of message.parts ?? []) {
       if (part.type !== "tool") continue;
       const toolPart = part as ToolPart;
+      const tool = String(toolPart.tool || "").toLowerCase();
+      const toolStatus = toolStateStatus(toolPart);
+      if (
+        tool === "question" &&
+        (toolStatus === "running" ||
+          toolStatus === "pending" ||
+          toolStatus === "waiting")
+      ) {
+        needsInput = true;
+      }
       actions.add(
         toolPart.callID || toolPart.id || `${message.id}:tool:${anonymousAction++}`,
       );
       if (!toolCompleted(toolPart)) continue;
-      const tool = String(toolPart.tool || "").toLowerCase();
       const input = toolInput(toolPart);
       if (!input) continue;
 
@@ -145,10 +183,25 @@ function assistantTurnSummary(messages: Message[]) {
   return {
     failed,
     stopped,
+    needsInput,
+    outcomeStatus,
     durationMs,
     actionCount: actions.size,
     changedFileCount: changedFiles.size,
   };
+}
+
+function turnSummaryLabel(turnMeta: ReturnType<typeof assistantTurnSummary>): string {
+  if (turnMeta.stopped || turnMeta.outcomeStatus === "cancelled") {
+    return "Остановлено пользователем";
+  }
+  if (turnMeta.needsInput || turnMeta.outcomeStatus === "needs_input") {
+    return "Нужны данные";
+  }
+  if (turnMeta.outcomeStatus === "partial") return "Частично выполнено";
+  if (turnMeta.outcomeStatus === "failed") return "Ошибка";
+  if (turnMeta.outcomeStatus === "completed") return "Готово";
+  return turnMeta.failed ? "Ошибка" : "Готово";
 }
 
 /**
@@ -239,13 +292,7 @@ function MessageItem({
   const turnMeta = !isUser ? assistantTurnSummary(msgArray) : null;
   const summaryBits: string[] = [];
   if (!isUser && !isWorking && turnMeta) {
-    summaryBits.push(
-      turnMeta.stopped
-        ? "Остановлено пользователем"
-        : turnMeta.failed
-          ? "Не завершено"
-          : "Готово",
-    );
+    summaryBits.push(turnSummaryLabel(turnMeta));
     if (turnMeta.durationMs != null) summaryBits.push(formatDuration(turnMeta.durationMs));
     if (turnMeta.actionCount > 0) {
       summaryBits.push(
@@ -373,6 +420,10 @@ function MessageItem({
       </div>
     );
   }
+
+  const failedSummary =
+    turnMeta?.outcomeStatus === "failed" ||
+    (turnMeta?.failed === true && turnMeta?.outcomeStatus !== "partial");
 
   return (
     <div className="group oc-msg-in flex flex-col gap-1.5 px-3 py-1 md:px-6">
@@ -531,7 +582,7 @@ function MessageItem({
         <div className="mt-1 flex min-h-10 flex-wrap items-center justify-between gap-x-3 gap-y-1 pl-1">
           {!isWorking && summaryBits.length > 0 && (
             <span
-              className={`text-[11px] ${turnMeta?.failed && !turnMeta.stopped ? "text-red-400/85" : "text-muted-foreground/70"}`}
+              className={`text-[11px] ${failedSummary ? "text-red-400/85" : "text-muted-foreground/70"}`}
               title={createdAt?.toLocaleString("ru-RU")}
             >
               {summaryBits.join(" · ")}
