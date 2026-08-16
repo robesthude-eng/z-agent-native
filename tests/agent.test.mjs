@@ -19,7 +19,7 @@ providerConfigs.upsertProviderConfig(ownerId, {
   id: providerId,
   name: 'Agent Test OpenAI',
   protocol: 'openai',
-  baseURL: 'https://api.example.com/v1',
+  baseURL: 'https://1.1.1.1/v1',
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-agent-test');
