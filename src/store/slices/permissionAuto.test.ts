@@ -1,12 +1,10 @@
 /**
  * Автоподтверждение разрешений.
  *
- * Пользователь работает в изолированной песочнице своего чата и не хочет
- * подтверждать каждый вызов инструмента. Но у автоподтверждения есть опасный
- * режим отказа: если ответ до сервера не дошёл, агент остаётся ждать
- * разрешения вечно, а карточки, которой это можно исправить, уже нет. Поэтому
- * тесты проверяют не только «карточка не появилась», но и возврат запроса в
- * очередь при сбое.
+ * Текущий native runtime подтверждает permission-gated tools на сервере и не
+ * должен присылать новые permission.asked. Эти тесты держат клиентский путь
+ * совместимости для старых/зависших событий: он отвечает "always", но никогда
+ * не возвращает карточку ручного подтверждения в интерфейс.
  */
 
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -60,7 +58,6 @@ describe("permission auto-approval", () => {
     const store = makeStore();
 
     store.applyEvent(askEvent());
-    // Ответ уходит асинхронно — даём микротаскам отработать.
     await Promise.resolve();
     await Promise.resolve();
 
@@ -68,7 +65,7 @@ describe("permission auto-approval", () => {
     expect(store.permissions).toEqual([]);
   });
 
-  test("puts the request back so a card can appear when the answer fails", async () => {
+  test("keeps the request hidden when the compatibility response fails", async () => {
     vi.spyOn(api, "respondPermission").mockRejectedValue(
       new Error("503 Service Unavailable"),
     );
@@ -79,9 +76,7 @@ describe("permission auto-approval", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    // Иначе агент ждал бы разрешения, которого сервер не получил, без
-    // единого элемента интерфейса, чтобы это исправить.
-    expect(store.permissions.map((p) => p.id)).toEqual(["perm_fail"]);
+    expect(store.permissions).toEqual([]);
     expect(store.error).toContain("503");
   });
 
@@ -99,7 +94,7 @@ describe("permission auto-approval", () => {
     expect(respond).toHaveBeenCalledTimes(1);
   });
 
-  test("permission.responded clears anything still queued", async () => {
+  test("permission.responded leaves the queue empty", async () => {
     vi.spyOn(api, "respondPermission").mockRejectedValue(new Error("boom"));
     const store = makeStore();
 
@@ -107,7 +102,7 @@ describe("permission auto-approval", () => {
     await Promise.resolve();
     await Promise.resolve();
     await Promise.resolve();
-    expect(store.permissions).toHaveLength(1);
+    expect(store.permissions).toEqual([]);
 
     store.applyEvent({
       type: "permission.responded",
