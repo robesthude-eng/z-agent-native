@@ -7,6 +7,7 @@ import path from 'node:path';
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-provider-test-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
+process.env.Z_AGENT_RELAY_URL = 'https://1.1.1.2/relay';
 
 const store = await import('../server/native/store.mjs');
 const providers = await import('../server/native/providers.mjs');
@@ -114,5 +115,26 @@ test('non-streaming provider calls retry transient HTTP errors', async () => {
     const result = await providers.probeModel(ownerId, 'openai', { modelId: 'gpt-test' });
     assert.equal(result.available, true);
     assert.equal(calls, 3);
+  } finally { globalThis.fetch = original; }
+});
+
+test('model discovery falls back to the direct endpoint after relay transport termination', async () => {
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (value.startsWith('https://1.1.1.2/relay/')) throw new TypeError('terminated');
+    return new Response(JSON.stringify({ data: [
+      { id: 'glm-test', name: 'GLM Test' },
+      { id: 'glm-test-2' },
+    ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const result = await providers.fetchModels(ownerId, 'openai', { force: true });
+    assert.equal(result.status, 'live');
+    assert.deepEqual(result.models.map((model) => model.id), ['glm-test', 'glm-test-2']);
+    assert.equal(urls.filter((url) => url.startsWith('https://1.1.1.2/relay/')).length, 3);
+    assert.equal(urls.at(-1), 'https://1.1.1.1/v1/models');
   } finally { globalThis.fetch = original; }
 });
