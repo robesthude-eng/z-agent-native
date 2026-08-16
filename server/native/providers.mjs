@@ -1,7 +1,8 @@
 import { assertSafeExternalUrl } from './security.mjs';
 import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
+import { listProviderConfigs } from './provider-configs.mjs';
 
-const specs = {
+const builtInSpecs = {
   openai: { name: 'OpenAI', kind: 'openai', baseURL: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1' },
   anthropic: { name: 'Anthropic', kind: 'anthropic', baseURL: process.env.ANTHROPIC_BASE_URL || 'https://api.anthropic.com/v1' },
   google: { name: 'Google Gemini', kind: 'google', baseURL: process.env.GOOGLE_BASE_URL || 'https://generativelanguage.googleapis.com/v1beta' },
@@ -16,14 +17,60 @@ const specs = {
   kiwi: { name: 'Kiwi LLM', kind: 'openai', baseURL: process.env.KIWI_BASE_URL || 'https://api.kiwillm.in/v1' },
 };
 
+function effectiveSpecs(ownerId) {
+  const specs = Object.fromEntries(Object.entries(builtInSpecs).map(([id, spec]) => [id, {
+    ...spec,
+    id,
+    enabled: true,
+    custom: false,
+    trustedBaseURL: true,
+  }]));
+  if (!ownerId) return specs;
+  for (const config of listProviderConfigs(ownerId)) {
+    const builtin = builtInSpecs[config.id];
+    if (builtin) {
+      specs[config.id] = {
+        ...builtin,
+        id: config.id,
+        name: config.name || builtin.name,
+        kind: config.protocol || builtin.kind,
+        baseURL: config.baseURL || builtin.baseURL,
+        enabled: config.enabled,
+        custom: false,
+        trustedBaseURL: (config.baseURL || builtin.baseURL) === builtin.baseURL,
+      };
+    } else {
+      specs[config.id] = {
+        id: config.id,
+        name: config.name,
+        kind: config.protocol,
+        baseURL: config.baseURL,
+        enabled: config.enabled,
+        custom: true,
+        trustedBaseURL: false,
+      };
+    }
+  }
+  return specs;
+}
+
 const cache = new Map();
 const discoveryCache = new Map();
 const CACHE_MS = 5 * 60 * 1000;
 const reqTimeout = 30_000;
 
-export function providerSpecs() { return specs; }
-export function providerList() {
-  return Object.entries(specs).map(([id, spec]) => ({ id, name: spec.name, models: {} }));
+export function isBuiltInProvider(providerId) { return Boolean(builtInSpecs[providerId]); }
+export function providerSpecs(ownerId = null) { return effectiveSpecs(ownerId); }
+export function providerList(ownerId = null) {
+  return Object.entries(effectiveSpecs(ownerId)).map(([id, spec]) => ({
+    id,
+    name: spec.name,
+    protocol: spec.kind,
+    baseURL: spec.baseURL,
+    enabled: spec.enabled !== false,
+    custom: Boolean(spec.custom),
+    models: {},
+  }));
 }
 
 function timeoutSignal(ms = reqTimeout, outerSignal) {
@@ -135,16 +182,18 @@ function providerAuth(spec, key) {
 }
 
 export async function fetchModels(ownerId, providerId, { force = false } = {}) {
-  const spec = specs[providerId];
+  const spec = effectiveSpecs(ownerId)[providerId];
   const key = getProviderKey(ownerId, providerId);
-  if (!spec || !key) return { status: 'unauthorized', models: [] };
-  const ck = `${ownerId}:${providerId}:${key.slice(-8)}`;
+  if (!spec || spec.enabled === false) return { status: 'disabled', models: [] };
+  if (!key) return { status: 'unauthorized', models: [] };
+  const ck = `${ownerId}:${providerId}:${spec.kind}:${spec.baseURL}:${key.slice(-8)}`;
   const old = cache.get(ck);
   if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models };
   try {
     let url;
     if (spec.kind === 'google') url = `${spec.baseURL.replace(/\/$/, '')}/models?key=${encodeURIComponent(key)}`;
     else url = `${spec.baseURL.replace(/\/$/, '')}/models`;
+    if (!spec.trustedBaseURL) await assertSafeExternalUrl(url);
     const body = await fetchJson(url, { headers: { accept: 'application/json', ...providerAuth(spec, key) } });
     let models = [];
     if (spec.kind === 'google') {
@@ -161,7 +210,6 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
     return { status: err.statusCode === 401 || err.statusCode === 403 ? 'unauthorized' : 'unavailable', models: [], error: err.message };
   }
 }
-
 
 function expandFinitePattern(pattern, limit = 64) {
   const input = String(pattern || '').trim();
@@ -200,11 +248,12 @@ function manualProviderId(providerId, model) {
   return model.base_url ? `custom:${providerId}:${Buffer.from(model.base_url).toString('base64url').slice(0, 20)}` : providerId;
 }
 
-export async function buildCatalog(ownerId) {
+export async function buildCatalog(ownerId, { force = false } = {}) {
   const models = [];
   const providers = {};
+  const specs = effectiveSpecs(ownerId);
   for (const [providerId, spec] of Object.entries(specs)) {
-    const found = await fetchModels(ownerId, providerId);
+    const found = await fetchModels(ownerId, providerId, { force });
     providers[providerId] = { status: found.status, count: found.models.length };
     const hidden = new Set(listHiddenModels(ownerId, providerId));
     for (const model of found.models) {
@@ -258,6 +307,7 @@ export function resolveModel(ownerId, model) {
   const providerID = model?.providerID || '';
   const modelID = model?.modelID || '';
   if (!providerID || !modelID) throw Object.assign(new Error('Модель не выбрана'), { statusCode: 400 });
+  const specs = effectiveSpecs(ownerId);
   if (providerID.startsWith('custom:')) {
     for (const [sourceId, spec] of Object.entries(specs)) {
       const manual = listManualModels(ownerId, sourceId).find((m) => {
@@ -271,8 +321,9 @@ export function resolveModel(ownerId, model) {
   const spec = specs[providerID];
   const key = getProviderKey(ownerId, providerID);
   if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
+  if (spec.enabled === false) throw Object.assign(new Error(`Провайдер ${spec.name} выключен`), { statusCode: 400 });
   if (!key) throw Object.assign(new Error(`API key для ${spec.name} не настроен`), { statusCode: 400 });
-  return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: true };
+  return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };
 }
 
 function safeJsonArgs(raw) {
@@ -523,11 +574,18 @@ export async function callModel(ownerId, model, request) {
 
 export async function probeModel(ownerId, providerId, { modelId, baseUrl = null }) {
   const start = Date.now();
-  const spec = specs[providerId];
+  const spec = effectiveSpecs(ownerId)[providerId];
   const key = getProviderKey(ownerId, providerId);
-  if (!spec || !key) return { available: false, latencyMs: Date.now() - start, checkedAt: Date.now(), error: 'API key не настроен' };
+  if (!spec || spec.enabled === false || !key) return { available: false, latencyMs: Date.now() - start, checkedAt: Date.now(), error: 'API key не настроен или провайдер выключен' };
   try {
-    const resolved = { providerId, displayProviderId: providerId, modelId, spec: { ...spec, ...(baseUrl ? { baseURL: baseUrl } : {}) }, key, trustedBaseURL: !baseUrl };
+    const resolved = {
+      providerId,
+      displayProviderId: providerId,
+      modelId,
+      spec: { ...spec, ...(baseUrl ? { baseURL: baseUrl } : {}) },
+      key,
+      trustedBaseURL: baseUrl ? false : Boolean(spec.trustedBaseURL),
+    };
     const pingTools = [];
     const result = resolved.spec.kind === 'anthropic'
       ? await callAnthropic(resolved, { system: 'Reply with OK.', frames: [{ role:'user',content:'OK' }], tools: pingTools })

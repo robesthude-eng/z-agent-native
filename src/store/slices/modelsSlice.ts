@@ -21,6 +21,7 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
       for (const model of catalog.models ?? []) {
         if (!model?.providerID || !model?.modelID) continue;
         const sourceProviderID = model.sourceProviderID || model.providerID;
+        if (catalog.providers?.[sourceProviderID]?.status === "disabled") continue;
         if (hiddenByProvider[sourceProviderID]?.includes(model.modelID)) continue;
         const provider = PROVIDERS.find((item) => item.id === sourceProviderID);
         entries.push({
