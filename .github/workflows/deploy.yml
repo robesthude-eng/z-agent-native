@@ -1,17 +1,25 @@
 name: Deploy
 
 on:
-  push:
-    branches:
-      - main
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
 
 concurrency:
   group: deploy-production
   cancel-in-progress: false
 
+permissions:
+  contents: read
+
 jobs:
   deploy:
     name: Deploy to production
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     environment:
@@ -19,8 +27,10 @@ jobs:
       url: https://agentwill.online
 
     steps:
-      - name: Checkout
+      - name: Checkout verified commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup SSH
         run: |
@@ -29,15 +39,30 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
 
-      - name: Deploy to server
+      - name: Deploy verified commit to server
+        env:
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} << 'DEPLOY'
+          ssh -i ~/.ssh/deploy_key \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "DEPLOY_SHA='$DEPLOY_SHA' bash -s" << 'DEPLOY'
             set -euo pipefail
             cd ~/z-agent-native
 
-            echo "→ Pulling latest code..."
+            echo "→ Fetching main and verified commit..."
             git fetch origin main
-            git reset --hard origin/main
+            LATEST_SHA="$(git rev-parse origin/main)"
+
+            # CI runs can finish out of order. Never let an older successful run
+            # roll production back after a newer commit has reached main.
+            if [ "$LATEST_SHA" != "$DEPLOY_SHA" ]; then
+              echo "→ Skipping superseded CI result: $DEPLOY_SHA"
+              echo "→ Current main is: $LATEST_SHA"
+              exit 0
+            fi
+
+            git reset --hard "$DEPLOY_SHA"
+            echo "→ Deploying verified SHA: $(git rev-parse HEAD)"
 
             echo "→ Building Docker image..."
             docker compose build --pull
@@ -50,7 +75,7 @@ jobs:
 
             echo "→ Health check..."
             sleep 5
-            if curl -sf http://127.0.0.1:3002/ > /dev/null 2>&1; then
+            if curl -sf http://127.0.0.1:3002/health > /dev/null 2>&1; then
               echo "✓ Application is healthy"
             else
               echo "✗ Application health check failed"
