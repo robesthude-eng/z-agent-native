@@ -30,8 +30,8 @@ function captureResponse() {
   };
 }
 
-test('provider management starts empty even though protocol adapters exist', () => {
-  assert.ok(Object.keys(providers.providerSpecs(ownerEmpty)).length > 0);
+test('provider management starts empty until the user adds a channel', () => {
+  assert.deepEqual(providers.providerSpecs(ownerEmpty), {});
   assert.deepEqual(listProviderChannels(ownerEmpty), []);
 });
 
