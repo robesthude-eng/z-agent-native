@@ -24,9 +24,9 @@ function StatusDot({ model }: { model: ModelEntry }) {
 }
 
 function sourceLabel(model: ModelEntry) {
-  if (model.source === "custom") return "custom endpoint";
-  if (model.source === "discovered") return "discovery";
-  if (model.source === "manual") return "manual";
+  if (model.source === "custom") return "свой API";
+  if (model.source === "discovered") return "найдена автоматически";
+  if (model.source === "manual") return "добавлена вручную";
   return null;
 }
 
@@ -72,8 +72,8 @@ export default function ModelSelector() {
   const personal = models.filter(
     (m) =>
       m.source === "manual" ||
-        m.source === "custom" ||
-        m.source === "discovered",
+      m.source === "custom" ||
+      m.source === "discovered",
   );
   const providerModels = models.filter(
     (m) =>
@@ -123,14 +123,14 @@ export default function ModelSelector() {
                 </span>
               )}
               {source && (
-                <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] uppercase tracking-wide text-muted-foreground">
+                <span className="rounded-full border border-border px-1.5 py-0.5 text-[9px] tracking-wide text-muted-foreground">
                   {source}
                 </span>
               )}
             </span>
             <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/80">
               {model.providerName}
-              {model.status === "cache" ? " · cache" : ""}
+              {model.status === "cache" ? " · сохранённый каталог" : ""}
             </span>
           </span>
         </span>
@@ -155,7 +155,7 @@ export default function ModelSelector() {
             </span>
           )}
           {current && sourceLabel(current) && (
-            <span className="hidden shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[9px] uppercase text-muted-foreground sm:inline-flex">
+            <span className="hidden shrink-0 rounded-full border border-border px-1.5 py-0.5 text-[9px] text-muted-foreground sm:inline-flex">
               {sourceLabel(current)}
             </span>
           )}
