@@ -34,6 +34,7 @@ export default function ModelSelector() {
   const models = useStore((s) => s.models);
   const selectedModel = useStore((s) => s.selectedModel);
   const setSelectedModel = useStore((s) => s.setSelectedModel);
+  const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -45,7 +46,22 @@ export default function ModelSelector() {
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
 
-  if (models.length === 0) return null;
+  const openModelSettings = () => {
+    setOpen(false);
+    setSettingsOpen(true);
+  };
+
+  if (models.length === 0) {
+    return (
+      <button
+        type="button"
+        className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
+        onClick={openModelSettings}
+      >
+        Подключить модель
+      </button>
+    );
+  }
 
   const current = models.find(
     (m) =>
@@ -168,6 +184,16 @@ export default function ModelSelector() {
               <div className="space-y-0.5">{list.map(renderOption)}</div>
             </div>
           ))}
+
+          <div className="mt-1 border-t border-border pt-1">
+            <button
+              type="button"
+              className="w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
+              onClick={openModelSettings}
+            >
+              Управление моделями…
+            </button>
+          </div>
         </div>
       )}
     </div>
