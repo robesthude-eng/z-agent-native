@@ -57,7 +57,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'edit',
     description: 'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file.',
-    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText', 'newText']),
+    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText']),
   },
   {
     name: 'apply_patch',
@@ -263,16 +263,29 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
     const killGroup = (signalName) => {
       try { process.kill(-child.pid, signalName); } catch { try { child.kill(signalName); } catch {} }
     };
-    const timeout = setTimeout(() => {
+    let forceKillTimer = null;
+    const terminateGroup = () => {
       killGroup('SIGTERM');
-      setTimeout(() => killGroup('SIGKILL'), 1000).unref?.();
-    }, Math.min(Math.max(timeoutMs || DEFAULT_TOOL_TIMEOUT_MS, 1000), 600000));
+      if (forceKillTimer) return;
+      forceKillTimer = setTimeout(() => {
+        forceKillTimer = null;
+        killGroup('SIGKILL');
+      }, 1000);
+      forceKillTimer.unref?.();
+    };
+    const timeout = setTimeout(terminateGroup, Math.min(Math.max(timeoutMs || DEFAULT_TOOL_TIMEOUT_MS, 1000), 600000));
     timeout.unref?.();
-    const abort = () => killGroup('SIGTERM');
+    const abort = () => terminateGroup();
     signal?.addEventListener('abort', abort, { once: true });
-    child.on('error', (err) => { clearTimeout(timeout); signal?.removeEventListener('abort', abort); reject(err); });
+    child.on('error', (err) => {
+      clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
+      signal?.removeEventListener('abort', abort);
+      reject(err);
+    });
     child.on('close', (code, sig) => {
       clearTimeout(timeout);
+      if (forceKillTimer) clearTimeout(forceKillTimer);
       signal?.removeEventListener('abort', abort);
       killGroup('SIGTERM');
       resolve({ code: code ?? (sig ? 130 : 1), stdout, stderr, signal: sig || null });
