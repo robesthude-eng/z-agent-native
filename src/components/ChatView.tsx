@@ -2,9 +2,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { isAbortedError, statusText } from "../api/eventGuards";
-import { dispositionOf, indicatorFor } from "../api/turnVerdict";
+import {
+  dispositionOf,
+  indicatorFor,
+  STUCK_ACTION,
+  STUCK_NOTICE,
+  VERDICT_POLL_MS,
+} from "../api/turnVerdict";
 import type { Message } from "../api/types";
 import { messageText } from "../lib/chatText";
+import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
 import AgentIndicator from "./AgentIndicator";
 import {
@@ -16,7 +23,6 @@ import {
 } from "./icons";
 import MessageItem from "./MessageItem";
 
-/** Человечная подпись текущего действия для индикатора работы агента. */
 function toolActivityLabel(tool: unknown): string {
   const t = (typeof tool === "string" ? tool : "").toLowerCase();
   if (["bash", "shell", "cmd"].includes(t)) return "выполняет команду…";
@@ -33,11 +39,6 @@ function toolActivityLabel(tool: unknown): string {
   return "выполняет действие…";
 }
 
-/**
- * Определяет текущую фазу работы агента по последней части
- * последнего assistant-сообщения: инструмент в работе → его подпись,
- * размышление → «думает…», текст → «пишет ответ…».
- */
 function currentActivityLabel(messages: Message[] | undefined): string {
   const list = messages ?? [];
   for (let i = list.length - 1; i >= 0; i--) {
@@ -130,16 +131,22 @@ export default function ChatView() {
     currentID ? s.status[currentID] : undefined,
   );
   const status = statusText(rawStatus);
-
   const projection = useStore((s) =>
     currentID ? (s.turnProjection[currentID] ?? null) : null,
   );
-  const indicator = indicatorFor(projection ? dispositionOf(projection) : null);
+  const projectionDisposition = projection ? dispositionOf(projection) : null;
+  const indicator = indicatorFor(projectionDisposition);
   const showWorking =
     indicator.kind === "unknown"
       ? status === "busy"
       : indicator.kind === "working";
-  const unresolved = indicator.kind === "unresolved" ? indicator : null;
+  const unresolved =
+    indicator.kind === "unresolved"
+      ? { notice: indicator.notice, action: indicator.action }
+      : indicator.kind === "unknown" &&
+          (status === "stale" || status === "orphaned")
+        ? { notice: STUCK_NOTICE, action: STUCK_ACTION }
+        : null;
 
   const error = useStore((s) => s.error);
   const refreshTurnProjection = useStore((s) => s.refreshTurnProjection);
@@ -151,6 +158,48 @@ export default function ChatView() {
   const [newAnswerCount, setNewAnswerCount] = useState(0);
   const [windowSize, setWindowSize] = useState(40);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
+
+  // Release A / Trust: a browser reload must not erase a server-side running
+  // turn. Read the authoritative projection immediately, then keep watching
+  // only while the turn is active/uncertain. Visibility and online events
+  // trigger an immediate reconciliation after mobile sleep or network loss.
+  useEffect(() => {
+    if (!currentID || isTmpSession(currentID)) return;
+    let disposed = false;
+    const sync = () => {
+      if (disposed || document.hidden) return;
+      void refreshTurnProjection(currentID);
+    };
+
+    sync();
+    const shouldWatch =
+      status === "busy" ||
+      status === "stale" ||
+      status === "orphaned" ||
+      projectionDisposition === "busy" ||
+      projectionDisposition === "waiting" ||
+      projectionDisposition === "stuck";
+    if (!shouldWatch) return;
+
+    const timer = window.setInterval(sync, VERDICT_POLL_MS);
+    const onVisibility = () => {
+      if (!document.hidden) sync();
+    };
+    const onOnline = () => sync();
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("online", onOnline);
+    return () => {
+      disposed = true;
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [
+    currentID,
+    projectionDisposition,
+    refreshTurnProjection,
+    status,
+  ]);
 
   const resetNewAnswers = () => {
     unreadAssistantIdsRef.current.clear();
@@ -222,10 +271,6 @@ export default function ChatView() {
     });
   }, [streamSignal]);
 
-  // If the user is reading history, do not drag them to the bottom. Instead,
-  // remember each newly active assistant response once and surface it in the
-  // floating down control. Token deltas for the same response do not inflate
-  // the counter.
   useEffect(() => {
     if (!streamSignal || atBottomRef.current || !messages?.length) return;
     for (let i = messages.length - 1; i >= 0; i--) {
