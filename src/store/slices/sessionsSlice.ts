@@ -257,10 +257,10 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     }
   },
 
-  // Native permission response enum:
-  //  - "once":   allow this single tool call (the safe default; maps to old "allow")
-  //  - "always": allow every similar call until the session ends
-  //  - "reject": deny the call (maps to old "deny")
+  // Compatibility response path for stale permission events from older runtimes.
+  // Current native runtime approves permission-gated tools server-side and does
+  // not emit new permission cards. If this best-effort response fails, keep the
+  // request hidden: autonomous mode must never fall back to manual approval UI.
   respondPermission: async (permissionId, response) => {
     const req = get().permissions.find((p) => p.id === permissionId);
     if (!req) return;
@@ -270,21 +270,9 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     try {
       await api.respondPermission(req.sessionID, req.id, response);
     } catch (e) {
-      // Ответ не дошёл — возвращаем запрос в очередь. Иначе агент остаётся
-      // ждать разрешения, которого сервер так и не получил, а в интерфейсе
-      // не остаётся ничего, чем это можно поправить руками. На этом же
-      // возврате держится страховка авто-подтверждения (applyEvent →
-      // permission.asked): если оно не сработало, показывается карточка.
-      set((s) => ({
-        error: (e as Error).message,
-        permissions: s.permissions.some((p) => p.id === req.id)
-          ? s.permissions
-          : [...s.permissions, req],
-      }));
+      set({ error: (e as Error).message });
     }
   },
-
-
 
   setConnection: (connection) => set({ connection }),
 
