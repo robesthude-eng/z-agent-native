@@ -89,13 +89,17 @@ export function upsertProviderConfig(ownerId, input, { custom = true } = {}) {
 }
 
 export function deleteProviderConfig(ownerId, providerId, { deleteData = false } = {}) {
-  const tx = db.transaction(() => {
+  db.exec('BEGIN IMMEDIATE');
+  try {
     db.prepare('DELETE FROM provider_configs WHERE owner_id=? AND provider_id=?').run(ownerId, providerId);
     if (deleteData) {
       db.prepare('DELETE FROM provider_keys WHERE owner_id=? AND provider_id=?').run(ownerId, providerId);
       db.prepare('DELETE FROM provider_models WHERE owner_id=? AND provider_id=?').run(ownerId, providerId);
       db.prepare('DELETE FROM hidden_models WHERE owner_id=? AND provider_id=?').run(ownerId, providerId);
     }
-  });
-  tx();
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
 }
