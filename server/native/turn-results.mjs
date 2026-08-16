@@ -393,6 +393,8 @@ export function recoverDanglingTurnResults() {
   for (const entry of fs.readdirSync(RESULT_DIR, { withFileTypes: true })) {
     if (!entry.isDirectory() || !/^ses_[A-Za-z0-9]+$/.test(entry.name)) continue;
     if (!fs.existsSync(activePath(entry.name))) continue;
+    const turn = getTurn(entry.name);
+    if (turn && ['running', 'waiting_permission', 'waiting_user_input'].includes(String(turn.lifecycle || ''))) continue;
     completeTurnResult(entry.name, 'runtime_restart');
   }
 }
