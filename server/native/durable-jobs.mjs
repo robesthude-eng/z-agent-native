@@ -60,6 +60,9 @@ function cleanPlan(plan) {
  */
 export function createDurableJob(input) {
   const sessionId = safeSessionId(input?.sessionId);
+  if (readJson(jobPath(sessionId))) {
+    throw Object.assign(new Error('Unfinished durable turn already exists for this session'), { statusCode: 409 });
+  }
   const now = Date.now();
   const job = {
     version: 1,
