@@ -1,15 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {
-  clearTurn, claimAction, completeAction, createPermission, createQuestion, failAction, getAction, getChat, getPermission, getQuestion,
-  listMessages, putMessage, renameChat, resolvePermission, resolveQuestion,
+  clearTurn, claimAction, completeAction, createQuestion, failAction, getAction, getChat, getQuestion,
+  listMessages, putMessage, renameChat, resolveQuestion,
   setTurn, workspaceFor,
 } from './store.mjs';
 import { emit } from './events.mjs';
-import { messageId, partId, permissionId, questionId, turnId } from './ids.mjs';
+import { messageId, partId, questionId, turnId } from './ids.mjs';
 import { buildCatalog, callModel } from './providers.mjs';
 import { safeWorkspacePath } from './security.mjs';
-import { availableToolDefinitions, executeTool, mutatesWorkspace, requiresPermission, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
+import { availableToolDefinitions, executeTool, mutatesWorkspace, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
 import {
@@ -27,8 +27,6 @@ let cachedSystem = null;
 const activeTurns = new Map();
 const activeActions = new Map();
 const questionWaiters = new Map();
-const permissionWaiters = new Map();
-const alwaysAllowed = new Map();
 
 function systemPrompt() {
   if (cachedSystem == null) cachedSystem = fs.readFileSync(SYSTEM_FILE, 'utf8');
@@ -167,7 +165,7 @@ function updateTurn(sessionId, state) {
     since: state.since ?? now,
   };
   setTurn(sessionId, projection);
-  emit(sessionId, 'session.status', { status: ['waiting_permission','waiting_user_input'].includes(projection.lifecycle) ? 'busy' : projection.lifecycle === 'failed' ? 'error' : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled' ? 'idle' : 'busy' });
+  emit(sessionId, 'session.status', { status: projection.lifecycle === 'waiting_user_input' ? 'busy' : projection.lifecycle === 'failed' ? 'error' : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled' ? 'idle' : 'busy' });
   return projection;
 }
 
@@ -237,16 +235,6 @@ async function askQuestion(sessionId, questions, signal) {
   const answers = await waitWithAbort(questionWaiters, id, sessionId, signal);
   updateTurn(sessionId, { lifecycle: 'running', since: Date.now(), reason: 'question_answered' });
   return { id, answers };
-}
-
-async function requestPermission(_sessionId, _tool, _input, signal) {
-  // Fully autonomous mode: all tool permission gates are approved inside the
-  // runtime itself. This removes the browser/network round-trip entirely, so
-  // bash/write/edit/apply_patch/webfetch/websearch/environment setup never stop
-  // on a permission card. The actual security boundaries remain below this
-  // layer: per-session UID/workspace isolation, SSRF filtering and sandboxing.
-  if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
-  return 'always';
 }
 
 const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
@@ -339,7 +327,6 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
   const part = toolPart(call);
   emitPart(assistant, part);
   try {
-    if (requiresPermission(call.name)) await requestPermission(sessionId, call.name, call.arguments, controller.signal);
     const workspace = workspaceFor(sessionId);
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
@@ -645,7 +632,6 @@ export function abortTurn(sessionId) {
   if (!active) return false;
   active.controller.abort();
   for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
-  for (const [id, waiter] of permissionWaiters) if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
   return true;
 }
 
@@ -669,16 +655,6 @@ export function rejectQuestion(sessionId, id) {
   return true;
 }
 
-export function answerPermission(sessionId, id, response) {
-  if (!['once', 'always', 'reject'].includes(response)) return false;
-  const p = getPermission(id);
-  if (!p || p.sessionID !== sessionId || p.status !== 'pending') return false;
-  resolvePermission(id, response);
-  emit(sessionId, 'permission.responded', { id, response });
-  permissionWaiters.get(id)?.resolve(response);
-  return true;
-}
-
 export function isTurnActive(sessionId) { return activeTurns.has(sessionId); }
 
 export async function waitForTurnIdle(sessionId, timeoutMs = 5000) {
@@ -691,14 +667,12 @@ export async function waitForTurnIdle(sessionId, timeoutMs = 5000) {
 
 export function clearAgentSessionState(sessionId) {
   if (activeTurns.has(sessionId)) return false;
-  alwaysAllowed.delete(sessionId);
   for (const key of activeActions.keys()) if (key.startsWith(`${sessionId}:`)) activeActions.delete(key);
   for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) questionWaiters.delete(id);
-  for (const [id, waiter] of permissionWaiters) if (waiter.sessionId === sessionId) permissionWaiters.delete(id);
   return true;
 }
 
 export function resetAgentStateForTests() {
   for (const active of activeTurns.values()) active.controller.abort();
-  activeTurns.clear(); activeActions.clear(); questionWaiters.clear(); permissionWaiters.clear(); alwaysAllowed.clear();
+  activeTurns.clear(); activeActions.clear(); questionWaiters.clear();
 }
