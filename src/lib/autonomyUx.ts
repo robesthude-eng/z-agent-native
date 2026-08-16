@@ -1,45 +1,8 @@
 import { useStore } from "../store/useStore";
 import { markStopRequested } from "./stopUx";
 
-const RESPONSE_ACTIONS = new Map<string, string>([
-  ["Спросить ещё раз", "↻ Ещё раз"],
-  ["Изменить последний запрос", "✎ Изменить"],
-]);
-
 function compactText(value: string | null | undefined): string {
   return String(value || "").replace(/\s+/g, " ").trim();
-}
-
-function polishComposer(root: ParentNode) {
-  const section = root.querySelector<HTMLElement>(
-    'section[aria-label="Поле ввода сообщения"]',
-  );
-  section?.parentElement?.classList.add("z-agent-composer-shell");
-}
-
-function polishResponseActions(root: ParentNode) {
-  for (const button of root.querySelectorAll<HTMLButtonElement>("button")) {
-    const text = compactText(button.textContent);
-    const replacement = RESPONSE_ACTIONS.get(text);
-    if (!replacement) continue;
-    button.textContent = replacement;
-    button.classList.add("z-agent-response-action");
-    if (text === "Спросить ещё раз") {
-      button.title = "Повторить последний запрос";
-      button.setAttribute("aria-label", "Повторить последний запрос");
-    } else {
-      button.title = "Изменить последний запрос";
-      button.setAttribute("aria-label", "Изменить последний запрос");
-    }
-  }
-}
-
-function polishTopBar(root: ParentNode) {
-  for (const button of root.querySelectorAll<HTMLButtonElement>("header button")) {
-    if (button.title) continue;
-    const aria = button.getAttribute("aria-label");
-    if (aria) button.title = aria;
-  }
 }
 
 function localizeWorkspace(root: ParentNode) {
@@ -48,24 +11,12 @@ function localizeWorkspace(root: ParentNode) {
   }
 }
 
-function hideLegacyPermissionUi(root: ParentNode) {
-  // New native turns never request tool permission, but a stale browser tab may
-  // still contain a card emitted by an older runtime. Do not let that legacy
-  // card block an otherwise autonomous session after a hot deploy.
-  for (const node of root.querySelectorAll<HTMLElement>("div, section, aside")) {
-    const text = compactText(node.textContent);
-    if (
-      text.startsWith("ЗАПРОС РАЗРЕШЕНИЯ") &&
-      text.includes("Разрешить") &&
-      text.includes("Отклонить")
-    ) {
-      node.style.display = "none";
-      node.setAttribute("aria-hidden", "true");
-      break;
-    }
-  }
-}
-
+/**
+ * Presentation-only Stop acknowledgement. React/store/runtime still own the
+ * cancellation itself; this bridge only makes the tap visible before a slow
+ * abort request returns. Unlike the old compatibility layer, it does not watch
+ * or rewrite every DOM mutation in the application.
+ */
 function installStopFeedback() {
   document.addEventListener("click", (event) => {
     const target = event.target;
@@ -89,17 +40,11 @@ function installStopFeedback() {
       markStopRequested(sid, assistantId);
     }
 
-    // Presentation only: React/store still own the actual cancellation. The
-    // dataset drives a CSS label immediately, so a slow network never leaves
-    // the user wondering whether the tap registered.
     button.dataset.zStopping = "true";
     button.setAttribute("aria-label", "Останавливаю ответ");
     button.title = "Останавливаю…";
     button.disabled = true;
 
-    // If the abort request itself fails and the runtime remains busy, restore
-    // the control so the user can retry. Normally React replaces this button
-    // with Send as soon as the server confirms idle, long before this timer.
     window.setTimeout(() => {
       if (!button.isConnected) return;
       delete button.dataset.zStopping;
@@ -110,46 +55,24 @@ function installStopFeedback() {
   });
 }
 
-function polish(root: ParentNode) {
-  polishComposer(root);
-  polishResponseActions(root);
-  polishTopBar(root);
-  localizeWorkspace(root);
-  hideLegacyPermissionUi(root);
+function installWorkspaceLabel() {
+  localizeWorkspace(document);
+  document.addEventListener("click", (event) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    if (!target.closest('[data-testid="workspace-toggle"]')) return;
+    // Workspace is rendered by React after the click handler returns.
+    window.setTimeout(() => localizeWorkspace(document), 0);
+  });
 }
 
 /**
- * Small DOM-level compatibility layer for presentation-only details that span
- * several independently rendered surfaces. Business logic stays in React/the
- * store; this only adds classes, labels and stale-runtime cleanup.
+ * Tiny compatibility entrypoint retained for existing bootstrap imports.
+ * No MutationObserver is installed: presentation work is bound only to the two
+ * explicit user actions that still need legacy bridging.
  */
 export function initAutonomyUx() {
   if (typeof window === "undefined" || typeof document === "undefined") return;
-
-  let queued = false;
-  const run = () => {
-    queued = false;
-    polish(document);
-  };
-  const schedule = () => {
-    if (queued) return;
-    queued = true;
-    requestAnimationFrame(run);
-  };
-
   installStopFeedback();
-  schedule();
-  const observer = new MutationObserver(schedule);
-  observer.observe(document.documentElement, {
-    childList: true,
-    subtree: true,
-  });
-
-  window.addEventListener(
-    "pagehide",
-    () => {
-      observer.disconnect();
-    },
-    { once: true },
-  );
+  installWorkspaceLabel();
 }
