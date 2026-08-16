@@ -30,10 +30,10 @@ type ManualRow = {
   is_free: boolean;
 };
 
-const PROTOCOL_LABELS: Record<ProviderProtocol, string> = {
-  openai: "OpenAI-compatible",
-  anthropic: "Anthropic-compatible",
-  google: "Google Gemini",
+const API_FORMAT_LABELS: Record<ProviderProtocol, string> = {
+  openai: "Chat completions (/chat/completions)",
+  anthropic: "Anthropic messages (/messages)",
+  google: "Google Gemini API",
 };
 
 const PROTOCOL_PLACEHOLDERS: Record<ProviderProtocol, string> = {
@@ -362,7 +362,7 @@ export function ProviderChannelManager() {
                     {channel.connected && <CheckIcon size={12} />}
                   </span>
                   <span className="block truncate text-[10px] text-muted-foreground">
-                    {PROTOCOL_LABELS[channel.protocol]}
+                    {API_FORMAT_LABELS[channel.protocol]}
                   </span>
                 </span>
                 {!channel.enabled && <span className="h-2 w-2 rounded-full bg-muted-foreground/40" />}
@@ -415,17 +415,20 @@ export function ProviderChannelManager() {
                   />
                 </label>
                 <label className="space-y-1.5">
-                  <span className="text-xs font-medium">Протокол</span>
+                  <span className="text-xs font-medium">API format</span>
                   <select
                     className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm"
                     value={draft.protocol}
                     disabled={!draft.custom && Boolean(draft.id)}
                     onChange={(event) => setDraft({ ...draft, protocol: event.target.value as ProviderProtocol })}
                   >
-                    <option value="openai">OpenAI-compatible</option>
-                    <option value="anthropic">Anthropic-compatible</option>
-                    <option value="google">Google Gemini</option>
+                    <option value="openai">{API_FORMAT_LABELS.openai}</option>
+                    <option value="anthropic">{API_FORMAT_LABELS.anthropic}</option>
+                    <option value="google">{API_FORMAT_LABELS.google}</option>
                   </select>
+                  <span className="block text-[10px] leading-relaxed text-muted-foreground">
+                    Выберите формат из документации провайдера. Для Chat Completions и Anthropic Z Agent сам добавляет служебный endpoint к Base URL.
+                  </span>
                 </label>
               </div>
 
