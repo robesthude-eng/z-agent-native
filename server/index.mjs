@@ -4,10 +4,12 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
+  abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, startDurableRecovery, submitTurn, waitForTurnIdle,
+} from './native/agent.mjs';
+import {
   authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
   loginUser, logoutToken, registerUser, requireAuth,
 } from './native/auth.mjs';
-import { abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle } from './native/agent.mjs';
 import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES } from './native/config.mjs';
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
 import { messageId, sessionId } from './native/ids.mjs';
@@ -26,11 +28,14 @@ import {
   setProviderKey, upsertManualModel, workspaceFor,
 } from './native/store.mjs';
 import { initTerminal } from './native/terminal.mjs';
+import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
 
 const STARTED_AT = Date.now();
 recoverInterruptedRuntimeState();
+const RECOVERED_TURNS = startDurableRecovery();
+recoverDanglingTurnResults();
 const AUTH_WINDOW_MS = 10 * 60 * 1000;
 const AUTH_MAX_ATTEMPTS = 20;
 const authAttempts = new Map();
@@ -380,7 +385,7 @@ const server = http.createServer((req, res) => {
 assertRuntimeSecretsPrivate();
 await initTerminal(server);
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Z Agent Native listening on http://0.0.0.0:${PORT}`);
+  console.log(`Z Agent Native listening on http://0.0.0.0:${PORT}${RECOVERED_TURNS ? ` · resumed ${RECOVERED_TURNS} durable turn(s)` : ''}`);
 });
 
 function shutdown() {
