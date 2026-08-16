@@ -12,6 +12,15 @@ import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, requiresPermission, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
+import {
+  classifyTaskOutcome,
+  createLoopGuard,
+  guardStopError,
+  observeToolLoop,
+  retryDelayMs,
+  shouldRetryToolCall,
+  stepLimitError,
+} from './turn-trust.mjs';
 
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
 let cachedSystem = null;
@@ -306,6 +315,26 @@ function toolPart(call) {
   };
 }
 
+function waitForRetry(delayMs, signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
+      return;
+    }
+    const timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, delayMs);
+    timer.unref?.();
+    const onAbort = () => {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort', onAbort);
+      reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+  });
+}
+
 async function executeCall(sessionId, assistant, call, controller, runtime) {
   const part = toolPart(call);
   emitPart(assistant, part);
@@ -321,7 +350,28 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
         metadata: { subagent: true, agent: subagent.kind, steps: subagent.steps, repositorySnapshot: subagent.repositorySnapshot },
       };
     } else {
-      result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal });
+      let attempt = 0;
+      while (true) {
+        try {
+          result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal });
+          break;
+        } catch (err) {
+          if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
+          if (!shouldRetryToolCall(call, err, attempt)) throw err;
+          attempt += 1;
+          part.state = {
+            ...part.state,
+            status: 'running',
+            metadata: {
+              ...(part.state?.metadata || {}),
+              retryCount: attempt,
+              lastRetryError: err?.message || String(err),
+            },
+          };
+          emitPart(assistant, part);
+          await waitForRetry(retryDelayMs(attempt - 1), controller.signal);
+        }
+      }
     }
     if (result?.kind === 'question') {
       const q = await askQuestion(sessionId, result.questions, controller.signal);
@@ -329,23 +379,24 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
         ...part.state,
         status: 'completed',
         output: `User answered: ${JSON.stringify(q.answers)}`,
-        metadata: { answers: q.answers, questionId: q.id },
+        metadata: { ...(part.state?.metadata || {}), answers: q.answers, questionId: q.id },
         time: { ...part.state.time, end: Date.now() },
       };
       emitPart(assistant, part);
       return { content: JSON.stringify({ answers: q.answers }), isError: false, metadata: part.state.metadata, mutatedPaths: [] };
     }
+    const resultMetadata = { ...(part.state?.metadata || {}), ...(result?.metadata || {}) };
     part.state = {
       ...part.state,
       status: 'completed',
       output: toolOutputText(result),
       title: result?.title || part.state.title,
-      metadata: { ...(result?.metadata || {}) },
+      metadata: resultMetadata,
       time: { ...part.state.time, end: Date.now() },
     };
     emitPart(assistant, part);
     if (mutatesWorkspace(call.name) || result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result?.mutatedPaths || ['.'] });
-    return { content: toolOutputText(result), isError: false, metadata: result?.metadata || {}, mutatedPaths: result?.mutatedPaths || [] };
+    return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [] };
   } catch (err) {
     part.state = {
       ...part.state,
@@ -355,8 +406,46 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     };
     emitPart(assistant, part);
     if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
-    return { content: `Error: ${err?.message || String(err)}`, isError: true, metadata: {}, mutatedPaths: [] };
+    return { content: `Error: ${err?.message || String(err)}`, isError: true, metadata: part.state?.metadata || {}, mutatedPaths: [] };
   }
+}
+
+function strategyInfo(strategy) {
+  return {
+    changed: strategy.changed,
+    verificationAttempts: strategy.verificationAttempts,
+    lastVerificationOk: strategy.lastVerificationOk,
+    toolErrors: strategy.toolErrors,
+  };
+}
+
+function assistantHasProgress(assistant, strategy) {
+  if (strategy?.changed) return true;
+  if (Array.isArray(strategy?.plan) && strategy.plan.some((item) => item?.status === 'completed')) return true;
+  return (assistant.parts || []).some((part) => {
+    if ((part.type === 'text' || part.type === 'reasoning') && String(part.text || '').trim()) return true;
+    if (part.type !== 'tool') return false;
+    const state = part.state && typeof part.state === 'object' ? part.state : {};
+    return state.status === 'completed' || state.status === 'success';
+  });
+}
+
+async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
+  if (note) await emitText(assistant, note, 'text');
+  assistant.time.completed = Date.now();
+  assistant.info.finish = finish;
+  assistant.info.tokens = usage ? {
+    input: usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens ?? usage.promptTokenCount,
+    output: usage.completion_tokens ?? usage.output_tokens ?? usage.outputTokens ?? usage.candidatesTokenCount,
+  } : undefined;
+  assistant.info.strategy = strategyInfo(strategy);
+  assistant.info.outcome = outcome;
+  assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
+  if (error) assistant.info.error = { message: error?.message || String(error), name: error?.name || 'Error' };
+  persistAssistant(assistant);
+  updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
+  emit(sessionId, 'session.idle', {});
+  return assistant;
 }
 
 export function submitTurn(args) {
@@ -411,15 +500,18 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
   };
   persistAssistant(assistant);
 
+  const strategy = createTurnStrategy(promptText(parts));
+  let lastUsage = null;
+
   try {
     const selected = await pickModel(ownerId, model);
     assistant.info.model = `${selected.providerID}/${selected.modelID}`;
     const history = listMessages(sessionId).filter((m) => m.id !== assistant.id);
     const frames = framesFromMessages(history, workspace);
-    const strategy = createTurnStrategy(promptText(parts));
     const maxSteps = Math.max(1, Number(process.env.Z_AGENT_MAX_STEPS) || 32);
-    let lastUsage = null;
+    const loopGuard = createLoopGuard();
     let gateReminders = 0;
+    let guardedStop = null;
 
     for (let step = 0; step < maxSteps; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
@@ -443,23 +535,18 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
           continue;
         }
         if (!streamedText) await emitText(assistant, response.text || 'Готово.', 'text');
-        assistant.time.completed = Date.now();
-        assistant.info.finish = response.finish || 'stop';
-        assistant.info.tokens = lastUsage ? {
-          input: lastUsage.prompt_tokens ?? lastUsage.input_tokens ?? lastUsage.inputTokens ?? lastUsage.promptTokenCount,
-          output: lastUsage.completion_tokens ?? lastUsage.output_tokens ?? lastUsage.outputTokens ?? lastUsage.candidatesTokenCount,
-        } : undefined;
-        assistant.info.strategy = {
-          changed: strategy.changed,
-          verificationAttempts: strategy.verificationAttempts,
-          lastVerificationOk: strategy.lastVerificationOk,
-          toolErrors: strategy.toolErrors,
-        };
-        assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
-        persistAssistant(assistant);
-        updateTurn(sessionId, { lifecycle: 'completed', verdict: 'completed', since: Date.now(), reason: 'model_final' });
-        emit(sessionId, 'session.idle', {});
-        return assistant;
+        const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
+        return await finalizeAssistant({
+          sessionId,
+          assistant,
+          strategy,
+          usage: lastUsage,
+          outcome,
+          finish: response.finish || 'stop',
+          lifecycle: 'completed',
+          verdict: 'completed',
+          reason: outcome.reason || 'model_final',
+        });
       }
 
       if (response.text && !streamedText) await emitText(assistant, response.text, 'text');
@@ -468,21 +555,83 @@ export async function runTurn({ sessionId, ownerId, parts, model, system }) {
         const result = await executeCall(sessionId, assistant, call, controller, { ownerId, model: selected });
         observeTool(strategy, call, result);
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
+        const loop = observeToolLoop(loopGuard, call, result);
+        if (loop) {
+          guardedStop = guardStopError(loop);
+          break;
+        }
       }
+      if (guardedStop) break;
     }
-    throw new Error(`Agent stopped after ${maxSteps} tool/model steps to prevent an infinite loop`);
+
+    const stopError = guardedStop || stepLimitError(maxSteps);
+    const progress = assistantHasProgress(assistant, strategy);
+    const outcome = classifyTaskOutcome({ strategy, kind: 'failed', reason: stopError.code, progress });
+    const failed = outcome.status === 'failed';
+    const note = guardedStop
+      ? `${guardedStop.message} ${failed ? 'Безопасная защита остановила задачу.' : 'Выполненная часть сохранена; задача остановлена, чтобы не продолжать цикл.'}`
+      : `Достигнут безопасный лимит ${maxSteps} шагов автономной работы. ${failed ? 'Задачу не удалось довести до результата.' : 'Выполненная часть сохранена, но задача может быть завершена не полностью.'}`;
+    return await finalizeAssistant({
+      sessionId,
+      assistant,
+      strategy,
+      usage: lastUsage,
+      outcome,
+      finish: failed ? 'error' : 'stop',
+      note,
+      error: failed ? stopError : null,
+      lifecycle: failed ? 'failed' : 'completed',
+      verdict: failed ? 'failed' : 'completed',
+      reason: stopError.code,
+    });
   } catch (err) {
     const cancelled = controller.signal.aborted || err?.name === 'AbortError';
-    assistant.time.completed = Date.now();
-    assistant.info.finish = cancelled ? 'stop' : 'error';
-    assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
-    if (!cancelled) assistant.info.error = { message: err?.message || String(err), name: err?.name || 'Error' };
-    if (!cancelled && !(assistant.parts || []).some((p) => p.type === 'text')) await emitText(assistant, `Ошибка агента: ${err?.message || String(err)}`, 'text');
-    persistAssistant(assistant);
-    updateTurn(sessionId, { lifecycle: cancelled ? 'cancelled' : 'failed', verdict: cancelled ? 'cancelled' : 'failed', since: Date.now(), reason: err?.message || String(err) });
-    emit(sessionId, 'session.idle', {});
-    if (!cancelled) throw err;
-    return assistant;
+    if (cancelled) {
+      const outcome = classifyTaskOutcome({ strategy, kind: 'cancelled', reason: 'user_cancelled' });
+      return await finalizeAssistant({
+        sessionId,
+        assistant,
+        strategy,
+        usage: lastUsage,
+        outcome,
+        finish: 'stop',
+        lifecycle: 'cancelled',
+        verdict: 'cancelled',
+        reason: err?.message || 'Turn cancelled',
+      });
+    }
+
+    const progress = assistantHasProgress(assistant, strategy);
+    const outcome = classifyTaskOutcome({ strategy, kind: 'failed', reason: err?.code || err?.name || 'runtime_error', progress });
+    if (outcome.status === 'partial') {
+      return await finalizeAssistant({
+        sessionId,
+        assistant,
+        strategy,
+        usage: lastUsage,
+        outcome,
+        finish: 'error',
+        note: `Работа остановилась из-за ошибки: ${err?.message || String(err)}. Выполненная часть сохранена.`,
+        lifecycle: 'completed',
+        verdict: 'completed',
+        reason: outcome.reason,
+      });
+    }
+
+    if (!(assistant.parts || []).some((p) => p.type === 'text')) await emitText(assistant, `Ошибка агента: ${err?.message || String(err)}`, 'text');
+    await finalizeAssistant({
+      sessionId,
+      assistant,
+      strategy,
+      usage: lastUsage,
+      outcome,
+      finish: 'error',
+      error: err,
+      lifecycle: 'failed',
+      verdict: 'failed',
+      reason: err?.message || String(err),
+    });
+    throw err;
   } finally {
     activeTurns.delete(sessionId);
     setTimeout(() => {
