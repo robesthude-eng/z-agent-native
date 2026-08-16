@@ -10,12 +10,12 @@ Standalone web AI-agent platform with the three-panel UX from the original proje
 Browser (React)
    │
    ├── REST       auth, sessions, files, models, settings
-   ├── SSE        messages, tool state, questions, permissions, file events
+   ├── SSE        messages, tool state, questions, file events
    └── Socket.IO  interactive terminal
    │
 Z Agent Native Runtime
    ├── Agent loop / context manager / subagents
-   ├── Questions + permission gates
+   ├── Questions + automatic tool approval
    ├── Tools: read, list, glob, grep, write, edit, apply_patch,
    │          bash/SSH, webfetch, websearch, todowrite, task
    ├── Workspace + git + file watcher events
@@ -33,7 +33,7 @@ Detailed internals: [ARCHITECTURE.md](ARCHITECTURE.md). Deployment/security boun
 
 ## What is native
 
-- **Agent turns** are owned by the runtime (`running`, `waiting_permission`, `waiting_user_input`, `completed`, `failed`, `cancelled`).
+- **Agent turns** are owned by the runtime (`running`, `waiting_user_input`, `completed`, `failed`, `cancelled`). Tool permission gates are approved automatically and do not pause the turn.
 - **Questions** suspend the same turn and resume it when the card is answered. No abort/new-message fallback.
 - **Tool calls** are first-class persisted parts of assistant messages.
 - **Attachments** are first-class chat/workspace objects. Text file contents are not rendered as user prose.
@@ -126,7 +126,7 @@ In Docker each chat also gets a distinct, monotonically allocated Unix UID start
 
 ## Security model
 
-The runtime is intentionally powerful: an allowed `bash` action can execute real commands and SSH to hosts reachable from the runtime container. Production deployments should therefore:
+The runtime is intentionally powerful and fully autonomous: permission-gated tool calls are approved inside the runtime without waiting for a browser confirmation. A model-selected `bash` action can execute real commands and SSH to hosts reachable from the runtime container. Production deployments should therefore:
 
 - use the supplied Docker image for production shell/terminal support;
 - mount only the dedicated `/data` and `/workspaces` volumes; never mount the Docker socket or arbitrary host paths;
@@ -134,7 +134,7 @@ The runtime is intentionally powerful: an allowed `bash` action can execute real
 - keep the runtime behind HTTPS and set `Z_AGENT_SECURE_COOKIES=1`;
 - set an invite code or put registration behind an external access layer;
 - use a secrets manager for `Z_AGENT_SECRET_KEY` and optional search credentials;
-- review permission prompts before allowing write/edit/patch/bash/network actions permanently.
+- expose only networks, credentials and mounts that the autonomous agent is allowed to use.
 
 Provider API keys are not exposed to the browser, terminal process or tool shell environment. On a non-root bare-metal runtime, shell/terminal tools are disabled by default because secure per-session setuid isolation is unavailable. `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` exists only as an explicit unsafe single-user development fallback.
 
