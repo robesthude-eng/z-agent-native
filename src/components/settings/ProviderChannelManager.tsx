@@ -42,6 +42,14 @@ const PROTOCOL_PLACEHOLDERS: Record<ProviderProtocol, string> = {
   google: "https://api.example.com/v1beta",
 };
 
+const PROVIDER_STATUS_LABELS: Record<string, string> = {
+  live: "каталог доступен",
+  cache: "каталог из кэша",
+  unavailable: "каталог недоступен",
+  unauthorized: "нет доступа к каталогу",
+  disabled: "выключен",
+};
+
 function providerColor(id: string) {
   const palette = ["#4f46e5", "#0f766e", "#b45309", "#be123c", "#0369a1", "#7e22ce"];
   let hash = 0;
@@ -52,6 +60,32 @@ function providerColor(id: string) {
 function errorText(error: unknown) {
   const value = error instanceof Error ? error.message : String(error || "Ошибка");
   return value.replace(/^\d+\s+\w+\s+/, "");
+}
+
+function providerStatusLabel(status: string) {
+  return PROVIDER_STATUS_LABELS[status] || status;
+}
+
+function catalogErrorText(error: unknown, status?: string) {
+  const raw = errorText(error).trim();
+  const lower = raw.toLowerCase();
+
+  if (status === "unauthorized" || /\b401\b|unauthori[sz]ed|invalid api.?key|authentication failed/.test(lower)) {
+    return "API-ключ не принят провайдером. Проверьте ключ и доступ к API.";
+  }
+  if (/локальные и служебные адреса|локальную\/служебную сеть|ssrf|private address/.test(lower)) {
+    return "Этот Base URL заблокирован настройками безопасности. Используйте публичный API endpoint провайдера.";
+  }
+  if (/terminated|fetch failed|econnreset|socket|network|aborted|timeout|timed out/.test(lower)) {
+    return "Не удалось загрузить список моделей: соединение с провайдером было прервано. Повторите попытку.";
+  }
+  if (/\b404\b|not found/.test(lower)) {
+    return "Провайдер не отдал каталог моделей по этому Base URL. Проверьте Base URL или добавьте Model ID вручную.";
+  }
+  if (/non-json|unexpected token|invalid json/.test(lower)) {
+    return "Провайдер вернул неожиданный ответ вместо каталога моделей.";
+  }
+  return "Не удалось загрузить список моделей. Проверьте Base URL, API-ключ и доступность каталога моделей.";
 }
 
 function draftFromChannel(channel: ProviderChannel): DraftChannel {
@@ -127,7 +161,9 @@ export function ProviderChannelManager() {
         const result = await providerChannelsApi.refresh(channel.id);
         setModels(result.models ?? []);
         setStatus(result.status);
-        if (result.error && (result.models?.length ?? 0) === 0) showNotice(result.error, true);
+        if (result.error && (result.models?.length ?? 0) === 0) {
+          showNotice(catalogErrorText(result.error, result.status), true);
+        }
       } else {
         const catalog = await api.listProviderCatalog();
         const rows = catalog.models
@@ -208,12 +244,21 @@ export function ProviderChannelManager() {
       });
       setApiKey("");
       setStatus(result.catalog.status);
+
+      const catalogReady = result.catalog.status === "live" || result.catalog.status === "cache";
+      const providerDisabled = result.catalog.status === "disabled";
+      const keyMissing = result.catalog.status === "unauthorized" && !result.catalog.error;
       showNotice(
-        result.catalog.status === "live" || result.catalog.status === "cache"
+        catalogReady
           ? `Провайдер сохранён. Найдено моделей: ${result.catalog.count ?? 0}.`
-          : result.catalog.error || "Провайдер сохранён. Каталог моделей пока недоступен.",
-        result.catalog.status === "unavailable",
+          : providerDisabled
+            ? "Провайдер сохранён и выключен."
+            : keyMissing
+              ? "Провайдер сохранён. Добавьте API key, чтобы загрузить модели."
+              : catalogErrorText(result.catalog.error, result.catalog.status),
+        !catalogReady && !providerDisabled && !keyMissing,
       );
+
       const updated = await syncChannels(result.provider.id);
       const channel = updated.find((item) => item.id === result.provider.id) ?? result.provider;
       setSelectedId(channel.id);
@@ -381,7 +426,7 @@ export function ProviderChannelManager() {
                   <div className="flex items-center gap-2">
                     <h3 className="text-base font-semibold">{draft.id ? draft.name : "Новый провайдер"}</h3>
                     {isConnected && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700">подключён</span>}
-                    {status && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{status}</span>}
+                    {status && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{providerStatusLabel(status)}</span>}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
                     {draft.custom ? "Пользовательский канал" : "Встроенный провайдер"}
@@ -441,7 +486,7 @@ export function ProviderChannelManager() {
                   placeholder={PROTOCOL_PLACEHOLDERS[draft.protocol]}
                 />
                 <span className="block text-[10px] text-muted-foreground">
-                  Можно указать обычный endpoint провайдера или совместимый relay endpoint. Для пользовательских URL runtime применяет SSRF-проверку.
+                  Можно указать обычный endpoint провайдера или совместимый relay endpoint. Для пользовательских URL runtime применяет SSRF-проверку до обращения к relay.
                 </span>
               </label>
 
@@ -498,9 +543,13 @@ export function ProviderChannelManager() {
                   <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
                     {visibleModels.length === 0 ? (
                       <div className="px-3 py-5 text-xs text-muted-foreground">
-                        {selected.connected
-                          ? "Endpoint не вернул список моделей. Добавьте Model ID вручную ниже."
-                          : "Сохраните API key, чтобы автоматически получить модели."}
+                        {!selected.connected
+                          ? "Сохраните API key, чтобы автоматически получить модели."
+                          : status === "unavailable"
+                            ? "Каталог моделей сейчас недоступен. Повторите загрузку или добавьте Model ID вручную."
+                            : status === "unauthorized"
+                              ? "API-ключ не даёт доступ к каталогу моделей. Проверьте ключ."
+                              : "Endpoint не вернул список моделей. Добавьте Model ID вручную ниже."}
                       </div>
                     ) : visibleModels.map((model) => (
                       <label key={model.id} className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/30">
