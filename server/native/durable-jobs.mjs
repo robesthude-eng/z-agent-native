@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from './config.mjs';
+import { DATA_DIR, DURABLE_JOB_TTL_MS } from './config.mjs';
 
 const JOB_DIR = path.join(DATA_DIR, 'durable-jobs');
 
@@ -60,8 +60,15 @@ function cleanPlan(plan) {
  */
 export function createDurableJob(input) {
   const sessionId = safeSessionId(input?.sessionId);
-  if (readJson(jobPath(sessionId))) {
-    throw Object.assign(new Error('Unfinished durable turn already exists for this session'), { statusCode: 409 });
+  const existing = readJson(jobPath(sessionId));
+  if (existing) {
+    // A job file left behind by a crash used to block the session forever with a
+    // permanent 409. After the TTL the stale file is taken over instead.
+    const age = Date.now() - Number(existing.updatedAt || existing.createdAt || 0);
+    if (!(age > DURABLE_JOB_TTL_MS)) {
+      throw Object.assign(new Error('Unfinished durable turn already exists for this session'), { statusCode: 409 });
+    }
+    try { fs.rmSync(jobPath(sessionId), { force: true }); } catch { /* recreated below */ }
   }
   const now = Date.now();
   const job = {
@@ -141,6 +148,20 @@ export function markDurableJobResuming(sessionId) {
 
 export function clearDurableJob(sessionId) {
   try { fs.rmSync(jobPath(sessionId), { force: true }); } catch { /* best effort */ }
+}
+
+/**
+ * Delete durable job files that no recovery will ever pick up again. Without
+ * this the directory grows forever and every restart re-reads dead jobs.
+ */
+export function pruneExpiredDurableJobs(ttlMs = DURABLE_JOB_TTL_MS) {
+  let removed = 0;
+  for (const job of listDurableJobs()) {
+    const age = Date.now() - Number(job.updatedAt || job.createdAt || 0);
+    if (age <= ttlMs) continue;
+    try { fs.rmSync(jobPath(job.sessionId), { force: true }); removed += 1; } catch { /* keep going */ }
+  }
+  return removed;
 }
 
 export function listDurableJobs() {
