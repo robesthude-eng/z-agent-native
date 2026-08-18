@@ -169,3 +169,21 @@ workspaces/
 ```
 
 Back up both persistent volumes. Back up the SQLite database **and** the master key (or retain the same `Z_AGENT_SECRET_KEY`) if provider credentials must remain decryptable after restore.
+
+## Security-relevant configuration
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Z_AGENT_INVITE_CODE` | empty | Required for every account after the bootstrap admin. |
+| `Z_AGENT_ALLOW_OPEN_REGISTRATION` | `0` | Explicit opt-in to open registration. Without it and without an invite code, registration is closed. |
+| `Z_AGENT_TRUST_PROXY` | `0` | Trust the first `X-Forwarded-For` hop for auth rate limiting. Enable only behind a proxy that rewrites it. |
+| `Z_AGENT_ALLOWED_ORIGINS` | empty | Comma-separated browser origins accepted by the terminal websocket when the public origin differs from `Host`. |
+| `Z_AGENT_SECURE_COOKIES` | `0` | Set to `1` behind HTTPS. |
+| `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. The relay sees API keys and prompts, so it stays off unless you operate it. |
+| `Z_AGENT_TOOLCHAIN_SHA256` | empty | JSON map of pinned toolchain digests, e.g. `{"java:21":"<sha256>"}`. |
+| `Z_AGENT_MAX_STEPS` | derived | Pins the per-turn step budget; otherwise it is derived from task complexity and clamped at 128. |
+| `Z_AGENT_GREP_TIMEOUT_MS` | `5000` | Deadline for `grep`; regex searches run in a worker thread and are cancelled at the deadline. |
+| `Z_AGENT_DURABLE_JOB_TTL_MS` | `86400000` | After this age a crashed durable turn can be taken over instead of blocking the session. |
+| `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Total concurrent upload bytes accepted by the runtime. |
+
+See `SECURITY.md` for the container, deployment and toolchain hardening notes.
