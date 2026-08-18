@@ -57,7 +57,7 @@ function tree(root) {
 function uniqueUploadPath(root, name) {
   const uploads = safeWorkspacePath(root, 'uploads');
   fs.mkdirSync(uploads, { recursive: true });
-  const clean = path.basename(name || 'file').replace(/[\\u0000-\\u001f]/g, '_');
+  const clean = path.basename(name || 'file').replace(/[\u0000-\u001f]/g, '_');
   const ext = path.extname(clean);
   const stem = path.basename(clean, ext) || 'file';
   let candidate = path.join(uploads, clean);
