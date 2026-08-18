@@ -13,12 +13,15 @@ WORKDIR /app
 # Keep a broad but bounded development substrate in the image. Agent sessions
 # still run as unprivileged per-session UIDs; language packages and extra SDKs
 # are provisioned below HOME by ensure_environment rather than with sudo/apt.
+# Network recon tooling (netcat, ping, dig, psql) is deliberately absent: model
+# generated code runs inside this image and must not find a ready made
+# lateral-movement kit next to it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     bash git openssh-client rsync curl ca-certificates unzip zip xz-utils util-linux file jq \
     python3 python3-venv python3-pip python3-dev \
     build-essential cmake ninja-build pkg-config libffi-dev libssl-dev \
     openjdk-17-jdk-headless \
-    sqlite3 postgresql-client dnsutils netcat-openbsd iputils-ping \
+    sqlite3 \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json

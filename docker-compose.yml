@@ -2,10 +2,44 @@ services:
   z-agent:
     build: .
     restart: unless-stopped
+    # Loopback only. TLS termination and public exposure belong to the reverse
+    # proxy in front of this container, not to Docker's default 0.0.0.0 publish
+    # rule. 3002 is the port the deploy health check probes.
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"
+      - "127.0.0.1:3002:3000"
     env_file:
       - .env
+    # The runtime starts as root inside this dedicated container so it can create
+    # one unprivileged UID per agent session. Keep only the capabilities that
+    # requires, and forbid gaining any new privileges on top of them.
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - DAC_OVERRIDE
+      - FOWNER
+      - SETUID
+      - SETGID
+      - KILL
+    # Model-generated code runs in this container: bound the blast radius of a
+    # fork bomb, a runaway build or a memory leak.
+    pids_limit: 2048
+    mem_limit: 6g
+    memswap_limit: 6g
+    cpus: 4.0
+    ulimits:
+      nofile:
+        soft: 4096
+        hard: 8192
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
     volumes:
       - z-agent-data:/data
       - z-agent-workspaces:/workspaces
