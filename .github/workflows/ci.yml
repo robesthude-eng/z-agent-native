@@ -17,9 +17,14 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
+      - if: always()
+        run: npm run lint
       - run: npm run test:native
       - run: npm test
       - if: always()
         run: npm run typecheck
       - if: always()
         run: npm run build
+      # Known high severity advisories in runtime dependencies must fail CI.
+      - if: always()
+        run: npm audit --omit=dev --audit-level=high

@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import { INVITE_CODE, SECURE_COOKIES, SESSION_TTL_MS } from './config.mjs';
+import { ALLOW_OPEN_REGISTRATION, INVITE_CODE, SECURE_COOKIES, SESSION_TTL_MS } from './config.mjs';
 import {
   createAuthSession, createUser, deleteAuthSession, deleteOtherAuthSessions,
   getAuthSession, getUser, pruneAuthSessions, updatePassword, userCount,
@@ -60,8 +60,19 @@ export function clearCookies() {
   return [cookie(SESSION_COOKIE, '', { maxAge: 0 }), cookie(CSRF_COOKIE, '', { maxAge: 0, httpOnly: false })];
 }
 
+// Expired-session cleanup is a full table scan; once a minute is plenty and
+// keeps it off the hot path of every request (including static assets).
+const PRUNE_INTERVAL_MS = 60_000;
+let lastPruneAt = 0;
+
+function pruneExpiredSessions(now = Date.now()) {
+  if (now - lastPruneAt < PRUNE_INTERVAL_MS) return;
+  lastPruneAt = now;
+  pruneAuthSessions(now - SESSION_TTL_MS);
+}
+
 export function authFromRequest(req) {
-  pruneAuthSessions(Date.now() - SESSION_TTL_MS);
+  pruneExpiredSessions();
   const token = parseCookies(req)[SESSION_COOKIE];
   if (!token) return null;
   const session = getAuthSession(token);
@@ -96,9 +107,15 @@ export function checkCsrf(req, res) {
 export function registerUser(email, password, inviteCode = '') {
   const clean = String(email || '').trim().toLowerCase();
   if (!clean.includes('@') || String(password || '').length < 6) throw Object.assign(new Error('Введите корректный email и пароль минимум из 6 символов.'), { statusCode: 400 });
+  const bootstrap = userCount() === 0;
+  // Fail closed: only the very first (admin) account may be created without an
+  // invite code. Public registration must be enabled explicitly.
+  if (!bootstrap && !INVITE_CODE && !ALLOW_OPEN_REGISTRATION) {
+    throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
+  }
   if (INVITE_CODE && inviteCode !== INVITE_CODE) throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
   if (getUser(clean)) throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
-  const role = userCount() === 0 ? 'admin' : 'user';
+  const role = bootstrap ? 'admin' : 'user';
   createUser(clean, hashPassword(password), role);
   return getUser(clean);
 }

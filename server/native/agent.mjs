@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {
   clearTurn, claimAction, completeAction, createQuestion, failAction, getAction, getChat, getQuestion,
-  listMessages, putMessage, renameChat, resolveQuestion,
+  getTurn, listMessages, putMessage, renameChat, resetAction, resolveQuestion,
   setTurn, workspaceFor,
 } from './store.mjs';
 import { emit } from './events.mjs';
@@ -44,6 +44,18 @@ let cachedSystem = null;
 const activeTurns = new Map();
 const activeActions = new Map();
 const questionWaiters = new Map();
+// sessionId -> Set<resolver>. Lets waitForTurnIdle react to the moment a turn
+// ends instead of polling activeTurns every 20 ms.
+const idleWaiters = new Map();
+
+function notifyTurnIdle(sessionId) {
+  const waiters = idleWaiters.get(sessionId);
+  if (!waiters) return;
+  idleWaiters.delete(sessionId);
+  for (const resolve of waiters) {
+    try { resolve(); } catch { /* a waiter must never break turn teardown */ }
+  }
+}
 const RECOVERY_INSPECTION_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'repo_map', 'environment_status', 'task']);
 
 function systemPrompt() {
@@ -171,7 +183,14 @@ function updateTurn(sessionId, state) {
     since: state.since ?? now,
   };
   setTurn(sessionId, projection);
-  emit(sessionId, 'session.status', { status: projection.lifecycle === 'waiting_user_input' ? 'busy' : projection.lifecycle === 'failed' ? 'error' : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled' ? 'idle' : 'busy' });
+  // `status` stays a three-value field for existing clients; `lifecycle` carries
+  // the detail they need to tell "working" apart from "waiting for you".
+  emit(sessionId, 'session.status', {
+    status: projection.lifecycle === 'waiting_user_input' ? 'busy' : projection.lifecycle === 'failed' ? 'error' : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled' ? 'idle' : 'busy',
+    lifecycle: projection.lifecycle,
+    turnID: projection.turnId,
+    waiting: projection.lifecycle === 'waiting_user_input' || projection.lifecycle === 'waiting_permission',
+  });
   return projection;
 }
 
@@ -809,6 +828,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     throw err;
   } finally {
     activeTurns.delete(sessionId);
+    notifyTurnIdle(sessionId);
     setTimeout(() => {
       if (!activeTurns.has(sessionId)) clearTurn(sessionId);
     }, 1500).unref?.();
@@ -823,7 +843,9 @@ export function submitTurn(args) {
   if (active) return active;
   const prior = getAction(args.sessionId, actionId);
   if (prior?.state === 'completed' && prior.result) return Promise.resolve(prior.result);
-  if (prior?.state === 'failed') return Promise.reject(new Error(prior.result?.error || 'Previous attempt failed'));
+  // A failed attempt must not poison the idempotency key forever: retrying the
+  // same submission after a transient failure is legitimate.
+  if (prior?.state === 'failed') resetAction(args.sessionId, actionId);
   if (prior?.state === 'running') return Promise.reject(Object.assign(new Error('This action is already running'), { statusCode: 409 }));
   claimAction(args.sessionId, actionId);
   const promise = runTurn({ ...args, actionId })
@@ -906,10 +928,15 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
     if (!actionId) clearDurableJob(sessionId);
     return result;
   } catch (err) {
-    if (activeTurns.has(sessionId)) {
-      activeTurns.delete(sessionId);
+    // executeTurnLifecycle already cleared activeTurns in its own finally block,
+    // so gating on activeTurns.has() meant this projection was never written and
+    // the session could stay "busy" in the UI after a crash.
+    activeTurns.delete(sessionId);
+    notifyTurnIdle(sessionId);
+    const settled = ['failed', 'cancelled', 'completed'].includes(String(getTurn(sessionId)?.lifecycle || ''));
+    if (!settled) {
       setTurn(sessionId, { turnId: tId, lifecycle: 'failed', verdict: 'failed', reason: err?.message || String(err), since: Date.now() });
-      emit(sessionId, 'session.status', { status: 'error' });
+      emit(sessionId, 'session.status', { status: 'error', lifecycle: 'failed', turnID: tId, waiting: false });
     }
     if (!actionId) clearDurableJob(sessionId);
     throw err;
@@ -1035,10 +1062,20 @@ export function rejectQuestion(sessionId, id) {
 export function isTurnActive(sessionId) { return activeTurns.has(sessionId); }
 
 export async function waitForTurnIdle(sessionId, timeoutMs = 5000) {
-  const deadline = Date.now() + Math.max(0, Number(timeoutMs) || 0);
-  while (activeTurns.has(sessionId) && Date.now() < deadline) {
-    await new Promise((resolve) => setTimeout(resolve, 20));
-  }
+  if (!activeTurns.has(sessionId)) return true;
+  await new Promise((resolve) => {
+    const waiters = idleWaiters.get(sessionId) || new Set();
+    idleWaiters.set(sessionId, waiters);
+    const done = () => {
+      clearTimeout(timer);
+      waiters.delete(done);
+      if (!waiters.size) idleWaiters.delete(sessionId);
+      resolve();
+    };
+    const timer = setTimeout(done, Math.max(0, Number(timeoutMs) || 0));
+    timer.unref?.();
+    waiters.add(done);
+  });
   return !activeTurns.has(sessionId);
 }
 
@@ -1053,5 +1090,8 @@ export function clearAgentSessionState(sessionId) {
 
 export function resetAgentStateForTests() {
   for (const active of activeTurns.values()) active.controller.abort();
+  const sessions = [...activeTurns.keys()];
   activeTurns.clear(); activeActions.clear(); questionWaiters.clear();
+  for (const sessionId of sessions) notifyTurnIdle(sessionId);
+  idleWaiters.clear();
 }

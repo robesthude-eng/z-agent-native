@@ -1,6 +1,8 @@
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import { authFromRequest } from './auth.mjs';
+import { ALLOWED_ORIGINS } from './config.mjs';
+import { isSessionId } from './security.mjs';
 import { managedShellEnvironment } from './environment.mjs';
 import { ownsChat, workspaceFor } from './store.mjs';
 import { prepareWorkspaceSandbox, shellSandboxAvailable } from './sandbox.mjs';
@@ -12,13 +14,25 @@ try {
   ptySpawn = mod.spawn || mod.default?.spawn || null;
 } catch { /* optional */ }
 
+/**
+ * Strict origin check for the terminal socket handshake.
+ *
+ * A missing Origin header used to pass, which let any non-browser client (and
+ * therefore any stolen cookie) open a shell. The handshake is now rejected
+ * unless the request carries an Origin that matches the configured allowlist,
+ * or the Host the request was sent to.
+ */
 export function sameOrigin(req) {
   const origin = String(req.headers?.origin || '');
-  if (!origin) return true;
-  try {
-    const parsed = new URL(origin);
-    return parsed.host === String(req.headers?.host || '');
-  } catch { return false; }
+  if (!origin) return false;
+  let parsed;
+  try { parsed = new URL(origin); } catch { return false; }
+  if (ALLOWED_ORIGINS.length) {
+    return ALLOWED_ORIGINS.some((allowed) => {
+      try { return new URL(allowed).origin === parsed.origin; } catch { return allowed === parsed.origin; }
+    });
+  }
+  return parsed.host === String(req.headers?.host || '');
 }
 
 function shellEnv(workspace) {
@@ -51,7 +65,7 @@ export async function initTerminal(httpServer) {
   io.on('connection', (socket) => {
     const auth = authFromRequest(socket.request);
     const sid = String(socket.handshake.query.workdir || '');
-    if (!auth || !/^ses_[a-zA-Z0-9]+$/.test(sid) || !ownsChat(sid, auth.user.email)) {
+    if (!auth || !isSessionId(sid) || !ownsChat(sid, auth.user.email)) {
       socket.emit('data', '\r\n\x1b[31mДоступ к терминалу запрещён.\x1b[0m\r\n');
       socket.disconnect(true);
       return;

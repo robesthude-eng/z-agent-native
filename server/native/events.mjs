@@ -57,6 +57,12 @@ export function subscribe(sessionId, onFrame, lastEventId = 0) {
   };
 }
 
+// A reader that stops draining must not turn into unbounded process memory.
+// Dropped clients reconnect with Last-Event-ID and the ring buffer replays what
+// they missed, so disconnecting is cheaper and safer than buffering forever.
+const MAX_SSE_BUFFER_BYTES = 4 * 1024 * 1024;
+const MAX_SSE_STALL_MS = 30_000;
+
 export function openSse(req, res, sessionId, lastEventId = 0) {
   res.writeHead(200, {
     'content-type': 'text/event-stream; charset=utf-8',
@@ -65,18 +71,44 @@ export function openSse(req, res, sessionId, lastEventId = 0) {
     'x-accel-buffering': 'no',
   });
   res.write(': z-agent native stream\n\n');
-  const write = (frame) => {
-    if (!res.writableEnded) res.write(frameText(frame));
-  };
-  const unsubscribe = subscribe(sessionId, write, lastEventId);
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(`: ping ${Date.now()}\n\n`);
-  }, 15_000);
-  heartbeat.unref?.();
+
+  let unsubscribe = () => {};
+  let heartbeat = null;
+  let stalledSince = 0;
+  let closed = false;
+
   const close = () => {
-    clearInterval(heartbeat);
+    if (closed) return;
+    closed = true;
+    if (heartbeat) clearInterval(heartbeat);
     unsubscribe();
   };
+
+  const drop = () => {
+    close();
+    try { res.destroy(); } catch { /* already gone */ }
+  };
+
+  const write = (frame) => {
+    if (closed || res.writableEnded) return;
+    if (res.write(frameText(frame))) {
+      stalledSince = 0;
+      return;
+    }
+    const now = Date.now();
+    if (!stalledSince) stalledSince = now;
+    if (res.writableLength > MAX_SSE_BUFFER_BYTES || now - stalledSince > MAX_SSE_STALL_MS) drop();
+  };
+
+  unsubscribe = subscribe(sessionId, write, lastEventId);
+  if (closed) unsubscribe();
+
+  heartbeat = setInterval(() => {
+    if (closed || res.writableEnded) return;
+    if (!res.write(`: ping ${Date.now()}\n\n`) && res.writableLength > MAX_SSE_BUFFER_BYTES) drop();
+  }, 15_000);
+  heartbeat.unref?.();
+
   req.on('close', close);
   res.on('close', close);
 }

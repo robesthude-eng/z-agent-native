@@ -33,17 +33,32 @@ jobs:
           ref: ${{ github.event.workflow_run.head_sha }}
 
       - name: Setup SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST_KEY: ${{ secrets.DEPLOY_SSH_HOST_KEY }}
         run: |
+          set -eu
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          # ssh-keyscan trusts whatever answers on the network at deploy time, so
+          # a hijacked first connection would hand production to an attacker.
+          # The host key must be pinned in a secret instead.
+          if [ -z "$DEPLOY_SSH_HOST_KEY" ]; then
+            echo 'DEPLOY_SSH_HOST_KEY secret is required (ssh-keyscan -t ed25519 <host> once, then store the line)' >&2
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Deploy verified commit to server
         env:
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
         run: |
           ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
             ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
             "DEPLOY_SHA='$DEPLOY_SHA' bash -s" << 'DEPLOY'
             set -euo pipefail

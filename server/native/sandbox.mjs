@@ -3,6 +3,14 @@ import path from 'node:path';
 import { ALLOW_UNISOLATED_SHELL, DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { getSandboxUid } from './store.mjs';
 
+// Sessions already normalised in this process. The initial ownership pass walks
+// every file in the workspace, so repeating it on every shell spawn blocked the
+// event loop for all other sessions.
+const preparedSandboxes = new Set();
+
+const SETPRIV_PATH = ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv']
+  .find((candidate) => { try { return fs.existsSync(candidate); } catch { return false; } }) || null;
+
 function isRootRuntime() {
   return typeof process.getuid === 'function' && process.getuid() === 0;
 }
@@ -22,10 +30,29 @@ export function sandboxIdentity(sessionId) {
 }
 
 function chownTree(full, uid, gid) {
-  const st = fs.lstatSync(full);
-  try { fs.lchownSync(full, uid, gid); } catch {}
+  let st;
+  try { st = fs.lstatSync(full); } catch { return; }
+  if (st.uid !== uid || st.gid !== gid) { try { fs.lchownSync(full, uid, gid); } catch {} }
   if (!st.isDirectory() || st.isSymbolicLink()) return;
-  for (const name of fs.readdirSync(full)) chownTree(path.join(full, name), uid, gid);
+  let names;
+  try { names = fs.readdirSync(full); } catch { return; }
+  for (const name of names) chownTree(path.join(full, name), uid, gid);
+}
+
+/**
+ * Build the argv that starts a process under the session identity.
+ *
+ * spawn({uid,gid}) keeps the parent's supplementary groups (root's), so prefer
+ * setpriv: it clears them and blocks privilege regain through no-new-privs.
+ */
+export function sandboxCommand(identity, file, args = []) {
+  if (!identity?.isolated) return { file, args, options: {} };
+  if (!SETPRIV_PATH) return { file, args, options: { uid: identity.uid, gid: identity.gid } };
+  return {
+    file: SETPRIV_PATH,
+    args: ['--clear-groups', '--no-new-privs', `--reuid=${identity.uid}`, `--regid=${identity.gid}`, file, ...args],
+    options: {},
+  };
 }
 
 export function prepareWorkspaceSandbox(sessionId, workspace) {
@@ -35,9 +62,19 @@ export function prepareWorkspaceSandbox(sessionId, workspace) {
   const parent = path.resolve(WORKSPACES_DIR);
   if (root !== parent && !root.startsWith(`${parent}${path.sep}`)) throw new Error('Workspace is outside the configured sandbox root');
   fs.mkdirSync(root, { recursive: true });
-  chownTree(root, identity.uid, identity.gid);
+  const key = `${sessionId}:${root}:${identity.uid}`;
+  if (preparedSandboxes.has(key)) {
+    try { fs.lchownSync(root, identity.uid, identity.gid); } catch {}
+  } else {
+    chownTree(root, identity.uid, identity.gid);
+    preparedSandboxes.add(key);
+  }
   try { fs.chmodSync(root, 0o700); } catch {}
   return identity;
+}
+
+export function resetSandboxCacheForTests() {
+  preparedSandboxes.clear();
 }
 
 export function syncSandboxOwnership(sessionId, workspace, target = workspace) {

@@ -177,10 +177,13 @@ for (const row of db.prepare("SELECT owner_id,provider_id,api_key FROM provider_
 }
 
 function allocateSandboxUid() {
-  const row = db.prepare("SELECT value FROM runtime_meta WHERE key='sandbox_uid_next'").get();
-  const uid = Number(row?.value || 20000);
+  // The Unix uid IS the sandbox boundary, so allocation must be atomic: a
+  // SELECT followed by a separate UPDATE let two concurrent chat creations hand
+  // the same identity (and therefore the same filesystem access) to two chats.
+  db.prepare("INSERT OR IGNORE INTO runtime_meta(key,value) VALUES('sandbox_uid_next','20000')").run();
+  const row = db.prepare("UPDATE runtime_meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='sandbox_uid_next' RETURNING value").get();
+  const uid = Number(row?.value) - 1;
   if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error('Sandbox Unix identity space exhausted');
-  db.prepare("UPDATE runtime_meta SET value=? WHERE key='sandbox_uid_next'").run(String(uid + 1));
   return uid;
 }
 
@@ -268,7 +271,10 @@ function messageRow(row) {
   };
 }
 export function putMessage(message) {
-  const created = message.time?.created || Date.now();
+  // created_at drives both list ordering and the "delete from this message"
+  // pivot, so a timestamp from the future would pin a message to the end of
+  // history forever. Clamp it to server time.
+  const created = Math.min(Number(message.time?.created) || Date.now(), Date.now());
   const completed = message.time?.completed || message.info?.time?.completed || null;
   db.prepare(`INSERT INTO messages(id,session_id,role,parts_json,info_json,created_at,completed_at)
               VALUES(?,?,?,?,?,?,?)
@@ -301,13 +307,24 @@ export function getTurn(sessionId) {
 }
 export function clearTurn(sessionId) { db.prepare('DELETE FROM turns WHERE session_id=?').run(sessionId); }
 
-export function recoverInterruptedRuntimeState() {
+/**
+ * Fail everything the previous process left mid-flight.
+ *
+ * `skipSessionIds` must list the sessions that have a resumable durable job:
+ * rejecting their pending questions and permissions would destroy exactly the
+ * state those jobs are about to resume.
+ */
+export function recoverInterruptedRuntimeState(options = {}) {
   const now = Date.now();
-  const interrupted = db.prepare("SELECT COUNT(*) c FROM turns WHERE lifecycle IN ('running','waiting_permission','waiting_user_input')").get().c;
-  db.prepare("UPDATE turns SET lifecycle='failed',verdict='failed',reason='runtime_restart',updated_at=? WHERE lifecycle IN ('running','waiting_permission','waiting_user_input')").run(now);
-  db.prepare("UPDATE actions SET state='failed',result_json=?,updated_at=? WHERE state='running'").run(JSON.stringify({ error: 'Runtime restarted while action was running' }), now);
-  db.prepare("UPDATE questions SET status='rejected',resolved_at=? WHERE status='pending'").run(now);
-  db.prepare("UPDATE permissions SET status='rejected',response='reject',resolved_at=? WHERE status='pending'").run(now);
+  const skip = [...new Set((options.skipSessionIds || []).map((id) => String(id || '')).filter(Boolean))];
+  const notSkipped = skip.length ? ` AND session_id NOT IN (${skip.map(() => '?').join(',')})` : '';
+  const interruptedLifecycles = "lifecycle IN ('running','waiting_permission','waiting_user_input')";
+
+  const interrupted = db.prepare(`SELECT COUNT(*) c FROM turns WHERE ${interruptedLifecycles}${notSkipped}`).get(...skip).c;
+  db.prepare(`UPDATE turns SET lifecycle='failed',verdict='failed',reason='runtime_restart',updated_at=? WHERE ${interruptedLifecycles}${notSkipped}`).run(now, ...skip);
+  db.prepare(`UPDATE actions SET state='failed',result_json=?,updated_at=? WHERE state='running'${notSkipped}`).run(JSON.stringify({ error: 'Runtime restarted while action was running' }), now, ...skip);
+  db.prepare(`UPDATE questions SET status='rejected',resolved_at=? WHERE status='pending'${notSkipped}`).run(now, ...skip);
+  db.prepare(`UPDATE permissions SET status='rejected',response='reject',resolved_at=? WHERE status='pending'${notSkipped}`).run(now, ...skip);
   return Number(interrupted) || 0;
 }
 
@@ -408,6 +425,15 @@ export function completeAction(sessionId, actionId, result) {
 }
 export function failAction(sessionId, actionId, error) {
   db.prepare('UPDATE actions SET state=?,result_json=?,updated_at=? WHERE session_id=? AND action_id=?').run('failed', JSON.stringify({ error:String(error?.message || error) }), Date.now(), sessionId, actionId);
+}
+/**
+ * Re-arm a failed idempotency key so the client can retry the same submission.
+ * Completed actions are never reset: replaying them must keep returning the
+ * stored result.
+ */
+export function resetAction(sessionId, actionId) {
+  return db.prepare("UPDATE actions SET state='running',result_json=NULL,updated_at=? WHERE session_id=? AND action_id=? AND state='failed'")
+    .run(Date.now(), sessionId, actionId).changes > 0;
 }
 
 export function listQueue(sessionId) {

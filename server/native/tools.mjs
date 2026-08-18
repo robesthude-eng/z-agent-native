@@ -2,17 +2,20 @@ import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
-import { DEFAULT_TOOL_TIMEOUT_MS } from './config.mjs';
+import { Worker } from 'node:worker_threads';
+import { DEFAULT_TOOL_TIMEOUT_MS, GREP_TIMEOUT_MS } from './config.mjs';
 import {
   commitEnvironmentRequirement, describeManagedEnvironment, managedShellEnvironment, prepareEnvironmentRequirement,
 } from './environment.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
-import { assertSafeExternalUrl, safeWorkspacePath } from './security.mjs';
-import { sandboxSpawnOptions, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
+import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
+const MAX_MATCH_LINE = 2000;
+const MAX_PATTERN_CHARS = 1000;
 const IGNORED_WALK_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
 const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
@@ -225,16 +228,51 @@ async function readUtf8Window(full, offset, limit) {
   return rows.join('\n');
 }
 
-function externalSpawnOptions(ctx, root) {
-  if (ctx?.sessionId) return sandboxSpawnOptions(ctx.sessionId, root);
-  if (process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') return {};
+function externalSpawnIdentity(ctx, root) {
+  if (ctx?.sessionId) return prepareWorkspaceSandbox(ctx.sessionId, root);
+  if (process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') return { isolated: false };
   throw new Error('External tool execution requires a session sandbox');
+}
+
+/**
+ * Run a regular-expression search off the main thread with a hard deadline.
+ * Literal search stays inline because it cannot backtrack.
+ */
+async function grepWithRegex(files, pattern, max, timeoutMs) {
+  const workerUrl = new URL('./grep-worker.mjs', import.meta.url);
+  return await new Promise((resolve, reject) => {
+    let settled = false;
+    const worker = new Worker(workerUrl, {
+      workerData: { files, pattern, max, maxBytes: MAX_READ_BYTES, maxLine: MAX_MATCH_LINE },
+      resourceLimits: { maxOldGenerationSizeMb: 256 },
+    });
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      worker.terminate().catch(() => {});
+      fn(value);
+    };
+    const timer = setTimeout(() => {
+      finish(reject, Object.assign(new Error(`grep: regular expression search exceeded ${timeoutMs} ms and was cancelled. Simplify the pattern or narrow the path.`), { statusCode: 408 }));
+    }, timeoutMs);
+    timer.unref?.();
+    worker.on('message', (message) => {
+      if (message?.error) finish(reject, new Error(`grep: ${message.error}`));
+      else finish(resolve, Array.isArray(message?.hits) ? message.hits : []);
+    });
+    worker.on('error', (err) => finish(reject, err));
+    worker.on('exit', () => finish(resolve, []));
+  });
 }
 
 async function execBash(root, command, timeoutMs, signal, ctx) {
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
-  const identity = externalSpawnOptions(ctx, root);
+  const identity = externalSpawnIdentity(ctx, root);
+  // Node's spawn({uid,gid}) keeps the parent's supplementary groups (root's), so
+  // route through setpriv when available, exactly like the PTY terminal path.
+  const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-c', command]);
   const env = managedShellEnvironment(root, {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
@@ -244,12 +282,12 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
     TERM: 'xterm-256color',
   });
   return new Promise((resolve, reject) => {
-    const child = spawn('/bin/bash', ['--noprofile', '--norc', '-c', command], {
+    const child = spawn(launch.file, launch.args, {
       cwd: root,
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       detached: true,
-      ...identity,
+      ...launch.options,
     });
     let stdout = '';
     let stderr = '';
@@ -287,7 +325,9 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
       clearTimeout(timeout);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       signal?.removeEventListener('abort', abort);
-      killGroup('SIGTERM');
+      // Reap stragglers that outlived the shell, but never re-signal a group that
+      // was already terminated above.
+      if (!forceKillTimer) killGroup('SIGTERM');
       resolve({ code: code ?? (sig ? 130 : 1), stdout, stderr, signal: sig || null });
     });
   });
@@ -307,9 +347,10 @@ async function applyGitPatch(root, patchText, signal, ctx) {
   validatePatchPaths(patchText);
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
-  const identity = externalSpawnOptions(ctx, root);
+  const identity = externalSpawnIdentity(ctx, root);
+  const launch = sandboxCommand(identity, 'git', ['apply', '--no-index', '--whitespace=nowarn', '-']);
   return await new Promise((resolve, reject) => {
-    const child = spawn('git', ['apply', '--no-index', '--whitespace=nowarn', '-'], { cwd: root, env: { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home }, stdio: ['pipe', 'pipe', 'pipe'], ...identity });
+    const child = spawn(launch.file, launch.args, { cwd: root, env: { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home }, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (d) => { stdout = truncate(stdout + d.toString('utf8')); });
     child.stderr.on('data', (d) => { stderr = truncate(stderr + d.toString('utf8')); });
@@ -394,25 +435,42 @@ export async function executeTool(name, input, ctx) {
     const st = fs.statSync(start);
     if (st.isDirectory()) walk(root, start, 10, all); else all.push({ path: rel(root, start), type: 'file' });
     const max = Math.min(Math.max(Number(input?.maxResults) || 100, 1), 300);
-    let matcher;
-    if (input?.regex) matcher = new RegExp(String(input?.query || ''), 'i');
-    const needle = String(input?.query || '').toLowerCase();
-    const hits = [];
+    const query = String(input?.query || '');
+    if (query.length > MAX_PATTERN_CHARS) throw new Error(`grep: query is too long (max ${MAX_PATTERN_CHARS} characters)`);
+
+    const files = [];
     for (const item of all) {
-      if (item.type !== 'file' || hits.length >= max) continue;
+      if (item.type !== 'file') continue;
+      try { files.push({ path: item.path, full: safeWorkspacePath(root, item.path, { allowMissing: false }) }); } catch { /* unreadable */ }
+    }
+
+    if (input?.regex) {
+      const hits = await grepWithRegex(files, query, max, GREP_TIMEOUT_MS);
+      return { output: hits.join('\n'), title: query, metadata: { matches: hits.length, mode: 'regex' } };
+    }
+
+    const needle = query.toLowerCase();
+    const deadline = Date.now() + GREP_TIMEOUT_MS;
+    const hits = [];
+    let timedOut = false;
+    for (const item of files) {
+      if (hits.length >= max) break;
+      if (Date.now() > deadline) { timedOut = true; break; }
       try {
-        const full = safeWorkspacePath(root, item.path, { allowMissing: false });
-        const buf = fs.readFileSync(full);
+        const buf = fs.readFileSync(item.full);
         if (buf.length > MAX_READ_BYTES || buf.includes(0)) continue;
         const lines = buf.toString('utf8').split('\n');
-        for (let i=0; i<lines.length && hits.length<max; i++) {
-          const ok = matcher ? matcher.test(lines[i]) : lines[i].toLowerCase().includes(needle);
-          if (ok) hits.push(`${item.path}:${i+1}: ${lines[i]}`);
-          if (matcher) matcher.lastIndex = 0;
+        for (let i = 0; i < lines.length && hits.length < max; i++) {
+          if (lines[i].toLowerCase().includes(needle)) hits.push(`${item.path}:${i + 1}: ${lines[i].slice(0, MAX_MATCH_LINE)}`);
         }
       } catch { /* unreadable */ }
     }
-    return { output: hits.join('\n'), title: String(input?.query || '') };
+    const body = hits.join('\n');
+    return {
+      output: timedOut ? `${body}${body ? '\n' : ''}[search stopped after ${GREP_TIMEOUT_MS} ms; narrow the path or the query]` : body,
+      title: query,
+      metadata: { matches: hits.length, mode: 'literal', timedOut },
+    };
   }
 
   if (tool === 'repo_map') {
@@ -525,12 +583,16 @@ export async function executeTool(name, input, ctx) {
   }
 
   if (tool === 'webfetch') {
-    const url = await assertSafeExternalUrl(input?.url);
     const maxChars = Math.min(Math.max(Number(input?.maxChars) || 50000, 1000), 200000);
-    const res = await fetch(url, { headers: { 'user-agent': 'Z-Agent-Native/1.0', accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.5' }, signal: ctx.signal, redirect: 'error' });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`HTTP ${res.status}: ${text.slice(0, 500)}`);
-    return { output: text.slice(0, maxChars), title: String(url) };
+    // safeExternalRequest reuses the exact address that passed the SSRF check,
+    // which closes the DNS-rebinding window between validation and connect.
+    const res = await safeExternalRequest(input?.url, {
+      headers: { 'user-agent': 'Z-Agent-Native/1.0', accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.5' },
+      signal: ctx.signal,
+      maxBytes: Math.max(maxChars * 4, 1024 * 1024),
+    });
+    if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}: ${res.text.slice(0, 500)}`);
+    return { output: res.text.slice(0, maxChars), title: String(res.url) };
   }
 
   throw new Error(`Unknown tool: ${name}`);

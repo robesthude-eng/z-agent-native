@@ -1,31 +1,57 @@
-import { assertSafeExternalUrl } from './security.mjs';
+import { assertSafeExternalUrl, isLoopbackOrPrivateHost } from './security.mjs';
 import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
 
 
-// --- Auto relay wrapper ---
-// If Z_AGENT_RELAY_URL env var is set, ALL external provider URLs are
-// transparently routed through the Worker relay (which forwards them via
-// Railway for geo-block bypass). Users enter real provider Base URLs from
-// documentation; the runtime handles the relay wrapping automatically.
-const RELAY_BASE = (process.env.Z_AGENT_RELAY_URL || '').replace(/\/+$/, '');
+// --- Optional relay wrapper (opt-in, off by default) ---
+// When Z_AGENT_RELAY_URL is set, external provider URLs are routed through that
+// relay. The relay therefore terminates TLS and observes provider API keys and
+// full prompt bodies, so it must be an HTTPS endpoint the operator controls.
+// It is intentionally empty by default: no traffic leaves for a third party
+// unless the operator opts in.
+function normalizeRelayBase(raw) {
+  const value = String(raw || '').trim().replace(/\/+$/, '');
+  if (!value) return '';
+  let parsed;
+  try { parsed = new URL(value); } catch {
+    console.warn('[providers] Z_AGENT_RELAY_URL is not a valid URL; relay disabled.');
+    return '';
+  }
+  if (parsed.protocol !== 'https:') {
+    console.warn('[providers] Z_AGENT_RELAY_URL must use https; relay disabled.');
+    return '';
+  }
+  if (isLoopbackOrPrivateHost(parsed.hostname)) {
+    console.warn('[providers] Z_AGENT_RELAY_URL points at a local/private host; relay disabled.');
+    return '';
+  }
+  console.warn('[providers] Provider traffic is routed through Z_AGENT_RELAY_URL. That host will observe provider API keys and prompt bodies.');
+  return value;
+}
+
+const RELAY_BASE = normalizeRelayBase(process.env.Z_AGENT_RELAY_URL);
 const RELAY_ENABLED = Boolean(RELAY_BASE);
+
+export function relayStatus() {
+  return { enabled: RELAY_ENABLED, host: RELAY_ENABLED ? new URL(RELAY_BASE).host : null };
+}
 
 function wrapProviderUrl(url) {
   if (!RELAY_ENABLED) return url;
   try {
     const parsed = new URL(url);
     if (parsed.host === new URL(RELAY_BASE).host) return url;
-    const host = parsed.hostname;
-    if (host === 'localhost' || host === '127.0.0.1' || host === '::1') return url;
-    if (/^(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)/.test(host)) return url;
+    // Never downgrade provider TLS through the relay path, and never relay a
+    // destination that is already local to this runtime.
+    if (parsed.protocol !== 'https:') return url;
+    if (isLoopbackOrPrivateHost(parsed.hostname)) return url;
     const stripped = url.replace(/^https?:\/\//, '');
-    return RELAY_BASE + '/' + stripped;
+    return `${RELAY_BASE}/${stripped}`;
   } catch {
     return url;
   }
 }
-// --- /Auto relay wrapper ---
+// --- /Optional relay wrapper ---
 
 const builtInSpecs = {}; // No builtin provider templates — only user-defined (custom) channels.
 

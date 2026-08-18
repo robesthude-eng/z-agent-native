@@ -66,7 +66,9 @@ export function compactFrames(input, options = {}) {
   for (let i = frames.length - 1; i >= 0; i--) {
     const frame = frames[i];
     const w = frameWeight(frame);
-    if (used > 0 && used + w > maxChars) break;
+    // Skip only the frames that do not fit. Stopping here dropped every older
+    // frame because of one oversized observation in the middle of the history.
+    if (used > 0 && used + w > maxChars) continue;
     keep[i] = true;
     used += w;
   }
@@ -102,12 +104,25 @@ const READ_ONLY_BASH_PATTERNS = [
   /^\s*(?:node|python|python3)\s+--version\b/i,
 ];
 
+/** Split a command line into the individual commands it will actually run. */
+function bashSegments(text) {
+  return String(text || '')
+    .split(/\|\||&&|[|;\n]/)
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
 export function classifyBash(command) {
   const text = String(command || '').trim();
   if (!text) return 'read_only';
   if (VERIFY_PATTERNS.some((rx) => rx.test(text))) return 'verification';
-  if (READ_ONLY_BASH_PATTERNS.some((rx) => rx.test(text)) && !/[;&|>]\s*[^&|]/.test(text)) return 'read_only';
-  return 'may_mutate';
+  // Redirections and command substitution can write no matter which command runs.
+  if (/>/.test(text) || /\$\(|`/.test(text)) return 'may_mutate';
+  // Every stage of a pipeline must be read-only, so `git log | grep x` stays
+  // read-only while `cat a | tee b` does not.
+  const segments = bashSegments(text);
+  if (!segments.length) return 'read_only';
+  return segments.every((segment) => READ_ONLY_BASH_PATTERNS.some((rx) => rx.test(segment))) ? 'read_only' : 'may_mutate';
 }
 
 export function createTurnStrategy(goal = '') {
@@ -165,7 +180,16 @@ export function observeTool(strategy, call, result) {
 }
 
 export function completionGate(strategy) {
-  if (!strategy?.needsVerification || !shellSandboxAvailable()) return null;
+  if (!strategy?.needsVerification) return null;
+  if (!shellSandboxAvailable()) {
+    // No shell means verification is impossible, not that the change is proven.
+    // Degrade to a mandatory read-back instead of silently dropping the gate.
+    return [
+      '[Runtime completion gate]',
+      'The workspace changed and no executable verification is available in this runtime (no shell sandbox).',
+      'Do not finish yet. Re-read every file you changed, confirm the edit is complete and internally consistent, and state in the final answer that automated verification was unavailable.',
+    ].join('\n');
+  }
   return [
     '[Runtime completion gate]',
     'The workspace may have changed, but no successful verification has happened after the latest change.',

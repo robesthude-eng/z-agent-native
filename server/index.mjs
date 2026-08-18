@@ -10,7 +10,8 @@ import {
   authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
   loginUser, logoutToken, registerUser, requireAuth,
 } from './native/auth.mjs';
-import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES } from './native/config.mjs';
+import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES, TRUST_PROXY } from './native/config.mjs';
+import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.mjs';
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
 import { messageId, sessionId } from './native/ids.mjs';
 import { readJson, sendJson } from './native/json.mjs';
@@ -33,7 +34,12 @@ import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
 
 const STARTED_AT = Date.now();
-recoverInterruptedRuntimeState();
+pruneExpiredDurableJobs();
+// Resumable sessions must be identified BEFORE the generic recovery sweep,
+// otherwise the sweep rejects the pending questions and permissions that those
+// durable jobs are about to resume.
+const RESUMABLE_SESSIONS = listDurableJobs().map((job) => String(job.sessionId || '')).filter(Boolean);
+recoverInterruptedRuntimeState({ skipSessionIds: RESUMABLE_SESSIONS });
 const RECOVERED_TURNS = startDurableRecovery();
 recoverDanglingTurnResults();
 const AUTH_WINDOW_MS = 10 * 60 * 1000;
@@ -41,23 +47,34 @@ const AUTH_MAX_ATTEMPTS = 20;
 const authAttempts = new Map();
 
 function authRateKey(req) {
+  // Behind a proxy every request shares the proxy's socket address, which turns
+  // the login limiter into a global lockout. Only trust the forwarded address
+  // when the operator confirmed there is a proxy in front.
+  if (TRUST_PROXY) {
+    const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+    if (forwarded) return forwarded;
+  }
   return String(req.socket?.remoteAddress || 'unknown');
 }
+
+let lastAuthSweep = 0;
 
 function checkAuthRate(req) {
   const key = authRateKey(req);
   const now = Date.now();
+  // Sweep on a timer, not only when the map is huge and the request happens to
+  // be under the limit: expired entries used to survive indefinitely.
+  if (now - lastAuthSweep > AUTH_WINDOW_MS || authAttempts.size > 5000) {
+    lastAuthSweep = now;
+    for (const [k, value] of authAttempts) if (now >= value.resetAt) authAttempts.delete(k);
+  }
   const current = authAttempts.get(key);
   if (!current || now >= current.resetAt) {
     authAttempts.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
     return true;
   }
   current.count += 1;
-  if (current.count > AUTH_MAX_ATTEMPTS) return false;
-  if (authAttempts.size > 5000) {
-    for (const [k, value] of authAttempts) if (now >= value.resetAt) authAttempts.delete(k);
-  }
-  return true;
+  return current.count <= AUTH_MAX_ATTEMPTS;
 }
 
 function clearAuthRate(req) { authAttempts.delete(authRateKey(req)); }
@@ -364,7 +381,11 @@ async function route(req, res) {
 }
 
 function serveStatic(req, res, pathname) {
-  const decoded = decodeURIComponent(pathname);
+  // A malformed percent-escape threw out of the request handler and killed the
+  // response with a 500 (and an unhandled rejection in the logs).
+  let decoded;
+  try { decoded = decodeURIComponent(pathname); } catch { return sendJson(res, 400, { error: 'Bad request' }); }
+  if (decoded.includes('\0')) return sendJson(res, 400, { error: 'Bad request' });
   const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
   let full = path.resolve(DIST_DIR, relative);
   if (!full.startsWith(path.resolve(DIST_DIR) + path.sep) && full !== path.resolve(DIST_DIR, 'index.html')) return sendJson(res, 403, { error: 'Forbidden' });
