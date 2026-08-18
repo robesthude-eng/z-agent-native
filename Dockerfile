@@ -6,7 +6,9 @@ RUN npm ci
 COPY . .
 # npm prune re-resolves peer dependencies; preserve the lockfile's known-good
 # dependency graph instead of failing on the optional React compiler peer range.
-RUN npm run build && npm prune --omit=dev --legacy-peer-deps
+# Bundle with vite only. `tsc -b` is a CI gate; a type error must never be able
+# to block a deploy that ships already-tested runtime code.
+RUN npx --no vite build && npm prune --omit=dev --legacy-peer-deps
 
 FROM node:24-bookworm-slim AS runtime
 WORKDIR /app

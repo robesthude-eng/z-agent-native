@@ -12,6 +12,13 @@ on:
         type: boolean
         default: false
 
+permissions:
+  contents: read
+
+concurrency:
+  group: server-terminal
+  cancel-in-progress: false
+
 jobs:
   run:
     name: Execute on server
@@ -20,39 +27,58 @@ jobs:
 
     steps:
       - name: Setup SSH
+        env:
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST_KEY: ${{ secrets.DEPLOY_SSH_HOST_KEY }}
         run: |
+          set -eu
           mkdir -p ~/.ssh
-          echo "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H ${{ secrets.DEPLOY_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+          # ssh-keyscan trusts whatever answers at run time, which would hand a
+          # root shell to anyone able to hijack the connection. Pin the key.
+          if [ -z "$DEPLOY_SSH_HOST_KEY" ]; then
+            echo 'DEPLOY_SSH_HOST_KEY secret is required (ssh-keyscan -t ed25519 <host> once, then store the line)' >&2
+            exit 1
+          fi
+          printf '%s\n' "$DEPLOY_SSH_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
 
       - name: Run command
-        id: exec
+        env:
+          # Never interpolate ${{ inputs.* }} into a shell script: the value is
+          # operator-supplied text and would execute on the runner itself.
+          INPUT_COMMAND: ${{ inputs.command }}
+          USE_SUDO: ${{ inputs.use_sudo }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
         run: |
-          CMD='${{ inputs.command }}'
-          if [ "${{ inputs.use_sudo }}" = "true" ]; then
-            CMD="sudo bash -c '$CMD'"
+          set -euo pipefail
+          if [ "$USE_SUDO" = 'true' ]; then
+            REMOTE_CMD='sudo -n bash -s'
+          else
+            REMOTE_CMD='bash -s'
           fi
-
-          echo ">>> $CMD"
-          echo "---"
-
-          ssh -i ~/.ssh/deploy_key ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} "$CMD" 2>&1 | tee /tmp/output.txt
-
-          # Save output for summary
-          {
-            echo 'result<<EOF'
-            cat /tmp/output.txt
-            echo 'EOF'
-          } >> "$GITHUB_OUTPUT"
+          # The command is piped to a remote shell instead of being embedded in
+          # the ssh argument, so no quoting mistake can split it into extra
+          # commands on either side.
+          printf '%s\n' "$INPUT_COMMAND" | ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes \
+            -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            "$DEPLOY_USER@$DEPLOY_HOST" "$REMOTE_CMD" 2>&1 | tee /tmp/output.txt
 
       - name: Summary
         if: always()
         run: |
-          echo "### 🖥️ Server Output" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "${{ steps.exec.outputs.result }}" >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
+          # Read the captured output from disk. Interpolating it into the script
+          # would let remote output inject commands into this runner.
+          {
+            echo '### Server output'
+            echo '```'
+            cat /tmp/output.txt 2>/dev/null || echo '(no output)'
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Cleanup
         if: always()
