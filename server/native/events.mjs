@@ -1,8 +1,10 @@
+import { CLUSTER_ENABLED, publishEvent, startCluster } from './cluster.mjs';
 import { EVENT_RING_SIZE } from './config.mjs';
 import { clearTurnResults, observeTurnResultEvent } from './turn-results.mjs';
 
 const rings = new Map();
 const subscribers = new Map();
+let clusterStarted = false;
 
 function stateFor(sessionId) {
   let state = rings.get(sessionId);
@@ -26,14 +28,11 @@ function frameText(frame) {
   return `id: ${frame.id}\nevent: ${frame.event.type}\ndata: ${JSON.stringify(frame.event)}\n\n`;
 }
 
-export function emit(sessionId, type, properties = {}) {
-  // Snapshot observation is synchronous on purpose: the initial `busy` event
-  // happens before the first tool can mutate the workspace, so the baseline is
-  // guaranteed to describe the exact state before this turn.
-  try { observeTurnResultEvent(sessionId, type, properties); } catch { /* result capture must never break realtime delivery */ }
-
+// Remote frames get local ids so Last-Event-ID resume keeps working per
+// instance, and they deliberately skip observeTurnResultEvent: the workspace
+// snapshot belongs to the replica that is actually running the turn.
+function deliver(sessionId, event) {
   const state = stateFor(sessionId);
-  const event = { type, properties: { ...properties, sessionID: properties.sessionID || sessionId } };
   const frame = { id: ++state.seq, event };
   state.frames.push(frame);
   if (state.frames.length > EVENT_RING_SIZE) state.frames.splice(0, state.frames.length - EVENT_RING_SIZE);
@@ -43,7 +42,30 @@ export function emit(sessionId, type, properties = {}) {
   return frame.id;
 }
 
+function ensureCluster() {
+  if (clusterStarted || !CLUSTER_ENABLED) return;
+  clusterStarted = true;
+  startCluster({ ingest: deliver });
+}
+
+export function emit(sessionId, type, properties = {}) {
+  ensureCluster();
+  // Snapshot observation is synchronous on purpose: the initial `busy` event
+  // happens before the first tool can mutate the workspace, so the baseline is
+  // guaranteed to describe the exact state before this turn.
+  try { observeTurnResultEvent(sessionId, type, properties); } catch { /* result capture must never break realtime delivery */ }
+
+  const event = { type, properties: { ...properties, sessionID: properties.sessionID || sessionId } };
+  const id = deliver(sessionId, event);
+  // No-op on a single node. On a cluster the other replicas replay this frame
+  // to their own subscribers, so an SSE stream is no longer pinned to the
+  // process that happened to serve the request.
+  try { publishEvent(sessionId, event); } catch { /* local delivery already happened */ }
+  return id;
+}
+
 export function subscribe(sessionId, onFrame, lastEventId = 0) {
+  ensureCluster();
   const state = stateFor(sessionId);
   const last = Number.isFinite(Number(lastEventId)) ? Number(lastEventId) : 0;
   for (const frame of state.frames) {
