@@ -10,7 +10,7 @@ let dispose: (() => void) | null = null;
 const pendingTimers = new Set<number>();
 
 function compactText(value: string | null | undefined): string {
-  return String(value || "").replace(/\\s+/g, " ").trim();
+  return String(value || "").replace(/\s+/g, " ").trim();
 }
 
 function later(run: () => void, delayMs: number) {
