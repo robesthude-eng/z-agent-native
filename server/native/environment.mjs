@@ -8,6 +8,24 @@ const SAFE_ENV_KEYS = new Set([
 const ANDROID_COMMANDLINE_TOOLS_VERSION = '15859902';
 const ANDROID_COMMANDLINE_TOOLS_SHA256 = '4e4c464f145a7512b57d088ac6c278c03c9eea610886b35a5e0804e74eedf583';
 
+/**
+ * Operator-pinned artifact checksums, as {"java:21":"<sha256>","gradle:8.14.5":"<sha256>"}.
+ *
+ * Publishers host the checksum next to the artifact, so whoever can serve a
+ * malicious archive can serve a matching checksum file too. A pin here is the
+ * only real integrity anchor; without one the download falls back to the
+ * published checksum, which only detects corruption in transit.
+ */
+const TOOLCHAIN_SHA256_PINS = (() => {
+  try { return JSON.parse(process.env.Z_AGENT_TOOLCHAIN_SHA256 || '{}') || {}; }
+  catch { return {}; }
+})();
+
+function pinnedChecksum(kind, version) {
+  const value = String(TOOLCHAIN_SHA256_PINS[`${kind}:${version}`] || '').trim().toLowerCase();
+  return /^[a-f0-9]{64}$/.test(value) ? value : '';
+}
+
 function agentHome(root) { return path.join(root, '.agent-home'); }
 function manifestPath(root) { return path.join(agentHome(root), 'environment.json'); }
 function slash(value) { return String(value).split(path.sep).join('/'); }
@@ -72,11 +90,29 @@ export function managedShellEnvironment(root, base = {}) {
   };
 }
 
+// The previous check only rejected leading dashes, whitespace and control
+// characters, so specs such as a git+https VCS URL or "pkg@file:/tmp/x" were
+// handed straight to the installer: arbitrary code execution at install time.
+// Only plain name[extras][version-constraint] specs are accepted now.
+const PIP_PACKAGE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9,._-]+\])?(?:(?:==|>=|<=|~=|!=|>|<)[A-Za-z0-9._*+!-]+)?$/;
+const NPM_PACKAGE_PATTERN = /^(?:@[a-z0-9][a-z0-9._-]*\/)?[a-z0-9][a-z0-9._-]*(?:@[A-Za-z0-9._^~><=*+-]+)?$/;
+// sdkmanager coordinates are semicolon separated: platforms;android-36
+const SDK_PACKAGE_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._+-]*(?:;[A-Za-z0-9][A-Za-z0-9._+-]*)*$/;
+const PACKAGE_PATTERNS = {
+  pip: PIP_PACKAGE_PATTERN,
+  python: PIP_PACKAGE_PATTERN,
+  npm: NPM_PACKAGE_PATTERN,
+  node: NPM_PACKAGE_PATTERN,
+  android: SDK_PACKAGE_PATTERN,
+  'android sdk': SDK_PACKAGE_PATTERN,
+};
+
 function safePackages(values, kind) {
   const rows = Array.isArray(values) ? values.slice(0, 30) : [];
+  const pattern = PACKAGE_PATTERNS[String(kind).toLowerCase()] || PIP_PACKAGE_PATTERN;
   return rows.map((value) => {
     const text = String(value || '').trim();
-    if (!text || text.length > 200 || text.startsWith('-') || /[\u0000-\u001f\s]/.test(text)) {
+    if (!text || text.length > 200 || !pattern.test(text)) {
       throw new Error(`Unsafe ${kind} package spec: ${JSON.stringify(text)}`);
     }
     return text;
@@ -97,7 +133,7 @@ function javaPlan(root, input) {
   const downloads = path.join(home, 'downloads');
   const archive = path.join(downloads, `temurin-${version}.tar.gz`);
   const api = `https://api.adoptium.net/v3/binary/latest/${version}/ga/linux/${javaArch()}/jdk/hotspot/normal/eclipse`;
-  const script = `set -euo pipefail\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'bin', 'java'))} ]; then\n  API_URL=${shellQuote(api)}\n  FETCH_URL="$(curl -fsS -o /dev/null -w '%{redirect_url}' "$API_URL")"\n  test -n "$FETCH_URL"\n  curl -fL --retry 3 --retry-delay 1 "$FETCH_URL" -o ${shellQuote(archive)}\n  EXPECTED="$(curl -fsSL "$FETCH_URL.sha256.txt" | awk 'NR==1 {print $1}')"\n  test -n "$EXPECTED"\n  printf '%s  %s\\n' "$EXPECTED" ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  tar -xzf ${shellQuote(archive)} -C "$TMP" --strip-components=1\n  test -x "$TMP/bin/java"\n  mv "$TMP" ${shellQuote(install)}\nfi\n${shellQuote(path.join(install, 'bin', 'java'))} -version\n${shellQuote(path.join(install, 'bin', 'javac'))} -version`;
+  const script = `set -euo pipefail\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'bin', 'java'))} ]; then\n  API_URL=${shellQuote(api)}\n  FETCH_URL="$(curl -fsS --proto '=https' --tlsv1.2 -o /dev/null -w '%{redirect_url}' "$API_URL")"\n  test -n "$FETCH_URL"\n  case "$FETCH_URL" in https://*) ;; *) echo 'Refusing non-HTTPS toolchain download' >&2; exit 1;; esac\n  curl -fL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 "$FETCH_URL" -o ${shellQuote(archive)}\n  EXPECTED=${shellQuote(pinnedChecksum('java', version))}\n  if [ -z "$EXPECTED" ]; then EXPECTED="$(curl -fsSL --proto '=https' --tlsv1.2 "$FETCH_URL.sha256.txt" | awk 'NR==1 {print $1}')"; fi\n  test -n "$EXPECTED"\n  printf '%s  %s\\n' "$EXPECTED" ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  tar -xzf ${shellQuote(archive)} -C "$TMP" --strip-components=1\n  test -x "$TMP/bin/java"\n  mv "$TMP" ${shellQuote(install)}\nfi\n${shellQuote(path.join(install, 'bin', 'java'))} -version\n${shellQuote(path.join(install, 'bin', 'javac'))} -version`;
   return {
     kind: 'java', title: `Java ${version}`, script,
     env: { JAVA_HOME: install }, pathPrepend: [path.join(install, 'bin')],
@@ -127,7 +163,7 @@ function gradlePlan(root, input) {
   const downloads = path.join(home, 'downloads');
   const archive = path.join(downloads, `gradle-${version}-bin.zip`);
   const url = `https://services.gradle.org/distributions/gradle-${version}-bin.zip`;
-  const script = `set -euo pipefail\ncommand -v java >/dev/null 2>&1 || { echo 'Java is required; provision kind=java first' >&2; exit 42; }\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'bin', 'gradle'))} ]; then\n  URL=${shellQuote(url)}\n  curl -fL --retry 3 --retry-delay 1 "$URL" -o ${shellQuote(archive)}\n  EXPECTED="$(curl -fsSL "$URL.sha256" | tr -d '[:space:]')"\n  test -n "$EXPECTED"\n  printf '%s  %s\\n' "$EXPECTED" ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  unzip -q ${shellQuote(archive)} -d "$TMP"\n  test -x "$TMP/gradle-${version}/bin/gradle"\n  mv "$TMP/gradle-${version}" ${shellQuote(install)}\n  rm -rf "$TMP"\nfi\n${shellQuote(path.join(install, 'bin', 'gradle'))} --version`;
+  const script = `set -euo pipefail\ncommand -v java >/dev/null 2>&1 || { echo 'Java is required; provision kind=java first' >&2; exit 42; }\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'bin', 'gradle'))} ]; then\n  URL=${shellQuote(url)}\n  case "$URL" in https://*) ;; *) echo 'Refusing non-HTTPS toolchain download' >&2; exit 1;; esac\n  curl -fL --proto '=https' --tlsv1.2 --retry 3 --retry-delay 1 "$URL" -o ${shellQuote(archive)}\n  EXPECTED=${shellQuote(pinnedChecksum('gradle', version))}\n  if [ -z "$EXPECTED" ]; then EXPECTED="$(curl -fsSL --proto '=https' --tlsv1.2 "$URL.sha256" | tr -d '[:space:]')"; fi\n  test -n "$EXPECTED"\n  printf '%s  %s\\n' "$EXPECTED" ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  unzip -q ${shellQuote(archive)} -d "$TMP"\n  test -x "$TMP/gradle-${version}/bin/gradle"\n  mv "$TMP/gradle-${version}" ${shellQuote(install)}\n  rm -rf "$TMP"\nfi\n${shellQuote(path.join(install, 'bin', 'gradle'))} --version`;
   return {
     kind: 'gradle', title: `Gradle ${version}`, script,
     env: { GRADLE_HOME: install }, pathPrepend: [path.join(install, 'bin')],

@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR } from './config.mjs';
+import { DATA_DIR, MAX_AGENT_STEPS, MAX_AGENT_STEPS_CEILING } from './config.mjs';
 import { buildCatalog, callModel as callProviderModel } from './providers.mjs';
 
 const HEALTH_FILE = path.join(DATA_DIR, 'autopilot-model-health.json');
@@ -270,13 +270,16 @@ export function promoteModelPlan(plan, selected) {
   };
 }
 
-export function taskStepBudget(goal, configured = process.env.Z_AGENT_MAX_STEPS) {
+export function taskStepBudget(goal, configured = MAX_AGENT_STEPS) {
+  // Z_AGENT_MAX_STEPS pins the budget exactly; otherwise it is derived from task
+  // complexity and clamped by the same ceiling. MAX_AGENT_STEPS was exported by
+  // config.mjs but never read by anything.
   const explicit = Number(configured);
-  if (Number.isFinite(explicit) && explicit > 0) return Math.min(128, Math.max(1, Math.floor(explicit)));
+  if (Number.isFinite(explicit) && explicit > 0) return Math.min(MAX_AGENT_STEPS_CEILING, Math.max(1, Math.floor(explicit)));
   const complexity = complexityHint(goal);
-  if (complexity >= 4) return 72;
-  if (complexity >= 2) return 52;
-  return 36;
+  if (complexity >= 4) return Math.min(MAX_AGENT_STEPS_CEILING, 72);
+  if (complexity >= 2) return Math.min(MAX_AGENT_STEPS_CEILING, 52);
+  return Math.min(MAX_AGENT_STEPS_CEILING, 36);
 }
 
 export function subagentStepBudget(profile, goal, configured = process.env.Z_AGENT_SUBAGENT_STEPS) {
