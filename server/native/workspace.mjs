@@ -1,9 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { MAX_UPLOAD_BYTES } from './config.mjs';
+import { MAX_INFLIGHT_UPLOAD_BYTES, MAX_UPLOAD_BYTES } from './config.mjs';
 import { emit } from './events.mjs';
 import { diffGitChange, listGitChanges, revertGitChange } from './git-changes.mjs';
-import { readBody, sendJson } from './json.mjs';
+import { sendJson } from './json.mjs';
+import { boundaryFromContentType, fileSink, parseMultipartStream, PART_TOO_LARGE } from './multipart.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { sandboxSpawnOptions, syncSandboxOwnership } from './sandbox.mjs';
 import { workspaceFor } from './store.mjs';
@@ -21,29 +22,7 @@ function kindOf(name) {
   return 'binary';
 }
 
-export function parseMultipart(buffer, boundary) {
-  const out = [];
-  const marker = Buffer.from(`--${boundary}`);
-  let pos = 0;
-  while (true) {
-    const start = buffer.indexOf(marker, pos);
-    if (start < 0) break;
-    let cursor = start + marker.length;
-    if (buffer[cursor] === 45 && buffer[cursor + 1] === 45) break;
-    if (buffer[cursor] === 13 && buffer[cursor + 1] === 10) cursor += 2;
-    const headerEnd = buffer.indexOf(Buffer.from('\r\n\r\n'), cursor);
-    if (headerEnd < 0) break;
-    const headers = buffer.slice(cursor, headerEnd).toString('utf8');
-    const next = buffer.indexOf(marker, headerEnd + 4);
-    const end = next < 0 ? buffer.length : next - 2;
-    const name = /name="([^"]+)"/.exec(headers)?.[1];
-    const filename = /filename="([^"]*)"/.exec(headers)?.[1] || null;
-    if (name) out.push({ name, filename, data: buffer.slice(headerEnd + 4, end) });
-    if (next < 0) break;
-    pos = next;
-  }
-  return out;
-}
+export { parseMultipart } from './multipart.mjs';
 
 function node(root, full, st) {
   return { path: path.relative(root, full).split(path.sep).join('/') || '.', name: path.basename(full), type: st.isDirectory() ? 'directory' : 'file', isDirectory: st.isDirectory(), size: st.isFile() ? st.size : undefined };
@@ -78,7 +57,7 @@ function tree(root) {
 function uniqueUploadPath(root, name) {
   const uploads = safeWorkspacePath(root, 'uploads');
   fs.mkdirSync(uploads, { recursive: true });
-  const clean = path.basename(name || 'file').replace(/[\u0000-\u001f]/g, '_');
+  const clean = path.basename(name || 'file').replace(/[\\u0000-\\u001f]/g, '_');
   const ext = path.extname(clean);
   const stem = path.basename(clean, ext) || 'file';
   let candidate = path.join(uploads, clean);
@@ -228,39 +207,50 @@ export async function handleWorkspace(req, res, sessionId, url) {
   }
 
   if (pathname === '/api/workspace/upload' && req.method === 'POST') {
-    const ct = String(req.headers['content-type'] || '');
-    const boundary = /boundary=(?:"([^"]+)"|([^;]+))/.exec(ct)?.[1] || /boundary=(?:"([^"]+)"|([^;]+))/.exec(ct)?.[2];
+    const boundary = boundaryFromContentType(req.headers['content-type']);
     if (!boundary) return sendJson(res, 400, { error: 'multipart boundary missing' });
-    const buf = await readBody(req, MAX_UPLOAD_BYTES + 1024 * 1024);
-    const file = parseMultipart(buf, boundary).find((p) => p.filename);
+    // Stream the part straight to disk. Buffering the request first meant a
+    // single large upload pinned at least twice its size in the heap before
+    // anything was written, so a few parallel uploads could kill the process.
+    let target = null;
+    const parsed = await parseMultipartStream(req, boundary, {
+      maxPartBytes: MAX_UPLOAD_BYTES,
+      maxTotalBytes: MAX_UPLOAD_BYTES + 1024 * 1024,
+      maxParts: 32,
+      openPart: ({ filename }) => {
+        if (!filename || target) return null;
+        target = fileSink(uniqueUploadPath(root, filename));
+        return target;
+      },
+    });
+    const file = parsed.parts.find((part) => part.filename);
     if (!file) return sendJson(res, 400, { error: 'file missing' });
-    if (file.data.length > MAX_UPLOAD_BYTES) return sendJson(res, 413, { error: 'Файл слишком большой' });
-    const full = uniqueUploadPath(root, file.filename);
-    fs.writeFileSync(full, file.data, { flag: 'wx' });
+    if (file.error === PART_TOO_LARGE) return sendJson(res, 413, { error: 'Файл слишком большой' });
+    if (file.error || !target) return sendJson(res, 400, { error: file.error || 'file missing' });
+    const full = target.path;
     syncSandboxOwnership(sessionId, root, full);
     const workspacePath = path.relative(root, full).split(path.sep).join('/');
     emit(sessionId, 'file.edited', { paths: [workspacePath] });
-    return sendJson(res, 200, { ok: true, name: path.basename(full), path: workspacePath, workspacePath, agentPath: workspacePath, size: file.data.length, kind: kindOf(full) });
+    return sendJson(res, 200, { ok: true, name: path.basename(full), path: workspacePath, workspacePath, agentPath: workspacePath, size: file.size, kind: kindOf(full) });
   }
 
   if (pathname === '/api/workspace/upload-folder' && req.method === 'POST') {
-    const ct = String(req.headers['content-type'] || '');
-    const match = /boundary=(?:"([^"]+)"|([^;]+))/.exec(ct);
-    const boundary = match?.[1] || match?.[2];
+    const boundary = boundaryFromContentType(req.headers['content-type']);
     if (!boundary) return sendJson(res, 400, { error: 'multipart boundary missing' });
-    const buf = await readBody(req, MAX_UPLOAD_BYTES + 1024 * 1024);
-    const parts = parseMultipart(buf, boundary);
-    let written = 0;
-    const errors = [];
-    for (const part of parts) {
-      try {
-        if (part.data.length > MAX_UPLOAD_BYTES) throw new Error('file too large');
-        const full = safeWorkspacePath(root, part.name, { allowMissing: true });
-        fs.mkdirSync(path.dirname(full), { recursive: true });
-        fs.writeFileSync(full, part.data);
-        written++;
-      } catch (err) { errors.push(`${part.name}: ${err.message}`); }
-    }
+    // Folder uploads arrive as hundreds of parts. Each one is written while it
+    // streams in, an unsafe path only fails its own part, and the request as a
+    // whole stays bounded.
+    const parsed = await parseMultipartStream(req, boundary, {
+      maxPartBytes: MAX_UPLOAD_BYTES,
+      maxTotalBytes: MAX_INFLIGHT_UPLOAD_BYTES,
+      maxParts: 4096,
+      openPart: ({ name }) => {
+        if (!name) return { skip: 'part name missing' };
+        return fileSink(safeWorkspacePath(root, name, { allowMissing: true }), { overwrite: true });
+      },
+    });
+    const errors = parsed.parts.filter((part) => part.error).map((part) => `${part.name}: ${part.error}`);
+    const written = parsed.parts.filter((part) => !part.error && !part.skipped).length;
     syncSandboxOwnership(sessionId, root, root);
     emit(sessionId, 'file.edited', { paths: ['.'] });
     return sendJson(res, 200, { ok: errors.length === 0, written, ...(errors.length ? { errors } : {}) });
