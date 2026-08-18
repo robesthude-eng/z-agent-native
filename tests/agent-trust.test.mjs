@@ -92,6 +92,13 @@ test('a transient webfetch failure is retried once inside the same tool call', a
   store.createChat(sid, ownerId, 'Новый чат');
 
   const original = globalThis.fetch;
+  const { setExternalTransportForTests } = await import('../server/native/security.mjs');
+  // webfetch no longer uses global fetch: it goes through the SSRF-validated,
+  // address-pinned transport. Point that transport back at the stub below.
+  setExternalTransportForTests(async ({ url }) => {
+    const res = await globalThis.fetch(String(url));
+    return { url, status: res.status, headers: {}, text: await res.text(), truncated: false };
+  });
   let providerCalls = 0;
   let webCalls = 0;
   globalThis.fetch = async (url) => {
@@ -127,6 +134,7 @@ test('a transient webfetch failure is retried once inside the same tool call', a
     assert.equal(fetchPart?.state?.metadata?.retryCount, 1);
     assert.equal(assistant.info?.outcome?.status, 'completed');
   } finally {
+    setExternalTransportForTests(null);
     globalThis.fetch = original;
     agent.resetAgentStateForTests();
   }
