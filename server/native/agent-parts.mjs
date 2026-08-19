@@ -117,7 +117,9 @@ export function waitForRetry(delayMs, signal) {
       signal?.removeEventListener('abort', onAbort);
       resolve();
     }, delayMs);
-    timer.unref?.();
+    // This timer is part of an awaited retry path. Unref'ing it lets Node exit
+    // while the turn is still waiting to retry, leaving the tool call pending
+    // forever (and cancelling node:test cases with an unresolved Promise).
     const onAbort = () => {
       clearTimeout(timer);
       signal?.removeEventListener('abort', onAbort);

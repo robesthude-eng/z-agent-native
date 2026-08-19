@@ -719,6 +719,7 @@ export async function executeTool(name, input, ctx) {
       title: plans.map((plan) => plan.kind).join(' + '),
       metadata: {
         diagnostics: {
+          ok: report.ok,
           errorCount: report.errorCount,
           warningCount: report.warningCount,
           commands: plans.map((plan) => plan.command),

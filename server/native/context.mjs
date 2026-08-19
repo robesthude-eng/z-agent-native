@@ -199,7 +199,40 @@ export function observeTool(strategy, call, result) {
       state.needsVerification = true;
       state.lastVerificationOk = null;
     }
+    return state;
   }
+
+  // Dedicated verification tools must satisfy the same completion gate as an
+  // equivalent bash command. Otherwise the model can run the purpose-built
+  // test/typecheck tools successfully and still be forced into a redundant
+  // verification loop.
+  if (name === 'run_tests') {
+    state.verificationAttempts += 1;
+    const exit = Number(result?.metadata?.tests?.exit);
+    const ok = !result?.isError && Number.isFinite(exit) && exit === 0;
+    state.lastVerificationOk = ok;
+    if (ok) state.needsVerification = false;
+    return state;
+  }
+
+  if (name === 'diagnostics') {
+    state.verificationAttempts += 1;
+    const ok = !result?.isError && result?.metadata?.diagnostics?.ok === true;
+    state.lastVerificationOk = ok;
+    if (ok) state.needsVerification = false;
+    return state;
+  }
+
+  // A writer subagent executes behind the parent `task` tool. Its concrete
+  // edits are surfaced through mutatedPaths, so the parent turn must inherit
+  // the changed/needs-verification state instead of being allowed to finish as
+  // if the delegated work were read-only.
+  if (name === 'task' && !result?.isError && result?.mutatedPaths?.length) {
+    state.changed = true;
+    state.needsVerification = true;
+    state.lastVerificationOk = null;
+  }
+
   return state;
 }
 

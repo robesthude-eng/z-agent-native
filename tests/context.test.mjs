@@ -46,6 +46,40 @@ test('failed verification keeps the completion gate active', () => {
   assert.match(completionGate(strategy) || '', /verification/i);
 });
 
+test('dedicated verification tools satisfy the completion gate only on success', () => {
+  const testsStrategy = createTurnStrategy('Fix behavior');
+  observeTool(testsStrategy, { name: 'edit', arguments: { path: 'feature.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] });
+  observeTool(testsStrategy, { name: 'run_tests', arguments: {} }, { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: ['.'] });
+  assert.equal(testsStrategy.verificationAttempts, 1);
+  assert.equal(testsStrategy.lastVerificationOk, true);
+  assert.equal(testsStrategy.needsVerification, false);
+
+  const failedTests = createTurnStrategy('Fix behavior');
+  observeTool(failedTests, { name: 'write', arguments: { path: 'feature.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] });
+  observeTool(failedTests, { name: 'run_tests', arguments: {} }, { isError: false, metadata: { tests: { exit: 1 } }, mutatedPaths: ['.'] });
+  assert.equal(failedTests.lastVerificationOk, false);
+  assert.equal(failedTests.needsVerification, true);
+
+  const diagnosticsStrategy = createTurnStrategy('Fix types');
+  observeTool(diagnosticsStrategy, { name: 'edit', arguments: { path: 'types.ts' } }, { isError: false, metadata: {}, mutatedPaths: ['types.ts'] });
+  observeTool(diagnosticsStrategy, { name: 'diagnostics', arguments: { kind: 'typecheck' } }, { isError: false, metadata: { diagnostics: { ok: true } }, mutatedPaths: [] });
+  assert.equal(diagnosticsStrategy.lastVerificationOk, true);
+  assert.equal(diagnosticsStrategy.needsVerification, false);
+});
+
+test('writer subagent mutations propagate into the parent completion strategy', () => {
+  const strategy = createTurnStrategy('Delegate a scoped implementation');
+  observeTool(strategy, { name: 'task', arguments: { agent: 'implement' } }, {
+    isError: false,
+    metadata: { subagent: true, agent: 'implement' },
+    mutatedPaths: ['src/feature.ts'],
+  });
+  assert.equal(strategy.changed, true);
+  assert.equal(strategy.needsVerification, true);
+  assert.equal(strategy.lastVerificationOk, null);
+  assert.match(completionGate(strategy) || '', /verification/i);
+});
+
 test('todowrite becomes pinned strategy guidance', () => {
   const strategy = createTurnStrategy('Implement feature');
   observeTool(strategy, { name: 'todowrite' }, {
