@@ -32,6 +32,17 @@ test('loop guard treats bash variants with tail/head as the same call', () => {
   assert.equal(stop?.code, 'repeated_tool_call');
 });
 
+test('loop guard allows the same check again after an edit', () => {
+  const guard = createLoopGuard({ callRepeatLimit: 3 });
+  const testCmd = { name: 'bash', arguments: { command: 'cd app && pytest -q' } };
+  const edit = { name: 'edit', arguments: { path: 'app.py', oldText: 'a', newText: 'b' } };
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'fail', isError: false }), null);
+  assert.equal(observeToolLoop(guard, edit, { content: 'edited', isError: false }), null);
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'fail2', isError: false }), null);
+  assert.equal(observeToolLoop(guard, edit, { content: 'edited', isError: false }), null);
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'ok', isError: false }), null);
+});
+
 test('loop guard stops the same call even when other tools are in between', () => {
   const guard = createLoopGuard({ callRepeatLimit: 3 });
   const compile = { name: 'bash', arguments: { command: 'python -m py_compile app.py' } };

@@ -84,7 +84,15 @@ export function createLoopGuard(options = {}) {
     recent: [],
     calls: [],
     callCounts: Object.create(null),
+    callLastSeen: Object.create(null),
+    lastMutationAt: -1,
   };
+}
+
+const WORKSPACE_MUTATING_TOOLS = new Set(['write', 'edit', 'apply_patch', 'ensure_environment']);
+
+function callMutatesWorkspace(call) {
+  return WORKSPACE_MUTATING_TOOLS.has(String(call?.name || '').trim().toLowerCase());
 }
 
 function repeatingCycle(calls, periodMin, periodMax) {
@@ -114,7 +122,14 @@ export function observeToolLoop(guard, call, result) {
 
   const name = String(call?.name || 'действие');
   const signature = callSignature(call);
+  const index = guard.calls.length;
+  // edit/write between two identical checks (pytest → edit → pytest) is progress.
+  if (callMutatesWorkspace(call) && !result?.isError) guard.lastMutationAt = index;
+  if (!guard.callLastSeen) guard.callLastSeen = Object.create(null);
+  const lastSeen = Number.isInteger(guard.callLastSeen[signature]) ? guard.callLastSeen[signature] : -1;
+  if (lastSeen >= 0 && Number(guard.lastMutationAt) > lastSeen) guard.callCounts[signature] = 0;
   guard.callCounts[signature] = Number(guard.callCounts[signature] || 0) + 1;
+  guard.callLastSeen[signature] = index;
   guard.calls.push(signature);
 
   const key = observationSignature(call, result);
