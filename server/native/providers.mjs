@@ -215,6 +215,9 @@ function retrySleepMs(err, attempt) {
 
 function grantRateLimitRetry(err, state) {
   if (!isRateLimitProviderError(err) || state.rateLimitExtra <= 0) return false;
+  // Autopilot can switch models. Sitting 3–4 minutes on one 429 (OpenCode
+  // Zen free tier) is worse than failing this candidate immediately.
+  if (state.failFastRateLimit) return false;
   state.rateLimitExtra -= 1;
   if (state.attemptsLeft < 1) state.attemptsLeft = 1;
   return true;
@@ -244,11 +247,15 @@ async function providerFetch(target, init) {
   return target.pinned ? await safeExternalFetch(target.url, init) : await fetch(target.url, init);
 }
 
-async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
+async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateLimit = false } = {}) {
   let lastError = null;
   let current = { url: target.url, pinned: target.pinned };
   let fallback = target.fallback || null;
-  const state = { attemptsLeft: retries + 1, rateLimitExtra: RATE_LIMIT_EXTRA_RETRIES };
+  const state = {
+    attemptsLeft: retries + 1,
+    rateLimitExtra: failFastRateLimit ? 0 : RATE_LIMIT_EXTRA_RETRIES,
+    failFastRateLimit,
+  };
   let attempt = 0;
   while (state.attemptsLeft > 0) {
     state.attemptsLeft -= 1;
@@ -264,6 +271,7 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
     } catch (err) {
       lastError = classifyWatchdogAbort(err, t, outerSignal);
       if (!isTransientProviderError(lastError, outerSignal)) throw lastError;
+      if (state.failFastRateLimit && isRateLimitProviderError(lastError)) throw lastError;
       if (fallback) {
         current = fallback;
         fallback = null;
@@ -282,11 +290,15 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
   throw lastError || new Error('Provider request failed');
 }
 
-async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}) {
+async function fetchSse(target, init, outerSignal, onEvent, { retries = 2, failFastRateLimit = false } = {}) {
   let lastError = null;
   let current = { url: target.url, pinned: target.pinned };
   let fallback = target.fallback || null;
-  const state = { attemptsLeft: retries + 1, rateLimitExtra: RATE_LIMIT_EXTRA_RETRIES };
+  const state = {
+    attemptsLeft: retries + 1,
+    rateLimitExtra: failFastRateLimit ? 0 : RATE_LIMIT_EXTRA_RETRIES,
+    failFastRateLimit,
+  };
   let attempt = 0;
   while (state.attemptsLeft > 0) {
     state.attemptsLeft -= 1;
@@ -346,6 +358,7 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
       // of aborting a turn that already made progress.
       if (received > 0 && isTransientProviderError(lastError, outerSignal)) return;
       if (!isTransientProviderError(lastError, outerSignal)) throw lastError;
+      if (state.failFastRateLimit && isRateLimitProviderError(lastError)) throw lastError;
       if (fallback) {
         current = fallback;
         fallback = null;
@@ -645,7 +658,7 @@ function openAiMessages(frames) {
   return out;
 }
 
-async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta }) {
+async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
     preferDirect: typeof onTextDelta === 'function',
@@ -658,7 +671,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
   };
   const headers = { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${resolved.key}` };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, { failFastRateLimit });
     const choice = body?.choices?.[0];
     const msg = choice?.message || {};
     const toolCalls = (msg.tool_calls || []).map((c) => toolCallFromParsed(c.id || `call_${Math.random().toString(36).slice(2)}`, c.function?.name || '', c.function?.arguments)).filter((c) => c.name);
@@ -687,7 +700,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
       if (piece.function?.arguments) current.arguments += piece.function.arguments;
       calls.set(index, current);
     }
-  });
+  }, { failFastRateLimit });
   const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
   return { text, toolCalls, usage, finish, streamed: true };
 }
@@ -723,7 +736,7 @@ function anthropicMessages(frames) {
   return out;
 }
 
-async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta }) {
+async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
     preferDirect: typeof onTextDelta === 'function',
@@ -731,7 +744,7 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, { failFastRateLimit });
     const content = Array.isArray(body?.content) ? body.content : [];
     return {
       text: content.filter((b) => b.type === 'text').map((b) => b.text || '').join(''),
@@ -766,7 +779,7 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
         calls.set(event.index, current);
       }
     }
-  });
+  }, { failFastRateLimit });
   const toolCalls = [...calls.values()].map((c) => toolCallFromParsed(c.id, c.name, c.partial || c.baseInput || {})).filter((c) => c.name);
   return { text, toolCalls, usage, finish, streamed: true };
 }
@@ -799,7 +812,7 @@ function geminiContents(frames) {
   return out;
 }
 
-async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta }) {
+async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
   const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}${typeof onTextDelta === 'function' ? '?alt=sse' : ''}`;
@@ -834,11 +847,11 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
   };
   const state = { text: '', calls: [], usage: null, finish: null };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, { failFastRateLimit });
     consume(body, state);
     return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: false };
   }
-  await fetchSse(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, (event) => consume(event, state));
+  await fetchSse(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, (event) => consume(event, state), { failFastRateLimit });
   return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: true };
 }
 
