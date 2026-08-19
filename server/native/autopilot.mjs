@@ -184,7 +184,7 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
         : {}),
     };
     try {
-      const response = await invoke(candidate, wrappedRequest);
+      const response = await invoke(candidate, wrappedRequest, index);
       attempts.push({ model: candidate, ok: true, latencyMs: Date.now() - startedAt });
       options.onAttempt?.(attempts.at(-1));
       return { ...response, model: candidate, attempts };
@@ -225,12 +225,24 @@ function healthRecorder(ownerId) {
   };
 }
 
+function failFastRateLimitFor(plan, index) {
+  const n = Array.isArray(plan?.candidates) ? plan.candidates.length : 0;
+  // Last remaining candidate should still wait out a 429. Anything we can
+  // replace (other candidates, or expandOnFailure after an explicit pick)
+  // must not burn ~3.5 minutes of extra retries first.
+  if (plan?.expandOnFailure) return true;
+  return index < n - 1;
+}
+
 export async function callModelAutopilot(ownerId, plan, request) {
   try {
     return await runFallbackPlan(
       plan,
       request,
-      (candidate, wrappedRequest) => callProviderModel(ownerId, candidate, wrappedRequest),
+      (candidate, wrappedRequest, index) => callProviderModel(ownerId, candidate, {
+        ...wrappedRequest,
+        failFastRateLimit: failFastRateLimitFor(plan, index),
+      }),
       healthRecorder(ownerId),
     );
   } catch (error) {
@@ -247,7 +259,10 @@ export async function callModelAutopilot(ownerId, plan, request) {
     const fallback = await runFallbackPlan(
       expanded,
       request,
-      (candidate, wrappedRequest) => callProviderModel(ownerId, candidate, wrappedRequest),
+      (candidate, wrappedRequest, index) => callProviderModel(ownerId, candidate, {
+        ...wrappedRequest,
+        failFastRateLimit: failFastRateLimitFor(expanded, index),
+      }),
       healthRecorder(ownerId),
     );
     return {
