@@ -1,0 +1,20 @@
+services:
+  z-agent:
+    ports: !override
+      - "127.0.0.1:3002:3000"
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    depends_on:
+      - z-agent
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - z-agent-caddy-data:/data
+      - z-agent-caddy-config:/config
+
+volumes:
+  z-agent-caddy-data:
+  z-agent-caddy-config:
