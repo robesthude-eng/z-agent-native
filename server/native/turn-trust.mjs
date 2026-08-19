@@ -60,19 +60,47 @@ export function createLoopGuard(options = {}) {
     consecutiveLimit: Math.max(2, Number(options.consecutiveLimit) || 3),
     recentLimit: Math.max(3, Number(options.recentLimit) || 5),
     recentWindow: Math.max(4, Number(options.recentWindow) || 8),
+    callRepeatLimit: Math.max(2, Number(options.callRepeatLimit) || 3),
+    cyclePeriodMin: Math.max(3, Number(options.cyclePeriodMin) || 3),
+    cyclePeriodMax: Math.max(3, Number(options.cyclePeriodMax) || 6),
     last: null,
     consecutive: 0,
     recent: [],
+    calls: [],
+    callCounts: Object.create(null),
   };
 }
 
+function repeatingCycle(calls, periodMin, periodMax) {
+  const seq = Array.isArray(calls) ? calls : [];
+  for (let period = periodMax; period >= periodMin; period--) {
+    if (seq.length < period * 2) continue;
+    const first = seq.slice(-period * 2, -period);
+    const second = seq.slice(-period);
+    if (first.length === period && first.every((item, index) => item === second[index])) {
+      return period;
+    }
+  }
+  return 0;
+}
+
 /**
- * Detect an actual no-progress loop: the same tool call must produce the same
- * result repeatedly. The same read after a file changed has a different result
- * digest and therefore does not trip the guard.
+ * Stop no-progress loops:
+ * - the same call + same result several times in a row;
+ * - the same call (even interleaved) too many times in one turn;
+ * - a repeating cycle of 3–6 distinct calls (compile → test → hash → …).
+ * Period 2 is ignored so a normal read/edit loop can continue.
  */
 export function observeToolLoop(guard, call, result) {
   if (!guard) return null;
+  if (!guard.callCounts) guard.callCounts = Object.create(null);
+  if (!Array.isArray(guard.calls)) guard.calls = [];
+
+  const name = String(call?.name || 'действие');
+  const signature = callSignature(call);
+  guard.callCounts[signature] = Number(guard.callCounts[signature] || 0) + 1;
+  guard.calls.push(signature);
+
   const key = observationSignature(call, result);
   if (key === guard.last) guard.consecutive += 1;
   else {
@@ -83,7 +111,6 @@ export function observeToolLoop(guard, call, result) {
   guard.recent.push(key);
   if (guard.recent.length > guard.recentWindow) guard.recent.shift();
   const recentCount = guard.recent.reduce((n, item) => n + (item === key ? 1 : 0), 0);
-  const name = String(call?.name || 'действие');
 
   if (guard.consecutive >= guard.consecutiveLimit) {
     return {
@@ -93,12 +120,29 @@ export function observeToolLoop(guard, call, result) {
       message: `Агент ${guard.consecutive} раза подряд повторил одно и то же действие «${name}» без нового результата.`,
     };
   }
+  if (guard.callCounts[signature] >= guard.callRepeatLimit) {
+    return {
+      code: 'repeated_tool_call',
+      tool: name,
+      repeats: guard.callCounts[signature],
+      message: `Агент ${guard.callCounts[signature]} раза повторил одно и то же действие «${name}» в этом ходе.`,
+    };
+  }
   if (recentCount >= guard.recentLimit) {
     return {
       code: 'cyclic_tool_result',
       tool: name,
       repeats: recentCount,
       message: `Агент возвращается к одному и тому же действию «${name}» без заметного прогресса.`,
+    };
+  }
+  const period = repeatingCycle(guard.calls, guard.cyclePeriodMin, guard.cyclePeriodMax);
+  if (period) {
+    return {
+      code: 'cyclic_tool_sequence',
+      tool: name,
+      repeats: period,
+      message: `Агент зациклил набор из ${period} действий и повторяет его без нового результата.`,
     };
   }
   return null;
