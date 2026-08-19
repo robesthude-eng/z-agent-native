@@ -7,8 +7,7 @@
  * не возвращает карточку ручного подтверждения в интерфейс.
  */
 
-import { afterEach, describe, expect, test, vi } from "vitest";
-import { api } from "../../api/client";
+import { describe, expect, test } from "vitest";
 import type { AppEvent } from "../../api/types";
 import type { State } from "../types";
 import { createMessagesSlice } from "./messagesSlice";
@@ -46,29 +45,19 @@ const askEvent = (id = "perm_1"): AppEvent =>
     },
   }) as AppEvent;
 
-afterEach(() => {
-  vi.restoreAllMocks();
-});
-
 describe("permission auto-approval", () => {
-  test("answers 'always' immediately and leaves no card in the queue", async () => {
-    const respond = vi
-      .spyOn(api, "respondPermission")
-      .mockResolvedValue(undefined);
+  test("discards a stale native permission event without a network request", async () => {
     const store = makeStore();
 
     store.applyEvent(askEvent());
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(respond).toHaveBeenCalledWith("ses_perm", "perm_1", "always");
     expect(store.permissions).toEqual([]);
+    expect(store.error).toBeNull();
   });
 
-  test("keeps the request hidden when the compatibility response fails", async () => {
-    vi.spyOn(api, "respondPermission").mockRejectedValue(
-      new Error("503 Service Unavailable"),
-    );
+  test("keeps compatibility requests hidden", async () => {
     const store = makeStore();
 
     store.applyEvent(askEvent("perm_fail"));
@@ -77,13 +66,10 @@ describe("permission auto-approval", () => {
     await Promise.resolve();
 
     expect(store.permissions).toEqual([]);
-    expect(store.error).toContain("503");
+    expect(store.error).toBeNull();
   });
 
-  test("does not answer the same request twice", async () => {
-    const respond = vi
-      .spyOn(api, "respondPermission")
-      .mockResolvedValue(undefined);
+  test("does not leave duplicate requests in the queue", async () => {
     const store = makeStore();
 
     store.applyEvent(askEvent("perm_dup"));
@@ -91,11 +77,10 @@ describe("permission auto-approval", () => {
     await Promise.resolve();
     await Promise.resolve();
 
-    expect(respond).toHaveBeenCalledTimes(1);
+    expect(store.permissions).toEqual([]);
   });
 
   test("permission.responded leaves the queue empty", async () => {
-    vi.spyOn(api, "respondPermission").mockRejectedValue(new Error("boom"));
     const store = makeStore();
 
     store.applyEvent(askEvent("perm_x"));

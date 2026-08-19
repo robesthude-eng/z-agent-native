@@ -29,20 +29,31 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 
 The supplied Docker deployment runs the trusted runtime as container root only so it can drop privileges for agent processes. Each chat gets a unique Unix UID; UIDs are never reused after chat deletion.
 
-The following run as the chat UID with a minimal environment:
+The following run through `setpriv` as the chat UID, with supplementary groups
+cleared, `no-new-privs` set and a minimal environment:
 
 - `bash`
 - `git apply` used by `apply_patch`
 - interactive terminal
-- Workspace Git status
+- Workspace Git status/diff/revert
+- automatic Git snapshots used by turn results and rollback
 
 The chat workspace is mode 0700. `/workspaces` is traversable but not listable; sibling session roots remain inaccessible. `/data` is mode 0700 and cannot be traversed by agent UIDs.
 
-On non-root bare metal, shell/terminal are disabled by default. `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is an explicit unsafe single-user development fallback, not a production mode.
+Startup performs a real privilege-drop probe; merely running as UID 0 is not
+treated as proof that the sandbox works. On non-root bare metal, or when that
+probe fails, shell/terminal are disabled by default.
+`Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is an explicit unsafe single-user
+development fallback, not a production mode.
 
 ## Network boundary
 
-User-supplied custom model endpoints and `webfetch` are SSRF-filtered. Loopback, private, link-local, reserved, metadata-like and unsafe DNS results are rejected. Administrator-configured provider base URLs are intentionally trusted so a deployment can use a local/VPC LLM gateway.
+Configured model endpoints must use HTTPS and, like `webfetch`, are
+SSRF-filtered. Loopback, private,
+link-local, reserved, metadata-like and unsafe DNS results are rejected. The
+validated public address is pinned into the socket connection, including for
+streaming provider requests, so DNS cannot change the destination between the
+check and connect.
 
 ## Automatic tool approval
 

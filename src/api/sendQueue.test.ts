@@ -19,6 +19,7 @@ import {
   type QueueEntry,
   removalPlan,
 } from "@/api/sendQueue";
+import type { ProcessedFile } from "@/api/files";
 
 const SID = "ses_real";
 const srv = (actionId: string, text: string, position: number): QueueEntry => ({
@@ -33,6 +34,14 @@ const loc = (actionId: string, text: string): QueueEntry => ({
   position: null,
   origin: "local",
 });
+const attachment: ProcessedFile = {
+  name: "diagram.png",
+  size: 123,
+  mime: "image/png",
+  ext: "png",
+  kind: "image",
+  workspacePath: "uploads/diagram.png",
+};
 
 describe("куда класть сообщение", () => {
   it("настоящая сессия при включённом флаге — на сервер", () => {
@@ -87,6 +96,15 @@ describe("сообщение не теряется", () => {
     // Тот же ключ, а не новый: повторная отправка с новым ключом создала бы
     // второй ход — ровно тот фантомный дубль, ради которого заведён реестр.
     expect(after.actionId).toBe("act_keepme");
+  });
+
+  it("вложение переживает серверную очередь и локальный fallback", () => {
+    const plan = enqueuePlan("", SID, {
+      enabled: true,
+      attachments: [{ ...attachment, dataUrl: "data:image/png;base64,AA==" }],
+    });
+    const after = fallbackToLocal(plan);
+    expect(after.attachments).toEqual([attachment]);
   });
 
   it("откат идемпотентен: локальная запись остаётся собой", () => {
@@ -176,6 +194,20 @@ describe("разбор ответа сервера", () => {
     // Сломанный ответ не должен выглядеть как пустая очередь: разница между
     // «ничего не стоит» и «не смогли прочитать» видна пользователю сразу.
     expect(parsed.map((e) => e.actionId)).toEqual(["a", "c"]);
+  });
+
+  it("восстанавливает attachment-only запись из серверной очереди", () => {
+    const parsed = parseServerQueue({
+      queue: [
+        {
+          actionId: "with_file",
+          payload: { text: "", attachments: [attachment] },
+          position: 1,
+        },
+      ],
+    });
+    expect(parsed[0]?.attachments).toEqual([attachment]);
+    expect(nextToSend(parsed, false)?.text).toBe("");
   });
 
   it("не роняется ни на чём", () => {

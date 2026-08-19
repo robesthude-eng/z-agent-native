@@ -66,4 +66,5 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('git diff --check'), 'read_only');
   assert.equal(classifyBash('git log -5 --oneline'), 'read_only');
   assert.equal(classifyBash('npm install foo'), 'may_mutate');
+  assert.equal(classifyBash('npm test && sed -i s/a/b/ file.txt'), 'may_mutate');
 });

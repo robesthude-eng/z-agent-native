@@ -105,9 +105,8 @@ describe("assistantFinishState", () => {
 });
 
 describe("FINAL_SETTLE_MS", () => {
-  it("совпадает с окном стабилизации арбитра на сервере", () => {
-    // server/turn-reconciler.mjs → THRESHOLDS.STABILIZATION_MS. Разные окна
-    // на клиенте и сервере — два разных ответа на вопрос «ход закончился?».
+  it("оставляет клиентскому fallback три секунды тишины", () => {
+    // Серверный turn projection не зависит от этого клиентского таймера.
     expect(FINAL_SETTLE_MS).toBe(3_000);
   });
 });

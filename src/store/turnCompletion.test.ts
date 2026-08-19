@@ -247,7 +247,7 @@ describe("новый путь: вердикт сервера", () => {
   });
 
   it("settled-вердикт закрывает ход", async () => {
-    vi.spyOn(api, "listMessages").mockResolvedValue([]);
+    const list = vi.spyOn(api, "listMessages").mockResolvedValue([]);
     vi.spyOn(api, "turnState").mockResolvedValue({
       orchestrator: true,
       turn: { turnId: "turn_1", lifecycle: "completed", verdict: "completed" },
@@ -258,6 +258,7 @@ describe("новый путь: вердикт сервера", () => {
     await expect(outcome).resolves.toBe("resolved");
     // Проекция кладётся в стор до всякого решения о завершении.
     expect(onTurnProjection).toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
   });
 
   it("failed-вердикт помечает сессию ошибкой", async () => {

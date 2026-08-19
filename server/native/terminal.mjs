@@ -5,7 +5,7 @@ import { ALLOWED_ORIGINS } from './config.mjs';
 import { isSessionId } from './security.mjs';
 import { managedShellEnvironment } from './environment.mjs';
 import { ownsChat, workspaceFor } from './store.mjs';
-import { prepareWorkspaceSandbox, shellSandboxAvailable } from './sandbox.mjs';
+import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable } from './sandbox.mjs';
 import { ensureWorkspaceWatcher } from './watcher.mjs';
 
 let ptySpawn = null;
@@ -80,11 +80,8 @@ export async function initTerminal(httpServer) {
     const env = shellEnv(cwd);
     const identity = prepareWorkspaceSandbox(sid, cwd);
     if (ptySpawn) {
-      const command = identity.isolated ? '/usr/bin/setpriv' : '/bin/bash';
-      const args = identity.isolated
-        ? [`--reuid=${identity.uid}`, `--regid=${identity.gid}`, '--clear-groups', '--', '/bin/bash', '--noprofile', '--norc', '-i']
-        : ['--noprofile', '--norc', '-i'];
-      const pty = ptySpawn(command, args, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env });
+      const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-i']);
+      const pty = ptySpawn(launch.file, launch.args, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env, ...launch.options });
       pty.onData((data) => socket.emit('data', data));
       pty.onExit(() => socket.disconnect(true));
       socket.on('data', (data) => pty.write(String(data)));
@@ -97,7 +94,8 @@ export async function initTerminal(httpServer) {
       return;
     }
 
-    const child = spawn('/bin/bash', ['-i'], { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...(identity.isolated ? { uid: identity.uid, gid: identity.gid } : {}) });
+    const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-i']);
+    const child = spawn(launch.file, launch.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
     child.stdout.on('data', (d) => socket.emit('data', d.toString('utf8')));
     child.stderr.on('data', (d) => socket.emit('data', d.toString('utf8')));
     socket.on('data', (data) => child.stdin.write(String(data)));

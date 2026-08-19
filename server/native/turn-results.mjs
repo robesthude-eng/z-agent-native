@@ -2,9 +2,9 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { DATA_DIR } from './config.mjs';
+import { DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { safeWorkspacePath } from './security.mjs';
-import { syncSandboxOwnership } from './sandbox.mjs';
+import { prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
 import { getTurn, listMessages, workspaceFor } from './store.mjs';
 
 const RESULT_DIR = path.join(DATA_DIR, 'turn-results');
@@ -19,13 +19,40 @@ function safeId(value, prefix) {
   return text;
 }
 
+function sessionIdForWorkspace(root) {
+  const resolved = path.resolve(root);
+  if (path.dirname(resolved) !== path.resolve(WORKSPACES_DIR)) return null;
+  const id = path.basename(resolved);
+  return /^ses_[A-Za-z0-9]+$/.test(id) ? id : null;
+}
+
 function git(root, args, options = {}) {
-  const result = spawnSync('git', ['-c', `safe.directory=${root}`, ...args], {
+  const sessionId = sessionIdForWorkspace(root);
+  const launch = sessionId
+    ? sandboxCommand(prepareWorkspaceSandbox(sessionId, root), 'git', [
+      '-c', `safe.directory=${root}`,
+      '-c', 'core.hooksPath=/dev/null',
+      ...args,
+    ])
+    : { file: 'git', args: [
+    '-c', `safe.directory=${root}`,
+    '-c', 'core.hooksPath=/dev/null',
+    ...args,
+    ], options: {} };
+  const result = spawnSync(launch.file, launch.args, {
     cwd: root,
     encoding: options.encoding === 'buffer' ? null : 'utf8',
     timeout: Number(options.timeoutMs) || 30_000,
     maxBuffer: Number(options.maxBuffer) || 8 * 1024 * 1024,
-    env: options.env || process.env,
+    env: {
+      PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+      HOME: path.join(root, '.agent-home'),
+      USER: 'agent',
+      LANG: process.env.LANG || 'C.UTF-8',
+      GIT_CONFIG_NOSYSTEM: '1',
+      ...(options.env || {}),
+    },
+    ...launch.options,
   });
   if (result.error) throw result.error;
   if ((result.status ?? 1) !== 0) {
@@ -88,17 +115,27 @@ export function captureWorkspaceTree(root) {
   git(root, ['rev-parse', '--git-dir']);
   const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-turn-index-'));
   const tempIndex = path.join(tempDir, 'index');
+  const sessionId = sessionIdForWorkspace(root);
+  const identity = sessionId ? prepareWorkspaceSandbox(sessionId, root) : null;
+  if (identity?.isolated) fs.chownSync(tempDir, identity.uid, identity.gid);
   try {
     const index = currentIndexPath(root);
-    if (fs.existsSync(index)) fs.copyFileSync(index, tempIndex);
+    if (fs.existsSync(index)) {
+      fs.copyFileSync(index, tempIndex);
+      if (identity?.isolated) fs.chownSync(tempIndex, identity.uid, identity.gid);
+    }
     else {
       const head = tryGit(root, ['rev-parse', '--verify', 'HEAD']);
-      const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
+      const env = { GIT_INDEX_FILE: tempIndex };
       if (head) git(root, ['read-tree', String(head).trim()], { env });
       else git(root, ['read-tree', '--empty'], { env });
     }
-    const env = { ...process.env, GIT_INDEX_FILE: tempIndex };
-    git(root, ['add', '-A', '--', '.', ':(exclude).agent-home/**'], { env, timeoutMs: 60_000 });
+    const env = { GIT_INDEX_FILE: tempIndex };
+    git(root, [
+      'add', '-A', '--', '.',
+      ':(exclude).agent-home',
+      ':(exclude).agent-home/**',
+    ], { env, timeoutMs: 60_000 });
     return String(git(root, ['write-tree'], { env })).trim();
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });

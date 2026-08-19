@@ -90,12 +90,27 @@ describe("newSession: кнопка не поднимает контейнер", 
     const store = makeStore({ sessions: [], currentID: null });
     await store.newSession();
 
-    await store.materializeSession();
+    await expect(store.materializeSession()).rejects.toThrow("502");
 
     // Чат-призрак не должен остаться в сайдбаре: отправка из него всё равно
     // невозможна, а выглядел бы он как обычный.
     expect(store.sessions).toHaveLength(0);
     expect(store.error).toContain("502");
+  });
+
+  it("не переключает неудавшуюся отправку нового чата на старую сессию", async () => {
+    vi.spyOn(api, "createSession").mockRejectedValue(new Error("create failed"));
+    const store = makeStore({
+      sessions: [ses("ses_old", 1)],
+      currentID: "ses_old",
+      messages: { ses_old: [] },
+    });
+    await store.newSession();
+
+    await expect(store.materializeSession()).rejects.toThrow("create failed");
+
+    expect(store.currentID).toBe("ses_old");
+    expect(store.sessions.map((session) => session.id)).toEqual(["ses_old"]);
   });
 
   it("два параллельных вызова создают ровно одну сессию", async () => {

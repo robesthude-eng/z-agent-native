@@ -307,6 +307,12 @@ export default function Workspace() {
       const el = e.target as HTMLInputElement;
       const fileList = el.files;
       if (!fileList || fileList.length === 0) return;
+      const uploadSessionId = currentID;
+      if (!workspaceOperable(uploadSessionId)) {
+        setUploadMsg("Ошибка: нет активного workspace");
+        el.value = "";
+        return;
+      }
       const files: { path: string; file: File }[] = [];
       for (let i = 0; i < fileList.length; i++) {
         const file = fileList[i];
@@ -323,13 +329,21 @@ export default function Workspace() {
       try {
         let done = 0;
         for (const batch of uploadBatches(files, 20)) {
-          if (!currentID) throw new Error("Нет активного workspace");
-          await api.uploadFolder(batch, currentID);
-          done += batch.length;
+          const result = await api.uploadFolder(batch, uploadSessionId);
+          done += result.written;
           setUploadProgress(done);
+          if (!result.ok) {
+            const detail = result.errors?.slice(0, 3).join("; ");
+            throw new Error(
+              detail ||
+                `Сервер записал ${result.written} из ${batch.length} файлов`,
+            );
+          }
         }
         setUploadMsg(`Загружено файлов: ${files.length}`);
-        refresh().catch(() => {});
+        if (useStore.getState().currentID === uploadSessionId) {
+          refresh().catch(() => {});
+        }
         setTimeout(() => setUploadMsg(null), 3000);
       } catch (err: unknown) {
         setUploadMsg(`Ошибка: ${(err as Error).message}`);

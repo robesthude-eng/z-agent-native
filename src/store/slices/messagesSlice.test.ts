@@ -135,7 +135,7 @@ describe("messagesSlice streaming event reducer", () => {
     );
   });
 
-  test("recovers from 410 Gone by replacing the stale session before retrying", async () => {
+  test("replaces a missing backend session before retrying", async () => {
     const newSid = "ses_recovered";
     const prompt = vi
       .spyOn(api, "promptWithParts")
@@ -155,7 +155,7 @@ describe("messagesSlice streaming event reducer", () => {
       });
     };
 
-    // The new send() logic calls get().send(text) after 410 Gone recovery,
+    // The new send() logic calls get().send(text) after missing-session recovery,
     // which re-enters send() and calls promptWithParts again. But the test
     // store's get().send() goes through the same path that fails on
     // getSystemInstruction() (no base URL in test env). So we only verify

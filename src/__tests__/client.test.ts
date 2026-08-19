@@ -2,7 +2,12 @@
  * Tests for src/api/client.ts
  */
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { api, configure, getConfig } from "../api/client";
+import {
+  api,
+  configure,
+  getConfig,
+  SessionGoneError,
+} from "../api/client";
 
 // Mock fetch
 global.fetch = vi.fn();
@@ -117,6 +122,19 @@ describe("client", () => {
       });
 
       await expect(api.health()).rejects.toThrow("non-JSON");
+    });
+
+    test("maps the server's 404 Session not found to SessionGoneError", async () => {
+      (global.fetch as ReturnType<typeof vi.fn>).mockResolvedValueOnce(
+        new Response(JSON.stringify({ error: "Session not found" }), {
+          status: 404,
+          headers: { "content-type": "application/json" },
+        }),
+      );
+
+      await expect(api.listMessages("ses_missing404")).rejects.toBeInstanceOf(
+        SessionGoneError,
+      );
     });
   });
 

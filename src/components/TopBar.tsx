@@ -270,7 +270,11 @@ export default function TopBar() {
       >
         <LazyPanel label="предпросмотр" skeleton={<PanelBodySkeleton />}>
           <PreviewPanel
-            url={currentID ? `/api/sandbox-proxy/${currentID}/` : ""}
+            url={
+              currentID
+                ? `/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/index.html`
+                : ""
+            }
           />
         </LazyPanel>
       </PanelModal>

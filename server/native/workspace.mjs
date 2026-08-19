@@ -6,12 +6,13 @@ import { diffGitChange, listGitChanges, revertGitChange } from './git-changes.mj
 import { sendJson } from './json.mjs';
 import { boundaryFromContentType, fileSink, parseMultipartStream, PART_TOO_LARGE } from './multipart.mjs';
 import { safeWorkspacePath } from './security.mjs';
-import { sandboxSpawnOptions, syncSandboxOwnership } from './sandbox.mjs';
+import { prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
 import { workspaceFor } from './store.mjs';
 import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
 
 const TEXT_EXTS = new Set(['.txt','.md','.json','.js','.jsx','.ts','.tsx','.css','.scss','.html','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.py','.rb','.go','.rs','.java','.kt','.c','.cpp','.h','.hpp','.cs','.php','.swift','.sh','.bash','.zsh','.sql','.graphql','.vue','.svelte','.astro','.env','.csv','.tsv','.log']);
 const IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg']);
+const MAX_TREE_ENTRIES = 10_000;
 
 function kindOf(name) {
   const ext = path.extname(name).toLowerCase();
@@ -32,22 +33,27 @@ function listDir(root, relative) {
   const full = safeWorkspacePath(root, relative || '.', { allowMissing: false });
   return fs.readdirSync(full, { withFileTypes: true }).sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name)).map((entry) => {
     const target = path.join(full, entry.name);
-    return node(root, target, fs.statSync(target));
+    return node(root, target, fs.lstatSync(target));
   });
 }
 
 function tree(root) {
   const out = [];
   const walk = (dir) => {
+    if (out.length >= MAX_TREE_ENTRIES) return;
     let entries = [];
     try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
     entries.sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
     for (const entry of entries) {
+      if (out.length >= MAX_TREE_ENTRIES) break;
       if (entry.name === '.agent-home') continue;
       const full = path.join(dir, entry.name);
-      const item = node(root, full, fs.statSync(full));
+      const stat = fs.lstatSync(full);
+      // Never follow a workspace symlink while building an API response: it
+      // may point outside the session even though later content reads reject it.
+      const item = node(root, full, stat);
       out.push(item);
-      if (entry.isDirectory()) walk(full);
+      if (entry.isDirectory() && !stat.isSymbolicLink()) walk(full);
     }
   };
   walk(root);
@@ -68,8 +74,12 @@ function uniqueUploadPath(root, name) {
 function gitOptions(sessionId, root) {
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
+  const identity = prepareWorkspaceSandbox(sessionId, root);
+  const launch = sandboxCommand(identity, 'git');
   return {
-    spawnOptions: sandboxSpawnOptions(sessionId, root),
+    spawnFile: launch.file,
+    spawnArgsPrefix: launch.args,
+    spawnOptions: launch.options,
     env: {
       PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
       HOME: home,
@@ -191,6 +201,12 @@ export async function handleWorkspace(req, res, sessionId, url) {
   if (pathname === '/api/workspace/file' && req.method === 'DELETE') {
     const p = url.searchParams.get('path') || '';
     const full = safeWorkspacePath(root, p, { allowMissing: false });
+    // `.` resolves to the session workspace itself. Removing it through the
+    // single-file endpoint would also erase every unrelated project file and
+    // the runtime-owned .agent-home in one request.
+    if (path.resolve(full) === path.resolve(root)) {
+      return sendJson(res, 400, { error: 'Корень workspace удалить нельзя' });
+    }
     fs.rmSync(full, { recursive: true, force: true });
     emit(sessionId, 'file.edited', { paths: [p] });
     return sendJson(res, 200, { ok: true, path: p });

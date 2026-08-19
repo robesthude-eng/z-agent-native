@@ -1,4 +1,4 @@
-import { assertSafeExternalUrl, isLoopbackOrPrivateHost } from './security.mjs';
+import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from './security.mjs';
 import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
 
@@ -135,21 +135,34 @@ function transientStatus(status) {
 
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(resolve, ms);
+    const cleanup = () => signal?.removeEventListener('abort', onAbort);
+    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
     const onAbort = () => {
       clearTimeout(timer);
+      cleanup();
       reject(Object.assign(new Error('Request aborted'), { name: 'AbortError' }));
     };
+    if (signal?.aborted) { onAbort(); return; }
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
-async function fetchJson(url, init, outerSignal, { retries = 2 } = {}) {
+let providerTransportOverride = null;
+export function setProviderTransportForTests(fn) {
+  providerTransportOverride = typeof fn === 'function' ? fn : null;
+}
+
+async function providerFetch(target, init) {
+  if (providerTransportOverride) return await providerTransportOverride(target.url, init, target);
+  return target.pinned ? await safeExternalFetch(target.url, init) : await fetch(target.url, init);
+}
+
+async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
   let lastError = null;
   for (let attempt = 0; attempt <= retries; attempt++) {
     const t = timeoutSignal(reqTimeout, outerSignal);
     try {
-      const res = await fetch(url, { ...init, signal: t.signal });
+      const res = await providerFetch(target, { ...init, signal: t.signal });
       const text = await res.text();
       let body = null;
       try { body = text ? JSON.parse(text) : null; } catch { /* handled below */ }
@@ -169,10 +182,10 @@ async function fetchJson(url, init, outerSignal, { retries = 2 } = {}) {
   throw lastError || new Error('Provider request failed');
 }
 
-async function fetchSse(url, init, outerSignal, onEvent) {
+async function fetchSse(target, init, outerSignal, onEvent) {
   const t = timeoutSignal(Math.max(reqTimeout, 120_000), outerSignal);
   try {
-    const res = await fetch(url, { ...init, signal: t.signal });
+    const res = await providerFetch(target, { ...init, signal: t.signal });
     if (!res.ok) {
       const text = await res.text();
       let body = null;
@@ -220,11 +233,20 @@ function providerAuth(spec, key) {
   return { authorization: `Bearer ${key}` };
 }
 
-async function routedProviderUrl(directUrl, trustedBaseURL) {
+async function assertSafeProviderUrl(value) {
+  const url = await assertSafeExternalUrl(value);
+  if (url.protocol !== 'https:') {
+    throw Object.assign(new Error('Provider endpoints must use HTTPS'), { statusCode: 400 });
+  }
+  return url;
+}
+
+async function routedProviderTarget(directUrl, trustedBaseURL) {
   // Validate the user-controlled destination before a trusted relay hides the
   // original host from the SSRF guard.
-  if (!trustedBaseURL) await assertSafeExternalUrl(directUrl);
-  return wrapProviderUrl(directUrl);
+  if (!trustedBaseURL) await assertSafeProviderUrl(directUrl);
+  const url = wrapProviderUrl(directUrl);
+  return { url, pinned: !trustedBaseURL || url !== directUrl };
 }
 
 function modelListDirectUrl(spec, key) {
@@ -242,12 +264,15 @@ async function fetchModelList(spec, key) {
     ...providerAuth(spec, key),
   };
   const direct = modelListDirectUrl(spec, key);
-  if (!spec.trustedBaseURL) await assertSafeExternalUrl(direct);
-  const urls = [...new Set([wrapProviderUrl(direct), direct])];
+  if (!spec.trustedBaseURL) await assertSafeProviderUrl(direct);
+  const urls = [...new Set([wrapProviderUrl(direct), direct])].map((url) => ({
+    url,
+    pinned: !spec.trustedBaseURL || url !== direct,
+  }));
   let lastError = null;
-  for (const url of urls) {
+  for (const target of urls) {
     try {
-      return await fetchJson(url, { headers });
+      return await fetchJson(target, { headers });
     } catch (err) {
       lastError = err;
       const status = Number(err?.statusCode) || 0;
@@ -451,7 +476,7 @@ function openAiMessages(frames) {
 
 async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
-  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
@@ -460,7 +485,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
   };
   const headers = { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${resolved.key}` };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(url, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
     const choice = body?.choices?.[0];
     const msg = choice?.message || {};
     const toolCalls = (msg.tool_calls || []).map((c) => ({ id: c.id || `call_${Math.random().toString(36).slice(2)}`, name: c.function?.name || '', arguments: safeJsonArgs(c.function?.arguments) })).filter((c) => c.name);
@@ -471,7 +496,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
   let usage = null;
   let finish = null;
   const calls = new Map();
-  await fetchSse(url, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+  await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
     if (event?.usage) usage = event.usage;
     const choice = event?.choices?.[0];
     if (!choice) return;
@@ -531,11 +556,11 @@ function anthropicMessages(frames) {
 
 async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
-  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(url, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
     const content = Array.isArray(body?.content) ? body.content : [];
     return {
       text: content.filter((b) => b.type === 'text').map((b) => b.text || '').join(''),
@@ -550,7 +575,7 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
   let usage = null;
   let finish = null;
   const calls = new Map();
-  await fetchSse(url, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+  await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
     if (event?.type === 'message_start' && event.message?.usage) usage = event.message.usage;
     if (event?.type === 'message_delta') {
       if (event.delta?.stop_reason) finish = event.delta.stop_reason;
@@ -611,7 +636,7 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
   const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`;
-  const url = await routedProviderUrl(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
     systemInstruction: { parts: [{ text: system }] },
     contents: geminiContents(frames),
@@ -634,11 +659,11 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
   };
   const state = { text: '', calls: [], usage: null, finish: null };
   if (typeof onTextDelta !== 'function') {
-    const body = await fetchJson(url, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
+    const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
     consume(body, state);
     return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: false };
   }
-  await fetchSse(url, { method: 'POST', headers, body: JSON.stringify(request) }, signal, (event) => consume(event, state));
+  await fetchSse(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, (event) => consume(event, state));
   return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: true };
 }
 

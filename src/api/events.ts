@@ -47,13 +47,13 @@ export function getActiveStreamStatus(): StreamStatus {
 // подписан на события ОДНОЙ (активной) сессии. Для фоновой сессии
 // SSE может быть «open», но её события в клиент не приходят. Поэтому
 // здоровье SSE нужно спрашивать per-session: стрим открыт И подписан
-// именно на эту сессию (null = глобальная шина без фильтра по сессии,
-// тогда события получают все сессии).
+// именно на эту сессию. Native runtime не предоставляет глобальную шину:
+// null означает, что подключаться пока некуда.
 let activeStreamSessionId: string | null = null;
 export function isSseHealthyForSession(sessionId: string): boolean {
   return (
     activeStreamStatus === "open" &&
-    (activeStreamSessionId === null || activeStreamSessionId === sessionId)
+    activeStreamSessionId === sessionId
   );
 }
 
@@ -64,6 +64,13 @@ export class EventStream {
   private tokenRefreshDebounce: ReturnType<typeof setTimeout> | null = null;
   private url: string;
   private sessionId: string | null;
+  // The application stream is constructed before a chat is selected. In that
+  // state /api/event has no valid session scope and the server correctly
+  // rejects it, so wait instead of entering an endless 403 reconnect loop.
+  private readonly requiresSession: boolean;
+  // connect() may be called before a session exists. Remember that so
+  // switchSession can open the stream instead of waiting for a listener.
+  private connectRequested = false;
   private attempt = 0;
   private maxAttempts = 50; // после ~50 быстрых попыток — редкие ретраи раз в минуту
   // True after a real transport error — used to trigger a one-shot catch-up
@@ -74,6 +81,8 @@ export class EventStream {
   // ?lastEventId= при ручном реконнекте (новый EventSource сам
   // Last-Event-ID не посылает).
   private lastSeq: number | null = null;
+  private lastEpoch: string | null = null;
+  private lastEventId: string | null = null;
   // Должно соответствовать SSE_RING_SIZE на сервере: повтор старее
   // этого окна — не replay, а сброс счётчика (рестарт сервера).
   private static readonly RING_REPLAY_WINDOW = 500;
@@ -91,6 +100,7 @@ export class EventStream {
     namedTypes?: readonly string[],
   ) {
     this.sessionId = sessionId ?? null;
+    this.requiresSession = url === undefined;
     activeStreamSessionId = this.sessionId;
     this.url = url ?? eventUrl(this.sessionId);
     this.namedTypes = namedTypes ?? DEFAULT_NAMED_TYPES;
@@ -128,6 +138,8 @@ export class EventStream {
     this.url = eventUrl(sessionId);
     // Релиз 4: у другой сессии свой кольцевой буфер и своя нумерация.
     this.lastSeq = null;
+    this.lastEpoch = null;
+    this.lastEventId = null;
     this.attempt = 0;
     if (this.retry) {
       clearTimeout(this.retry);
@@ -137,11 +149,17 @@ export class EventStream {
       this.es.close();
       this.es = null;
     }
-    // Connect immediately if anyone is listening (or a connection existed).
-    if (this.handlers.size > 0) this.connect();
+    // Connect immediately if anyone is listening, or if connect() already ran
+    // and was only waiting for a session id.
+    if (this.connectRequested || this.handlers.size > 0) this.connect();
   }
 
   connect() {
+    this.connectRequested = true;
+    if (this.requiresSession && !this.sessionId) {
+      this.setStatus("closed");
+      return;
+    }
     // P1-fix: защита от двойного вызова connect() — если соединение уже
     // открыто или открывается, не создаём параллельный EventSource
     // (двойная подписка = дубли событий и лишняя нагрузка на прокси).
@@ -159,9 +177,9 @@ export class EventStream {
       // кадров из кольцевого буфера (новый EventSource не шлёт
       // Last-Event-ID сам — передаём через query-параметр).
       const url =
-        this.lastSeq === null
+        this.lastEventId === null
           ? this.url
-          : `${this.url}${this.url.includes("?") ? "&" : "?"}lastEventId=${this.lastSeq}`;
+          : `${this.url}${this.url.includes("?") ? "&" : "?"}lastEventId=${encodeURIComponent(this.lastEventId)}`;
       this.es = new EventSource(url);
     } catch {
       this.scheduleReconnect();
@@ -211,12 +229,25 @@ export class EventStream {
     // или сброс счётчика (рестарт сервера) — один раз дотягиваем
     // историю через stream.reconnected. Внутри одного TCP-соединения SSE
     // упорядочен, поэтому буферизация «не по порядку» не требуется.
-    const seq = Number.parseInt(eventId ?? "", 10);
+    const rawEventId = eventId ?? "";
+    const match = /^([^:]+):(\d+)$/.exec(rawEventId);
+    const epoch = match?.[1] ?? null;
+    const seq = Number.parseInt(match?.[2] ?? rawEventId, 10);
     if (Number.isFinite(seq)) {
-      if (this.lastSeq !== null && seq <= this.lastSeq) {
-        if (this.lastSeq - seq < EventStream.RING_REPLAY_WINDOW) return;
-        // Счётчик сервера сброшен — принимаем заново и дотягиваем историю.
+      if (epoch && this.lastEpoch && epoch !== this.lastEpoch) {
+        // New server process: its sequence legitimately starts near zero.
+        // Accept the frame and force one authoritative history catch-up.
+        this.lastEpoch = epoch;
         this.lastSeq = seq;
+        this.lastEventId = rawEventId;
+        this.emit({ type: "stream.reconnected", properties: {} });
+      } else if (this.lastSeq !== null && seq <= this.lastSeq) {
+        if (this.lastSeq - seq < EventStream.RING_REPLAY_WINDOW) return;
+        // Legacy numeric ids have no epoch. Keep the old large-rollback
+        // recovery path for compatibility with an older server.
+        this.lastSeq = seq;
+        this.lastEpoch = epoch;
+        this.lastEventId = rawEventId;
         this.emit({
           type: "stream.reconnected",
           properties: {},
@@ -224,6 +255,8 @@ export class EventStream {
       } else {
         const gap = this.lastSeq !== null && seq > this.lastSeq + 1;
         this.lastSeq = seq;
+        this.lastEpoch = epoch;
+        this.lastEventId = rawEventId;
         if (gap) {
           this.emit({
             type: "stream.reconnected",

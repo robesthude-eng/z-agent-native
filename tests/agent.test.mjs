@@ -10,6 +10,7 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const providers = await import('../server/native/providers.mjs');
 const providerConfigs = await import('../server/native/provider-configs.mjs');
 
 const ownerId = 'agent@example.com';
@@ -23,6 +24,7 @@ providerConfigs.upsertProviderConfig(ownerId, {
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-agent-test');
+providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 function sse(events) {
   return new Response(events.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), {
@@ -189,3 +191,5 @@ test('typed attachments stay separate from user text while model receives worksp
     agent.resetAgentStateForTests();
   }
 });
+
+test.after(() => providers.setProviderTransportForTests(null));

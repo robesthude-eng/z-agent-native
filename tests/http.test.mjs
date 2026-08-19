@@ -88,6 +88,29 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const loaded = await file.json();
   assert.equal(loaded.content, 'native workspace');
 
+  for (const [filePath, content] of [
+    ['index.html', '<!doctype html><link rel="stylesheet" href="style.css"><script src="app.js"></script><main>preview works</main>'],
+    ['style.css', 'main { color: green; }'],
+    ['app.js', 'document.documentElement.dataset.preview = "ready";'],
+  ]) {
+    const response = await fetch(`${base}/api/workspace/file?sessionId=${encodeURIComponent(session.id)}`, {
+      method: 'PUT',
+      headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+      body: JSON.stringify({ path: filePath, content }),
+    });
+    assert.equal(response.status, 200, await response.text());
+  }
+  const previewBase = `${base}/api/sandbox-proxy/${encodeURIComponent(session.id)}/~`;
+  const preview = await fetch(`${previewBase}/index.html`, { headers: { cookie } });
+  assert.equal(preview.status, 200);
+  assert.match(await preview.text(), /preview works/);
+  const csp = preview.headers.get('content-security-policy') || '';
+  assert.match(csp, /script-src 'self'/);
+  assert.match(csp, /style-src 'self'/);
+  const previewScript = await fetch(`${previewBase}/app.js`, { headers: { cookie } });
+  assert.equal(previewScript.status, 200);
+  assert.match(await previewScript.text(), /dataset\.preview/);
+
   const sessions = await fetch(`${base}/api/session`, { headers: { cookie } });
   assert.equal(sessions.status, 200);
   assert.equal((await sessions.json()).length, 1);
@@ -111,6 +134,13 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   assert.equal(uploadedRead.status, 200);
   assert.equal((await uploadedRead.json()).content, 'attached through native runtime');
 
+  const deleteWorkspaceRoot = await fetch(`${base}/api/workspace/file?sessionId=${encodeURIComponent(session.id)}&path=.`, {
+    method: 'DELETE',
+    headers: { cookie, 'x-csrf-token': csrf },
+  });
+  assert.equal(deleteWorkspaceRoot.status, 400);
+  assert.equal(fs.existsSync(path.join(root, 'workspaces', session.id, 'project', 'hello.txt')), true);
+
   const unknownProvider = await fetch(`${base}/api/auth/not-a-provider`, {
     method: 'PUT',
     headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
@@ -126,6 +156,30 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
     body: JSON.stringify({ response: 'once' }),
   });
   assert.equal(legacyPermission.status, 404);
+
+  const invalidQueue = await fetch(`${base}/api/session/${session.id}/queue`, {
+    method: 'POST',
+    headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+    body: JSON.stringify({ actionId: '', payload: { text: 'lost', attachments: [] } }),
+  });
+  assert.equal(invalidQueue.status, 400);
+  const queued = await fetch(`${base}/api/session/${session.id}/queue`, {
+    method: 'POST',
+    headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+    body: JSON.stringify({
+      actionId: 'act_httpqueue1',
+      payload: {
+        text: '',
+        attachments: [{ name: 'note.txt', workspacePath: 'uploads/note.txt' }],
+      },
+    }),
+  });
+  assert.equal(queued.status, 200, await queued.text());
+  const queueList = await fetch(`${base}/api/session/${session.id}/queue`, {
+    headers: { cookie },
+  });
+  assert.equal(queueList.status, 200);
+  assert.equal((await queueList.json()).queue[0].actionId, 'act_httpqueue1');
 
   const logout = await fetch(`${base}/api/auth/logout`, {
     method: 'POST',

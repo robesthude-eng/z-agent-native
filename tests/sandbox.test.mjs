@@ -14,7 +14,7 @@ const store = await import('../server/native/store.mjs');
 const sandbox = await import('../server/native/sandbox.mjs');
 const { executeTool } = await import('../server/native/tools.mjs');
 
-const rootRuntime = typeof process.getuid === 'function' && process.getuid() === 0;
+const secureSandboxAvailable = sandbox.shellSandboxAvailable();
 
 test('each native chat gets a stable distinct sandbox Unix identity', () => {
   store.createUser('sandbox@example.com', 'hash');
@@ -36,7 +36,7 @@ test('sandbox Unix identities are never reused after chat deletion', () => {
   assert.ok(store.getSandboxUid('ses_sandboxe1') > oldUid);
 });
 
-test('isolated shell cannot read runtime secrets or another session workspace', { skip: !rootRuntime }, async () => {
+test('isolated shell cannot read runtime secrets or another session workspace', { skip: !secureSandboxAvailable }, async () => {
   store.setProviderKey('sandbox@example.com', 'openai', 'super-secret-provider-key');
   const aRoot = store.workspaceFor('ses_sandboxa1');
   const bRoot = store.workspaceFor('ses_sandboxb1');
@@ -62,7 +62,7 @@ test('isolated shell cannot read runtime secrets or another session workspace', 
   assert.doesNotMatch(result.output, /super-secret-provider-key/);
 });
 
-test('secure mode refuses shell on non-root runtime unless unsafe fallback is explicit', { skip: rootRuntime }, () => {
+test('secure mode refuses shell when UID isolation is unavailable unless unsafe fallback is explicit', { skip: secureSandboxAvailable }, () => {
   assert.equal(sandbox.shellSandboxAvailable(), false);
   assert.throws(() => sandbox.sandboxIdentity('ses_sandboxa1'), /sandbox is unavailable/i);
 });

@@ -1,4 +1,6 @@
-// File attachment utilities — convert browser File objects to API parts.
+// File attachment utilities. File bytes live in the session workspace; the
+// browser keeps metadata only, so a 50 MB image does not become a ~67 MB
+// base64 string copied through Zustand state.
 
 export interface ProcessedFile {
   name: string;
@@ -125,32 +127,10 @@ export function fileKind(name: string): ProcessedFile["kind"] {
   return "binary";
 }
 
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => {
-      const result = reader.result as string;
-      // result is "data:<mime>;base64,<data>" — extract just the data URL
-      resolve(result);
-    };
-    reader.onerror = reject;
-    reader.readAsDataURL(file);
-  });
-}
-
-export async function processFile(file: File): Promise<ProcessedFile> {
+export function processFile(file: File): ProcessedFile {
   const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
   const kind = fileKind(file.name);
   const mime = file.type || mimeFromExt(ext);
-
-  // base64 читаем ТОЛЬКО для картинок и PDF: их data-URL реально нужен —
-  // как превью в чипе и как vision-часть промпта. Для zip/бинарников/текста
-  // он не используется никем, а стоил 1.37× размера файла в строке, которая
-  // жила в сторе до конца сессии (архив на 50 МБ → ~68 МБ в памяти вкладки,
-  // плюс столько же на копию при каждом set()). Такие файлы агент читает из
-  // workspace по пути, куда их кладёт аплоад.
-  const needsDataUrl = kind === "image" || kind === "pdf";
-  const dataUrl = needsDataUrl ? await fileToBase64(file) : undefined;
 
   const result: ProcessedFile = {
     name: file.name,
@@ -158,29 +138,18 @@ export async function processFile(file: File): Promise<ProcessedFile> {
     mime,
     ext,
     kind,
-    ...(dataUrl
-      ? {
-          dataUrl,
-          part: {
-            type: "file" as const,
-            mime,
-            url: dataUrl,
-            filename: file.name,
-          },
-        }
-      : {}),
   };
 
   return result;
 }
 
 /**
- * Потолок размера ОДНОЙ загрузки. Должен совпадать с MAX_BODY_BYTES в
- * server/middleware.mjs: сервер обрывает тело запроса и отвечает 413, но
+ * Потолок размера ОДНОЙ загрузки. Совпадает с дефолтным MAX_UPLOAD_BYTES в
+ * server/native/config.mjs: streaming multipart parser отвечает 413, но
  * без этой проверки клиент узнаёт об отказе, только докачав файл до конца.
  * Суммарный объём вложений чата ограничивает сервер отдельно (квота сессии).
  */
-export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
+export const MAX_UPLOAD_BYTES = 250 * 1024 * 1024;
 
 export const ACCEPTED_EXTENSIONS =
   ".jpg,.jpeg,.png,.gif,.webp,.bmp,.svg,.pdf,.zip,.txt,.md,.json,.js,.jsx,.ts,.tsx,.css,.scss,.html,.xml,.yaml,.yml,.toml,.py,.rb,.go,.rs,.java,.c,.cpp,.h,.cs,.php,.sh,.sql,.csv,.log,.env";

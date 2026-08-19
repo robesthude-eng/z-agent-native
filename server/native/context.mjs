@@ -115,14 +115,22 @@ function bashSegments(text) {
 export function classifyBash(command) {
   const text = String(command || '').trim();
   if (!text) return 'read_only';
-  if (VERIFY_PATTERNS.some((rx) => rx.test(text))) return 'verification';
   // Redirections and command substitution can write no matter which command runs.
   if (/>/.test(text) || /\$\(|`/.test(text)) return 'may_mutate';
-  // Every stage of a pipeline must be read-only, so `git log | grep x` stays
-  // read-only while `cat a | tee b` does not.
+  // Classify every segment. A verification command followed by a mutation
+  // (`npm test && sed -i ...`) must not clear the completion gate.
   const segments = bashSegments(text);
   if (!segments.length) return 'read_only';
-  return segments.every((segment) => READ_ONLY_BASH_PATTERNS.some((rx) => rx.test(segment))) ? 'read_only' : 'may_mutate';
+  let hasVerification = false;
+  for (const segment of segments) {
+    if (VERIFY_PATTERNS.some((rx) => rx.test(segment))) {
+      hasVerification = true;
+      continue;
+    }
+    if (READ_ONLY_BASH_PATTERNS.some((rx) => rx.test(segment))) continue;
+    return 'may_mutate';
+  }
+  return hasVerification ? 'verification' : 'read_only';
 }
 
 export function createTurnStrategy(goal = '') {
@@ -131,6 +139,8 @@ export function createTurnStrategy(goal = '') {
     plan: [],
     changed: false,
     needsVerification: false,
+    pendingReadbacks: [],
+    verificationUnavailable: false,
     verificationAttempts: 0,
     lastVerificationOk: null,
     toolErrors: 0,
@@ -156,6 +166,20 @@ export function observeTool(strategy, call, result) {
       state.changed = true;
       state.needsVerification = true;
       state.lastVerificationOk = null;
+      if (name === 'write' || name === 'edit') {
+        const changedPath = String(call?.arguments?.path || '').trim();
+        if (changedPath && !state.pendingReadbacks.includes(changedPath)) state.pendingReadbacks.push(changedPath);
+      }
+    }
+    return state;
+  }
+
+  if (name === 'read' && !result?.isError && !shellSandboxAvailable()) {
+    const readPath = String(call?.arguments?.path || '').trim();
+    state.pendingReadbacks = state.pendingReadbacks.filter((changedPath) => changedPath !== readPath);
+    if (state.needsVerification && state.pendingReadbacks.length === 0) {
+      state.needsVerification = false;
+      state.verificationUnavailable = true;
     }
     return state;
   }
@@ -187,7 +211,7 @@ export function completionGate(strategy) {
     return [
       '[Runtime completion gate]',
       'The workspace changed and no executable verification is available in this runtime (no shell sandbox).',
-      'Do not finish yet. Re-read every file you changed, confirm the edit is complete and internally consistent, and state in the final answer that automated verification was unavailable.',
+      `Do not finish yet. Re-read every file you changed${strategy.pendingReadbacks?.length ? `: ${strategy.pendingReadbacks.join(', ')}` : ''}, confirm the edit is complete and internally consistent, and state in the final answer that automated verification was unavailable.`,
     ].join('\n');
   }
   return [
@@ -209,5 +233,6 @@ export function strategyGuidance(strategy) {
   if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion.');
   else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
   else if (strategy?.changed && strategy?.lastVerificationOk) lines.push('Workspace state: latest known changes have a successful verification signal.');
+  else if (strategy?.changed && strategy?.verificationUnavailable) lines.push('Workspace state: changed files were read back successfully; executable verification was unavailable and must be disclosed in the final answer.');
   return lines.join('\n');
 }

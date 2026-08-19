@@ -505,7 +505,7 @@ describe("activeQuestion — где взять вопрос для полосы"
   it("имя инструмента совпадает с серверным", () => {
     // Разойдись они — сервер считал бы ход ждущим человека, а интерфейс не
     // показывал бы, чего ждут. Серверная сторона: QUESTION_TOOL в
-    // server/turn-orchestrator.mjs.
+    // server/native/agent.mjs.
     expect(QUESTION_TOOL).toBe("question");
   });
 });

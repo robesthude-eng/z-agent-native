@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { ALLOW_UNISOLATED_SHELL, DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { getSandboxUid } from './store.mjs';
 
@@ -15,12 +16,28 @@ function isRootRuntime() {
   return typeof process.getuid === 'function' && process.getuid() === 0;
 }
 
+let rootSandboxProbe = null;
+function rootSandboxAvailable() {
+  if (!isRootRuntime() || !SETPRIV_PATH) return false;
+  if (rootSandboxProbe !== null) return rootSandboxProbe;
+  try {
+    const probe = spawnSync(SETPRIV_PATH, [
+      '--clear-groups', '--no-new-privs', '--reuid=20000', '--regid=20000',
+      '/bin/true',
+    ], { stdio: 'ignore', timeout: 2000 });
+    rootSandboxProbe = probe.status === 0;
+  } catch {
+    rootSandboxProbe = false;
+  }
+  return rootSandboxProbe;
+}
+
 export function shellSandboxAvailable() {
-  return isRootRuntime() || ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
+  return rootSandboxAvailable() || ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
 }
 
 export function sandboxIdentity(sessionId) {
-  if (isRootRuntime()) {
+  if (rootSandboxAvailable()) {
     const uid = getSandboxUid(sessionId);
     if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error(`No sandbox identity for session ${sessionId}`);
     return { uid, gid: uid, isolated: true };
@@ -47,7 +64,7 @@ function chownTree(full, uid, gid) {
  */
 export function sandboxCommand(identity, file, args = []) {
   if (!identity?.isolated) return { file, args, options: {} };
-  if (!SETPRIV_PATH) return { file, args, options: { uid: identity.uid, gid: identity.gid } };
+  if (!SETPRIV_PATH) throw new Error('Secure setpriv launcher is unavailable');
   return {
     file: SETPRIV_PATH,
     args: ['--clear-groups', '--no-new-privs', `--reuid=${identity.uid}`, `--regid=${identity.gid}`, file, ...args],
@@ -75,10 +92,11 @@ export function prepareWorkspaceSandbox(sessionId, workspace) {
 
 export function resetSandboxCacheForTests() {
   preparedSandboxes.clear();
+  rootSandboxProbe = null;
 }
 
 export function syncSandboxOwnership(sessionId, workspace, target = workspace) {
-  if (!isRootRuntime()) return;
+  if (!rootSandboxAvailable()) return;
   const identity = sandboxIdentity(sessionId);
   const root = path.resolve(workspace);
   let full = path.resolve(target);
@@ -91,12 +109,6 @@ export function syncSandboxOwnership(sessionId, workspace, target = workspace) {
   try { fs.lchownSync(root, identity.uid, identity.gid); } catch {}
   try { fs.chmodSync(root, 0o700); } catch {}
 }
-
-export function sandboxSpawnOptions(sessionId, workspace) {
-  const identity = prepareWorkspaceSandbox(sessionId, workspace);
-  return identity.isolated ? { uid: identity.uid, gid: identity.gid } : {};
-}
-
 
 export function killSandboxProcesses(sessionId) {
   if (!isRootRuntime()) return 0;

@@ -485,7 +485,7 @@ export function isLongForBar(text: string): boolean {
 
 /**
  * Имя инструмента, которым агент задаёт вопрос. Совпадает с `QUESTION_TOOL` в
- * `server/turn-orchestrator.mjs`: там по нему ход переводится в
+ * `server/native/agent.mjs`: там по нему ход переводится в
  * `waiting_user_input`, здесь по нему же вопрос попадает в полосу. Разойдись
  * они — сервер считал бы ход ждущим человека, а интерфейс не показывал бы, чего
  * ждут.

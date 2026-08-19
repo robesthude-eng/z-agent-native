@@ -77,10 +77,14 @@ describe("EventStream", () => {
     );
   });
 
-  test("uses cookie auth — default event URL has no token query", () => {
+  test("waits for a session before opening the default event URL", () => {
     const stream = new EventStream();
     stream.connect();
-    expect(MockEventSource.instances[0].url).toBe("/api/event");
+    expect(MockEventSource.instances).toHaveLength(0);
+    stream.switchSession("ses_ready");
+    expect(MockEventSource.instances[0].url).toBe(
+      "/api/event?sessionId=ses_ready",
+    );
   });
 
   test("dispatches named events to handlers", () =>

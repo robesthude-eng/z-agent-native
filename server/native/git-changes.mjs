@@ -7,7 +7,10 @@ const MAX_DIFF_CHARS = 240_000;
 const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;
 
 function gitResult(root, args, options = {}) {
-  const result = spawnSync('git', args, {
+  const result = spawnSync(options.spawnFile || 'git', [
+    ...(options.spawnArgsPrefix || []),
+    ...args,
+  ], {
     cwd: root,
     encoding: 'utf8',
     timeout: Number(options.timeoutMs) || 8_000,

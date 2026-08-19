@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
@@ -38,6 +38,11 @@ export default function FilePreview({
   url: string;
 }) {
   const [reloadKey, setReloadKey] = useState(0);
+  const [imageError, setImageError] = useState(false);
+
+  useEffect(() => {
+    setImageError(false);
+  }, [url, path]);
 
   if (kind === "markdown") {
     return (
@@ -59,13 +64,29 @@ export default function FilePreview({
     // не исполняются, а посмотреть нужно именно изображение.
     return (
       <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto bg-[repeating-conic-gradient(#0000_0%_25%,#8883_0%_50%)] bg-[length:16px_16px] p-4">
-        <img
-          key={reloadKey}
-          src={url}
-          alt={path}
-          className="max-h-full max-w-full object-contain"
-          onError={() => setReloadKey((k) => k + 1)}
-        />
+        {imageError ? (
+          <div className="rounded-lg bg-card/95 p-4 text-center text-sm text-muted-foreground shadow">
+            <p>Не удалось загрузить изображение.</p>
+            <button
+              type="button"
+              className="mt-2 rounded-md border border-border px-3 py-1.5 hover:bg-accent hover:text-foreground"
+              onClick={() => {
+                setImageError(false);
+                setReloadKey((k) => k + 1);
+              }}
+            >
+              Повторить
+            </button>
+          </div>
+        ) : (
+          <img
+            key={reloadKey}
+            src={url}
+            alt={path}
+            className="max-h-full max-w-full object-contain"
+            onError={() => setImageError(true)}
+          />
+        )}
       </div>
     );
   }

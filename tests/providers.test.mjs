@@ -14,6 +14,7 @@ const providers = await import('../server/native/providers.mjs');
 const providerConfigs = await import('../server/native/provider-configs.mjs');
 const ownerId = 'stream@example.com';
 store.createUser(ownerId, 'hash');
+providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 const testProviders = [
   { id: 'openai', name: 'Test OpenAI', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', key: 'sk-test' },
@@ -144,7 +145,7 @@ test('provider URL is blocked before relay wrapping can hide a private destinati
     id: 'blocked-local',
     name: 'Blocked Local',
     protocol: 'openai',
-    baseURL: 'http://127.0.0.1:8765/v1',
+    baseURL: 'https://127.0.0.1:8765/v1',
     enabled: true,
   });
   store.setProviderKey(ownerId, 'blocked-local', 'sk-local');
@@ -162,3 +163,5 @@ test('provider URL is blocked before relay wrapping can hide a private destinati
     assert.equal(calls, 0);
   } finally { globalThis.fetch = original; }
 });
+
+test.after(() => providers.setProviderTransportForTests(null));

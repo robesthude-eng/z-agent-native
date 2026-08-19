@@ -13,9 +13,10 @@ import {
 import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES, TRUST_PROXY } from './native/config.mjs';
 import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.mjs';
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
-import { messageId, sessionId } from './native/ids.mjs';
+import { assertActionId, messageId, sessionId } from './native/ids.mjs';
 import { readJson, sendJson } from './native/json.mjs';
 import { handleProviderChannels } from './native/provider-channels.mjs';
+import { normalizeProviderBaseUrl } from './native/provider-configs.mjs';
 import {
   buildCatalog, fetchModels, probeModel, providerList, providerSpecs,
 } from './native/providers.mjs';
@@ -112,6 +113,11 @@ function mergePrefs(current, patch) {
 function sanitizeTitle(value) {
   const s = String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().replace(/\s+/g, ' ');
   return s.slice(0, 120) || 'Новый чат';
+}
+
+function decodePathPart(value) {
+  try { return decodeURIComponent(value); }
+  catch { throw Object.assign(new Error('Bad request'), { statusCode: 400 }); }
 }
 
 function sessionFromPath(pathname) {
@@ -240,9 +246,20 @@ async function route(req, res) {
     if (p === `/api/session/${sid}/queue` && req.method === 'GET') return sendJson(res, 200, { queue: listQueue(sid) });
     if (p === `/api/session/${sid}/queue` && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
-      return sendJson(res, 200, { outcome: enqueueAction(sid, String(body.actionId || ''), body.payload || {}) });
+      const actionId = assertActionId(body.actionId);
+      const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
+        ? body.payload
+        : {};
+      if (typeof payload.text !== 'string' || (payload.attachments !== undefined && !Array.isArray(payload.attachments))) {
+        return sendJson(res, 400, { error: 'Invalid queue payload' });
+      }
+      return sendJson(res, 200, { outcome: enqueueAction(sid, actionId, payload) });
     }
-    if (p === `/api/session/${sid}/queue` && req.method === 'DELETE') return sendJson(res, 200, { removed: dequeueAction(sid, url.searchParams.get('actionId') || '') });
+    if (p === `/api/session/${sid}/queue` && req.method === 'DELETE') {
+      return sendJson(res, 200, {
+        removed: dequeueAction(sid, assertActionId(url.searchParams.get('actionId'))),
+      });
+    }
   }
 
   // Question protocol is native: one pending question belongs to one active turn.
@@ -255,7 +272,7 @@ async function route(req, res) {
   if (qReply && req.method === 'POST') {
     const qsid = url.searchParams.get('sessionId') || '';
     if (!ownsChat(qsid, ownerId)) return sendJson(res, 404, { error: 'Session not found' });
-    const id = decodeURIComponent(qReply[1]);
+    const id = decodePathPart(qReply[1]);
     if (qReply[2] === 'reply') {
       const body = await readJson(req, 128 * 1024);
       return answerQuestion(qsid, id, Array.isArray(body.answers) ? body.answers : []) ? sendJson(res, 204, null) : sendJson(res, 404, { error: 'Question not found' });
@@ -292,7 +309,7 @@ async function route(req, res) {
   }
   const authProvider = /^\/api\/auth\/([^/]+)$/.exec(p);
   if (authProvider && !['custom','login','logout','register','me','change-password'].includes(authProvider[1])) {
-    const providerId = decodeURIComponent(authProvider[1]);
+    const providerId = decodePathPart(authProvider[1]);
     if (req.method === 'PUT') {
       if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
       const body = await readJson(req, 128 * 1024);
@@ -311,7 +328,7 @@ async function route(req, res) {
   }
   const manual = /^\/api\/providers\/([^/]+)\/manual-models(?:\/(probe))?$/.exec(p);
   if (manual) {
-    const providerId = decodeURIComponent(manual[1]);
+    const providerId = decodePathPart(manual[1]);
     if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
     if (manual[2] === 'probe' && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
@@ -330,7 +347,14 @@ async function route(req, res) {
         const probe = await probeModel(ownerId, providerId, { modelId });
         if (!probe.available) return sendJson(res, 400, { error: probe.error || 'Модель недоступна' });
       }
-      upsertManualModel(ownerId, providerId, { modelId, name: body.name || null, baseUrl: body.baseUrl || null, isFree: Boolean(body.isFree), pattern: Boolean(body.pattern), enabled: body.enabled !== false });
+      upsertManualModel(ownerId, providerId, {
+        modelId,
+        name: body.name || null,
+        baseUrl: body.baseUrl ? normalizeProviderBaseUrl(body.baseUrl) : null,
+        isFree: Boolean(body.isFree),
+        pattern: Boolean(body.pattern),
+        enabled: body.enabled !== false,
+      });
       return sendJson(res, 200, { status: 'success', available: body.pattern ? null : true });
     }
     if (req.method === 'DELETE') {
@@ -341,7 +365,7 @@ async function route(req, res) {
   }
   const hidden = /^\/api\/providers\/([^/]+)\/hidden-models$/.exec(p);
   if (hidden) {
-    const providerId = decodeURIComponent(hidden[1]);
+    const providerId = decodePathPart(hidden[1]);
     if (req.method === 'GET') return sendJson(res, 200, { hidden: listHiddenModels(ownerId, providerId) });
     if (req.method === 'POST') {
       const body = await readJson(req, 64 * 1024);
@@ -364,13 +388,18 @@ async function route(req, res) {
   if (preview && req.method === 'GET') {
     const psid = preview[1];
     if (!ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Not found' });
-    const relative = preview[2].split('/').map(decodeURIComponent).join('/');
+    let relative;
+    try { relative = preview[2].split('/').map(decodeURIComponent).join('/'); }
+    catch { return sendJson(res, 400, { error: 'Bad request' }); }
     const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
     const st = fs.statSync(full);
     if (!st.isFile()) return sendJson(res, 404, { error: 'Not a file' });
     res.writeHead(200, {
       'content-type': mimeFor(full), 'content-length': st.size,
-      'content-security-policy': "default-src 'none'; img-src 'self' data: blob:; style-src 'unsafe-inline'; script-src 'none'; font-src 'none'; connect-src 'none'; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
+      // The iframe is sandboxed without allow-same-origin. Local scripts and
+      // styles may run for a useful app preview, but the document remains an
+      // opaque origin and cannot reach the authenticated parent DOM/cookies.
+      'content-security-policy': "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
       'cache-control': 'no-store',
     });
     fs.createReadStream(full).pipe(res);
@@ -392,7 +421,15 @@ function serveStatic(req, res, pathname) {
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) full = path.resolve(DIST_DIR, 'index.html');
   if (!fs.existsSync(full)) return sendJson(res, 503, { error: 'Frontend is not built. Run npm run build.' });
   const st = fs.statSync(full);
-  res.writeHead(200, { 'content-type': mimeFor(full), 'content-length': st.size, 'cache-control': path.basename(full) === 'index.html' ? 'no-cache' : 'public, max-age=31536000, immutable' });
+  const servedRelative = path.relative(DIST_DIR, full).split(path.sep).join('/');
+  const immutableAsset = servedRelative.startsWith('assets/');
+  res.writeHead(200, {
+    'content-type': mimeFor(full),
+    'content-length': st.size,
+    'cache-control': immutableAsset
+      ? 'public, max-age=31536000, immutable'
+      : 'no-cache',
+  });
   fs.createReadStream(full).pipe(res);
 }
 

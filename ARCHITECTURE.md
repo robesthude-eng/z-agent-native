@@ -5,7 +5,7 @@ Z Agent Native is one application with one trusted server runtime. The browser i
 ```text
 React browser
   ├─ REST      durable reads/writes
-  ├─ SSE       chat/tool/question/permission/workspace events
+  ├─ SSE       chat/tool/question/workspace events
   └─ Socket.IO interactive terminal
        │
        ▼
@@ -13,7 +13,7 @@ Native runtime
   ├─ session + turn state
   ├─ agent loop + context/turn strategy
   ├─ direct provider streaming
-  ├─ tool executor + permission gate
+  ├─ tool executor + automatic approval policy
   ├─ question suspension/resume
   ├─ workspace + watcher + terminal
   └─ SQLite persistence + encrypted provider secrets
@@ -49,12 +49,15 @@ Clustering does **not** share the workspace disk. A second replica without a sha
 2. It reconstructs coherent model frames from persisted history.
 3. Before every provider call, the context manager compacts oversized tool observations and bounds the full frame set while preserving tool-call/result coherence.
 4. The selected model is called directly and text deltas are streamed to the UI.
-5. Tool calls are persisted as assistant tool parts; risky tools stop at a permission gate.
+5. Tool calls are persisted as assistant tool parts; the native runtime applies
+   its automatic approval policy without waiting for a browser response.
 6. `todowrite` updates the live turn strategy so the original goal and current plan remain pinned in model guidance across long tool loops.
 7. `question` suspends the current turn and resumes that same turn with the answer.
 8. Tool results are fed back to the same model loop until a final model response or the step limit.
 9. Workspace-changing operations mark the turn as needing verification. When executable shell verification is available, the runtime does not accept a final model response until a successful targeted test/build/typecheck/lint/syntax check has happened after the latest change.
-10. On runtimes where secure shell execution is unavailable, the hard verification gate is disabled; the model is told to inspect the changed files and report the verification limitation instead of entering an impossible loop.
+10. On runtimes where secure shell execution is unavailable, each changed file
+    must be read back before completion; the model then reports that executable
+    verification was unavailable instead of claiming a test passed.
 11. Final turn state is persisted and `session.idle` is emitted.
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.
@@ -82,15 +85,17 @@ SSE is used for deterministic session events such as:
 - `session.status`
 - `session.idle`
 - `question.asked` / `question.replied`
-- `permission.asked` / `permission.responded`
 - `file.edited`
 - `file.watcher.updated`
 
-Each session has an in-memory replay ring with monotonic event IDs. Durable UI state can always be reconstructed from REST/SQLite after a restart.
+Each session has an in-memory replay ring. Event IDs contain a process epoch and
+a per-session sequence, so a reconnect after server restart cannot discard new
+low-numbered frames as duplicates. Durable UI state can always be reconstructed
+from REST/SQLite after a restart.
 
 ## Workspace and process isolation
 
-Every conversation owns one `workspaces/<session-id>/` directory. In the supplied production container every chat receives a unique monotonically allocated Unix UID. Arbitrary external processes (`bash`, `git apply`, terminal and Git status) run under that UID with a minimal environment. Runtime data and sibling workspaces are not traversable by tool processes.
+Every conversation owns one `workspaces/<session-id>/` directory. In the supplied production container every chat receives a unique monotonically allocated Unix UID. Arbitrary external processes (`bash`, `git apply`, terminal, workspace Git operations and automatic result snapshots) run under that UID with cleared supplementary groups and a minimal environment. Runtime data and sibling workspaces are not traversable by tool processes.
 
 First-party file tools still execute in the trusted runtime, but every path is resolved through the workspace boundary and symlink/traversal checks. Repository traversal tools skip heavy generated/vendor directories such as `.git`, `node_modules`, build outputs and caches. The `read` tool reads numbered line windows so large text files can be inspected without loading the entire file into memory/context.
 

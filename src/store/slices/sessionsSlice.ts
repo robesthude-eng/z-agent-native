@@ -22,7 +22,6 @@ let creatingSession = false;
 // send() awaits this event instead of napping a fixed 300ms and hoping the
 // backend is fast enough.
 let sessionCreationSettled: Promise<void> = Promise.resolve();
-let settleSessionCreation: () => void = () => {};
 
 /** Wait until the in-flight optimistic session creation (if any) settles. */
 export function waitForSessionCreation(): Promise<void> {
@@ -31,7 +30,7 @@ export function waitForSessionCreation(): Promise<void> {
 
 // UX-fix: чтобы React StrictMode / URL-effect не делали 3 select() подряд
 // с уходом в сеть, помним какие sid мы уже начинали проверять.
-// Комбо с __deadSessions в client.ts даёт полное подавление флудa 410.
+// Комбо с __deadSessions в client.ts подавляет повторные запросы к удалённой сессии.
 const __pendingSelect = new Set<string>();
 function _cleanupGhostFromURL(sid: string) {
   if (typeof window === "undefined") return;
@@ -61,7 +60,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
   },
 
   select: async (id) => {
-    // UX-fix: если sid уже в blacklist (сервер вернул 410 в прошлом запросе) —
+    // UX-fix: если sid уже в blacklist (сервер подтвердил отсутствие сессии) —
     // не идём в сеть повторно. Просто чистим URL и переключаемся на первую живую.
     if (id && isSessionDead(id)) {
       log.warn("[select] sid уже помечен dead, пропускаем сетевой вызов:", id);
@@ -153,11 +152,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       return;
     }
     creatingSession = true;
-    sessionCreationSettled = new Promise((resolve) => {
-      settleSessionCreation = resolve;
-    });
-
-    try {
+    const creation = (async () => {
       // Настоящее создание на бэкенде: пустой воркспейс и свой контейнер.
       const session = await api.createSession();
       set((s) => {
@@ -178,6 +173,11 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
           status: st,
         };
       });
+    })();
+    sessionCreationSettled = creation;
+
+    try {
+      await creation;
     } catch (e) {
       // Rollback optimistic on error
       set((s) => ({
@@ -185,9 +185,12 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
         currentID: s.sessions.find((x) => x.id !== tempId)?.id || null,
         error: (e as Error).message,
       }));
+      // The caller must stop. Swallowing this error let send() read the
+      // fallback currentID and deliver the new prompt into an older chat.
+      throw e;
     } finally {
       creatingSession = false;
-      settleSessionCreation();
+      if (sessionCreationSettled === creation) sessionCreationSettled = Promise.resolve();
     }
   },
 
@@ -257,21 +260,16 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     }
   },
 
-  // Compatibility response path for stale permission events from older runtimes.
-  // Current native runtime approves permission-gated tools server-side and does
-  // not emit new permission cards. If this best-effort response fails, keep the
-  // request hidden: autonomous mode must never fall back to manual approval UI.
+  // Stale permission events from older runtimes are local compatibility data.
+  // The native server has no browser permission-response endpoint, so discard
+  // the card without issuing a guaranteed 404 request.
   respondPermission: async (permissionId, response) => {
     const req = get().permissions.find((p) => p.id === permissionId);
     if (!req) return;
     set((s) => ({
       permissions: s.permissions.filter((p) => p.id !== permissionId),
     }));
-    try {
-      await api.respondPermission(req.sessionID, req.id, response);
-    } catch (e) {
-      set({ error: (e as Error).message });
-    }
+    void response;
   },
 
   setConnection: (connection) => set({ connection }),

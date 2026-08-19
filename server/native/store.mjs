@@ -342,6 +342,11 @@ export function getQuestion(id) {
   const r = db.prepare('SELECT * FROM questions WHERE id=?').get(id);
   return r ? { id:r.id,sessionID:r.session_id,questions:parse(r.questions_json,[]),answers:parse(r.answers_json,null),status:r.status } : null;
 }
+export function findQuestionForRecovery(sessionId, questions) {
+  const row = db.prepare('SELECT id FROM questions WHERE session_id=? AND questions_json=? ORDER BY created_at DESC LIMIT 1')
+    .get(sessionId, JSON.stringify(questions || []));
+  return row?.id ? getQuestion(row.id) : null;
+}
 
 export function createPermission(id, sessionId, tool, input) {
   db.prepare('INSERT INTO permissions(id,session_id,tool,input_json,status,created_at) VALUES(?,?,?,?,?,?)')
