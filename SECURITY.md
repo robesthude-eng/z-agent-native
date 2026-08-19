@@ -70,6 +70,7 @@ For production:
 - `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and the `nofile` ulimit bound a fork bomb or a runaway build started by the model.
 - Network recon tooling (`netcat`, `ping`, `dig`, `psql`) is not installed in the runtime image.
 - Deployment verifies the server against a pinned host key from the `DEPLOY_SSH_HOST_KEY` secret. `ssh-keyscan` at deploy time is not used, because it trusts whatever answers on the network.
+- `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares `Z_AGENT_SECRET_KEY`. Without a shared disk the lock is global but the files are not.
 
 ## Toolchain integrity
 
