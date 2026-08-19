@@ -1,0 +1,10 @@
+agentwill.online {
+	encode zstd gzip
+	reverse_proxy z-agent:3000 {
+		flush_interval -1
+	}
+}
+
+www.agentwill.online {
+	redir https://agentwill.online{uri} permanent
+}
