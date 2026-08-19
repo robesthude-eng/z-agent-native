@@ -9,6 +9,11 @@ import {
 } from './environment.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
+import { GIT_ACTIONS, executeGitTool } from './git-tool.mjs';
+import { buildTestCommand, formatTestReport } from './test-runner.mjs';
+import { DIAGNOSTIC_KINDS, formatDiagnosticsReport, planDiagnostics } from './diagnostics.mjs';
+import { BROWSER_ACTIONS, executeBrowserTool } from './browser.mjs';
+import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
@@ -85,9 +90,11 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'task',
-    description: 'Delegate a focused read-only repository investigation to a specialized subagent using the same model. Choose explore for architecture/navigation, debug for root-cause tracing, or review for defect-focused code review.',
+    description: 'Delegate focused work to a specialized subagent using the same model. Choose explore for architecture/navigation, debug for root-cause tracing, review for defect-focused code review, or implement to carry out and verify a scoped change. explore/debug/review are read-only; only implement may modify files.',
     inputSchema: object({
-      agent: { type: 'string', enum: ['explore', 'debug', 'review'], description: 'Specialized read-only subagent role; defaults to explore.' },
+      // Sourced from the profile registry so a new profile can never silently
+      // become unreachable through the schema.
+      agent: { type: 'string', enum: subagentKinds(), description: 'Specialized subagent role; defaults to explore. Only implement may modify files.' },
       description: { type: 'string' },
       prompt: { type: 'string' },
     }, ['prompt']),
@@ -143,14 +150,66 @@ export const TOOL_DEFINITIONS = [
       },
     }, ['questions']),
   },
+  {
+    name: 'git',
+    description: 'Inspect and record repository history: status, log, diff, show, blame, branches, create_branch, commit. Use this instead of bash for git work; arguments are passed as structured argv, never as a shell string.',
+    inputSchema: object({
+      action: { type: 'string', enum: GIT_ACTIONS },
+      rev: { type: 'string', description: 'Commit, tag, branch, or range such as HEAD~3..HEAD.' },
+      paths: { type: 'array', items: { type: 'string' }, maxItems: 20, description: 'Workspace-relative paths to limit the operation to.' },
+      branch: { type: 'string' },
+      message: { type: 'string', description: 'Commit message, required for action=commit.' },
+      limit: { type: 'integer', minimum: 1, maximum: 200 },
+      startLine: { type: 'integer', minimum: 1 },
+      endLine: { type: 'integer', minimum: 1 },
+      staged: { type: 'boolean', description: 'For diff: show staged changes instead of the working tree.' },
+      stat: { type: 'boolean', description: 'For diff/show: summary of changed files instead of full patch text.' },
+      timeoutMs: { type: 'integer' },
+    }, ['action']),
+  },
+  {
+    name: 'run_tests',
+    description: 'Run the project test suite and return a structured verdict: pass/fail totals plus the names and messages of failing tests, instead of raw log spam. Auto-detects the runner when command is omitted.',
+    inputSchema: object({
+      command: { type: 'string', description: 'Explicit test command. Omit to auto-detect from package.json, pytest, go, cargo, or gradle.' },
+      filter: { type: 'string', description: 'Test name or path filter passed through to the detected runner.' },
+      timeoutMs: { type: 'integer' },
+    }),
+  },
+  {
+    name: 'diagnostics',
+    description: 'Run the project typecheck and/or lint commands and return parsed file:line:column diagnostics grouped by severity. Use after edits instead of reading whole compiler logs.',
+    inputSchema: object({
+      kind: { type: 'string', enum: DIAGNOSTIC_KINDS, description: 'all (default), typecheck, or lint.' },
+      command: { type: 'string', description: 'Explicit checker command. Omit to auto-detect.' },
+      timeoutMs: { type: 'integer' },
+    }),
+  },
+  {
+    name: 'browser',
+    description: 'Drive a headless Chromium page: open, snapshot, click, fill, press, console, close. Returns page text plus interactive elements. Use for JavaScript-rendered pages and for verifying UI changes; use webfetch for static content.',
+    inputSchema: object({
+      action: { type: 'string', enum: BROWSER_ACTIONS },
+      url: { type: 'string', description: 'Required for action=open.' },
+      selector: { type: 'string', description: 'CSS selector for the target element.' },
+      text: { type: 'string', description: 'Visible text used to locate the element when selector is not given.' },
+      value: { type: 'string', description: 'Value for action=fill.' },
+      key: { type: 'string', description: 'Key for action=press, for example Enter.' },
+      timeoutMs: { type: 'integer' },
+    }, ['action']),
+  },
 ];
 
-const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch']);
+const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser']);
 export function requiresPermission(name) { return risky.has(String(name).toLowerCase()); }
-export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash'].includes(String(name).toLowerCase()); }
+export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(String(name).toLowerCase()); }
+
+// Everything that spawns a process or drives a browser must be gated exactly
+// like bash: without a session sandbox there is no isolation to run it in.
+const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser'];
 export function availableToolDefinitions() {
   if (shellSandboxAvailable()) return TOOL_DEFINITIONS;
-  return TOOL_DEFINITIONS.filter((tool) => !['bash', 'apply_patch', 'ensure_environment'].includes(tool.name));
+  return TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
 }
 
 function rel(root, full) { return path.relative(root, full).split(path.sep).join('/'); }
@@ -601,6 +660,75 @@ export async function executeTool(name, input, ctx) {
     });
     if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}: ${res.text.slice(0, 500)}`);
     return { output: res.text.slice(0, maxChars), title: String(res.url) };
+  }
+
+  if (tool === 'git') {
+    const result = await executeGitTool({
+      root,
+      identity: externalSpawnIdentity(ctx, root),
+      input: input || {},
+      signal: ctx.signal,
+    });
+    // Only history-writing actions touch the working tree. Reporting reads as
+    // mutations would make every git status dirty the workspace snapshot.
+    const writes = ['commit', 'create_branch'].includes(String(input?.action || '').toLowerCase());
+    return writes ? { ...result, mutatedPaths: ['.'] } : result;
+  }
+
+  if (tool === 'run_tests') {
+    const plan = buildTestCommand(root, input || {});
+    const result = await execBash(root, plan.command, Number(input?.timeoutMs) || 900_000, ctx.signal, ctx);
+    const report = formatTestReport({
+      command: plan.command,
+      framework: plan.framework,
+      source: plan.source,
+      exitCode: result.code,
+      output: [result.stdout, result.stderr].filter(Boolean).join('\n'),
+    });
+    return {
+      output: report.text,
+      title: plan.command,
+      // Test runs routinely write coverage, snapshots, and build caches.
+      mutatedPaths: ['.'],
+      metadata: {
+        tests: {
+          command: plan.command,
+          framework: plan.framework,
+          exit: result.code,
+          totals: report.totals,
+          failures: report.failures.slice(0, 40),
+        },
+      },
+    };
+  }
+
+  if (tool === 'diagnostics') {
+    const plans = planDiagnostics(root, input || {});
+    const runs = [];
+    for (const plan of plans) {
+      const result = await execBash(root, plan.command, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
+      runs.push({
+        ...plan,
+        exitCode: result.code,
+        output: [result.stdout, result.stderr].filter(Boolean).join('\n'),
+      });
+    }
+    const report = formatDiagnosticsReport(runs);
+    return {
+      output: report.text,
+      title: plans.map((plan) => plan.kind).join(' + '),
+      metadata: {
+        diagnostics: {
+          errorCount: report.errorCount,
+          warningCount: report.warningCount,
+          commands: plans.map((plan) => plan.command),
+        },
+      },
+    };
+  }
+
+  if (tool === 'browser') {
+    return executeBrowserTool({ sessionId: ctx.sessionId, input: input || {}, signal: ctx.signal });
   }
 
   throw new Error(`Unknown tool: ${name}`);

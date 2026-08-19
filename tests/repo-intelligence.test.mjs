@@ -61,10 +61,11 @@ test('repo_map tool is read-only and returns bounded structured metadata', async
   assert.ok(result.metadata?.repoMap?.fileCount >= 6);
 });
 
-test('specialized subagent profiles are explicit, read-only and default safely to explore', () => {
-  assert.deepEqual(subagentKinds(), ['explore', 'debug', 'review']);
+test('specialized subagent profiles are explicit, default safely to explore, and only implement may write', () => {
+  assert.deepEqual(subagentKinds(), ['explore', 'debug', 'review', 'implement']);
   assert.equal(normalizeSubagentKind('DEBUG'), 'debug');
   assert.equal(normalizeSubagentKind('unknown'), 'explore');
+  assert.equal(normalizeSubagentKind('IMPLEMENT'), 'implement');
 
   const explore = getSubagentProfile('explore');
   const debug = getSubagentProfile('debug');
@@ -76,4 +77,11 @@ test('specialized subagent profiles are explicit, read-only and default safely t
   assert.match(review.system, /severity/i);
   assert.match(review.system, /security/i);
   assert.ok(debug.maxSteps >= explore.maxSteps);
+
+  // The read-only guarantee is what makes investigation profiles safe to run
+  // speculatively; only the implement profile may mutate the workspace.
+  for (const kind of ['explore', 'debug', 'review']) {
+    assert.ok(!getSubagentProfile(kind).writes, `${kind} must stay read-only`);
+  }
+  assert.equal(getSubagentProfile('implement').writes, true);
 });

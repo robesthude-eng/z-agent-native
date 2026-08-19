@@ -569,7 +569,7 @@ export function resolveModel(ownerId, model) {
   }
   const spec = specs[providerID];
   const key = getProviderKey(ownerId, providerID);
-  if (!spec) throw Object.assign(new Error(`Неизвестный п��овайдер: ${providerID}`), { statusCode: 400 });
+  if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
   if (spec.enabled === false) throw Object.assign(new Error(`Провайдер ${spec.name} выключен`), { statusCode: 400 });
   if (!key) throw Object.assign(new Error(`API key для ${spec.name} не настроен`), { statusCode: 400 });
   return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };

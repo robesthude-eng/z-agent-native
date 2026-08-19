@@ -23,10 +23,10 @@ import {
   markDurableJobResuming,
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
-import { availableToolDefinitions, executeTool, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
+import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
 import { isIncompleteToolCall } from './providers.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
-import { getSubagentProfile } from './subagents.mjs';
+import { getSubagentProfile, subagentWrites } from './subagents.mjs';
 import {
   classifyTaskOutcome,
   createLoopGuard,
@@ -189,12 +189,31 @@ async function resumePendingQuestion(sessionId, assistant, signal) {
   return true;
 }
 
-const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
+const SUBAGENT_READONLY_TOOL_NAMES = ['repo_map', 'read', 'list', 'glob', 'grep'];
+// Writer subagents additionally get the edit-and-verify loop. They never get
+// question (they cannot reach the user) or task (no recursive delegation).
+const SUBAGENT_WRITER_TOOL_NAMES = [
+  ...SUBAGENT_READONLY_TOOL_NAMES,
+  'write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests', 'diagnostics',
+];
 
-async function runSubagent(ownerId, modelPlan, input, workspace, signal, projectContext = '') {
+// Resolved per call against availableToolDefinitions() so a runtime without a
+// shell sandbox never advertises process-spawning tools to a subagent.
+function subagentToolsFor(profile) {
+  const allowed = subagentWrites(profile?.name) ? SUBAGENT_WRITER_TOOL_NAMES : SUBAGENT_READONLY_TOOL_NAMES;
+  return availableToolDefinitions().filter((tool) => allowed.includes(tool.name));
+}
+
+async function runSubagent(ownerId, modelPlan, input, workspace, signal, projectContext = '', sessionId = '') {
   const prompt = String(input?.prompt || '').trim();
   if (!prompt) throw new Error('Subagent prompt must not be empty');
   const profile = getSubagentProfile(input?.agent);
+  const tools = subagentToolsFor(profile);
+  // A writer subagent runs the same sandboxed shell path as its parent turn, so
+  // it must carry the parent's session identity. Without it every
+  // process-spawning tool is correctly rejected for lack of isolation.
+  const toolContext = subagentWrites(profile.name) ? { workspace, sessionId, signal } : { workspace, signal };
+  const mutatedPaths = new Set();
   let repositorySnapshot = '';
   if (!projectContext) {
     try {
@@ -214,7 +233,7 @@ async function runSubagent(ownerId, modelPlan, input, workspace, signal, project
     const response = await callModelAutopilot(ownerId, plan, {
       system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
       frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
-      tools: SUBAGENT_SAFE_TOOLS,
+      tools,
       signal,
     });
     selectedModel = response.model || selectedModel;
@@ -227,16 +246,18 @@ async function runSubagent(ownerId, modelPlan, input, workspace, signal, project
         steps: step + 1,
         repositorySnapshot: Boolean(repositorySnapshot || projectContext),
         model: selectedModel ? modelKey(selectedModel) : '',
+        mutatedPaths: [...mutatedPaths],
       };
     }
     frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
     for (const call of calls) {
-      if (!SUBAGENT_SAFE_TOOLS.some((tool) => tool.name === call.name)) {
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Tool ${call.name} is not allowed in a read-only subagent.`, isError: true });
+      if (!tools.some((tool) => tool.name === call.name)) {
+        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Tool ${call.name} is not available to the ${profile.name} subagent.`, isError: true });
         continue;
       }
       try {
-        const result = await executeTool(call.name, call.arguments || {}, { workspace, signal });
+        const result = await executeTool(call.name, call.arguments || {}, toolContext);
+        for (const mutated of result?.mutatedPaths || []) mutatedPaths.add(mutated);
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: toolOutputText(result), isError: false });
       } catch (err) {
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Error: ${err?.message || String(err)}`, isError: true });
@@ -249,6 +270,7 @@ async function runSubagent(ownerId, modelPlan, input, workspace, signal, project
     steps: maxSteps,
     repositorySnapshot: Boolean(repositorySnapshot || projectContext),
     model: selectedModel ? modelKey(selectedModel) : '',
+    mutatedPaths: [...mutatedPaths],
   };
 }
 
@@ -315,10 +337,13 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     const workspace = workspaceFor(sessionId);
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
-      const subagent = await runSubagent(runtime.ownerId, runtime.modelPlan, call.arguments || {}, workspace, controller.signal, runtime.projectContext);
+      const subagent = await runSubagent(runtime.ownerId, runtime.modelPlan, call.arguments || {}, workspace, controller.signal, runtime.projectContext, sessionId);
       result = {
         output: subagent.report,
         title: call.arguments?.description || `${subagent.kind} subagent report`,
+        // A writer subagent edits the same workspace, so its mutations must reach
+        // the parent turn's change tracking and rollback.
+        mutatedPaths: subagent.mutatedPaths || [],
         metadata: {
           subagent: true,
           agent: subagent.kind,
