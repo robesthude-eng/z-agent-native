@@ -12,7 +12,12 @@ export const MAX_UPLOAD_BYTES = Number.parseInt(process.env.Z_AGENT_MAX_UPLOAD_B
 // without it the runtime derives a budget from task complexity and clamps it here.
 export const MAX_AGENT_STEPS = Number.parseInt(process.env.Z_AGENT_MAX_STEPS || '', 10) || 0;
 export const MAX_AGENT_STEPS_CEILING = 128;
-export const DEFAULT_TOOL_TIMEOUT_MS = Number.parseInt(process.env.Z_AGENT_TOOL_TIMEOUT_MS || '', 10) || 120_000;
+export const DEFAULT_TOOL_TIMEOUT_MS = Number.parseInt(process.env.Z_AGENT_TOOL_TIMEOUT_MS || '', 10) || 600_000;
+// Streaming model calls last as long as tokens keep arriving. Abort only after
+// this much silence (not wall-clock). A 30-minute turn is many such calls.
+export const PROVIDER_STREAM_IDLE_MS = Number.parseInt(process.env.Z_AGENT_PROVIDER_STREAM_IDLE_MS || '', 10) || 180_000;
+// Absolute ceiling for one model stream, even if tokens keep dripping.
+export const PROVIDER_STREAM_HARD_MS = Number.parseInt(process.env.Z_AGENT_PROVIDER_STREAM_HARD_MS || '', 10) || 1_800_000;
 export const EVENT_RING_SIZE = 1000;
 export const INVITE_CODE = process.env.Z_AGENT_INVITE_CODE || '';
 // Registration is fail-closed: after the bootstrap admin exists, a new account

@@ -172,9 +172,13 @@ Back up both persistent volumes. Back up the SQLite database **and** the master 
 | `Z_AGENT_TRUST_PROXY` | `0` | Trust the first `X-Forwarded-For` hop for auth rate limiting. Enable only behind a proxy that rewrites it. |
 | `Z_AGENT_ALLOWED_ORIGINS` | empty | Comma-separated browser origins accepted by the terminal websocket when the public origin differs from `Host`. |
 | `Z_AGENT_SECURE_COOKIES` | `0` | Set to `1` behind HTTPS. |
-| `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. The relay sees API keys and prompts, so it stays off unless you operate it. |
+| `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. Streaming prefers the direct provider URL and only falls back to the relay. The relay sees API keys and prompts. Serverless relays (Cloudflare Workers) typically cut streams after ~30–100s and cannot carry a 30-minute turn. |
 | `Z_AGENT_TOOLCHAIN_SHA256` | empty | JSON map of pinned toolchain digests, e.g. `{"java:21":"<sha256>"}`. |
 | `Z_AGENT_MAX_STEPS` | derived | Pins the per-turn step budget; otherwise it is derived from task complexity and clamped at 128. |
+| `Z_AGENT_TOOL_TIMEOUT_MS` | `600000` | Default budget for one bash/build inside a turn (10 minutes). |
+| `Z_AGENT_PROVIDER_STREAM_IDLE_MS` | `180000` | Abort a model stream only after this much silence, not wall-clock. |
+| `Z_AGENT_PROVIDER_STREAM_HARD_MS` | `1800000` | Absolute ceiling for one model stream (30 minutes). |
+| `Z_AGENT_CLUSTER_LOCK_TTL_MS` | `120000` | Cluster turn-lock TTL. A running turn renews the lock every 5s. |
 | `Z_AGENT_MAX_UPLOAD_BYTES` | `262144000` | Maximum size of one uploaded file. |
 | `Z_AGENT_GREP_TIMEOUT_MS` | `5000` | Deadline for `grep`; literal and regex scans run in a worker thread and are cancelled at the deadline. |
 | `Z_AGENT_DURABLE_JOB_TTL_MS` | `86400000` | After this age a crashed durable turn can be taken over instead of blocking the session. |

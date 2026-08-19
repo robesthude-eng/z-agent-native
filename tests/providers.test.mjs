@@ -165,6 +165,83 @@ test('model discovery falls back to the direct endpoint after relay transport te
   } finally { globalThis.fetch = original; }
 });
 
+test('idle watchdog keeps a live stream and aborts only after silence', async () => {
+  const watchdog = providers.idleTimeoutSignal({ idleMs: 80, hardMs: 5_000, pollMs: 20 });
+  const keepAlive = setInterval(() => watchdog.touch(), 15);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    assert.equal(watchdog.signal.aborted, false);
+  } finally {
+    clearInterval(keepAlive);
+  }
+  await new Promise((resolve) => setTimeout(resolve, 160));
+  assert.equal(watchdog.signal.aborted, true);
+  watchdog.cleanup();
+});
+
+test('idle watchdog still aborts at the hard ceiling while tokens keep arriving', async () => {
+  const watchdog = providers.idleTimeoutSignal({ idleMs: 5_000, hardMs: 80, pollMs: 20 });
+  const keepAlive = setInterval(() => watchdog.touch(), 15);
+  try {
+    await new Promise((resolve) => setTimeout(resolve, 160));
+    assert.equal(watchdog.signal.aborted, true);
+  } finally {
+    clearInterval(keepAlive);
+    watchdog.cleanup();
+  }
+});
+
+test('streaming prefers the direct provider URL and falls back to the relay', async () => {
+  const original = globalThis.fetch;
+  const urls = [];
+  globalThis.fetch = async (url) => {
+    const value = String(url);
+    urls.push(value);
+    if (!value.includes('/relay/')) {
+      const err = new Error('read ECONNRESET');
+      err.code = 'ECONNRESET';
+      throw err;
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.match(urls[0], /^https:\/\/1\.1\.1\.1\/v1\/chat\/completions$/);
+    assert.ok(urls.some((url) => url.startsWith('https://1.1.1.2/relay/')));
+  } finally { globalThis.fetch = original; }
+});
+
+test('a user abort is not retried as a dropped provider socket', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  const controller = new AbortController();
+  globalThis.fetch = async (_url, init) => {
+    calls += 1;
+    controller.abort();
+    const err = Object.assign(new Error('This operation was aborted'), { name: 'AbortError' });
+    if (init?.signal?.aborted) throw err;
+    throw err;
+  };
+  try {
+    await assert.rejects(
+      () => providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+        system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+        signal: controller.signal,
+        onTextDelta: () => {},
+      }),
+      (err) => err?.name === 'AbortError' || /abort/i.test(String(err?.message || '')),
+    );
+    assert.equal(calls, 1);
+  } finally { globalThis.fetch = original; }
+});
+
 test('provider URL is blocked before relay wrapping can hide a private destination', async () => {
   providerConfigs.upsertProviderConfig(ownerId, {
     id: 'blocked-local',

@@ -35,11 +35,11 @@ A single replica keeps turn locks and the SSE ring in process memory. That is th
 Set `Z_AGENT_CLUSTER=1` only when more than one runtime process shares the same SQLite file. Then `server/native/cluster.mjs`:
 
 - registers a heartbeat row per replica (`Z_AGENT_INSTANCE_ID`, or `node-<8 hex>` if empty);
-- takes a `turn:<sessionId>` lock before `runTurn`, renews it on checkpoint, and releases it when the turn goes idle;
+- takes a `turn:<sessionId>` lock before `runTurn`, pulses it every 5s while the turn is running (and on each durable checkpoint), and releases it when the turn goes idle;
 - skips durable recovery of a job another replica already holds;
 - copies recent SSE frames through a short-lived `cluster_events` table so a browser attached to replica B can catch up with work on replica A.
 
-Lock TTL defaults to 15s (`Z_AGENT_CLUSTER_LOCK_TTL_MS`); the event-bus poll defaults to 250ms (`Z_AGENT_CLUSTER_POLL_MS`). An abandoned lock is stealable after TTL — that is the recovery path if a replica dies between acquire and `notifyTurnIdle`.
+Lock TTL defaults to 120s (`Z_AGENT_CLUSTER_LOCK_TTL_MS`); the event-bus poll defaults to 250ms (`Z_AGENT_CLUSTER_POLL_MS`). An abandoned lock is stealable after TTL — that is the recovery path if a replica dies between acquire and `notifyTurnIdle`.
 
 Clustering does **not** share the workspace disk. A second replica without a shared `Z_AGENT_WORKSPACES_DIR` (or the `z-agent-workspaces` volume) will lock turns correctly and then fail to see the files. `Z_AGENT_SECRET_KEY` must also be the same on every replica, or provider credentials decrypt only on the node that wrote them.
 

@@ -1,3 +1,4 @@
+import { PROVIDER_STREAM_HARD_MS, PROVIDER_STREAM_IDLE_MS } from './config.mjs';
 import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from './security.mjs';
 import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
@@ -120,6 +121,40 @@ function timeoutSignal(ms = reqTimeout, outerSignal) {
   return { signal: controller.signal, cleanup() { clearTimeout(timer); outerSignal?.removeEventListener('abort', onAbort); } };
 }
 
+// Wall-clock abort kills a healthy 10-minute reasoning stream. Abort only
+// after idleMs of silence, with a hard ceiling so a wedged socket cannot
+// pin a turn forever.
+export function idleTimeoutSignal({ idleMs, hardMs, outerSignal, pollMs = 2_000 }) {
+  const controller = new AbortController();
+  let lastActivity = Date.now();
+  const started = Date.now();
+  const onAbort = () => controller.abort();
+  outerSignal?.addEventListener('abort', onAbort, { once: true });
+  const timer = setInterval(() => {
+    const now = Date.now();
+    if (now - started >= hardMs || now - lastActivity >= idleMs) controller.abort();
+  }, Math.max(20, Number(pollMs) || 2_000));
+  timer.unref?.();
+  return {
+    signal: controller.signal,
+    touch() { lastActivity = Date.now(); },
+    cleanup() {
+      clearInterval(timer);
+      outerSignal?.removeEventListener('abort', onAbort);
+    },
+  };
+}
+
+function classifyWatchdogAbort(err, watchdog, outerSignal) {
+  if (err?.name === 'AbortError' && watchdog.signal.aborted && !outerSignal?.aborted) {
+    return Object.assign(new Error('Provider stream timed out (idle or hard ceiling)'), {
+      name: 'TimeoutError',
+      code: 'ETIMEDOUT',
+    });
+  }
+  return err;
+}
+
 function providerError(res, text, body = null) {
   const message = body?.error?.message || body?.message || String(text || '').slice(0, 500) || `${res.status} ${res.statusText}`;
   const err = new Error(message);
@@ -170,10 +205,15 @@ async function providerFetch(target, init) {
 
 async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
   let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  let current = { url: target.url, pinned: target.pinned };
+  let fallback = target.fallback || null;
+  let attemptsLeft = retries + 1;
+  let attempt = 0;
+  while (attemptsLeft > 0) {
+    attemptsLeft -= 1;
     const t = timeoutSignal(reqTimeout, outerSignal);
     try {
-      const res = await providerFetch(target, { ...init, signal: t.signal });
+      const res = await providerFetch(current, { ...init, signal: t.signal });
       const text = await res.text();
       let body = null;
       try { body = text ? JSON.parse(text) : null; } catch { /* handled below */ }
@@ -181,25 +221,42 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
       if (body === null && text) throw new Error('Provider returned non-JSON response');
       return body;
     } catch (err) {
-      lastError = err;
-      const aborted = outerSignal?.aborted || err?.name === 'AbortError';
-      const retryable = !aborted && (transientStatus(Number(err?.statusCode)) || !err?.statusCode);
-      if (!retryable || attempt >= retries) throw err;
+      lastError = classifyWatchdogAbort(err, t, outerSignal);
+      if (!isTransientProviderError(lastError, outerSignal)) throw lastError;
+      if (fallback) {
+        current = fallback;
+        fallback = null;
+        if (attemptsLeft < 1) attemptsLeft = 1;
+      } else if (attemptsLeft < 1) {
+        throw lastError;
+      }
     } finally {
       t.cleanup();
     }
-    await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+    if (attemptsLeft > 0) {
+      await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+      attempt += 1;
+    }
   }
   throw lastError || new Error('Provider request failed');
 }
 
 async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}) {
   let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  let current = { url: target.url, pinned: target.pinned };
+  let fallback = target.fallback || null;
+  let attemptsLeft = retries + 1;
+  let attempt = 0;
+  while (attemptsLeft > 0) {
+    attemptsLeft -= 1;
     let received = 0;
-    const t = timeoutSignal(Math.max(reqTimeout, 120_000), outerSignal);
+    const t = idleTimeoutSignal({
+      idleMs: PROVIDER_STREAM_IDLE_MS,
+      hardMs: PROVIDER_STREAM_HARD_MS,
+      outerSignal,
+    });
     try {
-      const res = await providerFetch(target, { ...init, signal: t.signal });
+      const res = await providerFetch(current, { ...init, signal: t.signal });
       if (!res.ok) {
         const text = await res.text();
         let body = null;
@@ -227,6 +284,7 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
       };
       for (;;) {
         const { value, done } = await reader.read();
+        if (value?.byteLength) t.touch();
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
         let idx;
         while ((idx = buffer.indexOf('\n')) >= 0) {
@@ -242,15 +300,25 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
       flush();
       return;
     } catch (err) {
-      lastError = err;
+      lastError = classifyWatchdogAbort(err, t, outerSignal);
       // Mid-stream reset: keep the tokens/tool calls already delivered instead
       // of aborting a turn that already made progress.
-      if (received > 0 && isTransientProviderError(err, outerSignal)) return;
-      if (!isTransientProviderError(err, outerSignal) || attempt >= retries) throw err;
+      if (received > 0 && isTransientProviderError(lastError, outerSignal)) return;
+      if (!isTransientProviderError(lastError, outerSignal)) throw lastError;
+      if (fallback) {
+        current = fallback;
+        fallback = null;
+        if (attemptsLeft < 1) attemptsLeft = 1;
+      } else if (attemptsLeft < 1) {
+        throw lastError;
+      }
     } finally {
       t.cleanup();
     }
-    await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+    if (attemptsLeft > 0) {
+      await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+      attempt += 1;
+    }
   }
   throw lastError || new Error('Provider stream failed');
 }
@@ -269,12 +337,20 @@ async function assertSafeProviderUrl(value) {
   return url;
 }
 
-async function routedProviderTarget(directUrl, trustedBaseURL) {
+async function routedProviderTarget(directUrl, trustedBaseURL, { preferDirect = false } = {}) {
   // Validate the user-controlled destination before a trusted relay hides the
   // original host from the SSRF guard.
   if (!trustedBaseURL) await assertSafeProviderUrl(directUrl);
-  const url = wrapProviderUrl(directUrl);
-  return { url, pinned: !trustedBaseURL || url !== directUrl };
+  const relayed = wrapProviderUrl(directUrl);
+  const directTarget = { url: directUrl, pinned: !trustedBaseURL };
+  if (relayed === directUrl) return directTarget;
+  const relayTarget = { url: relayed, pinned: true };
+  // Streaming a 30-minute turn through a serverless relay (Cloudflare Workers
+  // typically cut HTTP at 30–100s) looks like read ECONNRESET. Prefer the
+  // direct provider URL for streams; JSON catalog/probe still try the relay
+  // first and fall back to direct, matching fetchModelList.
+  if (preferDirect) return { ...directTarget, fallback: relayTarget };
+  return { ...relayTarget, fallback: directTarget };
 }
 
 function modelListDirectUrl(spec, key) {
@@ -504,7 +580,9 @@ function openAiMessages(frames) {
 
 async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
+    preferDirect: typeof onTextDelta === 'function',
+  });
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
@@ -584,7 +662,9 @@ function anthropicMessages(frames) {
 
 async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
+    preferDirect: typeof onTextDelta === 'function',
+  });
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
   if (typeof onTextDelta !== 'function') {
@@ -664,7 +744,9 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
   const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
+    preferDirect: typeof onTextDelta === 'function',
+  });
   const request = {
     systemInstruction: { parts: [{ text: system }] },
     contents: geminiContents(frames),

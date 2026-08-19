@@ -27,7 +27,7 @@ function clamp(value, min, max, fallback) {
 
 export const CLUSTER_ENABLED = flag(process.env.Z_AGENT_CLUSTER);
 export const INSTANCE_ID = String(process.env.Z_AGENT_INSTANCE_ID || `node-${randomUUID().slice(0, 8)}`);
-export const LOCK_TTL_MS = clamp(process.env.Z_AGENT_CLUSTER_LOCK_TTL_MS, 2_000, 600_000, 15_000);
+export const LOCK_TTL_MS = clamp(process.env.Z_AGENT_CLUSTER_LOCK_TTL_MS, 2_000, 1_800_000, 120_000);
 const POLL_MS = clamp(process.env.Z_AGENT_CLUSTER_POLL_MS, 50, 60_000, 250);
 const HEARTBEAT_MS = Math.max(1_000, Math.floor(LOCK_TTL_MS / 3));
 // Events are a catch-up channel between replicas, not history. The ring buffer
