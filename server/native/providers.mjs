@@ -133,6 +133,17 @@ function transientStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
+function isTransientProviderError(err, outerSignal) {
+  // User-cancelled turns must stay cancelled. A timer abort (no outer abort)
+  // is a dropped socket and is worth another try.
+  if (outerSignal?.aborted) return false;
+  if (transientStatus(Number(err?.statusCode))) return true;
+  if (Number(err?.statusCode) > 0) return false;
+  const message = `${err?.code || ''} ${err?.cause?.code || ''} ${err?.message || String(err || '')}`;
+  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|UND_ERR|socket hang up|network error|fetch failed|terminated|other side closed/i.test(message)
+    || err?.name === 'AbortError';
+}
+
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
     const cleanup = () => signal?.removeEventListener('abort', onAbort);
@@ -182,49 +193,66 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
   throw lastError || new Error('Provider request failed');
 }
 
-async function fetchSse(target, init, outerSignal, onEvent) {
-  const t = timeoutSignal(Math.max(reqTimeout, 120_000), outerSignal);
-  try {
-    const res = await providerFetch(target, { ...init, signal: t.signal });
-    if (!res.ok) {
-      const text = await res.text();
-      let body = null;
-      try { body = text ? JSON.parse(text) : null; } catch {}
-      throw providerError(res, text, body);
-    }
-    if (!res.body) throw new Error('Provider returned an empty streaming response');
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = '';
-    let eventData = [];
-    const flush = () => {
-      if (eventData.length === 0) return;
-      const raw = eventData.join('\n');
-      eventData = [];
-      if (raw === '[DONE]') return;
-      try { onEvent(JSON.parse(raw)); } catch (err) {
-        if (err instanceof SyntaxError) return;
-        throw err;
+async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}) {
+  let lastError = null;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    let received = 0;
+    const t = timeoutSignal(Math.max(reqTimeout, 120_000), outerSignal);
+    try {
+      const res = await providerFetch(target, { ...init, signal: t.signal });
+      if (!res.ok) {
+        const text = await res.text();
+        let body = null;
+        try { body = text ? JSON.parse(text) : null; } catch {}
+        throw providerError(res, text, body);
       }
-    };
-    for (;;) {
-      const { value, done } = await reader.read();
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
-      let idx;
-      while ((idx = buffer.indexOf('\n')) >= 0) {
-        let line = buffer.slice(0, idx);
-        buffer = buffer.slice(idx + 1);
-        if (line.endsWith('\r')) line = line.slice(0, -1);
-        if (!line) { flush(); continue; }
-        if (line.startsWith('data:')) eventData.push(line.slice(5).trimStart());
+      if (!res.body) throw new Error('Provider returned an empty streaming response');
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let eventData = [];
+      const flush = () => {
+        if (eventData.length === 0) return;
+        const raw = eventData.join('\n');
+        eventData = [];
+        if (raw === '[DONE]') return;
+        try {
+          const event = JSON.parse(raw);
+          received += 1;
+          onEvent(event);
+        } catch (err) {
+          if (err instanceof SyntaxError) return;
+          throw err;
+        }
+      };
+      for (;;) {
+        const { value, done } = await reader.read();
+        buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        let idx;
+        while ((idx = buffer.indexOf('\n')) >= 0) {
+          let line = buffer.slice(0, idx);
+          buffer = buffer.slice(idx + 1);
+          if (line.endsWith('\r')) line = line.slice(0, -1);
+          if (!line) { flush(); continue; }
+          if (line.startsWith('data:')) eventData.push(line.slice(5).trimStart());
+        }
+        if (done) break;
       }
-      if (done) break;
+      if (buffer.trim().startsWith('data:')) eventData.push(buffer.trim().slice(5).trimStart());
+      flush();
+      return;
+    } catch (err) {
+      lastError = err;
+      // Mid-stream reset: keep the tokens/tool calls already delivered instead
+      // of aborting a turn that already made progress.
+      if (received > 0 && isTransientProviderError(err, outerSignal)) return;
+      if (!isTransientProviderError(err, outerSignal) || attempt >= retries) throw err;
+    } finally {
+      t.cleanup();
     }
-    if (buffer.trim().startsWith('data:')) eventData.push(buffer.trim().slice(5).trimStart());
-    flush();
-  } finally {
-    t.cleanup();
+    await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
   }
+  throw lastError || new Error('Provider stream failed');
 }
 
 function providerAuth(spec, key) {
