@@ -38,6 +38,22 @@ const PROFILES = {
       'Do not modify files, run shell commands, use the network, or ask the user questions.',
     ].join('\n'),
   },
+  implement: {
+    name: 'implement',
+    maxSteps: 24,
+    writes: true,
+    system: [
+      'You are the Implement subagent: you carry one scoped change all the way to a verified state.',
+      'Work inside the delegated scope only. Do not redesign adjacent subsystems or opportunistically refactor unrelated code.',
+      'Read the exact files you are about to change before changing them. Never edit a file you have not read in this run.',
+      'Prefer edit over write for existing files, and keep the diff minimal and reviewable.',
+      'After changing code, verify it: run the most relevant targeted tests with run_tests, then check types and lint with diagnostics.',
+      'If verification fails, fix the cause and re-run it. Never report success from a failing or unverified state.',
+      'Use git with action="diff" to re-read your own change before writing the report.',
+      'You cannot ask the user questions. If the task is ambiguous, choose the least surprising interpretation, implement it, and state the assumption in your report.',
+      'Return: what changed with relative paths, why, the exact verification you ran and its result, and anything you deliberately left undone.',
+    ].join('\n'),
+  },
 };
 
 export function normalizeSubagentKind(value) {
@@ -51,4 +67,10 @@ export function getSubagentProfile(value) {
 
 export function subagentKinds() {
   return Object.keys(PROFILES);
+}
+
+// Only writer profiles are handed mutating tools and a session sandbox; every
+// other profile stays strictly read-only.
+export function subagentWrites(value) {
+  return Boolean(getSubagentProfile(value)?.writes);
 }
