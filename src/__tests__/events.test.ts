@@ -81,10 +81,25 @@ describe("EventStream", () => {
     const stream = new EventStream();
     stream.connect();
     expect(MockEventSource.instances).toHaveLength(0);
+    expect(stream.status).toBe("idle");
     stream.switchSession("ses_ready");
     expect(MockEventSource.instances[0].url).toBe(
       "/api/event?sessionId=ses_ready",
     );
+  });
+
+  test("welcome screen without a session is idle, not a dropped stream", () => {
+    const stream = new EventStream();
+    expect(stream.status).toBe("idle");
+    stream.connect();
+    expect(stream.status).toBe("idle");
+    expect(MockEventSource.instances).toHaveLength(0);
+    stream.switchSession("ses_chat");
+    expect(stream.status).toBe("connecting");
+    stream.switchSession(null);
+    expect(stream.status).toBe("idle");
+    expect(MockEventSource.instances).toHaveLength(1);
+    stream.close();
   });
 
   test("dispatches named events to handlers", () =>

@@ -100,7 +100,8 @@ function AppShell() {
   const streamRef = useRef<EventStream | null>(null);
   // Баннер «потеряно соединение с потоком событий» показывается с задержкой:
   // мобильная сеть рвёт SSE на ~1-2с при каждом обрыве, и мгновенный баннер
-  // мигал бы постоянно. Показываем только если поток реально лежит >3с.
+  // мигал бы постоянно. Показываем только если поток реально лежит >8с
+  // (статус closed, не idle без выбранного чата).
   const [sseDown, setSseDown] = useState(false);
   const sseDownTimer = useRef<number | null>(null);
 
@@ -128,27 +129,29 @@ function AppShell() {
     );
     streamRef.current = stream;
     const off = stream.on((e) => applyEvent(e));
-    let poll: ReturnType<typeof setInterval> | null = setInterval(() => {
+    // Debounce баннера: «closed» — реальный обрыв транспорта. «idle» значит
+    // чат ещё не выбран (welcome), это не потеря потока.
+    const syncSseUi = () => {
       setConnection(stream.status);
-      // Debounce баннера: «closed» считается реальным обрывом только после
-      // 3с непрерывного отсутствия соединения. Мгновенные реконнекты (1-2с)
-      // не мигают жёлтой/синей полосой.
-      const status = stream.status;
-      if (status === "closed") {
+      if (stream.status === "closed") {
         if (sseDownTimer.current === null) {
           sseDownTimer.current = window.setTimeout(
             () => setSseDown(true),
             8000,
           );
         }
-      } else {
-        if (sseDownTimer.current !== null) {
-          window.clearTimeout(sseDownTimer.current);
-          sseDownTimer.current = null;
-        }
-        setSseDown(false);
+        return;
       }
-    }, 400);
+      if (sseDownTimer.current !== null) {
+        window.clearTimeout(sseDownTimer.current);
+        sseDownTimer.current = null;
+      }
+      setSseDown(false);
+    };
+    let poll: ReturnType<typeof setInterval> | null = setInterval(
+      syncSseUi,
+      400,
+    );
     let healthPoll: ReturnType<typeof setInterval> | null = setInterval(
       () => checkConnection(),
       15000,
@@ -175,7 +178,7 @@ function AppShell() {
           modelsPoll = null;
         }
       } else {
-        if (!poll) poll = setInterval(() => setConnection(stream.status), 400);
+        if (!poll) poll = setInterval(syncSseUi, 400);
         if (!healthPoll)
           healthPoll = setInterval(() => checkConnection(), 15000);
         if (!modelsPoll)
