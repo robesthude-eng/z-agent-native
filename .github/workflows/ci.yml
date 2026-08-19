@@ -31,12 +31,13 @@ jobs:
       - run: npm ci
       - name: Validate eval manifest
         run: npm run eval:validate
+      - name: Validate real-repository benchmark manifest
+        run: npm run eval:benchmark:validate
       - name: Check capability documentation
         run: npm run docs:check
       - name: Deterministic agent smoke eval
         run: npm run eval:smoke
         env:
-          # GH-hosted runner is not root and cannot allocate per-session UIDs.
           Z_AGENT_ALLOW_UNISOLATED_SHELL: '1'
       - name: Native runtime tests
         run: npm run test:native
@@ -112,6 +113,69 @@ jobs:
       - run: npm ci
       - name: Block new high/critical runtime advisories
         run: npm audit --omit=dev --audit-level=high
+
+
+  containers:
+    name: Production container contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate Compose topology
+        run: |
+          cp .env.example .env
+          docker compose config -q
+      - name: Validate public Caddy security config
+        run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+      - name: Build API/executor image
+        run: docker build --pull -t z-agent-native:ci .
+      - name: Build isolated browser image
+        run: docker build --pull -f Dockerfile.browser -t z-agent-browser:ci .
+      - name: Boot production topology and require full readiness
+        run: |
+          set -euo pipefail
+          export Z_AGENT_RELEASE_SHA=ci-${GITHUB_SHA}
+          cleanup() { docker compose down -v --remove-orphans >/dev/null 2>&1 || true; }
+          trap cleanup EXIT
+          docker compose up -d --build --remove-orphans
+          READY=0
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3002/health/ready > /tmp/z-agent-ci-ready.json 2>/dev/null; then
+              READY=1
+              break
+            fi
+            sleep 2
+          done
+          if [ "$READY" != 1 ]; then
+            docker compose ps
+            docker compose logs --tail=200 z-agent z-agent-executor z-agent-browser z-agent-browser-egress || true
+            exit 1
+          fi
+          cat /tmp/z-agent-ci-ready.json
+          test "$(docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA | tr -d '\r')" = "$Z_AGENT_RELEASE_SHA"
+          docker compose ps --status running z-agent | grep -q z-agent
+          docker compose ps --status running z-agent-executor | grep -q z-agent-executor
+          docker compose ps --status running z-agent-browser | grep -q z-agent-browser
+          docker compose ps --status running z-agent-browser-egress | grep -q z-agent-browser-egress
+
+  sbom:
+    name: Dependency inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Generate CycloneDX dependency inventory
+        run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sbom-cyclonedx
+          path: sbom.cdx.json
+          retention-days: 30
 
   # Formatting churn is useful feedback but not a production correctness gate.
   quality:

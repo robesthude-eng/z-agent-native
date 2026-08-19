@@ -1,4 +1,16 @@
 agentwill.online {
+	# Browser hardening at the public TLS boundary. Application HTML also
+	# carries its own CSP from the Node runtime; these headers cover API and
+	# preview responses without granting additional browser capabilities.
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "no-referrer"
+		Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+
 	# Never compress the event stream. gzip/zstd buffer SSE comments and
 	# mobile Chrome then aborts the HTTP/2 stream in a few milliseconds
 	# (Caddy: "aborting with incomplete response / context canceled").

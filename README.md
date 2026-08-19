@@ -13,21 +13,25 @@ Browser (React)
    ├── SSE        messages, tool state, questions, file events
    └── Socket.IO  interactive terminal
    │
-Z Agent Native Runtime
+Z Agent Native Runtime (trusted orchestrator)
    ├── Agent loop / context manager / subagents
    ├── Questions + automatic tool approval
-   ├── Tools: read, list, glob, grep, write, edit, apply_patch,
-   │          bash/SSH, webfetch, websearch, todowrite, task
-   ├── Workspace + git + file watcher events
-   ├── Provider layer (direct API calls)
+   ├── First-party file/git/web tools + provider streaming
+   ├── Workspace + watcher + terminal
    └── SQLite + encrypted provider credentials
-          │
-          ├── OpenAI / OpenAI-compatible
-          ├── Anthropic
-          └── Google Gemini
+        │ UDS                         │ UDS
+        ▼                             ▼
+Networkless Executor             Isolated Browser
+(arbitrary code, no /data)       (Chromium, no data/workspace mounts)
+        │                             │ internal-only network
+        └── shared workspace          ▼
+                                  Browser Egress Proxy
+                                  (policy + SSRF + DNS pin)
+
+Provider traffic: OpenAI-compatible / Anthropic / Gemini
 ```
 
-There is no second agent process, runner HTTP proxy or protocol translation layer between this runtime and the UI.
+There is no second **agent loop** or protocol-translation daemon between the UI and the native orchestrator. Production does use narrow sibling security services: a networkless arbitrary-code executor and an isolated Chromium service reached over Unix-domain sockets, plus a no-secret browser egress proxy. The browser has no direct Internet/API-network route; the proxy is its only outbound path.
 
 Detailed internals: [ARCHITECTURE.md](ARCHITECTURE.md). Deployment/security boundary: [SECURITY.md](SECURITY.md).
 
@@ -96,7 +100,7 @@ cp .env.example .env
 docker compose up --build -d
 ```
 
-Runtime state/secrets are stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. The runtime gives each chat a stable low-privilege Unix UID, so its shell/terminal cannot read `/data` or another chat workspace. When serving through HTTPS, set:
+Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state/secrets are stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins the container paths to `/data` and `/workspaces` even though `.env.example` uses convenient relative paths for bare-metal development. Each chat has a stable low-privilege Unix UID, so autonomous code cannot read `/data` or another chat workspace. When serving through HTTPS, set:
 
 ```env
 Z_AGENT_SECURE_COOKIES=1
@@ -128,21 +132,24 @@ Every real chat has exactly one isolated directory:
 workspaces/<session-id>/
 ```
 
-In Docker each chat also gets a distinct, monotonically allocated Unix UID starting at 20000; identities are never reused after chat deletion. The agent's `bash`, `apply_patch`, interactive terminal and Git status processes run as that UID, not as the runtime process. Permitted external processes such as local Git operations, package/build commands and tests therefore create files in the same workspace that the right sidebar shows. Remote Git/SCP/rsync/package-network operations are additionally subject to the configured egress policy. The system instruction explicitly requires remote project downloads to target this workspace and to verify the files before claiming success.
+In Docker each chat also gets a distinct, monotonically allocated Unix UID starting at 20000; identities are never reused after chat deletion. Autonomous `bash`, `run_tests` and diagnostics execute as that UID inside the sibling **networkless executor container**. Model-selected Git and snapshot operations that can activate repository hooks, clean/process filters, fsmonitor helpers or other external processes cross the same executor boundary; only non-executing Git object plumbing stays in the trusted runtime under the session UID. The interactive human terminal is disabled by the production Compose profile; trusted self-hosted operators may explicitly enable it with `Z_AGENT_TERMINAL_ENABLED=1`. All of them therefore create files in the same workspace that the right sidebar shows, while sibling workspaces remain mode-0700 boundaries. Hardened mode intentionally disables networked dependency installers; bake dependencies into the image/operator workflow instead of giving arbitrary agent code Internet access.
 
 ## Security model
 
-The runtime is intentionally powerful and fully autonomous: permission-gated tool calls are approved inside the runtime without waiting for a browser confirmation. `bash` executes real commands, but direct shell egress is **guarded by default**: common network clients and direct references to credential-like workspace files are blocked before process launch. This application-layer policy reduces accidental/prompt-injected exfiltration but is not a kernel firewall; production deployments should therefore:
+Production treats model-selected code as hostile. The **hard egress boundary for autonomous code is the executor container**, not command-text filtering: `bash`, builds, tests and diagnostics are sent over a Unix-domain socket to `z-agent-executor`, which has `network_mode: none`, no `/data` mount, a per-session UID, per-command RLIMITs and Docker CPU/memory/PID caps. A Python/Node program, `/dev/tcp`, obfuscated shell, or compromised build script therefore still has no container network interface.
 
-- use the supplied Docker image for production shell/terminal support;
-- mount only the dedicated `/data` and `/workspaces` volumes; never mount the Docker socket or arbitrary host paths;
-- keep `/data` private to the runtime; tool processes are setuid to a per-session identity and cannot traverse it or sibling workspaces;
-- keep the runtime behind HTTPS and set `Z_AGENT_SECURE_COOKIES=1`;
-- set an invite code or put registration behind an external access layer;
-- use a secrets manager for `Z_AGENT_SECRET_KEY` and optional search credentials;
-- expose only networks, credentials and mounts that the autonomous agent is allowed to use.
+The `guarded` / `tool-only` shell policies and sensitive-file filters remain defense in depth. Provider keys never enter tool environments. Model-selected `webfetch`, `websearch` and browser access are **off by default** (`Z_AGENT_NETWORK_POLICY=off`). Operators may opt into a hostname allowlist or `public` compatibility mode. Chromium runs in a separate browser container that receives neither `/data`, provider secrets nor workspace mounts. A minimal root controller owns the private UDS only long enough to launch each chat browser worker through `setpriv --clear-groups --no-new-privs` as that chat's dedicated UID; web content therefore does not share the controller identity or another chat's browser identity. The container is attached only to an internal Docker network; a separate no-secret egress proxy is the only route outward and reapplies destination policy, SSRF validation and DNS pinning at the actual upstream connection. Provider API traffic is separate and remains SSRF-filtered/DNS-pinned in the trusted orchestrator.
 
-Provider API keys are not exposed to the browser, terminal process or tool shell environment. Workspace files matching common credential patterns (`.env`, SSH keys, cloud credential stores, etc.) are also blocked from agent `read`/`grep` and guarded shell access by default. Use `Z_AGENT_SHELL_NETWORK_POLICY=tool-only` for a stricter multi-user shell posture, or `open` only for trusted compatibility workloads. Model-selected `webfetch`/`websearch`/`browser` traffic has a separate `Z_AGENT_NETWORK_POLICY`: set it to `allowlist` with `Z_AGENT_NETWORK_ALLOWLIST=docs.example.com,...`, or `off`, when arbitrary public destinations are not acceptable. On a non-root bare-metal runtime, shell/terminal tools are disabled by default because secure per-session setuid isolation is unavailable. `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` exists only as an explicit unsafe single-user development fallback.
+For production:
+
+- use the supplied Compose topology; do not collapse the executor back into the API container;
+- never mount the Docker socket or arbitrary host paths into any service;
+- keep model web access `off` unless the task genuinely requires it; prefer an explicit allowlist over `public`;
+- keep `/data` private to the trusted runtime and keep `Z_AGENT_EXECUTOR_REQUIRED=1` / `Z_AGENT_BROWSER_REQUIRED=1` so missing isolation fails closed;
+- serve through HTTPS with `Z_AGENT_SECURE_COOKIES=1`, close registration with an invite/access layer, and store `Z_AGENT_SECRET_KEY` in a secrets manager;
+- keep the interactive terminal disabled in multi-user production (`Z_AGENT_TERMINAL_ENABLED=0`, the Compose default). It is a trusted self-hosted opt-in because its shell lives in the orchestrator container rather than the networkless executor.
+
+On non-root bare metal, autonomous shell falls back only when `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is explicitly enabled for unsafe single-user development; the interactive terminal additionally requires `Z_AGENT_TERMINAL_ENABLED=1`. See `SECURITY.md` for the exact trust boundaries and residual assumptions.
 
 ## Tests
 
@@ -157,16 +164,19 @@ They cover storage, ownership, actions/queue, path/symlink protection, SSRF bloc
 The eval manifest now has an **executable** harness rather than only schema validation:
 
 ```bash
-npm run eval:validate       # manifest/capability consistency
+npm run eval:validate       # fixture manifest/capability consistency
+npm run eval:benchmark:validate  # production real-repo manifest contract
 npm run eval:smoke          # real runTurn + tools using the deterministic fixture provider
 npm run eval:run -- --model anthropic/your-model-id  # real model, isolated workspaces
 # compare a new run against a saved baseline; fail only on >5-point case regressions
 npm run eval:run -- --model anthropic/your-model-id --baseline evals/baseline.json --fail-on-regression --regression-tolerance 5
+# release benchmark over pinned real repositories (use a private 100–300 case manifest)
+npm run eval:benchmark -- --manifest evals/production-benchmark.json --model anthropic/your-model-id
 ```
 
-The manifest contains **30 executable cases** across explore/debug/review/implement plus the deterministic smoke. `eval:run` produces scored JSON reports, can run repository/fixture tasks with file expectations and an external verification command, and can compare case scores with a saved baseline so quality regressions are visible rather than inferred from infrastructure tests. CI runs the deterministic smoke so the complete provider → agent loop → tool → verification path is regression-tested without provider credentials. Real-model baselines remain operator-controlled because provider/model output is stochastic and credentialed.
+The bundled manifest contains **30 executable regression cases** across explore/debug/review/implement plus the deterministic smoke. `eval:run` produces scored JSON reports, can run repository/fixture tasks with file expectations and an external verification command, and can compare case scores with a saved baseline so quality regressions are visible rather than inferred from infrastructure tests. CI runs the deterministic smoke so the complete provider → agent loop → tool → verification path is regression-tested without provider credentials. Real-model baselines remain operator-controlled because provider/model output is stochastic and credentialed.
 
-Browser E2E includes the same deterministic fixture provider and verifies a real UI submission through server/runtime/tool execution back to persisted workspace content. The fixture provider is disabled unless `Z_AGENT_ENABLE_FIXTURE_PROVIDER=1`; never enable it on a production instance.
+Browser E2E includes the same deterministic fixture provider and verifies a real UI submission through server/runtime/tool execution back to persisted workspace content. The fixture provider is disabled unless `Z_AGENT_ENABLE_FIXTURE_PROVIDER=1`; never enable it on a production instance. `eval:benchmark` is the release-quality harness for a private corpus of pinned real repositories. Remote sources require a full immutable commit hash; model web access is forced off; setup, agent shell work, oracle and regression commands execute through the networkless executor; repeated runs enforce duration/tool-call budgets and stability. The runner fails closed when the executor socket is missing. `--unsafe-local-executor` exists only for trusted fixture development and is intentionally not a release mode.
 
 The React/Vitest suite is available through:
 
@@ -188,7 +198,14 @@ workspaces/
   ses_.../
 ```
 
-Back up both persistent volumes. Back up the SQLite database **and** the master key (or retain the same `Z_AGENT_SECRET_KEY`) if provider credentials must remain decryptable after restore.
+Back up both persistent volumes **off-host**. The automatic pre-deploy SQLite snapshot is only a short-term rollback aid on the same volume (locally retained for 30 days), not disaster recovery. Back up the SQLite database **and** the master key (or retain the same `Z_AGENT_SECRET_KEY`) if provider credentials must remain decryptable after restore. Schema changes are versioned in `schema_migrations`; each migration declares the oldest schema-aware reader it remains compatible with. Automatic deploy refuses a candidate whose schema would make the currently running release unable to roll back; an incompatible migration is rejected by the automatic workflow and requires a separate operator-controlled maintenance deployment with a data-preservation/rollback plan.
+
+```bash
+npm run db:backup -- /path/to/z-agent.sqlite   # online, integrity-checked snapshot
+npm run db:migrate                              # explicit migration/quick-check entry point
+```
+
+Production deploy takes an integrity-checked online SQLite snapshot before touching the candidate, records the running schema-reader version, builds the candidate, verifies the candidate's minimum rollback-reader contract **before startup**, injects a release SHA, waits on `/health/ready` (DB read/write + compatible schema marker, key, writable/free-space checks on both volumes, executor network-boundary attestation and browser/proxy IPC), verifies the live release SHA, and keeps the previous code/image path available for rollback before pruning stale layers.
 
 ## Turn telemetry
 
@@ -199,7 +216,7 @@ npm run telemetry:summary
 npm run telemetry:summary -- --last 200
 ```
 
-Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound it. Per-turn telemetry is also attached to the completed assistant message and emitted as `turn.telemetry`.
+Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound it. Per-turn telemetry is also attached to the completed assistant message and emitted as `turn.telemetry`. For scraping, set `Z_AGENT_METRICS_TOKEN`; `/metrics` then exposes low-cardinality Prometheus counters/gauges with no user/session/turn IDs in labels.
 
 ## Security-relevant configuration
 
@@ -213,8 +230,12 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. Streaming prefers the direct provider URL and only falls back to the relay. The relay sees API keys and prompts. Serverless relays (Cloudflare Workers) typically cut streams after ~30–100s and cannot carry a 30-minute turn. |
 | `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `guarded`, `tool-only`, or `open` application-layer shell egress policy. `tool-only` is the stricter multi-user option; neither mode replaces a network firewall. |
 | `Z_AGENT_SENSITIVE_FILE_POLICY` | `block` | Blocks agent content access to common workspace credential files. `allow` is an explicit compatibility escape hatch. |
-| `Z_AGENT_NETWORK_POLICY` | `public` | Model-selected external network policy: `public`, hostname `allowlist`, or `off`. Provider API traffic is separate. |
-| `Z_AGENT_NETWORK_ALLOWLIST` | empty | Comma-separated hostnames accepted when agent network policy is `allowlist`; subdomains are included. |
+| `Z_AGENT_NETWORK_POLICY` | `off` | Model-selected external network policy: fail-closed `off`, hostname `allowlist`, or trusted compatibility `public`. Provider API traffic is separate. |
+| `Z_AGENT_NETWORK_ALLOWLIST` | empty | Comma-separated host patterns for `allowlist`: exact hostnames are exact; use `*.example.com` to explicitly authorize subdomains. |
+| `Z_AGENT_EXECUTOR_REQUIRED` | `1` in Compose | Fail closed instead of executing autonomous shell code in the trusted runtime when the networkless executor is missing. |
+| `Z_AGENT_BROWSER_REQUIRED` | `1` in Compose | Fail closed when the isolated Chromium service is missing. |
+| `Z_AGENT_TERMINAL_ENABLED` | `0` in Compose | Trusted self-hosted opt-in for the interactive terminal. Keep `0` for multi-user production because the terminal is not the autonomous no-network executor. |
+| `Z_AGENT_METRICS_TOKEN` | empty | Enables bearer-protected `/metrics`; empty returns 404. |
 | `Z_AGENT_TELEMETRY_FILE` | `data/turn-telemetry.jsonl` | Privacy-minimized completed-turn metrics JSONL. |
 | `Z_AGENT_MODEL_PRICING_JSON` | empty | Optional model → USD/1M input/output token map used only for telemetry cost estimates. |
 | `Z_AGENT_TOOLCHAIN_SHA256` | empty | JSON map of pinned toolchain digests, e.g. `{"java:21":"<sha256>"}`. |

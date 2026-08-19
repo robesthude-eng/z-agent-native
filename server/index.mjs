@@ -4,7 +4,7 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, startDurableRecovery, submitTurn, waitForTurnIdle,
+  abortTurn, activeTurnCount, answerQuestion, clearAgentSessionState, rejectQuestion, startDurableRecovery, submitTurn, waitForTurnIdle,
 } from './native/agent.mjs';
 import {
   authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
@@ -21,15 +21,19 @@ import {
   buildCatalog, probeModel, providerList, providerSpecs,
 } from './native/providers.mjs';
 import { safeWorkspacePath } from './native/security.mjs';
+import { readinessCheck } from './native/readiness.mjs';
+import { prometheusMetrics } from './native/metrics.mjs';
+import { killExecutorIdentity } from './native/executor-client.mjs';
+import { closeBrowserSessionRemote } from './native/browser-client.mjs';
 import { assertRuntimeSecretsPrivate, killSandboxProcesses, shellSandboxAvailable } from './native/sandbox.mjs';
 import {
-  createChat, deleteChat, deleteManualModel, deleteMessagesFrom, deleteProviderKey,
+  authRateLimitExceeded, createChat, deleteChat, deleteManualModel, deleteMessagesFrom, deleteProviderKey,
   dequeueAction, enqueueAction, getChat, getPrefs, getTurn,
   listChats, listHiddenModels, listManualModels, listMessages, listPendingQuestions,
-  listProviderKeyIds, listQueue, ownsChat, recoverInterruptedRuntimeState, renameChat, setHiddenModel, setPrefs,
-  setProviderKey, upsertManualModel, workspaceFor,
+  listProviderKeyIds, listQueue, ownsChat, recordAuthFailures, recoverInterruptedRuntimeState, renameChat, setHiddenModel, setPrefs,
+  setProviderKey, upsertManualModel, workspaceFor, getSandboxUid,
 } from './native/store.mjs';
-import { initTerminal } from './native/terminal.mjs';
+import { initTerminal, terminalEnabled } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
@@ -44,13 +48,10 @@ recoverInterruptedRuntimeState({ skipSessionIds: RESUMABLE_SESSIONS });
 const RECOVERED_TURNS = startDurableRecovery();
 recoverDanglingTurnResults();
 const AUTH_WINDOW_MS = 10 * 60 * 1000;
-const AUTH_MAX_ATTEMPTS = 20;
-const authAttempts = new Map();
+const AUTH_IP_MAX_FAILURES = 40;
+const AUTH_ACCOUNT_MAX_FAILURES = 15;
 
-function authRateKey(req) {
-  // Behind a proxy every request shares the proxy's socket address, which turns
-  // the login limiter into a global lockout. Only trust the forwarded address
-  // when the operator confirmed there is a proxy in front.
+function authRemoteAddress(req) {
   if (TRUST_PROXY) {
     const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
     if (forwarded) return forwarded;
@@ -58,31 +59,25 @@ function authRateKey(req) {
   return String(req.socket?.remoteAddress || 'unknown');
 }
 
-let lastAuthSweep = 0;
-
-// The limiter counts failures only, and a success no longer resets it. Counting
-// every attempt and wiping the window on success meant an attacker could spray
-// 19 guesses at one account, log into an account they own to clear the counter,
-// and repeat from the same address forever.
-function checkAuthRate(req) {
-  const now = Date.now();
-  // Sweep on a timer, not only when the map is huge and the request happens to
-  // be under the limit: expired entries used to survive indefinitely.
-  if (now - lastAuthSweep > AUTH_WINDOW_MS || authAttempts.size > 5000) {
-    lastAuthSweep = now;
-    for (const [k, value] of authAttempts) if (now >= value.resetAt) authAttempts.delete(k);
-  }
-  const current = authAttempts.get(authRateKey(req));
-  if (!current || now >= current.resetAt) return true;
-  return current.count < AUTH_MAX_ATTEMPTS;
+function authBucket(kind, value) {
+  return `${kind}:${crypto.createHash('sha256').update(String(value || '').trim().toLowerCase(), 'utf8').digest('hex')}`;
 }
 
-function noteAuthFailure(req) {
-  const key = authRateKey(req);
-  const now = Date.now();
-  const current = authAttempts.get(key);
-  if (!current || now >= current.resetAt) authAttempts.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
-  else current.count += 1;
+function authRateBuckets(req, email = '') {
+  const ip = authBucket('ip', authRemoteAddress(req));
+  const account = String(email || '').trim() ? authBucket('account', email) : null;
+  return { ip, account, all: [ip, account].filter(Boolean) };
+}
+
+function checkAuthRate(req, email = '') {
+  const buckets = authRateBuckets(req, email);
+  const limits = { [buckets.ip]: AUTH_IP_MAX_FAILURES, default: AUTH_ACCOUNT_MAX_FAILURES };
+  if (buckets.account) limits[buckets.account] = AUTH_ACCOUNT_MAX_FAILURES;
+  return !authRateLimitExceeded(buckets.all, limits);
+}
+
+function noteAuthFailure(req, email = '') {
+  recordAuthFailures(authRateBuckets(req, email).all, { windowMs: AUTH_WINDOW_MS });
 }
 
 function securityHeaders(res) {
@@ -144,24 +139,48 @@ async function route(req, res) {
   const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
 
-  if (p === '/health' || p === '/api/global/health' || p === '/global/health') return sendJson(res, 200, { status: 'ok', runtime: 'z-agent-native', version: '1.0.0', uptime: Math.floor((Date.now() - STARTED_AT) / 1000) });
+  if (p === '/health/live') return sendJson(res, 200, { status: 'alive', runtime: 'z-agent-native', version: '1.0.0', uptime: Math.floor((Date.now() - STARTED_AT) / 1000) });
+  if (p === '/metrics' && req.method === 'GET') {
+    const expected = String(process.env.Z_AGENT_METRICS_TOKEN || '');
+    if (!expected) return sendJson(res, 404, { error: 'Not found' });
+    const supplied = String(req.headers.authorization || '').replace(/^Bearer\s+/i, '');
+    const a = Buffer.from(supplied); const b = Buffer.from(expected);
+    const ok = a.length === b.length && a.length > 0 && crypto.timingSafeEqual(a, b);
+    if (!ok) return sendJson(res, 401, { error: 'Unauthorized' });
+    const body = Buffer.from(prometheusMetrics({ activeTurns: activeTurnCount() }));
+    res.writeHead(200, { 'content-type': 'text/plain; version=0.0.4; charset=utf-8', 'content-length': String(body.length), 'cache-control': 'no-store' });
+    return res.end(body);
+  }
+  if (p === '/health' || p === '/health/ready' || p === '/api/global/health' || p === '/global/health') {
+    const readiness = await readinessCheck();
+    // Health is commonly exposed through a reverse proxy. Never reflect raw
+    // exception strings/paths from DB, volume or IPC probes to unauthenticated
+    // callers; operators get detail from logs/metrics instead.
+    const checks = Object.fromEntries(Object.entries(readiness.checks || {}).map(([name, value]) => [name, {
+      ok: Boolean(value?.ok), latencyMs: Number(value?.latencyMs) || 0,
+    }]));
+    return sendJson(res, readiness.ok ? 200 : 503, {
+      status: readiness.ok ? 'ok' : 'not_ready', runtime: 'z-agent-native', version: '1.0.0',
+      uptime: Math.floor((Date.now() - STARTED_AT) / 1000), checks,
+    });
+  }
 
   // Authentication endpoints intentionally precede the auth gate.
   if (p === '/api/auth/register' && req.method === 'POST') {
-    if (!checkAuthRate(req)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     const body = await readJson(req, 64 * 1024);
+    if (!checkAuthRate(req, body.email)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     let user;
     try { user = registerUser(body.email, body.password, body.inviteCode); }
-    catch (error) { noteAuthFailure(req); throw error; }
+    catch (error) { noteAuthFailure(req, body.email); throw error; }
     const login = issueLogin(user.email);
     return sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
   }
   if (p === '/api/auth/login' && req.method === 'POST') {
-    if (!checkAuthRate(req)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     const body = await readJson(req, 64 * 1024);
+    if (!checkAuthRate(req, body.email)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     let user;
     try { user = loginUser(body.email, body.password); }
-    catch (error) { noteAuthFailure(req); throw error; }
+    catch (error) { noteAuthFailure(req, body.email); throw error; }
     const login = issueLogin(user.email);
     return sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
   }
@@ -225,6 +244,9 @@ async function route(req, res) {
       abortTurn(sid);
       if (!(await waitForTurnIdle(sid, 5000))) return sendJson(res, 409, { error: 'Agent turn is still stopping; retry deletion.' });
       killSandboxProcesses(sid);
+      const sandboxUid = getSandboxUid(sid);
+      if (Number.isInteger(sandboxUid)) await killExecutorIdentity(sandboxUid);
+      await closeBrowserSessionRemote(sid, sandboxUid);
       closeWorkspaceWatcher(sid);
       emit(sid, 'session.removed', {});
       deleteChat(sid, ownerId);
@@ -252,7 +274,7 @@ async function route(req, res) {
       return sendJson(res, 200, { ok: true, removed });
     }
     if (p === `/api/session/${sid}/turn` && req.method === 'GET') return sendJson(res, 200, { turn: getTurn(sid), orchestrator: true });
-    if (p === `/api/session/${sid}/capabilities` && req.method === 'GET') return sendJson(res, 200, { capabilities: { terminal: shellSandboxAvailable() ? 'ready' : 'unavailable', workspace: 'ready', preview: fs.existsSync(path.join(workspaceFor(sid), 'index.html')) ? 'ready' : 'unavailable' } });
+    if (p === `/api/session/${sid}/capabilities` && req.method === 'GET') return sendJson(res, 200, { capabilities: { terminal: terminalEnabled() && shellSandboxAvailable() ? 'ready' : 'unavailable', workspace: 'ready', preview: fs.existsSync(path.join(workspaceFor(sid), 'index.html')) ? 'ready' : 'unavailable' } });
     if (p === `/api/session/${sid}/queue` && req.method === 'GET') return sendJson(res, 200, { queue: listQueue(sid) });
     if (p === `/api/session/${sid}/queue` && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
@@ -419,6 +441,39 @@ async function route(req, res) {
   return sendJson(res, 404, { error: `Unknown route: ${req.method} ${p}` });
 }
 
+const APP_CONTENT_SECURITY_POLICY_BASE = [
+  "default-src 'self'",
+  "base-uri 'none'",
+  "object-src 'none'",
+  "frame-ancestors 'self'",
+  "form-action 'self'",
+  "script-src 'self'",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data: blob:",
+  "font-src 'self' data:",
+  "media-src 'self' blob:",
+  "worker-src 'self' blob:",
+];
+
+function appSecurityHeaders(req) {
+  const rawHost = String(req?.headers?.host || '').trim();
+  // Same-host websocket sources keep the trusted self-hosted terminal working
+  // without broad `ws:`/`wss:` CSP sources that would permit arbitrary egress.
+  const host = /^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(rawHost) ? rawHost : '';
+  const sockets = host ? ` ws://${host} wss://${host}` : '';
+  // Browser telemetry is optional. Keep the exception narrow instead of
+  // allowing arbitrary HTTPS exfiltration from an injected script. Operators
+  // using a self-hosted Sentry origin should extend this policy explicitly.
+  const csp = [...APP_CONTENT_SECURITY_POLICY_BASE, `connect-src 'self'${sockets} https://*.ingest.sentry.io https://*.ingest.us.sentry.io`].join('; ');
+  return {
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'permissions-policy': 'camera=(), microphone=(), geolocation=(), payment=(), usb=()',
+    'x-frame-options': 'SAMEORIGIN',
+    'content-security-policy': csp,
+  };
+}
+
 function serveStatic(req, res, pathname) {
   // A malformed percent-escape threw out of the request handler and killed the
   // response with a 500 (and an unhandled rejection in the logs).
@@ -439,6 +494,7 @@ function serveStatic(req, res, pathname) {
     'cache-control': immutableAsset
       ? 'public, max-age=31536000, immutable'
       : 'no-cache',
+    ...appSecurityHeaders(req),
   });
   fs.createReadStream(full).pipe(res);
 }

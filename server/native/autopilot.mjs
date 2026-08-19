@@ -227,9 +227,6 @@ function healthRecorder(ownerId) {
 
 function failFastRateLimitFor(plan, index) {
   const n = Array.isArray(plan?.candidates) ? plan.candidates.length : 0;
-  // Last remaining candidate should still wait out a 429. Anything we can
-  // replace (other candidates, or expandOnFailure after an explicit pick)
-  // must not burn ~3.5 minutes of extra retries first.
   if (plan?.expandOnFailure) return true;
   return index < n - 1;
 }

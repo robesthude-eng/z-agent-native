@@ -40,8 +40,8 @@ export function assertAgentReadablePath(relative) {
 
 
 export function agentNetworkPolicy() {
-  const value = String(process.env.Z_AGENT_NETWORK_POLICY || 'public').trim().toLowerCase();
-  return ['public', 'allowlist', 'off'].includes(value) ? value : 'public';
+  const value = String(process.env.Z_AGENT_NETWORK_POLICY || 'off').trim().toLowerCase();
+  return ['public', 'allowlist', 'off'].includes(value) ? value : 'off';
 }
 
 export function agentNetworkAllowlist() {
@@ -53,7 +53,16 @@ export function agentNetworkAllowlist() {
 
 function hostnameAllowed(hostname, allowed) {
   const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
-  return allowed.some((entry) => host === entry || host.endsWith(`.${entry}`));
+  return allowed.some((entry) => {
+    const value = String(entry || '').toLowerCase();
+    if (value.startsWith('*.')) {
+      const suffix = value.slice(2);
+      return Boolean(suffix) && host !== suffix && host.endsWith(`.${suffix}`);
+    }
+    // Exact hostnames are exact by default. Authorizing a parent domain must
+    // not silently authorize every tenant-controlled subdomain below it.
+    return host === value;
+  });
 }
 
 /**
@@ -94,10 +103,10 @@ const REMOTE_GIT = /\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b/i;
 const SENSITIVE_COMMAND = /(?:^|[\s'"`/])(?:\.env(?:\.[\w.-]+)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|\.ssh(?:\/|\b)|(?:aws\/)?credentials(?:\.json)?|service[-_]?account[^\s'"`]*)/i;
 
 /**
- * Application-layer egress guard. It intentionally does not claim to be a
- * kernel firewall: arbitrary code launched by an allowed package/build tool
- * can still open sockets. Multi-user deployments should combine tool-only mode
- * with container/network policy at the host layer.
+ * Defense-in-depth command guard. Production Docker does not rely on these
+ * regexes for containment: autonomous code runs in z-agent-executor with
+ * network_mode:none. This layer still blocks obvious risky intent early and
+ * protects unsafe/local development fallbacks.
  */
 export function assertShellCommandAllowed(command) {
   const policy = shellNetworkPolicy();

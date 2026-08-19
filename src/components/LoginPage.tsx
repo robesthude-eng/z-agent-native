@@ -26,8 +26,12 @@ export default function LoginPage() {
       setError("Введите корректный email адрес.");
       return;
     }
-    if (!password || password.length < 6) {
-      setError("Пароль должен содержать минимум 6 символов.");
+    if (!password) {
+      setError("Введите пароль.");
+      return;
+    }
+    if (isRegistering && password.length < 12) {
+      setError("Пароль должен содержать минимум 12 символов.");
       return;
     }
     if (isRegistering && password !== confirmPass) {

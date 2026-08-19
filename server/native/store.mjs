@@ -1,8 +1,10 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, WORKSPACES_DIR } from './config.mjs';
 import { decryptSecret, encryptSecret } from './secrets.mjs';
+import { LATEST_SCHEMA_VERSION, inspectSchemaCompatibility, runMigrations } from './migrations.mjs';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(WORKSPACES_DIR, { recursive: true });
@@ -152,22 +154,8 @@ db.exec(`
   );
 `);
 
-// Native shell isolation was added after the first development schema. Keep
-// existing local databases usable while assigning every chat a stable Unix UID.
-const chatColumns = db.prepare('PRAGMA table_info(chats)').all();
-if (!chatColumns.some((column) => column.name === 'sandbox_uid')) {
-  db.exec('ALTER TABLE chats ADD COLUMN sandbox_uid INTEGER');
-}
-
-// The CSRF token used to live only in a cookie, so the check could not tell a
-// token this server issued from one that anything able to write a cookie for
-// the site had planted. Store it next to the session it belongs to. NULL means
-// "issued before this migration": those sessions keep working on the old
-// double-submit comparison instead of being logged out on deploy.
-const authSessionColumns = db.prepare('PRAGMA table_info(auth_sessions)').all();
-if (!authSessionColumns.some((column) => column.name === 'csrf')) {
-  db.exec('ALTER TABLE auth_sessions ADD COLUMN csrf TEXT');
-}
+// Apply explicit, versioned forward-only migrations before data backfills.
+runMigrations(db);
 
 function bootstrapSandboxUids() {
   let next = Number(db.prepare('SELECT MAX(sandbox_uid) max_uid FROM chats').get()?.max_uid || 19999) + 1;
@@ -183,7 +171,20 @@ function bootstrapSandboxUids() {
 }
 
 bootstrapSandboxUids();
-db.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_chats_sandbox_uid ON chats(sandbox_uid)');
+
+function authSessionKey(token) {
+  const value = String(token || '');
+  if (!value) return '';
+  return `sha256:${crypto.createHash('sha256').update(value, 'utf8').digest('hex')}`;
+}
+
+// Browser cookies keep the random bearer token, but the database stores only a
+// one-way digest. A database snapshot leak therefore does not hand an attacker
+// immediately reusable authenticated cookies. Legacy plaintext rows can be
+// migrated in place because they contain the original bearer value.
+for (const row of db.prepare("SELECT token FROM auth_sessions WHERE token NOT LIKE 'sha256:%'").all()) {
+  db.prepare('UPDATE auth_sessions SET token=? WHERE token=?').run(authSessionKey(row.token), row.token);
+}
 
 // One-time transparent migration from the prototype's plaintext provider keys.
 for (const row of db.prepare("SELECT owner_id,provider_id,api_key FROM provider_keys WHERE api_key <> '' AND api_key NOT LIKE 'enc:v1:%'").all()) {
@@ -218,6 +219,27 @@ export function createUser(email, passwordHash, role = 'user') {
   db.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)')
     .run(email, passwordHash, role, Date.now());
 }
+export function createRegistrationUser(email, passwordHash, { allowAdditional = false } = {}) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    if (db.prepare('SELECT 1 FROM users WHERE email=?').get(email)) {
+      db.exec('ROLLBACK');
+      return { status: 'exists', role: null };
+    }
+    const bootstrap = Number(db.prepare('SELECT COUNT(*) AS c FROM users').get()?.c || 0) === 0;
+    if (!bootstrap && !allowAdditional) {
+      db.exec('ROLLBACK');
+      return { status: 'closed', role: null };
+    }
+    const role = bootstrap ? 'admin' : 'user';
+    db.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)').run(email, passwordHash, role, Date.now());
+    db.exec('COMMIT');
+    return { status: 'created', role };
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 export function getUser(email) {
   return db.prepare('SELECT email,password_hash,role,created_at FROM users WHERE email=?').get(email) || null;
 }
@@ -226,16 +248,50 @@ export function updatePassword(email, passwordHash) {
   db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(passwordHash, email);
 }
 export function createAuthSession(token, email, csrf = null) {
-  db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(token, email, Date.now(), csrf || null);
+  db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(authSessionKey(token), email, Date.now(), csrf || null);
 }
 export function getAuthSession(token) {
-  return db.prepare('SELECT token,email,created_at,csrf FROM auth_sessions WHERE token=?').get(token) || null;
+  return db.prepare('SELECT token,email,created_at,csrf FROM auth_sessions WHERE token=?').get(authSessionKey(token)) || null;
 }
-export function deleteAuthSession(token) { db.prepare('DELETE FROM auth_sessions WHERE token=?').run(token); }
+export function deleteAuthSession(token) { db.prepare('DELETE FROM auth_sessions WHERE token=?').run(authSessionKey(token)); }
 export function deleteOtherAuthSessions(email, keepToken) {
-  return db.prepare('DELETE FROM auth_sessions WHERE email=? AND token<>?').run(email, keepToken).changes;
+  return db.prepare('DELETE FROM auth_sessions WHERE email=? AND token<>?').run(email, authSessionKey(keepToken)).changes;
 }
 export function pruneAuthSessions(before) { db.prepare('DELETE FROM auth_sessions WHERE created_at < ?').run(before); }
+
+export function authRateLimitExceeded(buckets, limits, now = Date.now()) {
+  const unique = [...new Set((buckets || []).map(String).filter(Boolean))];
+  for (const bucket of unique) {
+    const row = db.prepare('SELECT failures,reset_at FROM auth_rate_limits WHERE bucket=?').get(bucket);
+    if (!row || Number(row.reset_at) <= now) continue;
+    const max = Number(limits?.[bucket] ?? limits?.default ?? 20);
+    if (Number(row.failures) >= max) return true;
+  }
+  return false;
+}
+
+export function recordAuthFailures(buckets, { windowMs = 10 * 60 * 1000 } = {}, now = Date.now()) {
+  const unique = [...new Set((buckets || []).map(String).filter(Boolean))];
+  if (!unique.length) return;
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const select = db.prepare('SELECT failures,reset_at FROM auth_rate_limits WHERE bucket=?');
+    const upsert = db.prepare(`
+      INSERT INTO auth_rate_limits(bucket,failures,reset_at,updated_at) VALUES(?,?,?,?)
+      ON CONFLICT(bucket) DO UPDATE SET failures=excluded.failures,reset_at=excluded.reset_at,updated_at=excluded.updated_at
+    `);
+    for (const bucket of unique) {
+      const row = select.get(bucket);
+      const active = row && Number(row.reset_at) > now;
+      upsert.run(bucket, active ? Number(row.failures) + 1 : 1, active ? Number(row.reset_at) : now + windowMs, now);
+    }
+    db.prepare('DELETE FROM auth_rate_limits WHERE reset_at < ?').run(now - windowMs);
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 
 function chatRow(row) {
   return row ? { id: row.id, title: row.title, time: { created: row.created_at, updated: row.updated_at }, version: 'native-1' } : null;
@@ -468,3 +524,28 @@ export function dequeueAction(sessionId, actionId) {
 }
 
 export function closeStore() { db.close(); }
+
+/** Lightweight readiness probe. Performs a real SQLite write inside runtime_meta
+ * so a read-only/corrupt/full database cannot report ready merely because SELECT works. */
+export function storeReadinessCheck() {
+  const now = Date.now();
+  const row = db.prepare('SELECT 1 AS ok').get();
+  if (row?.ok !== 1) throw new Error('SQLite read probe failed');
+  // Prove writes are possible without turning every readiness probe into a
+  // persistent WAL write. The savepoint is synchronous on this connection and
+  // rolls the probe row back before returning.
+  db.exec('SAVEPOINT readiness_probe');
+  try {
+    db.prepare("INSERT INTO runtime_meta(key,value) VALUES('readiness_probe',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(now));
+    db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe');
+  } catch (error) {
+    try { db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe'); } catch {}
+    throw error;
+  }
+  const schema = inspectSchemaCompatibility(db);
+  if (!schema.compatible) throw new Error(`SQLite schema ${schema.currentVersion} is not compatible with code schema ${LATEST_SCHEMA_VERSION}`);
+  return {
+    ok: true, journalMode: String(db.prepare('PRAGMA journal_mode').get()?.journal_mode || ''),
+    schemaVersion: schema.currentVersion, expectedSchemaVersion: LATEST_SCHEMA_VERSION, newerCompatible: schema.newerCompatible, at: now,
+  };
+}

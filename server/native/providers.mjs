@@ -275,8 +275,8 @@ function retrySleepMs(err, attempt) {
 
 function grantRateLimitRetry(err, state) {
   if (!isRateLimitProviderError(err) || state.rateLimitExtra <= 0) return false;
-  // Autopilot can switch models. Sitting 3–4 minutes on one 429 (OpenCode
-  // Zen free tier) is worse than failing this candidate immediately.
+  // Autopilot can switch models. Sitting 3–4 minutes on one 429 is worse
+  // than failing this candidate immediately.
   if (state.failFastRateLimit) return false;
   state.rateLimitExtra -= 1;
   if (state.attemptsLeft < 1) state.attemptsLeft = 1;

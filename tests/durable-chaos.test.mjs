@@ -13,8 +13,6 @@ fs.chmodSync(root, 0o755);
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 process.env.Z_AGENT_ENABLE_FIXTURE_PROVIDER = '1';
-// GitHub-hosted CI is root and uses per-session UIDs. Local/non-root runners
-// cannot isolate, so allow the fixture run_tests path instead of looping.
 if (typeof process.getuid === 'function' && process.getuid() !== 0) {
   process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 }

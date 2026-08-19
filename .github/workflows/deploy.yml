@@ -21,7 +21,7 @@ jobs:
       github.event.workflow_run.conclusion == 'success' &&
       github.event.workflow_run.head_branch == 'main'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 40
     environment:
       name: production
       url: https://agentwill.online
@@ -76,36 +76,115 @@ jobs:
               exit 0
             fi
 
-            CURRENT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
-            if [ "$CURRENT_SHA" = "$DEPLOY_SHA" ] && curl -sf http://127.0.0.1:3002/health > /dev/null 2>&1; then
-              echo "✓ Verified SHA is already deployed and healthy: $DEPLOY_SHA"
+            CHECKOUT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
+            RUNNING_SHA="$(docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA 2>/dev/null | tr -d '\r' || true)"
+            CURRENT_SHA="$RUNNING_SHA"
+            CURRENT_SCHEMA_READER=""
+            if docker compose ps --status running z-agent | grep -q z-agent; then
+              CURRENT_SCHEMA_READER="$(docker compose exec -T z-agent node --input-type=module -e "import('./server/native/migrations.mjs').then(m=>console.log(m.LATEST_SCHEMA_VERSION)).catch(()=>process.exit(2))" 2>/dev/null | tr -d '\r' | tail -n1 || true)"
+            fi
+            if ! printf '%s' "$CURRENT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              # Compatibility fallback for the first deployment from an image
+              # that predates Z_AGENT_RELEASE_SHA. From this release onward the
+              # running container, not the checkout, is authoritative.
+              CURRENT_SHA="$CHECKOUT_SHA"
+            fi
+            if [ "$RUNNING_SHA" = "$DEPLOY_SHA" ] && curl -sf http://127.0.0.1:3002/health/ready > /dev/null 2>&1; then
+              echo "✓ Verified SHA is already deployed and ready: $DEPLOY_SHA"
               exit 0
+            fi
+
+            # Install rollback before touching the checkout or building. A build
+            # failure must not leave git HEAD at the candidate while old
+            # containers keep serving, otherwise a retry could falsely conclude
+            # that the candidate is already deployed.
+            rollback() {
+              echo "✗ Candidate failed; restoring code/runtime to $CURRENT_SHA" >&2
+              docker compose logs --tail=100 z-agent z-agent-executor z-agent-browser z-agent-browser-egress || true
+              if printf '%s' "$CURRENT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+                git reset --hard "$CURRENT_SHA"
+                export Z_AGENT_RELEASE_SHA="$CURRENT_SHA"
+                docker compose build
+                docker compose up -d --remove-orphans
+                sleep 5
+                curl -fsS http://127.0.0.1:3002/health/ready >/dev/null || true
+              fi
+            }
+            trap rollback ERR
+
+            # Keep a transactionally consistent SQLite snapshot before any code
+            # that can advance the schema is started. The script is copied into
+            # the currently running container so the old image need not contain it.
+            BACKUP_NAME="pre-deploy-${DEPLOY_SHA}-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+            if docker compose ps --status running z-agent | grep -q z-agent; then
+              git show "$DEPLOY_SHA:server/backup.mjs" > /tmp/z-agent-backup.mjs
+              docker compose cp /tmp/z-agent-backup.mjs z-agent:/tmp/z-agent-backup.mjs
+              docker compose exec -T z-agent node /tmp/z-agent-backup.mjs "/data/backups/$BACKUP_NAME"
+              rm -f /tmp/z-agent-backup.mjs
+              echo "✓ Database snapshot: /data/backups/$BACKUP_NAME"
             fi
 
             git reset --hard "$DEPLOY_SHA"
             echo "→ Deploying verified SHA: $(git rev-parse HEAD)"
 
-            echo "→ Building Docker image..."
+            export Z_AGENT_RELEASE_SHA="$DEPLOY_SHA"
+            echo "→ Building candidate images..."
             docker compose build --pull
 
-            echo "→ Restarting services..."
+            # A code rollback is safe after migration only when the candidate
+            # schema explicitly remains readable by the currently running
+            # release. Destructive migrations require an operator-controlled
+            # maintenance window instead of pretending the image rollback is
+            # lossless.
+            CANDIDATE_SCHEMA_CONTRACT="$(docker compose run --rm --no-deps --entrypoint node z-agent --input-type=module -e "import('./server/native/migrations.mjs').then(m=>console.log(m.LATEST_SCHEMA_VERSION+':'+m.SCHEMA_MIN_READER_VERSION))")"
+            CANDIDATE_SCHEMA_VERSION="${CANDIDATE_SCHEMA_CONTRACT%%:*}"
+            CANDIDATE_MIN_READER="${CANDIDATE_SCHEMA_CONTRACT##*:}"
+            if docker compose ps --status running z-agent | grep -q z-agent; then
+              if ! printf '%s' "$CURRENT_SCHEMA_READER" | grep -Eq '^[0-9]+$'; then
+                echo "→ Running image predates schema-reader; treating current reader as 0 for first upgrade."
+                CURRENT_SCHEMA_READER=0
+              fi
+              if [ "$CANDIDATE_MIN_READER" -gt "$CURRENT_SCHEMA_READER" ]; then
+                echo "✗ Candidate schema $CANDIDATE_SCHEMA_VERSION requires reader >=$CANDIDATE_MIN_READER, but running release reader is $CURRENT_SCHEMA_READER." >&2
+                echo "  Refusing automatic deploy because an image rollback would not be schema-safe. Use a planned maintenance migration instead." >&2
+                exit 1
+              fi
+            fi
+            echo "✓ Schema rollback contract: candidate=$CANDIDATE_SCHEMA_VERSION min-reader=$CANDIDATE_MIN_READER current-reader=${CURRENT_SCHEMA_READER:-fresh}"
+
+            echo "→ Starting candidate..."
             docker compose up -d --remove-orphans
 
-            echo "→ Cleaning up old images..."
-            docker image prune -f
+            echo "→ Waiting for readiness (DB + key + volumes + isolated executor + browser egress)..."
+            READY=0
+            for attempt in $(seq 1 30); do
+              if curl -fsS http://127.0.0.1:3002/health/ready >/tmp/z-agent-ready.json 2>/dev/null; then
+                READY=1
+                break
+              fi
+              sleep 2
+            done
+            test "$READY" = 1
+            cat /tmp/z-agent-ready.json
 
-            echo "→ Health check..."
-            sleep 5
-            if curl -sf http://127.0.0.1:3002/health > /dev/null 2>&1; then
-              echo "✓ Application is healthy"
-            else
-              echo "✗ Application health check failed"
-              docker compose logs --tail=50 z-agent
-              exit 1
-            fi
-
-            echo "→ Status:"
+            echo "→ Verifying both compose services..."
             docker compose ps
+            docker compose ps --status running z-agent | grep -q z-agent
+            docker compose ps --status running z-agent-executor | grep -q z-agent-executor
+            docker compose ps --status running z-agent-browser | grep -q z-agent-browser
+            docker compose ps --status running z-agent-browser-egress | grep -q z-agent-browser-egress
+            ACTUAL_SHA="$(docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA | tr -d '\r')"
+            test "$ACTUAL_SHA" = "$DEPLOY_SHA"
+
+            trap - ERR
+            echo "✓ Candidate is ready"
+            # Deployment snapshots are short-term rollback aids, not disaster
+            # recovery. Bound their local retention so a healthy deploy process
+            # cannot slowly fill the same persistent disk it is protecting.
+            docker compose exec -T z-agent sh -lc "find /data/backups -type f -name 'pre-deploy-*.sqlite' -mtime +30 -delete" || true
+            # Preserve recent images for fast manual rollback; only remove stale
+            # dangling layers after the candidate has passed readiness.
+            docker image prune -f --filter 'until=168h' || true
           DEPLOY
 
       - name: Cleanup SSH key

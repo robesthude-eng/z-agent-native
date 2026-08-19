@@ -9,11 +9,11 @@
     "node": ">=24"
   },
   "scripts": {
-    "dev": "node server/index.mjs",
-    "dev:server": "node server/index.mjs",
+    "dev": "node --env-file-if-exists=.env server/index.mjs",
+    "dev:server": "node --env-file-if-exists=.env server/index.mjs",
     "dev:web": "vite",
     "build": "tsc -b && vite build",
-    "start": "node server/index.mjs",
+    "start": "node --env-file-if-exists=.env server/index.mjs",
     "test": "vitest run",
     "test:native": "node --test --test-concurrency=1 tests/*.test.mjs",
     "test:e2e": "playwright test",
@@ -23,12 +23,16 @@
     "lint": "biome check .",
     "format": "biome format --write .",
     "preview": "vite preview",
-    "eval:run": "node scripts/run-agent-evals.mjs",
-    "eval:smoke": "node scripts/run-agent-evals.mjs --smoke",
+    "eval:run": "node --env-file-if-exists=.env scripts/run-agent-evals.mjs",
+    "eval:smoke": "node --env-file-if-exists=.env scripts/run-agent-evals.mjs --smoke",
     "docs:check": "node scripts/check-capability-docs.mjs",
-    "telemetry:summary": "node scripts/summarize-turn-telemetry.mjs",
+    "telemetry:summary": "node --env-file-if-exists=.env scripts/summarize-turn-telemetry.mjs",
     "lint:ci": "biome lint .",
-    "format:check": "biome format ."
+    "format:check": "biome format .",
+    "eval:benchmark": "node --env-file-if-exists=.env scripts/run-repo-benchmark.mjs",
+    "eval:benchmark:validate": "node scripts/validate-repo-benchmark.mjs",
+    "db:migrate": "node --env-file-if-exists=.env server/migrate.mjs",
+    "db:backup": "node --env-file-if-exists=.env server/backup.mjs"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",
@@ -48,6 +52,7 @@
     "highlight.js": "^11.11.1",
     "idb-keyval": "^6.3.0",
     "lucide-react": "^1.27.0",
+    "playwright": "1.61.1",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "^10.1.0",

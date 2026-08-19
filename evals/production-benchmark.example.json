@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "description": "Template for production-quality real-repository benchmarks. Replace/add cases with pinned git revisions; keep 100-300 representative tasks in the private benchmark manifest used by release qualification.",
+  "cases": [
+    {
+      "id": "local-counter-example",
+      "source": { "type": "local", "path": "evals/fixtures/counter-bug" },
+      "prompt": "Fix the counter bug so increment returns the next integer. Preserve the public API and add/adjust regression coverage as needed.",
+      "verifyCommand": "node --test",
+      "regressionCommands": ["node --test"],
+      "maxToolCalls": 40,
+      "maxDurationMs": 300000
+    }
+  ]
+}

@@ -338,10 +338,7 @@ test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting m
     calls += 1;
     return new Response(JSON.stringify({
       error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
-    }), {
-      status: 429,
-      headers: { 'content-type': 'application/json' },
-    });
+    }), { status: 429, headers: { 'content-type': 'application/json' } });
   };
   try {
     const started = Date.now();

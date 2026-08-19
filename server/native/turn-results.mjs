@@ -6,6 +6,7 @@ import { DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { safeWorkspacePath } from './security.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
 import { getTurn, listMessages, workspaceFor } from './store.mjs';
+import { executeInExecutorSync } from './executor-client.mjs';
 
 const RESULT_DIR = path.join(DATA_DIR, 'turn-results');
 const MAX_RESULT_CHANGES = 4000;
@@ -28,30 +29,43 @@ function sessionIdForWorkspace(root) {
 
 function git(root, args, options = {}) {
   const sessionId = sessionIdForWorkspace(root);
-  const launch = sessionId
-    ? sandboxCommand(prepareWorkspaceSandbox(sessionId, root), 'git', [
-      '-c', `safe.directory=${root}`,
-      '-c', 'core.hooksPath=/dev/null',
-      ...args,
-    ])
-    : { file: 'git', args: [
+  const identity = sessionId ? prepareWorkspaceSandbox(sessionId, root) : null;
+  const gitArgs = [
     '-c', `safe.directory=${root}`,
     '-c', 'core.hooksPath=/dev/null',
+    '-c', 'core.fsmonitor=false',
     ...args,
-    ], options: {} };
+  ];
+  const env = {
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    HOME: path.join(root, '.agent-home'),
+    USER: 'agent',
+    LANG: process.env.LANG || 'C.UTF-8',
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+    ...(options.env || {}),
+  };
+  // `git add` may execute repository-defined clean/process filters. Snapshot
+  // capture is runtime-owned, but the repository is untrusted, so this one
+  // porcelain operation must cross the same networkless executor boundary as
+  // model-selected code. Pure object plumbing below cannot invoke repo code.
+  if (args[0] === 'add' && identity?.isolated && options.encoding !== 'buffer') {
+    const remote = executeInExecutorSync({ workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args: gitArgs, env, timeoutMs: Number(options.timeoutMs) || 30_000 });
+    if (remote) {
+      if (Number(remote.code) !== 0) throw Object.assign(new Error(String(remote.stderr || remote.stdout || `git exited ${remote.code}`).trim()), { statusCode: 409 });
+      return String(remote.stdout || '');
+    }
+  }
+  const launch = identity
+    ? sandboxCommand(identity, 'git', gitArgs)
+    : { file: 'git', args: gitArgs, options: {} };
   const result = spawnSync(launch.file, launch.args, {
     cwd: root,
     encoding: options.encoding === 'buffer' ? null : 'utf8',
     timeout: Number(options.timeoutMs) || 30_000,
     maxBuffer: Number(options.maxBuffer) || 8 * 1024 * 1024,
-    env: {
-      PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
-      HOME: path.join(root, '.agent-home'),
-      USER: 'agent',
-      LANG: process.env.LANG || 'C.UTF-8',
-      GIT_CONFIG_NOSYSTEM: '1',
-      ...(options.env || {}),
-    },
+    env,
     ...launch.options,
   });
   if (result.error) throw result.error;
@@ -113,9 +127,15 @@ function captureIndexTree(root) {
  */
 export function captureWorkspaceTree(root) {
   git(root, ['rev-parse', '--git-dir']);
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-turn-index-'));
-  const tempIndex = path.join(tempDir, 'index');
   const sessionId = sessionIdForWorkspace(root);
+  // Production executor sees the shared /workspaces volume but not the API
+  // container's /tmp. Keep the transient index beside (not inside) session
+  // roots so repository filters executed in the executor can use it without
+  // accidentally adding the temporary index to the captured worktree.
+  const tempBase = sessionId ? WORKSPACES_DIR : os.tmpdir();
+  const tempDir = fs.mkdtempSync(path.join(tempBase, sessionId ? `.z-agent-turn-index-${sessionId}-` : 'z-agent-turn-index-'));
+  fs.chmodSync(tempDir, 0o700);
+  const tempIndex = path.join(tempDir, 'index');
   const identity = sessionId ? prepareWorkspaceSandbox(sessionId, root) : null;
   if (identity?.isolated) fs.chownSync(tempDir, identity.uid, identity.gid);
   try {
@@ -160,7 +180,7 @@ function parseNameStatusZ(raw) {
 
 export function diffWorkspaceTrees(root, beforeTree, afterTree) {
   if (!beforeTree || !afterTree) return [];
-  const raw = git(root, ['diff', '--name-status', '-z', '--no-renames', beforeTree, afterTree, '--']);
+  const raw = git(root, ['diff', '--no-ext-diff', '--name-status', '-z', '--no-renames', beforeTree, afterTree, '--']);
   const changes = parseNameStatusZ(raw);
   if (changes.length > MAX_RESULT_CHANGES) throw Object.assign(new Error(`Слишком много изменений в одном ходе: ${changes.length}`), { statusCode: 413 });
   return changes;

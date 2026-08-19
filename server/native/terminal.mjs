@@ -9,6 +9,10 @@ import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable } from '
 import { ensureWorkspaceWatcher } from './watcher.mjs';
 
 let ptySpawn = null;
+
+export function terminalEnabled() {
+  return String(process.env.Z_AGENT_TERMINAL_ENABLED || '').trim() === '1';
+}
 try {
   const mod = await import('node-pty');
   ptySpawn = mod.spawn || mod.default?.spawn || null;
@@ -48,6 +52,10 @@ function shellEnv(workspace) {
 }
 
 export async function initTerminal(httpServer) {
+  if (!terminalEnabled()) {
+    console.info('[terminal] disabled; set Z_AGENT_TERMINAL_ENABLED=1 only for trusted self-hosted deployments');
+    return null;
+  }
   let SocketIOServer;
   try {
     ({ Server: SocketIOServer } = await import('socket.io'));

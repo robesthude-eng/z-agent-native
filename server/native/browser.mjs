@@ -61,7 +61,7 @@ export async function closeBrowserSession(sessionId) {
   return true;
 }
 
-async function sweepIdleSessions() {
+export async function sweepIdleBrowserSessions() {
   const now = Date.now();
   for (const [key, state] of sessions) {
     if (now - state.lastUsed <= SESSION_IDLE_MS) continue;
@@ -82,13 +82,15 @@ async function ensureSession(playwright, sessionId) {
     existing.lastUsed = Date.now();
     return existing;
   }
+  const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
   const browser = await playwright.chromium.launch({
     headless: true,
-    // Containers routinely lack the shared-memory budget Chromium expects and
-    // the kernel namespaces its own sandbox needs. Process isolation here comes
-    // from the surrounding container, not from Chromium.
+    // Chromium is already a non-root process in a no-secret/no-workspace
+    // container. Its only network path is the dedicated policy proxy when the
+    // production Compose topology is used.
     chromiumSandbox: false,
     args: ['--disable-dev-shm-usage'],
+    ...(proxyServer ? { proxy: { server: proxyServer } } : {}),
   });
   const context = await browser.newContext({
     acceptDownloads: false,
@@ -106,9 +108,9 @@ async function ensureSession(playwright, sessionId) {
       const parsed = new URL(target);
       if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
         assertAgentNetworkUrl(target, { tool: 'browser' });
-        // Browser sockets cannot use the native pinned-DNS transport, so each
-        // request is revalidated immediately before Chromium continues it.
-        // Strict deployments should combine allowlisting with host egress rules.
+        // Keep an in-process validation layer for fast failure. Production also
+        // forces Chromium through browser-egress, which resolves/validates again
+        // and pins the actual upstream address at CONNECT/request time.
         await assertSafeExternalUrl(target);
       }
       await route.continue();
@@ -222,7 +224,7 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
   const playwright = await loadPlaywright();
   if (!playwright) throw new Error(browserUnavailableMessage());
 
-  await sweepIdleSessions();
+  await sweepIdleBrowserSessions();
   if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
 
   const state = await ensureSession(playwright, sessionId);

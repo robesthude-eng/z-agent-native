@@ -133,6 +133,8 @@ test('truncated tool arguments are not executed', async () => {
 
 test('a transient webfetch failure is retried once inside the same tool call', async () => {
   agent.resetAgentStateForTests();
+  const previousNetworkPolicy = process.env.Z_AGENT_NETWORK_POLICY;
+  process.env.Z_AGENT_NETWORK_POLICY = 'public';
   const sid = 'ses_trustretry1';
   store.createChat(sid, ownerId, 'Новый чат');
 
@@ -181,6 +183,7 @@ test('a transient webfetch failure is retried once inside the same tool call', a
   } finally {
     setExternalTransportForTests(null);
     globalThis.fetch = original;
+    if (previousNetworkPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousNetworkPolicy;
     agent.resetAgentStateForTests();
   }
 });

@@ -8,7 +8,7 @@ import { useStore } from "../../store/useStore";
 import { SettingsCard, SettingsRow, SettingsSection } from "./primitives";
 
 /** Та же нижняя граница, что и на сервере (routes/auth.mjs). */
-const MIN_PASSWORD_LENGTH = 6;
+const MIN_PASSWORD_LENGTH = 12;
 
 /**
  * Раздел «Аккаунт»: сведения о вошедшем пользователе и смена пароля.

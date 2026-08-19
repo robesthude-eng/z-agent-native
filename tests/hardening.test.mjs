@@ -3,7 +3,9 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
+const repoRoot = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-hardening-'));
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
@@ -99,9 +101,28 @@ test('expired durable job files are pruned', () => {
   assert.ok(!durable.listDurableJobs().some((entry) => entry.sessionId === 'ses_hardeningstale'));
 });
 
+test('authentication failure limits are shared in SQLite across runtime callers', () => {
+  const bucket = 'account:test-shared-rate-limit';
+  for (let i = 0; i < 3; i += 1) store.recordAuthFailures([bucket], { windowMs: 60_000 }, 1_000 + i);
+  assert.equal(store.authRateLimitExceeded([bucket], { [bucket]: 3 }, 2_000), true);
+  assert.equal(store.authRateLimitExceeded([bucket], { [bucket]: 4 }, 2_000), false);
+  assert.equal(store.authRateLimitExceeded([bucket], { [bucket]: 3 }, 70_000), false);
+});
+
+test('authentication sessions are stored as one-way token digests', () => {
+  const token = 'raw-session-token-that-must-not-live-in-sqlite';
+  store.createAuthSession(token, 'h@example.com', 'csrf-value');
+  const found = store.getAuthSession(token);
+  assert.equal(found.email, 'h@example.com');
+  assert.match(found.token, /^sha256:[0-9a-f]{64}$/);
+  assert.notEqual(found.token, token);
+  store.deleteAuthSession(token);
+  assert.equal(store.getAuthSession(token), null);
+});
+
 test('registration is closed once the bootstrap admin exists', { skip: (process.env.Z_AGENT_INVITE_CODE || process.env.Z_AGENT_ALLOW_OPEN_REGISTRATION === '1') ? 'invite code or open registration configured' : false }, () => {
   if (store.userCount() === 0) store.createUser('bootstrap@example.com', 'hash');
-  assert.throws(() => auth.registerUser('intruder@example.com', 'password1'), /закрыт/i);
+  assert.throws(() => auth.registerUser('intruder@example.com', 'password12345'), /закрыт/i);
 });
 
 test('package specs cannot smuggle VCS or URL installs', () => {
@@ -136,4 +157,106 @@ test('a catastrophic regex is cancelled by the grep deadline', async () => {
     /exceeded|cancelled/i,
   );
   fs.rmSync(workspace, { recursive: true, force: true });
+});
+
+test('local env loading stays developer-friendly while production forces hard boundaries', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
+  const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+
+  assert.match(pkg.scripts.start, /--env-file-if-exists=\.env/);
+  assert.match(pkg.scripts.dev, /--env-file-if-exists=\.env/);
+  assert.match(envExample, /^Z_AGENT_EXECUTOR_REQUIRED=0$/m);
+  assert.match(envExample, /^Z_AGENT_BROWSER_REQUIRED=0$/m);
+  assert.match(envExample, /^Z_AGENT_TERMINAL_ENABLED=1$/m);
+  assert.match(api, /Z_AGENT_EXECUTOR_REQUIRED:\s*['"]?1['"]?/);
+  assert.match(api, /Z_AGENT_BROWSER_REQUIRED:\s*['"]?1['"]?/);
+  assert.match(api, /Z_AGENT_TERMINAL_ENABLED:\s*['"]?0['"]?/);
+});
+
+test('production compose pins persistent runtime paths instead of inheriting bare-metal .env paths', () => {
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  assert.match(api, /Z_AGENT_DATA_DIR:\s*\/data/);
+  assert.match(api, /Z_AGENT_WORKSPACES_DIR:\s*\/workspaces/);
+  assert.match(api, /z-agent-data:\/data/);
+  assert.match(api, /z-agent-workspaces:\/workspaces/);
+});
+
+test('production compose isolates autonomous execution in a networkless sibling service', () => {
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  assert.match(compose, /z-agent-executor:[\s\S]*network_mode:\s*none/);
+  assert.match(compose, /Z_AGENT_EXECUTOR_REQUIRED:\s*['"]?1['"]?/);
+  assert.match(compose, /Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE:\s*['"]?1['"]?/);
+  const executorBlock = compose.split(/\n\s{2}z-agent-executor:\s*\n/)[1]?.split(/\nvolumes:\s*\n/)[0] || '';
+  assert.match(executorBlock, /z-agent-workspaces:\/workspaces/);
+  assert.doesNotMatch(executorBlock, /z-agent-data:\/data/);
+});
+
+test('production browser has an internal-only network and a separate pinned egress proxy', () => {
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const browserBlock = compose.match(/^  z-agent-browser:\n([\s\S]*?)(?=^  z-agent-browser-egress:)/m)?.[1] || '';
+  const proxyBlock = compose.match(/^  z-agent-browser-egress:\n([\s\S]*?)(?=^volumes:)/m)?.[1] || '';
+  const apiBlock = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  assert.match(browserBlock, /Dockerfile\.browser/);
+  assert.match(browserBlock, /cap_add:[\s\S]*SETUID[\s\S]*SETGID/);
+  assert.match(browserBlock, /Z_AGENT_BROWSER_PROXY:\s*http:\/\/z-agent-browser-egress:8080/);
+  assert.match(browserBlock, /- browser-sandbox/);
+  assert.doesNotMatch(browserBlock, /- runtime-egress|- browser-egress/);
+  assert.doesNotMatch(browserBlock, /env_file:|z-agent-data:\/data|z-agent-workspaces:\/workspaces/);
+  assert.match(proxyBlock, /user:\s*node/);
+  assert.match(proxyBlock, /- browser-sandbox/);
+  assert.match(proxyBlock, /- browser-egress/);
+  assert.doesNotMatch(proxyBlock, /env_file:|volumes:|z-agent-data|z-agent-workspaces/);
+  assert.match(compose, /browser-sandbox:\n\s+internal:\s*true/);
+  assert.match(apiBlock, /- runtime-egress/);
+  assert.doesNotMatch(apiBlock, /browser-sandbox|browser-egress/);
+});
+
+test('model-selected process-capable Git operations cross the networkless executor boundary', () => {
+  const gitTool = fs.readFileSync(path.join(repoRoot, 'server/native/git-tool.mjs'), 'utf8');
+  const toolsSource = fs.readFileSync(path.join(repoRoot, 'server/native/tools.mjs'), 'utf8');
+  const changes = fs.readFileSync(path.join(repoRoot, 'server/native/git-changes.mjs'), 'utf8');
+  const results = fs.readFileSync(path.join(repoRoot, 'server/native/turn-results.mjs'), 'utf8');
+  assert.match(gitTool, /executeInExecutor/);
+  assert.match(toolsSource, /executeInExecutor[\s\S]*git apply/);
+  assert.match(changes, /executeInExecutorSync/);
+  assert.match(results, /args\[0\] === 'add'[\s\S]*executeInExecutorSync/);
+});
+
+test('public app and TLS proxy ship restrictive browser security headers', () => {
+  const caddy = fs.readFileSync(path.join(repoRoot, 'Caddyfile'), 'utf8');
+  const server = fs.readFileSync(path.join(repoRoot, 'server/index.mjs'), 'utf8');
+  assert.match(caddy, /Strict-Transport-Security/);
+  assert.match(caddy, /X-Content-Type-Options\s+"nosniff"/);
+  assert.match(caddy, /Referrer-Policy\s+"no-referrer"/);
+  assert.match(caddy, /Permissions-Policy/);
+  assert.match(server, /APP_CONTENT_SECURITY_POLICY_BASE/);
+  assert.match(server, /script-src 'self'/);
+  assert.match(server, /object-src 'none'/);
+  assert.doesNotMatch(server.match(/const APP_CONTENT_SECURITY_POLICY = \[[\s\S]*?\]\.join\('; '\);/)?.[0] || '', /connect-src 'self' https:\s/);
+});
+
+test('readiness includes a persistent-volume free-space floor', () => {
+  const readiness = fs.readFileSync(path.join(repoRoot, 'server/native/readiness.mjs'), 'utf8');
+  assert.match(readiness, /Z_AGENT_MIN_FREE_BYTES/);
+  assert.match(readiness, /statfsSync/);
+  assert.match(readiness, /free space is below the readiness floor/);
+});
+
+test('automatic deploy refuses schema-breaking rollback contracts and has no bypass flag', () => {
+  const deploy = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+  const migrations = fs.readFileSync(path.join(repoRoot, 'server/native/migrations.mjs'), 'utf8');
+  assert.match(migrations, /SCHEMA_MIN_READER_VERSION/);
+  assert.match(deploy, /CURRENT_SCHEMA_READER/);
+  assert.match(deploy, /CANDIDATE_MIN_READER/);
+  assert.doesNotMatch(deploy, /Z_AGENT_ALLOW_BREAKING_MIGRATION/);
+  assert.match(deploy, /image rollback would not be schema-safe/);
+});
+
+test('12-character password policy does not lock out legacy-login passwords in the UI', () => {
+  const login = fs.readFileSync(path.join(repoRoot, 'src/components/LoginPage.tsx'), 'utf8');
+  assert.match(login, /if \(isRegistering && password\.length < 12\)/);
+  assert.doesNotMatch(login, /if \(!password \|\| password\.length < 12\)/);
 });
