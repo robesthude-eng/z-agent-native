@@ -46,9 +46,25 @@ function digest(value) {
   return createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, 20);
 }
 
+export function normalizeBashCommand(command) {
+  let value = String(command || '').replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+  value = value.replace(/\s*\|\s*(?:tail|head)\s+-n?\s*\d+\s*$/i, '');
+  value = value.replace(/\s+2>&1\b/g, '');
+  value = value.replace(/-newermt\s+'[^']+'/g, '-newermt TS');
+  value = value.replace(/-newermt\s+"[^"]+"/g, '-newermt TS');
+  value = value.replace(/\b\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}\b/g, 'TS');
+  return value.replace(/\s+/g, ' ').trim();
+}
+
+export function normalizeToolArguments(name, args) {
+  const tool = String(name || '').trim().toLowerCase();
+  if (tool !== 'bash' || !args || typeof args !== 'object') return args || {};
+  return { ...args, command: normalizeBashCommand(args.command) };
+}
+
 function callSignature(call) {
   const name = String(call?.name || '').trim().toLowerCase();
-  return `${name}:${stableString(call?.arguments || {})}`;
+  return `${name}:${stableString(normalizeToolArguments(name, call?.arguments || {}))}`;
 }
 
 function observationSignature(call, result) {

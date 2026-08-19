@@ -3,7 +3,7 @@
 import { classifyBash, createTurnStrategy, observeTool } from './context.mjs';
 import { partId } from './ids.mjs';
 import { mutatesWorkspace } from './tools.mjs';
-import { createLoopGuard, observeToolLoop } from './turn-trust.mjs';
+import { createLoopGuard, normalizeToolArguments, observeToolLoop } from './turn-trust.mjs';
 
 const RECOVERY_INSPECTION_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'repo_map', 'environment_status', 'task']);
 
@@ -20,7 +20,8 @@ function stableString(value) {
 }
 
 export function toolCallSignature(call) {
-  return `${String(call?.name || '').trim().toLowerCase()}:${stableString(call?.arguments || {})}`;
+  const name = String(call?.name || '').trim().toLowerCase();
+  return `${name}:${stableString(normalizeToolArguments(name, call?.arguments || {}))}`;
 }
 
 export function toolMayHaveSideEffects(name) {

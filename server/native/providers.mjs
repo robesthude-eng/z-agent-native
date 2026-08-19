@@ -573,10 +573,34 @@ export function resolveModel(ownerId, model) {
   return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };
 }
 
-function safeJsonArgs(raw) {
-  if (raw && typeof raw === 'object') return raw;
-  if (typeof raw !== 'string' || !raw.trim()) return {};
-  try { return JSON.parse(raw); } catch { return { _raw: raw }; }
+export function parseToolArguments(raw) {
+  if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    if (Object.prototype.hasOwnProperty.call(raw, '_raw') && Object.keys(raw).length === 1) {
+      return { ok: false, value: {}, raw: raw._raw };
+    }
+    return { ok: true, value: raw };
+  }
+  if (typeof raw !== 'string' || !raw.trim()) return { ok: true, value: {} };
+  try {
+    const value = JSON.parse(raw);
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, value: {}, raw };
+    return { ok: true, value };
+  } catch {
+    return { ok: false, value: {}, raw };
+  }
+}
+
+export function isIncompleteToolCall(call) {
+  if (call?.incomplete) return true;
+  const args = call?.arguments;
+  return Boolean(args && typeof args === 'object' && Object.prototype.hasOwnProperty.call(args, '_raw') && Object.keys(args).length === 1);
+}
+
+function toolCallFromParsed(id, name, rawArgs) {
+  const parsed = parseToolArguments(rawArgs);
+  const call = { id, name, arguments: parsed.ok ? parsed.value : {} };
+  if (!parsed.ok) call.incomplete = true;
+  return call;
 }
 
 function parseDataUrl(dataUrl) {
@@ -635,7 +659,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal);
     const choice = body?.choices?.[0];
     const msg = choice?.message || {};
-    const toolCalls = (msg.tool_calls || []).map((c) => ({ id: c.id || `call_${Math.random().toString(36).slice(2)}`, name: c.function?.name || '', arguments: safeJsonArgs(c.function?.arguments) })).filter((c) => c.name);
+    const toolCalls = (msg.tool_calls || []).map((c) => toolCallFromParsed(c.id || `call_${Math.random().toString(36).slice(2)}`, c.function?.name || '', c.function?.arguments)).filter((c) => c.name);
     return { text: typeof msg.content === 'string' ? msg.content : '', toolCalls, usage: body?.usage || null, finish: choice?.finish_reason || null, streamed: false };
   }
 
@@ -662,11 +686,7 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
       calls.set(index, current);
     }
   });
-  const toolCalls = [...calls.values()].map((c, i) => ({
-    id: c.id || `call_${Date.now()}_${i}`,
-    name: c.name,
-    arguments: safeJsonArgs(c.arguments),
-  })).filter((c) => c.name);
+  const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
   return { text, toolCalls, usage, finish, streamed: true };
 }
 
@@ -745,11 +765,7 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
       }
     }
   });
-  const toolCalls = [...calls.values()].map((c) => ({
-    id: c.id,
-    name: c.name,
-    arguments: c.partial ? safeJsonArgs(c.partial) : c.baseInput || {},
-  })).filter((c) => c.name);
+  const toolCalls = [...calls.values()].map((c) => toolCallFromParsed(c.id, c.name, c.partial || c.baseInput || {})).filter((c) => c.name);
   return { text, toolCalls, usage, finish, streamed: true };
 }
 

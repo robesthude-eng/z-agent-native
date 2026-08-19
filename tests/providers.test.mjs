@@ -331,4 +331,12 @@ test('a Console rate-limit payload is retryable even without HTTP 429', async ()
   } finally { globalThis.fetch = original; }
 });
 
+test('truncated tool-call JSON is marked incomplete instead of becoming _raw', () => {
+  assert.deepEqual(providers.parseToolArguments('{"path":"a.ts"}'), { ok: true, value: { path: 'a.ts' } });
+  const broken = providers.parseToolArguments('{"command":"rm -rf');
+  assert.equal(broken.ok, false);
+  assert.equal(providers.isIncompleteToolCall({ name: 'bash', arguments: {}, incomplete: true }), true);
+  assert.equal(providers.isIncompleteToolCall({ name: 'bash', arguments: { command: 'ls' } }), false);
+});
+
 test.after(() => providers.setProviderTransportForTests(null));

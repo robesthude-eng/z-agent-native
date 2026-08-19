@@ -24,6 +24,7 @@ import {
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { availableToolDefinitions, executeTool, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
+import { isIncompleteToolCall } from './providers.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
 import {
@@ -284,6 +285,18 @@ function interruptedToolParts(assistant) {
 async function executeCall(sessionId, assistant, call, controller, runtime) {
   const part = toolPart(call);
   emitPart(assistant, part);
+  if (isIncompleteToolCall(call)) {
+    const output = 'Аргументы инструмента обрезаны или не являются JSON. Вызов не выполнен. Повторите его с полными аргументами.';
+    part.state = {
+      ...part.state,
+      status: 'error',
+      output,
+      metadata: { ...(part.state?.metadata || {}), incompleteArguments: true },
+      time: { ...part.state.time, end: Date.now() },
+    };
+    emitPart(assistant, part);
+    return { content: output, isError: true, metadata: part.state.metadata, mutatedPaths: [] };
+  }
   const recovery = runtime?.recovery;
   const signature = toolCallSignature(call);
   if (recovery?.resumed && recovery.ambiguousSignatures.has(signature) && !recovery.inspected) {

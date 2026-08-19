@@ -21,6 +21,17 @@ test('loop guard trips only when the same call produces the same result repeated
   assert.equal(observeToolLoop(changed, call, { content: 'v2', isError: false }), null);
 });
 
+test('loop guard treats bash variants with tail/head as the same call', () => {
+  const guard = createLoopGuard({ callRepeatLimit: 3 });
+  const a = { name: 'bash', arguments: { command: 'cd travian_player && pytest -q | tail -20' } };
+  const b = { name: 'bash', arguments: { command: 'cd travian_player && pytest -q | tail -5' } };
+  const c = { name: 'bash', arguments: { command: 'cd travian_player && pytest -q 2>&1 | head -10' } };
+  assert.equal(observeToolLoop(guard, a, { content: 'out-1', isError: false }), null);
+  assert.equal(observeToolLoop(guard, b, { content: 'out-2', isError: false }), null);
+  const stop = observeToolLoop(guard, c, { content: 'out-3', isError: false });
+  assert.equal(stop?.code, 'repeated_tool_call');
+});
+
 test('loop guard stops the same call even when other tools are in between', () => {
   const guard = createLoopGuard({ callRepeatLimit: 3 });
   const compile = { name: 'bash', arguments: { command: 'python -m py_compile app.py' } };
