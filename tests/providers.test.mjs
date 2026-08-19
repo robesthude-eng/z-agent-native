@@ -104,6 +104,31 @@ test('Gemini provider streams text and function calls', async () => {
   } finally { globalThis.fetch = original; }
 });
 
+test('streaming provider calls retry read ECONNRESET before the first token', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      const err = new Error('read ECONNRESET');
+      err.code = 'ECONNRESET';
+      throw err;
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.equal(calls, 2);
+  } finally { globalThis.fetch = original; }
+});
+
 test('non-streaming provider calls retry transient HTTP errors', async () => {
   const original = globalThis.fetch;
   let calls = 0;
