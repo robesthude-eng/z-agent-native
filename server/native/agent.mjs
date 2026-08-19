@@ -1,5 +1,3 @@
-import fs from 'node:fs';
-import path from 'node:path';
 import {
   clearTurn, claimAction, completeAction, createQuestion, failAction, getAction, getChat, getQuestion,
   getTurn, listMessages, putMessage, renameChat, resetAction, resolveQuestion,
@@ -25,9 +23,8 @@ import {
   markDurableJobResuming,
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
-import { safeWorkspacePath } from './security.mjs';
 import { availableToolDefinitions, executeTool, mutatesWorkspace, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
-import { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
+import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
 import {
   classifyTaskOutcome,
@@ -38,9 +35,10 @@ import {
   shouldRetryToolCall,
   stepLimitError,
 } from './turn-trust.mjs';
+import { acquireTurnLock, isClustered, releaseTurnLock, renewTurnLock, turnLockHolder } from './cluster.mjs';
+import { framesFromMessages, promptText, systemPrompt, textParts, userPartsFromPrompt } from './agent-frames.mjs';
+import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, toolCallFromPart, toolCallSignature, toolMayHaveSideEffects, toolPart, waitForRetry } from './agent-parts.mjs';
 
-const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
-let cachedSystem = null;
 const activeTurns = new Map();
 const activeActions = new Map();
 const questionWaiters = new Map();
@@ -49,127 +47,15 @@ const questionWaiters = new Map();
 const idleWaiters = new Map();
 
 function notifyTurnIdle(sessionId) {
+  // A finished turn must stop being this replica's property: without an explicit
+  // release another node could only take the session over after the lock TTL.
+  if (isClustered()) { try { releaseTurnLock(sessionId); } catch { /* teardown must not depend on the lock table */ } }
   const waiters = idleWaiters.get(sessionId);
   if (!waiters) return;
   idleWaiters.delete(sessionId);
   for (const resolve of waiters) {
     try { resolve(); } catch { /* a waiter must never break turn teardown */ }
   }
-}
-const RECOVERY_INSPECTION_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'repo_map', 'environment_status', 'task']);
-
-function systemPrompt() {
-  if (cachedSystem == null) cachedSystem = fs.readFileSync(SYSTEM_FILE, 'utf8');
-  return cachedSystem;
-}
-
-function textParts(message) {
-  return (message.parts || [])
-    .filter((part) => (part?.type === 'text' || part?.type === 'reasoning') && typeof part.text === 'string')
-    .map((part) => part.text)
-    .join('\n\n')
-    .trim();
-}
-
-function attachmentRefs(message) {
-  return (message.parts || [])
-    .filter((part) => part?.type === 'attachment' && typeof part.path === 'string' && part.path)
-    .map((part) => ({
-      name: String(part.name || path.basename(part.path) || 'attachment'),
-      path: String(part.path),
-      kind: String(part.kind || 'binary'),
-      mime: String(part.mime || 'application/octet-stream'),
-      size: Number(part.size) || 0,
-      note: typeof part.note === 'string' ? part.note : '',
-    }));
-}
-
-function attachmentContext(message) {
-  const refs = attachmentRefs(message);
-  if (!refs.length) return '';
-  const lines = refs.map((ref) => `- ${ref.name} -> ${ref.path}${ref.note ? ` (${ref.note})` : ''}`);
-  return ['[User attachments already present in this chat workspace]', ...lines, 'Use workspace tools with these relative paths.'].join('\n');
-}
-
-function messageMedia(message, workspace) {
-  const out = [];
-  for (const part of message.parts || []) {
-    if (part?.type !== 'attachment') continue;
-    if (!['image', 'pdf'].includes(String(part.kind || ''))) continue;
-    try {
-      const full = safeWorkspacePath(workspace, String(part.path || ''), { allowMissing: false });
-      const st = fs.statSync(full);
-      if (!st.isFile() || st.size > 20 * 1024 * 1024) continue;
-      const mime = String(part.mime || (part.kind === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
-      const dataUrl = `data:${mime};base64,${fs.readFileSync(full).toString('base64')}`;
-      out.push({ name: String(part.name || path.basename(full)), kind: String(part.kind), dataUrl });
-    } catch { /* attachment may have been removed after the message was sent */ }
-  }
-  return out;
-}
-
-function framesFromMessages(messages, workspace) {
-  const frames = [];
-  for (const msg of messages) {
-    if (msg.role === 'user') {
-      const visible = textParts(msg);
-      const internal = attachmentContext(msg);
-      const content = [visible, internal].filter(Boolean).join('\n\n');
-      const media = messageMedia(msg, workspace);
-      if (content || media.length) frames.push({ role: 'user', content, media });
-      continue;
-    }
-    if (msg.role !== 'assistant') continue;
-    const content = textParts(msg);
-    const tools = (msg.parts || []).filter((part) => part?.type === 'tool' && part.callID && part.tool);
-    const toolCalls = tools.map((part) => ({
-      id: String(part.callID),
-      name: String(part.tool),
-      arguments: part.state?.input && typeof part.state.input === 'object' ? part.state.input : {},
-    }));
-    if (content || toolCalls.length) frames.push({ role: 'assistant', content, toolCalls });
-    for (const part of tools) {
-      const state = part.state && typeof part.state === 'object' ? part.state : {};
-      if (!['completed', 'error'].includes(state.status)) continue;
-      frames.push({
-        role: 'tool',
-        callId: String(part.callID),
-        name: String(part.tool),
-        content: typeof state.output === 'string' ? state.output : JSON.stringify(state.output ?? ''),
-        isError: state.status === 'error',
-      });
-    }
-  }
-  return frames;
-}
-
-function userPartsFromPrompt(parts, workspace) {
-  const ui = [];
-  for (const part of Array.isArray(parts) ? parts : []) {
-    if (part?.type === 'text' && typeof part.text === 'string') {
-      ui.push({ type: 'text', text: part.text });
-      continue;
-    }
-    if (part?.type !== 'attachment' || typeof part.path !== 'string') continue;
-    try {
-      const full = safeWorkspacePath(workspace, part.path, { allowMissing: false });
-      if (!fs.statSync(full).isFile()) continue;
-      ui.push({
-        type: 'attachment',
-        name: String(part.name || path.basename(full)),
-        path: path.relative(workspace, full).split(path.sep).join('/'),
-        size: Number(part.size) || fs.statSync(full).size,
-        kind: String(part.kind || 'binary'),
-        mime: String(part.mime || 'application/octet-stream'),
-        ...(typeof part.note === 'string' && part.note ? { note: part.note.slice(0, 300) } : {}),
-      });
-    } catch { /* forged/stale path is not accepted into the chat record */ }
-  }
-  return ui;
-}
-
-function promptText(parts) {
-  return (Array.isArray(parts) ? parts : []).filter((p) => p?.type === 'text' && typeof p.text === 'string').map((p) => p.text).join('\n\n').trim();
 }
 
 function updateTurn(sessionId, state) {
@@ -325,45 +211,6 @@ async function runSubagent(ownerId, modelPlan, input, workspace, signal, project
   };
 }
 
-function stableValue(value) {
-  if (Array.isArray(value)) return value.map(stableValue);
-  if (!value || typeof value !== 'object') return value;
-  const out = {};
-  for (const key of Object.keys(value).sort()) out[key] = stableValue(value[key]);
-  return out;
-}
-
-function stableString(value) {
-  try { return JSON.stringify(stableValue(value)); } catch { return String(value ?? ''); }
-}
-
-function toolCallSignature(call) {
-  return `${String(call?.name || '').trim().toLowerCase()}:${stableString(call?.arguments || {})}`;
-}
-
-function toolMayHaveSideEffects(name) {
-  const normalized = String(name || '').trim().toLowerCase();
-  return mutatesWorkspace(normalized) || normalized === 'ensure_environment';
-}
-
-function toolCallFromPart(part) {
-  return {
-    id: String(part?.callID || ''),
-    name: String(part?.tool || ''),
-    arguments: part?.state?.input && typeof part.state.input === 'object' ? part.state.input : {},
-  };
-}
-
-function toolResultFromPart(part) {
-  const state = part?.state && typeof part.state === 'object' ? part.state : {};
-  return {
-    content: typeof state.output === 'string' ? state.output : JSON.stringify(state.output ?? ''),
-    isError: state.status === 'error',
-    metadata: state.metadata && typeof state.metadata === 'object' ? state.metadata : {},
-    mutatedPaths: Array.isArray(state.metadata?.mutatedPaths) ? state.metadata.mutatedPaths : [],
-  };
-}
-
 function interruptedToolParts(assistant) {
   const ambiguous = [];
   let changed = false;
@@ -392,86 +239,6 @@ function interruptedToolParts(assistant) {
   }
   if (changed) persistAssistant(assistant);
   return ambiguous;
-}
-
-function rebuildStrategy(goal, assistant) {
-  const strategy = createTurnStrategy(goal);
-  for (const part of assistant.parts || []) {
-    if (part?.type !== 'tool') continue;
-    const state = part.state && typeof part.state === 'object' ? part.state : {};
-    if (!['completed', 'error'].includes(String(state.status || ''))) continue;
-    const call = toolCallFromPart(part);
-    const result = toolResultFromPart(part);
-    observeTool(strategy, call, result);
-    if (state.metadata?.restartAmbiguous) {
-      strategy.changed = true;
-      strategy.needsVerification = true;
-      strategy.lastVerificationOk = null;
-    }
-  }
-  return strategy;
-}
-
-function rebuildLoopGuard(assistant) {
-  const guard = createLoopGuard();
-  let stop = null;
-  for (const part of assistant.parts || []) {
-    if (part?.type !== 'tool') continue;
-    const state = part.state && typeof part.state === 'object' ? part.state : {};
-    if (!['completed', 'error'].includes(String(state.status || '')) || state.metadata?.restartInterrupted) continue;
-    stop = observeToolLoop(guard, toolCallFromPart(part), toolResultFromPart(part)) || stop;
-  }
-  return { guard, stop };
-}
-
-function isInspectionResult(call, result) {
-  if (result?.isError) return false;
-  const name = String(call?.name || '').toLowerCase();
-  if (RECOVERY_INSPECTION_TOOLS.has(name)) return true;
-  return name === 'bash' && classifyBash(call?.arguments?.command) === 'read_only';
-}
-
-function recoveryGuidance(recovery) {
-  if (!recovery?.resumed) return '';
-  const lines = [
-    '[Durable runtime recovery]',
-    'This is the same agent turn resumed after a server-process restart.',
-    'Completed tool results already present in context are authoritative checkpoints. Do not repeat them merely to reconstruct state.',
-  ];
-  if (recovery.ambiguousSignatures.size && !recovery.inspected) {
-    lines.push('At least one mutating action was in flight when the process stopped. It may have partially completed. Inspect the current workspace/environment before retrying an equivalent mutating action. The runtime will block an identical retry until a successful inspection occurs.');
-  }
-  return lines.join('\n');
-}
-
-function toolPart(call) {
-  return {
-    id: partId(),
-    type: 'tool',
-    tool: call.name,
-    callID: call.id,
-    state: { status: 'running', input: call.arguments || {}, title: call.name, time: { start: Date.now() } },
-  };
-}
-
-function waitForRetry(delayMs, signal) {
-  return new Promise((resolve, reject) => {
-    if (signal?.aborted) {
-      reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
-      return;
-    }
-    const timer = setTimeout(() => {
-      signal?.removeEventListener('abort', onAbort);
-      resolve();
-    }, delayMs);
-    timer.unref?.();
-    const onAbort = () => {
-      clearTimeout(timer);
-      signal?.removeEventListener('abort', onAbort);
-      reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
-    };
-    signal?.addEventListener('abort', onAbort, { once: true });
-  });
 }
 
 async function executeCall(sessionId, assistant, call, controller, runtime) {
@@ -623,6 +390,9 @@ function safeAttemptInfo(attempt) {
 }
 
 function checkpointState(sessionId, runtime, strategy, fields = {}) {
+  // Heartbeat turn ownership on the durable-checkpoint cadence: a stalled node
+  // stops renewing and its claim becomes takeable once the TTL passes.
+  if (isClustered()) { try { renewTurnLock(sessionId); } catch { /* the lock TTL is the backstop */ } }
   try {
     checkpointDurableJob(sessionId, {
       phase: fields.phase || 'running',
@@ -866,6 +636,11 @@ export function submitTurn(args) {
 
 export async function runTurn({ sessionId, ownerId, parts, model, system, actionId = '' }) {
   if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
+  // activeTurns only knows this process. With Z_AGENT_CLUSTER on, ownership of a
+  // session is claimed in SQLite so two replicas cannot run the same turn.
+  if (isClustered() && !acquireTurnLock(sessionId).ok) {
+    throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409, holder: turnLockHolder(sessionId)?.instanceId || null });
+  }
   const tId = turnId();
   const goal = promptText(parts);
   const stepBudget = taskStepBudget(goal);
@@ -1004,6 +779,8 @@ export function startDurableRecovery() {
       continue;
     }
     if (activeTurns.has(job.sessionId)) continue;
+    // Another replica may already be recovering this durable job.
+    if (isClustered() && !acquireTurnLock(job.sessionId).ok) continue;
 
     const controller = new AbortController();
     activeTurns.set(job.sessionId, { controller, turnId: job.turnId, ownerId: job.ownerId, recovered: true });
