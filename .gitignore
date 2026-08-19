@@ -8,3 +8,6 @@ workspaces/
 *.tsbuildinfo
 coverage/
 .playwright/
+.e2e-tmp/
+playwright-report/
+test-results/
