@@ -218,6 +218,7 @@ export function formatDiagnosticsReport(runs) {
 
   return {
     text: [header.join('\n'), '', sections.join('\n\n')].join('\n'),
+    ok: !anyFailed,
     diagnostics: all,
     errorCount: errors.length,
     warningCount: warnings.length,

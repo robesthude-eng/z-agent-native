@@ -195,6 +195,7 @@ test('diagnostics report is CLEAN only with a zero exit and no findings', () => 
   const clean = formatDiagnosticsReport([{ kind: 'typecheck', command: 'tsc --noEmit', exitCode: 0, output: '' }]);
   assert.match(clean.text, /status: CLEAN/);
   assert.equal(clean.errorCount, 0);
+  assert.equal(clean.ok, true);
 
   const dirty = formatDiagnosticsReport([{
     kind: 'typecheck',
@@ -204,6 +205,7 @@ test('diagnostics report is CLEAN only with a zero exit and no findings', () => 
   }]);
   assert.match(dirty.text, /status: ISSUES/);
   assert.equal(dirty.errorCount, 1);
+  assert.equal(dirty.ok, false);
 });
 
 test('a checker that failed to start is not reported as clean', () => {
@@ -215,6 +217,7 @@ test('a checker that failed to start is not reported as clean', () => {
   }]);
   assert.match(report.text, /status: ISSUES/);
   assert.match(report.text, /may have failed to start/);
+  assert.equal(report.ok, false);
 });
 
 test('diagnostics planning detects config and fails loudly otherwise', () => {
