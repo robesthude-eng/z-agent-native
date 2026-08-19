@@ -98,7 +98,7 @@ export function subscribe(sessionId, onFrame, lastEventId = 0) {
 // Dropped clients reconnect with Last-Event-ID and the ring buffer replays what
 // they missed, so disconnecting is cheaper and safer than buffering forever.
 const MAX_SSE_BUFFER_BYTES = 4 * 1024 * 1024;
-const MAX_SSE_STALL_MS = 30_000;
+const MAX_SSE_STALL_MS = 180_000;
 
 export function openSse(req, res, sessionId, lastEventId = 0) {
   res.writeHead(200, {

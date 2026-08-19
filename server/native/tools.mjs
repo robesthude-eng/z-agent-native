@@ -105,7 +105,7 @@ export const TOOL_DEFINITIONS = [
       sha256: { type: 'string', description: 'For kind=portable, expected SHA-256 of the downloaded artifact.' },
       archiveType: { type: 'string', enum: ['raw', 'zip', 'tar.gz', 'tar.xz'], description: 'For kind=portable, downloaded artifact format.' },
       binaryPath: { type: 'string', description: 'For archived kind=portable artifacts, relative path to the executable inside the archive.' },
-      timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 },
+      timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 },
     }, ['kind']),
   },
   {
@@ -116,7 +116,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'bash',
     description: 'Run a shell command in the current workspace. Use for tests, builds, git, package managers, ssh/scp/rsync and project tooling.',
-    inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 600000 } }, ['command']),
+    inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 } }, ['command']),
   },
   {
     name: 'webfetch',
@@ -315,7 +315,7 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
       }, 1000);
       forceKillTimer.unref?.();
     };
-    const timeout = setTimeout(terminateGroup, Math.min(Math.max(timeoutMs || DEFAULT_TOOL_TIMEOUT_MS, 1000), 600000));
+    const timeout = setTimeout(terminateGroup, Math.min(Math.max(timeoutMs || DEFAULT_TOOL_TIMEOUT_MS, 1000), 1_800_000));
     timeout.unref?.();
     const abort = () => terminateGroup();
     signal?.addEventListener('abort', abort, { once: true });
@@ -510,7 +510,7 @@ export async function executeTool(name, input, ctx) {
     const plan = BASE_ENVIRONMENT_KINDS.includes(kind)
       ? prepareEnvironmentRequirement(root, input || {})
       : prepareToolchainRequirement(root, input || {});
-    const result = await execBash(root, plan.script, Number(input?.timeoutMs) || 600_000, ctx.signal, ctx);
+    const result = await execBash(root, plan.script, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
     const body = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     if (result.code !== 0) throw new Error(body || `${plan.title} provisioning exited ${result.code}`);
     const manifest = commitEnvironmentRequirement(root, plan);

@@ -466,6 +466,7 @@ function checkpointState(sessionId, runtime, strategy, fields = {}) {
 async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
   let strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
+  let lockPulse = null;
 
   try {
     if (resume) await resumePendingQuestion(sessionId, assistant, controller.signal);
@@ -497,6 +498,12 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       ...(resume ? { resumed: true, resumeCount: Number(job?.resumeCount || 0) } : {}),
     };
     checkpointState(sessionId, runtime, strategy, { phase: resume ? 'resumed' : 'prepared' });
+    if (isClustered()) {
+      lockPulse = setInterval(() => {
+        try { renewTurnLock(sessionId); } catch { /* TTL is the backstop */ }
+      }, 5_000);
+      lockPulse.unref?.();
+    }
 
     const workspace = workspaceFor(sessionId);
     const messages = listMessages(sessionId);
@@ -596,7 +603,10 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       reason: stopError.code,
     });
   } catch (err) {
-    const cancelled = controller.signal.aborted || err?.name === 'AbortError';
+    // Only a user/runtime abort on THIS turn controller is a cancel.
+    // Provider idle/timeout uses its own AbortController and must not look
+    // like the user pressed Stop — that used to kill a 30-minute session.
+    const cancelled = controller.signal.aborted;
     if (cancelled) {
       const outcome = classifyTaskOutcome({ strategy, kind: 'cancelled', reason: 'user_cancelled' });
       return await finalizeAssistant({
@@ -644,6 +654,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     });
     throw err;
   } finally {
+    if (lockPulse) clearInterval(lockPulse);
     activeTurns.delete(sessionId);
     notifyTurnIdle(sessionId);
     setTimeout(() => {
