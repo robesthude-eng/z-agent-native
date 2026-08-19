@@ -52,6 +52,7 @@ export default defineConfig({
 			// through the real agent loop and tools, but never makes an external LLM call.
 			Z_AGENT_ENABLE_FIXTURE_PROVIDER: "1",
 			Z_AGENT_DEFAULT_MODEL: "fixture/coding-e2e",
+			Z_AGENT_ALLOW_UNISOLATED_SHELL: "1",
 			NODE_ENV: "production",
 		},
 	},

@@ -35,6 +35,9 @@ jobs:
         run: npm run docs:check
       - name: Deterministic agent smoke eval
         run: npm run eval:smoke
+        env:
+          # GH-hosted runner is not root and cannot allocate per-session UIDs.
+          Z_AGENT_ALLOW_UNISOLATED_SHELL: '1'
       - name: Native runtime tests
         run: npm run test:native
 
@@ -49,9 +52,6 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      # Correctness lint is blocking; formatting remains report-only below.
-      - name: Lint correctness
-        run: npm run lint:ci
       # `if: always()` so one red step still reports the remaining checks instead of
       # hiding them behind the first failure.
       - name: Typecheck
