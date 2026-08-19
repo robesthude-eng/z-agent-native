@@ -247,7 +247,7 @@ export default function Composer() {
       if (next.origin === "server" && currentID) {
         api.dequeueAction(currentID, next.actionId).catch(() => {});
       }
-      send(next.text)
+      send(next.text, next.attachments ?? [], next.actionId)
         .catch(() => {})
         .finally(() => {
           sendingRef.current = false;
@@ -299,8 +299,11 @@ export default function Composer() {
     // P2-fix: во время генерации Enter не теряет сообщение,
     // а ставит его в очередь.
     if (busy) {
-      if (value) {
-        const plan = enqueuePlan(value, currentID);
+      if (value || attachments.length > 0) {
+        const plan = enqueuePlan(value, currentID, {
+          attachments,
+        });
+        const queuedAttachments = plan.attachments;
         // Запись появляется в списке СРАЗУ и как локальная, независимо от
         // пути. Ждать ответа сервера, чтобы показать своё же сообщение,
         // значило бы на время потерять его из вида; слияние по `actionId`
@@ -310,15 +313,23 @@ export default function Composer() {
           {
             actionId: plan.actionId,
             text: value,
+            attachments: queuedAttachments,
             position: null,
             origin: "local",
           },
         ]);
         setText("");
+        clearAttachments();
         if (currentID) sessionDrafts.delete(currentID);
+        if (currentID) sessionAttachments.delete(currentID);
         if (plan.kind === "server") {
           api
-            .enqueueAction(plan.sessionId, plan.actionId, plan.text)
+            .enqueueAction(
+              plan.sessionId,
+              plan.actionId,
+              plan.text,
+              plan.attachments,
+            )
             .then(() => refreshQueue())
             .catch(() => {
               // Недоступность очереди — не повод отказать: запись уже лежит
@@ -373,7 +384,7 @@ export default function Composer() {
       await materializeSession();
     }
     const sid = useStore.getState().currentID;
-    if (sessionActionPrep(sid) !== "ready") {
+    if (!sid || sessionActionPrep(sid) !== "ready") {
       // Сюда попадаем, только если создание сессии не удалось:
       // materializeSession() уже откатила оптимистичный чат и записала error.
       setUploadError("Не удалось создать чат для загрузки файла");
@@ -416,7 +427,19 @@ export default function Composer() {
           if (typeof result.entryCount === "number") {
             processed.entryCount = result.entryCount;
           }
-          addAttachments([processed]);
+          if (useStore.getState().currentID === sid) {
+            addAttachments([processed]);
+          } else {
+            // The user changed chats while the upload was in flight. Keep the
+            // result with the workspace that received its bytes; putting it in
+            // the active global attachment array would forge a path in the
+            // newly selected chat.
+            const saved = sessionAttachments.get(sid) ?? [];
+            sessionAttachments.set(sid, [
+              ...saved.filter((item) => item.name !== processed.name),
+              processed,
+            ]);
+          }
         } catch (err: unknown) {
           const msg = (err as Error)?.message || String(err);
           setUploadError(`${name}: ${msg}`);
@@ -644,7 +667,13 @@ export default function Composer() {
                   title={q.text}
                 >
                   <span className="opacity-60">⏳</span>
-                  <span className="truncate max-w-[160px]">{q.text}</span>
+                  <span className="truncate max-w-[160px]">
+                    {q.text ||
+                      q.attachments
+                        ?.map((attachment) => attachment.name)
+                        .join(", ") ||
+                      "Вложение"}
+                  </span>
                   <button
                     type="button"
                     className="hover:text-destructive"
@@ -679,9 +708,12 @@ export default function Composer() {
                   key={att.name}
                   className="group/chip flex max-w-[240px] items-center gap-2 rounded-lg border border-border bg-muted/40 py-1.5 pl-1.5 pr-1 text-xs"
                 >
-                  {att.kind === "image" && att.dataUrl ? (
+                  {att.kind === "image" && att.workspacePath && currentID ? (
                     <img
-                      src={att.dataUrl}
+                      src={`/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/${att.workspacePath
+                        .split("/")
+                        .map(encodeURIComponent)
+                        .join("/")}`}
                       alt={att.name}
                       className="h-8 w-8 shrink-0 rounded-md object-cover"
                     />

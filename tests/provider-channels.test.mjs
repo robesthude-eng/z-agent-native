@@ -96,6 +96,9 @@ test('provider config validation rejects unsafe shapes', () => {
     id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'file:///tmp/model', enabled: true,
   }), /HTTP/);
   assert.throws(() => configs.upsertProviderConfig(ownerA, {
+    id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'http://models.example.com/v1', enabled: true,
+  }), /HTTPS/);
+  assert.throws(() => configs.upsertProviderConfig(ownerA, {
     id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'https://user:pass@example.com/v1', enabled: true,
   }), /логина\/пароля/);
 });

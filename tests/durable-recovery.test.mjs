@@ -10,6 +10,7 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const providers = await import('../server/native/providers.mjs');
 const durable = await import('../server/native/durable-jobs.mjs');
 const providerConfigs = await import('../server/native/provider-configs.mjs');
 const { shellSandboxAvailable } = await import('../server/native/sandbox.mjs');
@@ -25,6 +26,7 @@ providerConfigs.upsertProviderConfig(ownerId, {
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-durable-test');
+providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 function sse(events) {
   return new Response(events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
@@ -228,3 +230,68 @@ test('an identical mutating call interrupted by restart is blocked until state i
     agent.resetAgentStateForTests();
   }
 });
+
+test('restart rehydrates a pending question and delivers the answer to the same tool call', async () => {
+  durable.resetDurableJobsForTests();
+  agent.resetAgentStateForTests();
+  const sid = 'ses_durablequestion1';
+  const actionId = 'act_durablequestion1';
+  const turnId = 'turn_durablequestion1';
+  const questionId = 'que_durablequestion1';
+  const questions = [{ header: 'Mode', question: 'Как продолжить?', options: [{ label: 'Авто' }] }];
+  store.createChat(sid, ownerId, 'Pending question');
+  const { userId, assistantId } = seedMessages(sid, [{
+    id: 'part_question_running',
+    type: 'tool',
+    tool: 'question',
+    callID: 'call_question_running',
+    state: {
+      status: 'running',
+      input: { questions },
+      output: '',
+      metadata: { questionId },
+      time: { start: Date.now() - 1200 },
+    },
+  }]);
+  store.createQuestion(questionId, sid, questions);
+  store.setTurn(sid, { turnId, lifecycle: 'waiting_user_input', verdict: null, reason: 'question', since: Date.now() - 1000 });
+  store.claimAction(sid, actionId);
+  durable.createDurableJob({
+    sessionId: sid,
+    ownerId,
+    actionId,
+    turnId,
+    userMessageId: userId,
+    assistantMessageId: assistantId,
+    requestedModel: { providerID: providerId, modelID: 'gpt-durable' },
+    goal: 'Продолжи после ответа',
+    stepBudget: 12,
+  });
+
+  const original = globalThis.fetch;
+  let sawRecoveredAnswer = false;
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    sawRecoveredAnswer ||= JSON.stringify(body.messages || []).includes('мой ответ после рестарта');
+    return finalSse('Ответ после рестарта принят.');
+  };
+
+  try {
+    assert.equal(agent.startDurableRecovery(), 1);
+    await waitFor(() => store.getTurn(sid)?.lifecycle === 'waiting_user_input');
+    assert.equal(agent.answerQuestion(sid, questionId, [['мой ответ после рестарта']]), true);
+    await waitFor(() => !durable.getDurableJob(sid), 6000);
+    const assistant = store.listMessages(sid).find((message) => message.id === assistantId);
+    const questionPart = assistant.parts.find((part) => part.id === 'part_question_running');
+    assert.equal(questionPart.state.status, 'completed');
+    assert.equal(questionPart.state.metadata.recovered, true);
+    assert.deepEqual(questionPart.state.metadata.answers, [['мой ответ после рестарта']]);
+    assert.equal(sawRecoveredAnswer, true);
+    assert.equal(store.listPendingQuestions(sid).length, 0);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});
+
+test.after(() => providers.setProviderTransportForTests(null));

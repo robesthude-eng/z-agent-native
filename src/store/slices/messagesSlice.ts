@@ -238,19 +238,31 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
       }
     },
 
-    send: async (text) => {
-      const actionId = newActionId();
+    send: async (text, attachmentsOverride, actionIdOverride) => {
+      const actionId = actionIdOverride || newActionId();
       const { currentID, newSession, materializeSession, selectedModel } = get();
       let sid = currentID;
       if (!sid || isTmpSession(sid)) {
         if (!sid) await newSession();
-        await materializeSession();
+        try {
+          await materializeSession();
+        } catch (e) {
+          set((s) => ({
+            error: (e as Error).message,
+            failedSendText: text,
+            attachments:
+              s.attachments.length === 0
+                ? (attachmentsOverride ?? s.attachments)
+                : s.attachments,
+          }));
+          return;
+        }
         sid = get().currentID;
         if (!sid || isTmpSession(sid)) return;
       }
       const sidStr = sid as string;
 
-      const currentAttachments = get().attachments;
+      const currentAttachments = attachmentsOverride ?? get().attachments;
       const userMsg = buildUserMessage(text, currentAttachments);
       const requestGen = sessionFsm.beginRequest(sidStr);
       set((s) => ({
@@ -280,7 +292,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
       };
 
       try {
-        const parts = buildPromptParts(get().attachments, text);
+        const parts = buildPromptParts(currentAttachments, text);
 
         async function retryablePrompt(
           sidStr: string,
@@ -333,7 +345,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
           2,
         );
 
-        set({ attachments: [] });
+        if (attachmentsOverride === undefined) set({ attachments: [] });
 
         await awaitTurnCompletion({
           sessionId: sidStr,
@@ -381,26 +393,20 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
           });
           try {
             await get().newSession();
+            await get().materializeSession();
             const newSid = get().currentID;
             if (newSid && !isTmpSession(newSid)) {
-              if (get().attachments.length > 0 || hadAssistantReply) {
+              if (hadAssistantReply) {
                 set({ failedSendText: text });
-                if (hadAssistantReply) {
-                  toast(
-                    "info",
-                    "Сессия оборвалась во время ответа. Запрос возвращён в поле ввода — отправьте повторно, если нужно.",
-                  );
-                }
+                if (currentAttachments.length > 0)
+                  set({ attachments: currentAttachments });
+                toast(
+                  "info",
+                  "Сессия оборвалась во время ответа. Запрос возвращён в поле ввода — отправьте повторно, если нужно.",
+                );
                 return;
               }
-              if (currentAttachments.length > 0)
-                set((s) => ({
-                  attachments:
-                    s.attachments.length === 0
-                      ? currentAttachments
-                      : s.attachments,
-                }));
-              get().send(text).catch(() => {});
+              await get().send(text, currentAttachments, actionId);
             }
           } catch (recErr) {
             set((_s) => ({ error: (recErr as Error).message }));

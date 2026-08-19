@@ -93,22 +93,15 @@ Z_AGENT_SECURE_COOKIES=1
 
 Provider API keys are added from **Settings → Models**. They are stored encrypted with AES-256-GCM. On a single-node installation, a random key is generated at `data/master.key` (0600). For reproducible backups or multiple replicas, provide a stable `Z_AGENT_SECRET_KEY` through the environment/secrets manager.
 
-Built-in provider families:
+The provider registry starts empty. Add an owner-scoped channel in Settings and
+choose one of the supported protocols: OpenAI-compatible, Anthropic Messages,
+or Google Gemini. OpenAI-compatible channels cover services such as OpenAI,
+xAI, DeepSeek, Groq, Mistral, OpenRouter and self-hosted gateways when their
+base URL and model IDs are configured explicitly.
 
-- OpenAI
-- Anthropic
-- Google Gemini
-- xAI
-- DeepSeek
-- Groq
-- Mistral
-- OpenRouter
-- Together
-- Z.ai
-- AnyModel
-- Kiwi LLM
-
-OpenAI-compatible base URLs can be overridden with environment variables in `.env.example`. Administrator-configured endpoints are trusted and may point to a local/VPC gateway. **User-entered custom endpoints remain SSRF-filtered** and cannot target loopback/private/link-local/metadata addresses.
+All configured endpoints are SSRF-filtered and DNS-pinned for the request, so
+they cannot target loopback/private/link-local/metadata addresses or swap to
+one after validation.
 
 ## Web search
 
@@ -182,8 +175,9 @@ Back up both persistent volumes. Back up the SQLite database **and** the master 
 | `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. The relay sees API keys and prompts, so it stays off unless you operate it. |
 | `Z_AGENT_TOOLCHAIN_SHA256` | empty | JSON map of pinned toolchain digests, e.g. `{"java:21":"<sha256>"}`. |
 | `Z_AGENT_MAX_STEPS` | derived | Pins the per-turn step budget; otherwise it is derived from task complexity and clamped at 128. |
-| `Z_AGENT_GREP_TIMEOUT_MS` | `5000` | Deadline for `grep`; regex searches run in a worker thread and are cancelled at the deadline. |
+| `Z_AGENT_MAX_UPLOAD_BYTES` | `262144000` | Maximum size of one uploaded file. |
+| `Z_AGENT_GREP_TIMEOUT_MS` | `5000` | Deadline for `grep`; literal and regex scans run in a worker thread and are cancelled at the deadline. |
 | `Z_AGENT_DURABLE_JOB_TTL_MS` | `86400000` | After this age a crashed durable turn can be taken over instead of blocking the session. |
-| `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Total concurrent upload bytes accepted by the runtime. |
+| `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Maximum aggregate body size of one folder-upload request. |
 
 See `SECURITY.md` for the container, deployment and toolchain hardening notes.

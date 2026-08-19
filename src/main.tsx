@@ -32,9 +32,9 @@ if (typeof window !== "undefined" && "serviceWorker" in navigator) {
       .then(() =>
         navigator.serviceWorker.register("/sw.js", {
           scope: "/",
-          // Скрипт SW сервер отдаёт как .js, а статике проставлен
-          // immutable-кэш — без этого браузер мог бы месяцами не замечать
-          // новую версию воркера.
+          // Даже если промежуточный прокси закэшировал скрипт, браузер всегда
+          // перепроверяет его в сети. Runtime дополнительно отдаёт sw.js с
+          // Cache-Control: no-cache.
           updateViaCache: "none",
         }),
       )

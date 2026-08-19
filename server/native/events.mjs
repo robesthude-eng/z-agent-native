@@ -1,9 +1,14 @@
+import { randomUUID } from 'node:crypto';
 import { CLUSTER_ENABLED, publishEvent, startCluster } from './cluster.mjs';
 import { EVENT_RING_SIZE } from './config.mjs';
 import { clearTurnResults, observeTurnResultEvent } from './turn-results.mjs';
 
 const rings = new Map();
 const subscribers = new Map();
+// Sequence numbers restart with the process. Prefixing them with a process
+// epoch prevents a reconnecting browser from mistaking fresh frames for old
+// duplicates after a server restart.
+const EVENT_EPOCH = randomUUID();
 let clusterStarted = false;
 
 function stateFor(sessionId) {
@@ -33,7 +38,8 @@ function frameText(frame) {
 // snapshot belongs to the replica that is actually running the turn.
 function deliver(sessionId, event) {
   const state = stateFor(sessionId);
-  const frame = { id: ++state.seq, event };
+  state.seq += 1;
+  const frame = { id: `${EVENT_EPOCH}:${state.seq}`, seq: state.seq, event };
   state.frames.push(frame);
   if (state.frames.length > EVENT_RING_SIZE) state.frames.splice(0, state.frames.length - EVENT_RING_SIZE);
   for (const listener of listenersFor(sessionId)) {
@@ -67,9 +73,18 @@ export function emit(sessionId, type, properties = {}) {
 export function subscribe(sessionId, onFrame, lastEventId = 0) {
   ensureCluster();
   const state = stateFor(sessionId);
-  const last = Number.isFinite(Number(lastEventId)) ? Number(lastEventId) : 0;
+  const raw = String(lastEventId ?? '');
+  const epochSeparator = raw.lastIndexOf(':');
+  const suppliedEpoch = epochSeparator > 0 ? raw.slice(0, epochSeparator) : EVENT_EPOCH;
+  const suppliedSeq = Number(epochSeparator > 0 ? raw.slice(epochSeparator + 1) : raw);
+  // A different epoch means the caller survived a process restart. Replay the
+  // complete retained ring; using its old sequence would silently drop every
+  // new frame whose number has not caught up yet.
+  const last = suppliedEpoch === EVENT_EPOCH && Number.isFinite(suppliedSeq)
+    ? suppliedSeq
+    : 0;
   for (const frame of state.frames) {
-    if (frame.id > last) onFrame(frame);
+    if (frame.seq > last) onFrame(frame);
   }
   const set = listenersFor(sessionId);
   set.add(onFrame);

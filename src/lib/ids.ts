@@ -14,7 +14,8 @@ export const ID_PREFIX = {
  * разных действия и создаст второй ход: ровно тот фантомный дубликат, ради
  * которого реестр и заведён (I-12).
  *
- * Форма подчинена серверной проверке `[A-Za-z0-9_-]{8,128}`: идентификатор
+ * Форма подчинена серверной проверке `act_` + 8..124 безопасных символа:
+ * полная длина не превышает 128; идентификатор
  * попадает в SQL как параметр и в логи как текст.
  */
 export function newActionId(): string {
@@ -29,7 +30,7 @@ export function newActionId(): string {
 }
 
 export function isActionId(id?: string | null): id is string {
-  return typeof id === "string" && id.startsWith(ID_PREFIX.ACTION);
+  return typeof id === "string" && /^act_[A-Za-z0-9_-]{8,124}$/.test(id);
 }
 
 export function isTmpSession(id?: string | null): id is string {

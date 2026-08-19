@@ -38,12 +38,12 @@ function cleanProtocol(value) {
   return protocol;
 }
 
-function cleanBaseUrl(value) {
+export function normalizeProviderBaseUrl(value) {
   const raw = String(value || '').trim().replace(/\/+$/, '');
   let url;
   try { url = new URL(raw); } catch { throw Object.assign(new Error('Некорректный API Base URL'), { statusCode: 400 }); }
-  if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password) {
-    throw Object.assign(new Error('API Base URL должен быть HTTP(S) URL без логина/пароля'), { statusCode: 400 });
+  if (url.protocol !== 'https:' || url.username || url.password) {
+    throw Object.assign(new Error('API Base URL должен быть HTTPS URL без логина/пароля'), { statusCode: 400 });
   }
   if (raw.length > 2000) throw Object.assign(new Error('API Base URL слишком длинный'), { statusCode: 400 });
   return raw;
@@ -79,7 +79,7 @@ export function upsertProviderConfig(ownerId, input, { custom = true } = {}) {
   if (!/^[A-Za-z0-9._:-]{2,120}$/.test(providerId)) throw Object.assign(new Error('Некорректный provider id'), { statusCode: 400 });
   const name = cleanName(input?.name);
   const protocol = cleanProtocol(input?.protocol);
-  const baseURL = cleanBaseUrl(input?.baseURL);
+  const baseURL = normalizeProviderBaseUrl(input?.baseURL);
   const enabled = input?.enabled !== false;
   const now = Date.now();
   db.prepare(`INSERT INTO provider_configs(owner_id,provider_id,name,protocol,base_url,enabled,is_custom,created_at,updated_at)

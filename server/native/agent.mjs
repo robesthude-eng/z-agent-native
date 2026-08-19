@@ -1,10 +1,10 @@
 import {
-  clearTurn, claimAction, completeAction, createQuestion, failAction, getAction, getChat, getQuestion,
+  clearTurn, claimAction, completeAction, createQuestion, failAction, findQuestionForRecovery, getAction, getChat, getQuestion,
   getTurn, listMessages, putMessage, renameChat, resetAction, resolveQuestion,
   setTurn, workspaceFor,
 } from './store.mjs';
 import { emit } from './events.mjs';
-import { messageId, partId, questionId, turnId } from './ids.mjs';
+import { assertActionId, messageId, partId, questionId, turnId } from './ids.mjs';
 import {
   buildModelPlan,
   callModelAutopilot,
@@ -23,7 +23,7 @@ import {
   markDurableJobResuming,
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
-import { availableToolDefinitions, executeTool, mutatesWorkspace, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
+import { availableToolDefinitions, executeTool, TOOL_DEFINITIONS, toolOutputText } from './tools.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
 import { getSubagentProfile } from './subagents.mjs';
 import {
@@ -138,14 +138,54 @@ function waitWithAbort(map, id, sessionId, signal) {
   });
 }
 
-async function askQuestion(sessionId, questions, signal) {
+async function waitForQuestionAnswer(question, sessionId, signal) {
+  const latest = getQuestion(question.id);
+  if (latest?.status === 'answered' || latest?.status === 'rejected') return latest.answers || [];
+  const waiting = waitWithAbort(questionWaiters, question.id, sessionId, signal);
+  // Close the tiny race between the status read above and waiter registration.
+  const afterRegistration = getQuestion(question.id);
+  if (afterRegistration?.status === 'answered' || afterRegistration?.status === 'rejected') {
+    questionWaiters.get(question.id)?.resolve(afterRegistration.answers || []);
+  }
+  return await waiting;
+}
+
+async function askQuestion(sessionId, questions, signal, onCreated = null) {
   const id = questionId();
   createQuestion(id, sessionId, questions);
+  onCreated?.(id);
   updateTurn(sessionId, { lifecycle: 'waiting_user_input', since: Date.now(), reason: 'question' });
   emit(sessionId, 'question.asked', { id, questions });
-  const answers = await waitWithAbort(questionWaiters, id, sessionId, signal);
+  const answers = await waitForQuestionAnswer({ id }, sessionId, signal);
   updateTurn(sessionId, { lifecycle: 'running', since: Date.now(), reason: 'question_answered' });
   return { id, answers };
+}
+
+async function resumePendingQuestion(sessionId, assistant, signal) {
+  const part = (assistant.parts || []).find((candidate) => {
+    const status = String(candidate?.state?.status || '');
+    return candidate?.type === 'tool' && candidate?.tool === 'question' && ['running', 'pending'].includes(status);
+  });
+  if (!part) return false;
+  const inputQuestions = Array.isArray(part.state?.input?.questions) ? part.state.input.questions : [];
+  const stored = part.state?.metadata?.questionId
+    ? getQuestion(part.state.metadata.questionId)
+    : findQuestionForRecovery(sessionId, inputQuestions);
+  if (!stored || stored.sessionID !== sessionId) return false;
+
+  updateTurn(sessionId, { lifecycle: stored.status === 'pending' ? 'waiting_user_input' : 'running', since: Date.now(), reason: 'question_recovered' });
+  if (stored.status === 'pending') emit(sessionId, 'question.asked', { id: stored.id, questions: stored.questions, recovered: true });
+  const answers = await waitForQuestionAnswer(stored, sessionId, signal);
+  part.state = {
+    ...part.state,
+    status: 'completed',
+    output: `User answered: ${JSON.stringify(answers)}`,
+    metadata: { ...(part.state?.metadata || {}), answers, questionId: stored.id, recovered: true },
+    time: { ...(part.state?.time || {}), end: Date.now() },
+  };
+  emitPart(assistant, part);
+  updateTurn(sessionId, { lifecycle: 'running', since: Date.now(), reason: 'question_answered_after_restart' });
+  return true;
 }
 
 const SUBAGENT_SAFE_TOOLS = TOOL_DEFINITIONS.filter((tool) => ['repo_map', 'read', 'list', 'glob', 'grep'].includes(tool.name));
@@ -299,7 +339,13 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       }
     }
     if (result?.kind === 'question') {
-      const q = await askQuestion(sessionId, result.questions, controller.signal);
+      const q = await askQuestion(sessionId, result.questions, controller.signal, (id) => {
+        part.state = {
+          ...part.state,
+          metadata: { ...(part.state?.metadata || {}), questionId: id },
+        };
+        emitPart(assistant, part);
+      });
       part.state = {
         ...part.state,
         status: 'completed',
@@ -320,7 +366,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       time: { ...part.state.time, end: Date.now() },
     };
     emitPart(assistant, part);
-    if (mutatesWorkspace(call.name) || result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result?.mutatedPaths || ['.'] });
+    if (result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result.mutatedPaths });
     return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [] };
   } catch (err) {
     part.state = {
@@ -422,6 +468,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
   let lastUsage = job?.checkpoint?.lastUsage || null;
 
   try {
+    if (resume) await resumePendingQuestion(sessionId, assistant, controller.signal);
     const interrupted = resume ? interruptedToolParts(assistant) : [];
     const persistedAmbiguous = Array.isArray(job?.checkpoint?.ambiguousCalls) ? job.checkpoint.ambiguousCalls : [];
     const ambiguousSignatures = new Set([...persistedAmbiguous, ...interrupted]);
@@ -606,7 +653,8 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
 }
 
 export function submitTurn(args) {
-  const actionId = String(args.actionId || '').trim();
+  const rawActionId = String(args.actionId || '').trim();
+  const actionId = rawActionId ? assertActionId(rawActionId) : '';
   if (!actionId) return runTurn(args);
   const key = `${args.sessionId}:${actionId}`;
   const active = activeActions.get(key);
@@ -646,49 +694,55 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
   const stepBudget = taskStepBudget(goal);
   const userMessageId = messageId();
   const assistantMessageId = messageId();
-  createDurableJob({
-    sessionId,
-    ownerId,
-    actionId,
-    turnId: tId,
-    userMessageId,
-    assistantMessageId,
-    requestedModel: model,
-    goal,
-    stepBudget,
-  });
+  try {
+    createDurableJob({
+      sessionId,
+      ownerId,
+      actionId,
+      turnId: tId,
+      userMessageId,
+      assistantMessageId,
+      requestedModel: model,
+      goal,
+      stepBudget,
+    });
+  } catch (err) {
+    if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
+    throw err;
+  }
 
   const controller = new AbortController();
   activeTurns.set(sessionId, { controller, turnId: tId, ownerId });
-  updateTurn(sessionId, { turnId: tId, lifecycle: 'running', since: Date.now(), reason: 'user_message' });
-
-  const workspace = workspaceFor(sessionId);
-  const userMessage = {
-    id: userMessageId, role: 'user', sessionID: sessionId,
-    parts: userPartsFromPrompt(parts, workspace),
-    time: { created: Date.now(), completed: Date.now() },
-    info: { role: 'user', finish: 'stop', time: { created: Date.now(), completed: Date.now() } },
-  };
-  putMessage(userMessage);
-  emit(sessionId, 'message.updated', { message: userMessage });
-
-  const chat = getChat(sessionId, ownerId);
-  if (chat?.title === 'Новый чат') {
-    const first = goal.split('\n')[0].trim().slice(0, 72);
-    if (first) {
-      const updated = renameChat(sessionId, ownerId, first);
-      if (updated) emit(sessionId, 'session.updated', { session: updated });
-    }
-  }
-
-  const assistant = {
-    id: assistantMessageId, role: 'assistant', sessionID: sessionId, parts: [],
-    time: { created: Date.now() },
-    info: { role: 'assistant', time: { created: Date.now() } },
-  };
-  persistAssistant(assistant);
 
   try {
+    updateTurn(sessionId, { turnId: tId, lifecycle: 'running', since: Date.now(), reason: 'user_message' });
+
+    const workspace = workspaceFor(sessionId);
+    const userMessage = {
+      id: userMessageId, role: 'user', sessionID: sessionId,
+      parts: userPartsFromPrompt(parts, workspace),
+      time: { created: Date.now(), completed: Date.now() },
+      info: { role: 'user', finish: 'stop', time: { created: Date.now(), completed: Date.now() } },
+    };
+    putMessage(userMessage);
+    emit(sessionId, 'message.updated', { message: userMessage });
+
+    const chat = getChat(sessionId, ownerId);
+    if (chat?.title === 'Новый чат') {
+      const first = goal.split('\n')[0].trim().slice(0, 72);
+      if (first) {
+        const updated = renameChat(sessionId, ownerId, first);
+        if (updated) emit(sessionId, 'session.updated', { session: updated });
+      }
+    }
+
+    const assistant = {
+      id: assistantMessageId, role: 'assistant', sessionID: sessionId, parts: [],
+      time: { created: Date.now() },
+      info: { role: 'assistant', time: { created: Date.now() } },
+    };
+    persistAssistant(assistant);
+
     const result = await executeTurnLifecycle({
       sessionId,
       ownerId,

@@ -88,6 +88,11 @@ An explicit current official checksum may be supplied with `sha256` when desired
 
 ## Base image
 
-The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js, Python/venv/pip, OpenJDK 17, build-essential, CMake, Ninja, SSH/rsync/curl, PostgreSQL and SQLite clients, DNS/network diagnostics, `jq`, `ffmpeg`, `procps`, `lsof`, GnuPG, `groff`, and `less`.
+The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js 24; Bash, Git, OpenSSH client, rsync and curl; CA certificates; unzip/zip/xz, util-linux, `file` and `jq`; Python with venv, pip and development headers; build-essential, CMake, Ninja, pkg-config, libffi and OpenSSL development headers; OpenJDK 17; and the SQLite client.
+
+Network reconnaissance tools (`netcat`, `ping`, `dig`), the PostgreSQL client,
+`ffmpeg`, `procps`, `lsof`, GnuPG, `groff` and `less` are deliberately not part
+of the supplied image. Install task-specific user-space tooling through a
+managed provisioner when appropriate.
 
 System packages that genuinely require host/container administration are still not available to model shell commands. If a task depends on a kernel feature, privileged device, system daemon, unsupported architecture, or unavailable secret, the agent must report that concrete limitation rather than asking for unrestricted root.

@@ -11,6 +11,7 @@ process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const providers = await import('../server/native/providers.mjs');
 const events = await import('../server/native/events.mjs');
 const providerConfigs = await import('../server/native/provider-configs.mjs');
 
@@ -25,6 +26,7 @@ providerConfigs.upsertProviderConfig(ownerId, {
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-verification-test');
+providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 function sse(items) {
   return new Response(items.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
@@ -108,3 +110,5 @@ test('runtime auto-approves tool calls and still forces executable verification 
     events.resetEventsForTests();
   }
 });
+
+test.after(() => providers.setProviderTransportForTests(null));

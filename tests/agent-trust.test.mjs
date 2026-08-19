@@ -10,6 +10,7 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 
 const store = await import('../server/native/store.mjs');
 const agent = await import('../server/native/agent.mjs');
+const providers = await import('../server/native/providers.mjs');
 const providerConfigs = await import('../server/native/provider-configs.mjs');
 
 const ownerId = 'trust@example.com';
@@ -23,6 +24,7 @@ providerConfigs.upsertProviderConfig(ownerId, {
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-trust-test');
+providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 function sse(events) {
   return new Response(events.map((event) => `data: ${typeof event === 'string' ? event : JSON.stringify(event)}\n\n`).join(''), {
@@ -139,3 +141,5 @@ test('a transient webfetch failure is retried once inside the same tool call', a
     agent.resetAgentStateForTests();
   }
 });
+
+test.after(() => providers.setProviderTransportForTests(null));

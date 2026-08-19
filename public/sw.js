@@ -20,7 +20,7 @@
  *      это же чистит наследие старого workbox-кэша.
  */
 
-const VERSION = "v1";
+const VERSION = "v2";
 const ASSET_CACHE = `z-agent-assets-${VERSION}`;
 const SHELL_CACHE = `z-agent-shell-${VERSION}`;
 const KEEP_CACHES = new Set([ASSET_CACHE, SHELL_CACHE]);

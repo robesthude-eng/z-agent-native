@@ -33,7 +33,10 @@ function parseCookies(req) {
     if (i <= 0) continue;
     const k = part.slice(0, i).trim();
     const v = part.slice(i + 1).trim();
-    if (k) out[k] = decodeURIComponent(v);
+    if (k) {
+      try { out[k] = decodeURIComponent(v); }
+      catch { /* malformed cookies are ignored instead of turning auth into 500 */ }
+    }
   }
   return out;
 }

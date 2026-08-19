@@ -5,7 +5,6 @@ import { finalMarkerOf } from "../../api/turnFinality";
 import type {
   Message,
   Part,
-  PermissionRequest,
   SessionInfo,
   SessionStatus,
 } from "../../api/types";
@@ -323,35 +322,16 @@ const streamReconnected: EventHandler = ({ set, get }) => {
   })();
 };
 
-const permissionAsked: EventHandler = ({ set, get }, sid, p) => {
+const permissionAsked: EventHandler = ({ set }, sid, p) => {
   if (!sid || !p.id) return;
-  // Некоторые streaming payload присылают в `tool` объект-ссылку {messageID, callID},
-  // а не имя инструмента. Нормализуем, чтобы React не рендерил объект (error #31).
-  const toolName = typeof p.tool === "string" ? p.tool : undefined;
-  const req: PermissionRequest = {
-    sessionID: sid,
-    id: p.id,
-    ...(toolName ? { tool: toolName } : {}),
-    input: p.input,
-  };
-  const alreadyQueued = get().permissions.some((x) => x.id === req.id);
+  // Native runtime approves tools on the server. A leftover permission.asked
+  // is compatibility noise: never surface a card and never fire a 404 reply.
+  // Claim first so a replay after we already discarded the same id cannot
+  // re-insert it into the queue.
+  permissionDedup.claim(String(p.id));
   set((s: State) => ({
-    permissions: alreadyQueued ? s.permissions : [...s.permissions, req],
+    permissions: s.permissions.filter((x) => x.id !== p.id),
   }));
-  // Автоподтверждение: пользователь работает в изолированной песочнице своего
-  // чата и не хочет подтверждать каждый шаг вручную, поэтому разрешение
-  // выдаётся сразу и карточка не показывается. "always" вместо "once" — чтобы
-  // движок не спрашивал повторно про тот же инструмент до конца сессии
-  // (меньше круговых запросов). Если ответ не дойдёт, respondPermission
-  // вернёт запрос в очередь и карточка появится как страховка — агент не
-  // останется висеть.
-  if (!alreadyQueued && permissionDedup.claim(req.id)) {
-    get()
-      .respondPermission(req.id, "always")
-      .catch(() => {
-        /* ошибку уже показал respondPermission */
-      });
-  }
 };
 
 const permissionResponded: EventHandler = ({ set }, _sid, p) => {

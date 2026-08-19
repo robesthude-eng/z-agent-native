@@ -9,6 +9,7 @@ import {
 } from './environment.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
+import { classifyBash } from './context.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 
@@ -16,6 +17,7 @@ const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
 const MAX_MATCH_LINE = 2000;
 const MAX_PATTERN_CHARS = 1000;
+const MAX_WALK_ENTRIES = 10_000;
 const IGNORED_WALK_DIRS = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
 const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
@@ -159,11 +161,12 @@ function truncate(text, max = MAX_TOOL_OUTPUT) {
 }
 
 function walk(root, start, depth, out, baseDepth = 0) {
-  if (baseDepth > depth) return;
+  if (baseDepth > depth || out.length >= MAX_WALK_ENTRIES) return;
   let entries;
   try { entries = fs.readdirSync(start, { withFileTypes: true }); } catch { return; }
   entries.sort((a,b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
+    if (out.length >= MAX_WALK_ENTRIES) break;
     if (entry.isDirectory() && IGNORED_WALK_DIRS.has(entry.name)) continue;
     const full = path.join(start, entry.name);
     const relative = rel(root, full);
@@ -235,15 +238,16 @@ function externalSpawnIdentity(ctx, root) {
 }
 
 /**
- * Run a regular-expression search off the main thread with a hard deadline.
- * Literal search stays inline because it cannot backtrack.
+ * Run file scanning off the main thread with a hard deadline. Literal search
+ * cannot catastrophically backtrack, but synchronous reads across thousands
+ * of files still block every HTTP/SSE client on the main Node thread.
  */
-async function grepWithRegex(files, pattern, max, timeoutMs) {
+async function grepInWorker(files, pattern, max, timeoutMs, regex) {
   const workerUrl = new URL('./grep-worker.mjs', import.meta.url);
   return await new Promise((resolve, reject) => {
     let settled = false;
     const worker = new Worker(workerUrl, {
-      workerData: { files, pattern, max, maxBytes: MAX_READ_BYTES, maxLine: MAX_MATCH_LINE },
+      workerData: { files, pattern, max, regex, maxBytes: MAX_READ_BYTES, maxLine: MAX_MATCH_LINE },
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
     const finish = (fn, value) => {
@@ -254,7 +258,7 @@ async function grepWithRegex(files, pattern, max, timeoutMs) {
       fn(value);
     };
     const timer = setTimeout(() => {
-      finish(reject, Object.assign(new Error(`grep: regular expression search exceeded ${timeoutMs} ms and was cancelled. Simplify the pattern or narrow the path.`), { statusCode: 408 }));
+      finish(reject, Object.assign(new Error(`grep: search exceeded ${timeoutMs} ms and was cancelled. Simplify the pattern or narrow the path.`), { statusCode: 408 }));
     }, timeoutMs);
     timer.unref?.();
     worker.on('message', (message) => {
@@ -444,32 +448,12 @@ export async function executeTool(name, input, ctx) {
       try { files.push({ path: item.path, full: safeWorkspacePath(root, item.path, { allowMissing: false }) }); } catch { /* unreadable */ }
     }
 
-    if (input?.regex) {
-      const hits = await grepWithRegex(files, query, max, GREP_TIMEOUT_MS);
-      return { output: hits.join('\n'), title: query, metadata: { matches: hits.length, mode: 'regex' } };
-    }
-
-    const needle = query.toLowerCase();
-    const deadline = Date.now() + GREP_TIMEOUT_MS;
-    const hits = [];
-    let timedOut = false;
-    for (const item of files) {
-      if (hits.length >= max) break;
-      if (Date.now() > deadline) { timedOut = true; break; }
-      try {
-        const buf = fs.readFileSync(item.full);
-        if (buf.length > MAX_READ_BYTES || buf.includes(0)) continue;
-        const lines = buf.toString('utf8').split('\n');
-        for (let i = 0; i < lines.length && hits.length < max; i++) {
-          if (lines[i].toLowerCase().includes(needle)) hits.push(`${item.path}:${i + 1}: ${lines[i].slice(0, MAX_MATCH_LINE)}`);
-        }
-      } catch { /* unreadable */ }
-    }
-    const body = hits.join('\n');
+    const regex = Boolean(input?.regex);
+    const hits = await grepInWorker(files, query, max, GREP_TIMEOUT_MS, regex);
     return {
-      output: timedOut ? `${body}${body ? '\n' : ''}[search stopped after ${GREP_TIMEOUT_MS} ms; narrow the path or the query]` : body,
+      output: hits.join('\n'),
       title: query,
-      metadata: { matches: hits.length, mode: 'literal', timedOut },
+      metadata: { matches: hits.length, mode: regex ? 'regex' : 'literal' },
     };
   }
 
@@ -549,7 +533,8 @@ export async function executeTool(name, input, ctx) {
   }
 
   if (tool === 'bash') {
-    const result = await execBash(root, String(input?.command || ''), Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
+    const command = String(input?.command || '');
+    const result = await execBash(root, command, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
     const hint = missingCommandHint(result);
     const body = [
       `exit=${result.code}`,
@@ -559,8 +544,8 @@ export async function executeTool(name, input, ctx) {
     ].filter(Boolean).join('\n');
     return {
       output: body,
-      title: String(input?.command || ''),
-      mutatedPaths: ['.'],
+      title: command,
+      mutatedPaths: classifyBash(command) === 'read_only' ? [] : ['.'],
       metadata: { exit: result.code, ...(hint ? { environmentHint: hint } : {}) },
     };
   }

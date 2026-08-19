@@ -126,9 +126,8 @@ export interface SessionsSlice {
   materializeSession: () => Promise<void>;
   removeSession: (id: string) => Promise<void>;
   abort: () => Promise<void>;
-  // Native permission response enum: "once" = allow this call,
-  // "always" = allow all similar calls for the rest of the session,
-  // "reject" = deny the call.
+  // Compatibility handler for stale permission events from older runtimes.
+  // The native server owns automatic approval and exposes no response route.
   respondPermission: (
     permissionId: string,
     response: "once" | "always" | "reject",
@@ -174,7 +173,11 @@ export interface MessagesSlice {
     }
   >;
   _flushTimer: ReturnType<typeof setTimeout> | null;
-  send: (text: string) => Promise<void>;
+  send: (
+    text: string,
+    attachmentsOverride?: ProcessedFile[],
+    actionIdOverride?: string,
+  ) => Promise<void>;
   // Заменить своё сообщение новым текстом и перезапросить ответ: история
   // чата обрезается по это сообщение, затем уходит новый prompt.
   editAndResend: (messageId: string, text: string) => Promise<void>;

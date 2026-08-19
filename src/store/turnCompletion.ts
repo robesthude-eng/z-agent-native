@@ -188,6 +188,12 @@ export function awaitTurnCompletion(
         return;
       }
       try {
+        // On the server-verdict path, healthy SSE already carries message
+        // deltas and the dedicated verdict poller owns finality. A second
+        // full-history request every three seconds adds database and JSON
+        // load without contributing any information.
+        const sseHealthy = isSseHealthyForSession(sidStr);
+        if (fromServer && sseHealthy) return;
         const msgs = await api.listMessages(sidStr);
         // REAL-TIME FIX: раньше поллер ПОЛНОСТЬЮ перезаписывал стор серверным
         // снапшотом каждые 3s — это откатывало/дёргало текст, который уже
@@ -204,7 +210,6 @@ export function awaitTurnCompletion(
         // «open» обманывал фоновый чат после переключения — стрим подписан на
         // другую сессию, события сюда не идут, а поллер молчал — текст замирал
         // до переключения обратно.
-        const sseHealthy = isSseHealthyForSession(sidStr);
         if (!sseHealthy && Array.isArray(msgs) && msgs.length > 0) {
           onSnapshot(msgs as Message[]);
         }

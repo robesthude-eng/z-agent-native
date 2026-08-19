@@ -25,6 +25,11 @@ function reply(res, status, body) {
   return true;
 }
 
+function decodePathPart(value) {
+  try { return decodeURIComponent(value); }
+  catch { throw Object.assign(new Error('Bad request'), { statusCode: 400 }); }
+}
+
 /**
  * Provider management is intentionally user-defined only.
  * Runtime protocol adapters may know how to speak OpenAI/Anthropic/Gemini,
@@ -73,7 +78,7 @@ export async function handleProviderChannels(req, res, ownerId, url) {
 
   const match = /^\/api\/provider-channels\/([^/]+)(?:\/(key|refresh|manual-models))?$/.exec(p);
   if (!match) return false;
-  const providerId = decodeURIComponent(match[1]);
+  const providerId = decodePathPart(match[1]);
   const action = match[2] || '';
 
   if (!providerExists(ownerId, providerId)) return reply(res, 404, { error: 'Unknown provider' });

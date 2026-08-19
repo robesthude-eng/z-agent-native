@@ -1,7 +1,7 @@
 /**
  * Очередь отправки: решения отдельно от компонента.
  *
- * Этап 2.4. Серверная очередь (`server/action-queue.mjs`, маршрут
+ * Этап 2.4. Серверная очередь (`server/native/store.mjs`, маршрут
  * `/api/session/:id/queue`) существует с Wave 1, но источником правды до сих
  * пор был `useState` внутри `Composer.tsx` — поэтому I-15 держался наполовину:
  * очередь переживала перезапуск сервера и не переживала закрытие вкладки.
@@ -17,6 +17,7 @@
  */
 
 import { newActionId, sessionActionPrep } from "@/lib/ids";
+import type { ProcessedFile } from "./files";
 
 /** Запись очереди в том виде, в каком её рисует композер. */
 export interface QueueEntry {
@@ -24,6 +25,8 @@ export interface QueueEntry {
    *  говорят об одном действии, и придумывать второй ключ нельзя. */
   actionId: string;
   text: string;
+  /** Snapshot of already-uploaded workspace attachments bound to this entry. */
+  attachments?: ProcessedFile[];
   /** Позицию присваивает сервер. У локальных записей её нет. */
   position: number | null;
   /** `local` — запись ещё не принята сервером: либо черновик, либо очередь
@@ -33,8 +36,20 @@ export interface QueueEntry {
 
 /** Что делать с сообщением, набранным во время работы агента. */
 export type EnqueuePlan =
-  | { kind: "server"; sessionId: string; actionId: string; text: string }
-  | { kind: "local"; actionId: string; text: string; why: LocalReason };
+  | {
+      kind: "server";
+      sessionId: string;
+      actionId: string;
+      text: string;
+      attachments: ProcessedFile[];
+    }
+  | {
+      kind: "local";
+      actionId: string;
+      text: string;
+      attachments: ProcessedFile[];
+      why: LocalReason;
+    };
 
 export type LocalReason = "flag_off" | "draft_session" | "queue_unavailable";
 
@@ -58,18 +73,22 @@ export function serverQueueEnabled(): boolean {
 export function enqueuePlan(
   text: string,
   sessionId: string | null,
-  opts: { enabled?: boolean; actionId?: string } = {},
+  opts: { enabled?: boolean; actionId?: string; attachments?: ProcessedFile[] } = {},
 ): EnqueuePlan {
   const actionId = opts.actionId ?? newActionId();
+  const attachments = (opts.attachments ?? []).map((attachment) => {
+    const { dataUrl: _dataUrl, part: _part, ...metadata } = attachment;
+    return metadata;
+  });
   const enabled = opts.enabled ?? serverQueueEnabled();
-  if (!enabled) return { kind: "local", actionId, text, why: "flag_off" };
+  if (!enabled) return { kind: "local", actionId, text, attachments, why: "flag_off" };
   // Правило «сессия настоящая» берётся у `sessionActionPrep`, а не пишется
   // заново: вторая копия того же условия разошлась бы с первой молча, и
   // разошлась бы именно на `tmp_` — то есть в новом чате.
   if (sessionId === null || sessionActionPrep(sessionId) !== "ready") {
-    return { kind: "local", actionId, text, why: "draft_session" };
+    return { kind: "local", actionId, text, attachments, why: "draft_session" };
   }
-  return { kind: "server", sessionId, actionId, text };
+  return { kind: "server", sessionId, actionId, text, attachments };
 }
 
 /**
@@ -87,6 +106,7 @@ export function fallbackToLocal(plan: EnqueuePlan): EnqueuePlan {
     kind: "local",
     actionId: plan.actionId,
     text: plan.text,
+    attachments: plan.attachments,
     why: "queue_unavailable",
   };
 }
@@ -166,9 +186,48 @@ export function parseServerQueue(body: unknown): QueueEntry[] {
     if (typeof r?.actionId !== "string" || !r.actionId) continue;
     const text = (r.payload as { text?: unknown })?.text;
     if (typeof text !== "string") continue;
+    const rawAttachments = (r.payload as { attachments?: unknown })
+      ?.attachments;
+    const attachments = Array.isArray(rawAttachments)
+      ? rawAttachments.flatMap((item): ProcessedFile[] => {
+          const attachment = item as Partial<ProcessedFile>;
+          const valid =
+            typeof attachment.name === "string" &&
+            typeof attachment.size === "number" &&
+            typeof attachment.mime === "string" &&
+            typeof attachment.ext === "string" &&
+            ["image", "pdf", "text", "zip", "binary"].includes(
+              String(attachment.kind),
+            ) &&
+            typeof attachment.workspacePath === "string" &&
+            !attachment.workspacePath.startsWith("/") &&
+            !attachment.workspacePath.split(/[\\/]/).includes("..");
+          if (!valid) return [];
+          return [
+            {
+              name: attachment.name as string,
+              size: attachment.size as number,
+              mime: attachment.mime as string,
+              ext: attachment.ext as string,
+              kind: attachment.kind as ProcessedFile["kind"],
+              workspacePath: attachment.workspacePath as string,
+              ...(typeof attachment.serverName === "string"
+                ? { serverName: attachment.serverName }
+                : {}),
+              ...(typeof attachment.agentPath === "string"
+                ? { agentPath: attachment.agentPath }
+                : {}),
+              ...(typeof attachment.entryCount === "number"
+                ? { entryCount: attachment.entryCount }
+                : {}),
+            },
+          ];
+        })
+      : [];
     out.push({
       actionId: r.actionId,
       text,
+      ...(attachments.length > 0 ? { attachments } : {}),
       position: typeof r.position === "number" ? r.position : null,
       origin: "server",
     });

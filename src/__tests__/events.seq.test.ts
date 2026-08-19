@@ -26,7 +26,7 @@ class SeqEventSource {
     this.readyState = 2;
   }
   /** Кадр с порядковым номером (id: N от прокси) или без него. */
-  frame(n: number | null, payload: Record<string, unknown> = {}) {
+  frame(n: number | string | null, payload: Record<string, unknown> = {}) {
     const ev = {
       data: JSON.stringify({ type: "message", properties: payload }),
       lastEventId: n === null ? undefined : String(n),
@@ -103,6 +103,28 @@ describe("EventStream: нумерация кадров и replay", () => {
       const next = SeqEventSource.instances.at(-1) as SeqEventSource;
       expect(next).not.toBe(es);
       expect(next.url).toContain("lastEventId=42");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("новая эпоха сервера принимает малый seq и запускает сверку истории", () => {
+    const { received, es } = connected();
+    es.frame("old-process:900");
+    es.frame("new-process:1");
+    expect(msgs(received)).toBe(2);
+    expect(reconnects(received)).toBe(1);
+  });
+
+  test("epoch id целиком передаётся при реконнекте", () => {
+    vi.useFakeTimers();
+    try {
+      const { es } = connected();
+      es.frame("process-a:42");
+      es.onerror?.();
+      vi.advanceTimersToNextTimer();
+      const next = SeqEventSource.instances.at(-1) as SeqEventSource;
+      expect(next.url).toContain("lastEventId=process-a%3A42");
     } finally {
       vi.useRealTimers();
     }

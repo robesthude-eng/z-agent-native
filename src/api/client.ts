@@ -1,4 +1,5 @@
 import { isTmpSession } from "../lib/ids";
+import { MAX_UPLOAD_BYTES, type ProcessedFile } from "./files";
 import type {
   FileNode,
   ManualModel,
@@ -82,7 +83,8 @@ async function req<T>(
 ): Promise<T> {
   // guard: обрываем запрос, если sessionID в пути уже в blacklist (и это не запрос удаления)
   const sidMatch = path.match(/\/session\/(ses_[A-Za-z0-9]+)/);
-  const deadSid = sidMatch?.[1];
+  const querySidMatch = path.match(/[?&]sessionId=(ses_[A-Za-z0-9]+)/);
+  const deadSid = sidMatch?.[1] ?? querySidMatch?.[1];
   const isDelete = init?.method === "DELETE";
   if (deadSid && __deadSessions.has(deadSid) && !isDelete) {
     throw new SessionGoneError(deadSid, "session in local dead-list");
@@ -111,17 +113,23 @@ async function req<T>(
     });
     if (!res.ok) {
       const body = await res.text().catch(() => "");
-      // 410 Gone → сессия убита на бэке. Помечаем в blacklist и бросаем
+      let parsedError: { error?: unknown; sessionId?: unknown } | null = null;
+      try {
+        parsedError = JSON.parse(body) as {
+          error?: unknown;
+          sessionId?: unknown;
+        };
+      } catch {}
+      const missingSession =
+        res.status === 410 ||
+        (res.status === 404 && parsedError?.error === "Session not found");
+      // Missing session → сессия убита на бэке. Помечаем в blacklist и бросаем
       // типизированную ошибку — sessionsSlice.select() / messagesSlice.send()
       // сами почистят стор, создадут новую сессию и повторят prompt.
-      if (res.status === 410) {
-        let sid = sidMatch?.[1];
-        if (!sid) {
-          try {
-            const j = JSON.parse(body);
-            if (typeof j.sessionId === "string") sid = j.sessionId;
-          } catch {}
-        }
+      if (missingSession) {
+        let sid = deadSid;
+        if (!sid && typeof parsedError?.sessionId === "string")
+          sid = parsedError.sessionId;
         if (sid) _markSessionDead(sid);
         throw new SessionGoneError(sid ?? "unknown", body || "session_gone");
       }
@@ -207,7 +215,7 @@ export interface UserPrefs {
   chatFolderAssignments?: PrefEnvelope<Record<string, string>>;
 }
 
-// UX-fix: локальный чёрный список sessionID, для которых сервер уже вернул 410.
+// UX-fix: локальный чёрный список sessionID, отсутствие которых подтвердил сервер.
 // Дальнейшие запросы к таким ID мы обрываем на клиенте, не тратя сеть.
 const __deadSessions = new Set<string>();
 function _markSessionDead(sid: string) {
@@ -274,10 +282,15 @@ export const api = {
   listQueue: (sessionId: string) =>
     req<{ queue: unknown[] }>(`/session/${sessionId}/queue`),
 
-  enqueueAction: (sessionId: string, actionId: string, text: string) =>
+  enqueueAction: (
+    sessionId: string,
+    actionId: string,
+    text: string,
+    attachments: ProcessedFile[] = [],
+  ) =>
     req<{ outcome: string }>(`/session/${sessionId}/queue`, {
       method: "POST",
-      body: JSON.stringify({ actionId, payload: { text } }),
+      body: JSON.stringify({ actionId, payload: { text, attachments } }),
     }),
 
   dequeueAction: (sessionId: string, actionId: string) =>
@@ -366,16 +379,6 @@ export const api = {
       PROMPT_REQUEST_TIMEOUT_MS,
     ),
 
-  respondPermission: (
-    id: string,
-    permissionId: string,
-    response: "once" | "always" | "reject",
-  ) =>
-    req<void>(`/session/${id}/permissions/${permissionId}`, {
-      method: "POST",
-      body: JSON.stringify({ response }),
-    }),
-
   // Native Question API продолжает тот же agent turn. Ответ не создаёт
   // нового user-message и не вызывает abort текущего tool-call.
   listPendingQuestions: (id: string) =>
@@ -462,25 +465,43 @@ export const api = {
     ),
 
   uploadFolder: async (files: { path: string; file: File }[], sessionId: string) => {
+    const oversized = files.find(({ file }) => file.size > MAX_UPLOAD_BYTES);
+    if (oversized) {
+      throw new Error(
+        `${oversized.path}: file exceeds the ${Math.round(MAX_UPLOAD_BYTES / 1024 / 1024)} MB upload limit`,
+      );
+    }
+    const totalBytes = files.reduce((sum, { file }) => sum + file.size, 0);
+    const maxFolderBytes = 250 * 1024 * 1024;
+    if (totalBytes > maxFolderBytes) {
+      throw new Error("Folder upload exceeds the 250 MB batch limit");
+    }
     const form = new FormData();
     for (const { path, file } of files) {
       form.append(path, file);
     }
-    const res = await fetch(`${config.baseUrl}/workspace/upload-folder?sessionId=${encodeURIComponent(sessionId)}`, {
-      method: "POST",
-      credentials: "include",
-      headers: csrfHeaders(),
-      body: form,
-    });
-    if (!res.ok) {
-      const body = await res.text().catch(() => "");
-      throw new Error(`${res.status} ${res.statusText} ${body}`.trim());
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15 * 60_000);
+    try {
+      const res = await fetch(`${config.baseUrl}/workspace/upload-folder?sessionId=${encodeURIComponent(sessionId)}`, {
+        method: "POST",
+        credentials: "include",
+        headers: csrfHeaders(),
+        body: form,
+        signal: controller.signal,
+      });
+      if (!res.ok) {
+        const body = await res.text().catch(() => "");
+        throw new Error(`${res.status} ${res.statusText} ${body}`.trim());
+      }
+      return jsonOrThrow<{
+        ok: boolean;
+        written: number;
+        errors?: string[];
+      }>(res);
+    } finally {
+      clearTimeout(timeout);
     }
-    return jsonOrThrow<{
-      ok: boolean;
-      written: number;
-      errors?: string[];
-    }>(res);
   },
 
   uploadFile: (
@@ -506,6 +527,7 @@ export const api = {
         : base;
       const xhr = new XMLHttpRequest();
       xhr.open("POST", url);
+      xhr.timeout = 15 * 60_000;
       xhr.withCredentials = true;
       for (const [name, value] of Object.entries(csrfHeaders())) {
         xhr.setRequestHeader(name, value);
@@ -533,6 +555,8 @@ export const api = {
         }
       };
       xhr.onerror = () => reject(new Error("Upload failed — network error"));
+      xhr.ontimeout = () => reject(new Error("Upload timed out after 15 minutes"));
+      xhr.onabort = () => reject(new Error("Upload cancelled"));
       const form = new FormData();
       form.append("file", file, file.name);
       xhr.send(form);
