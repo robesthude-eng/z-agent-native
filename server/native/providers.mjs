@@ -155,12 +155,24 @@ function classifyWatchdogAbort(err, watchdog, outerSignal) {
   return err;
 }
 
+function parseRetryAfterMs(res) {
+  const raw = res?.headers?.get?.('retry-after');
+  if (raw == null || String(raw).trim() === '') return null;
+  const seconds = Number(raw);
+  if (Number.isFinite(seconds) && seconds >= 0) return Math.round(seconds * 1000);
+  const when = Date.parse(raw);
+  if (Number.isFinite(when)) return Math.max(0, when - Date.now());
+  return null;
+}
+
 function providerError(res, text, body = null) {
   const message = body?.error?.message || body?.message || String(text || '').slice(0, 500) || `${res.status} ${res.statusText}`;
   const err = new Error(message);
   err.statusCode = res.status;
   err.body = body;
   err.providerResponse = true;
+  const retryAfterMs = parseRetryAfterMs(res);
+  if (retryAfterMs != null) err.retryAfterMs = retryAfterMs;
   return err;
 }
 
@@ -168,15 +180,44 @@ function transientStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
+const RATE_LIMIT_RE = /rate limit|too many requests|try again later|temporarily overloaded|overloaded|error from provider \(console\)/i;
+const RATE_LIMIT_BACKOFF_MS = [5_000, 15_000, 30_000, 45_000, 60_000, 60_000];
+const RATE_LIMIT_EXTRA_RETRIES = 4;
+const RATE_LIMIT_MAX_WAIT_MS = 60_000;
+
+export function isRateLimitProviderError(err) {
+  if (Number(err?.statusCode) === 429) return true;
+  const message = `${err?.code || ''} ${err?.message || ''} ${JSON.stringify(err?.body || '')}`;
+  return RATE_LIMIT_RE.test(message);
+}
+
 function isTransientProviderError(err, outerSignal) {
   // User-cancelled turns must stay cancelled. A timer abort (no outer abort)
   // is a dropped socket and is worth another try.
   if (outerSignal?.aborted) return false;
+  if (isRateLimitProviderError(err)) return true;
   if (transientStatus(Number(err?.statusCode))) return true;
   if (Number(err?.statusCode) > 0) return false;
   const message = `${err?.code || ''} ${err?.cause?.code || ''} ${err?.message || String(err || '')}`;
   return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|UND_ERR|socket hang up|network error|fetch failed|terminated|other side closed/i.test(message)
     || err?.name === 'AbortError';
+}
+
+function retrySleepMs(err, attempt) {
+  if (isRateLimitProviderError(err)) {
+    const hinted = Number(err?.retryAfterMs);
+    const fallback = RATE_LIMIT_BACKOFF_MS[Math.min(Math.max(0, attempt), RATE_LIMIT_BACKOFF_MS.length - 1)];
+    const wait = Number.isFinite(hinted) && hinted >= 0 ? hinted : fallback;
+    return Math.min(RATE_LIMIT_MAX_WAIT_MS, wait);
+  }
+  return Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150));
+}
+
+function grantRateLimitRetry(err, state) {
+  if (!isRateLimitProviderError(err) || state.rateLimitExtra <= 0) return false;
+  state.rateLimitExtra -= 1;
+  if (state.attemptsLeft < 1) state.attemptsLeft = 1;
+  return true;
 }
 
 function sleep(ms, signal) {
@@ -207,10 +248,10 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
   let lastError = null;
   let current = { url: target.url, pinned: target.pinned };
   let fallback = target.fallback || null;
-  let attemptsLeft = retries + 1;
+  const state = { attemptsLeft: retries + 1, rateLimitExtra: RATE_LIMIT_EXTRA_RETRIES };
   let attempt = 0;
-  while (attemptsLeft > 0) {
-    attemptsLeft -= 1;
+  while (state.attemptsLeft > 0) {
+    state.attemptsLeft -= 1;
     const t = timeoutSignal(reqTimeout, outerSignal);
     try {
       const res = await providerFetch(current, { ...init, signal: t.signal });
@@ -226,15 +267,15 @@ async function fetchJson(target, init, outerSignal, { retries = 2 } = {}) {
       if (fallback) {
         current = fallback;
         fallback = null;
-        if (attemptsLeft < 1) attemptsLeft = 1;
-      } else if (attemptsLeft < 1) {
+        if (state.attemptsLeft < 1) state.attemptsLeft = 1;
+      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state)) {
         throw lastError;
       }
     } finally {
       t.cleanup();
     }
-    if (attemptsLeft > 0) {
-      await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+    if (state.attemptsLeft > 0) {
+      await sleep(retrySleepMs(lastError, attempt), outerSignal);
       attempt += 1;
     }
   }
@@ -245,10 +286,10 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
   let lastError = null;
   let current = { url: target.url, pinned: target.pinned };
   let fallback = target.fallback || null;
-  let attemptsLeft = retries + 1;
+  const state = { attemptsLeft: retries + 1, rateLimitExtra: RATE_LIMIT_EXTRA_RETRIES };
   let attempt = 0;
-  while (attemptsLeft > 0) {
-    attemptsLeft -= 1;
+  while (state.attemptsLeft > 0) {
+    state.attemptsLeft -= 1;
     let received = 0;
     const t = idleTimeoutSignal({
       idleMs: PROVIDER_STREAM_IDLE_MS,
@@ -308,15 +349,15 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
       if (fallback) {
         current = fallback;
         fallback = null;
-        if (attemptsLeft < 1) attemptsLeft = 1;
-      } else if (attemptsLeft < 1) {
+        if (state.attemptsLeft < 1) state.attemptsLeft = 1;
+      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state)) {
         throw lastError;
       }
     } finally {
       t.cleanup();
     }
-    if (attemptsLeft > 0) {
-      await sleep(Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150)), outerSignal);
+    if (state.attemptsLeft > 0) {
+      await sleep(retrySleepMs(lastError, attempt), outerSignal);
       attempt += 1;
     }
   }
