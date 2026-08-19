@@ -12,6 +12,11 @@ try { fs.chmodSync(WORKSPACES_DIR, typeof process.getuid === 'function' && proce
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
   PRAGMA journal_mode=WAL;
+  -- Three modules open their own DatabaseSync handle on this same file
+  -- (store, provider-configs, cluster). Without a busy timeout the loser of a
+  -- write race gets an immediate SQLITE_BUSY instead of waiting for the current
+  -- writer, which surfaced as random "database is locked" 500s under load.
+  PRAGMA busy_timeout=5000;
   PRAGMA foreign_keys=ON;
   CREATE TABLE IF NOT EXISTS users (
     email TEXT PRIMARY KEY,
@@ -154,6 +159,16 @@ if (!chatColumns.some((column) => column.name === 'sandbox_uid')) {
   db.exec('ALTER TABLE chats ADD COLUMN sandbox_uid INTEGER');
 }
 
+// The CSRF token used to live only in a cookie, so the check could not tell a
+// token this server issued from one that anything able to write a cookie for
+// the site had planted. Store it next to the session it belongs to. NULL means
+// "issued before this migration": those sessions keep working on the old
+// double-submit comparison instead of being logged out on deploy.
+const authSessionColumns = db.prepare('PRAGMA table_info(auth_sessions)').all();
+if (!authSessionColumns.some((column) => column.name === 'csrf')) {
+  db.exec('ALTER TABLE auth_sessions ADD COLUMN csrf TEXT');
+}
+
 function bootstrapSandboxUids() {
   let next = Number(db.prepare('SELECT MAX(sandbox_uid) max_uid FROM chats').get()?.max_uid || 19999) + 1;
   next = Math.max(20000, next);
@@ -210,11 +225,11 @@ export function userCount() { return db.prepare('SELECT COUNT(*) c FROM users').
 export function updatePassword(email, passwordHash) {
   db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(passwordHash, email);
 }
-export function createAuthSession(token, email) {
-  db.prepare('INSERT INTO auth_sessions(token,email,created_at) VALUES(?,?,?)').run(token, email, Date.now());
+export function createAuthSession(token, email, csrf = null) {
+  db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(token, email, Date.now(), csrf || null);
 }
 export function getAuthSession(token) {
-  return db.prepare('SELECT token,email,created_at FROM auth_sessions WHERE token=?').get(token) || null;
+  return db.prepare('SELECT token,email,created_at,csrf FROM auth_sessions WHERE token=?').get(token) || null;
 }
 export function deleteAuthSession(token) { db.prepare('DELETE FROM auth_sessions WHERE token=?').run(token); }
 export function deleteOtherAuthSessions(email, keepToken) {

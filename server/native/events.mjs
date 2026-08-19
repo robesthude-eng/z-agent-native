@@ -11,10 +11,29 @@ const subscribers = new Map();
 const EVENT_EPOCH = randomUUID();
 let clusterStarted = false;
 
+// Rings are retained so a reconnecting browser can replay what it missed. With
+// no expiry the map only ever grew: one entry per session the process had ever
+// touched, each holding up to EVENT_RING_SIZE frames, for the lifetime of the
+// process. Only rings with no live subscriber and no traffic for the idle TTL
+// are dropped, so an active or briefly disconnected stream is never affected.
+const RING_IDLE_TTL_MS = 30 * 60 * 1000;
+const RING_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
+let lastRingSweep = 0;
+
+function sweepIdleRings(now) {
+  if (now - lastRingSweep < RING_SWEEP_INTERVAL_MS) return;
+  lastRingSweep = now;
+  for (const [sessionId, state] of rings) {
+    if (subscribers.get(sessionId)?.size) continue;
+    if (now - (state.touchedAt || 0) < RING_IDLE_TTL_MS) continue;
+    rings.delete(sessionId);
+  }
+}
+
 function stateFor(sessionId) {
   let state = rings.get(sessionId);
   if (!state) {
-    state = { seq: 0, frames: [] };
+    state = { seq: 0, frames: [], touchedAt: Date.now() };
     rings.set(sessionId, state);
   }
   return state;
@@ -38,6 +57,9 @@ function frameText(frame) {
 // snapshot belongs to the replica that is actually running the turn.
 function deliver(sessionId, event) {
   const state = stateFor(sessionId);
+  const now = Date.now();
+  state.touchedAt = now;
+  sweepIdleRings(now);
   state.seq += 1;
   const frame = { id: `${EVENT_EPOCH}:${state.seq}`, seq: state.seq, event };
   state.frames.push(frame);
@@ -73,6 +95,7 @@ export function emit(sessionId, type, properties = {}) {
 export function subscribe(sessionId, onFrame, lastEventId = 0) {
   ensureCluster();
   const state = stateFor(sessionId);
+  state.touchedAt = Date.now();
   const raw = String(lastEventId ?? '');
   const epochSeparator = raw.lastIndexOf(':');
   const suppliedEpoch = epochSeparator > 0 ? raw.slice(0, epochSeparator) : EVENT_EPOCH;
@@ -170,4 +193,5 @@ export function clearSessionEvents(sessionId) {
 export function resetEventsForTests() {
   rings.clear();
   subscribers.clear();
+  lastRingSweep = 0;
 }

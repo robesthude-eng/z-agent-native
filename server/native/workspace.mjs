@@ -207,6 +207,12 @@ export async function handleWorkspace(req, res, sessionId, url) {
     if (path.resolve(full) === path.resolve(root)) {
       return sendJson(res, 400, { error: 'Корень workspace удалить нельзя' });
     }
+    // .agent-home is hidden from the tree, so the UI can never offer it, but the
+    // endpoint took any path. Deleting it wipes the sandbox HOME: provisioned
+    // toolchains, caches and the git config the runtime writes for the session.
+    if (path.resolve(full) === path.resolve(root, '.agent-home')) {
+      return sendJson(res, 400, { error: 'Служебный каталог .agent-home удалить нельзя' });
+    }
     fs.rmSync(full, { recursive: true, force: true });
     emit(sessionId, 'file.edited', { paths: [p] });
     return sendJson(res, 200, { ok: true, path: p });

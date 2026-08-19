@@ -6,6 +6,27 @@ import { safeWorkspacePath } from './security.mjs';
 const MAX_DIFF_CHARS = 240_000;
 const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;
 
+// git inherits whatever it is given, and the server process environment holds
+// provider API keys, the master-key override and deploy secrets. A hook, an
+// alias or a credential helper picked up from the workspace would see all of
+// it. Pass only what git actually needs, and disable the config sources and
+// prompts that could reach outside the repository.
+const GIT_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR'];
+
+function defaultGitEnv() {
+  const env = {
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_TERMINAL_PROMPT: '0',
+    GIT_OPTIONAL_LOCKS: '0',
+  };
+  for (const key of GIT_ENV_ALLOWLIST) {
+    const value = process.env[key];
+    if (typeof value === 'string' && value) env[key] = value;
+  }
+  if (!env.PATH) env.PATH = '/usr/local/bin:/usr/bin:/bin';
+  return env;
+}
+
 function gitResult(root, args, options = {}) {
   const result = spawnSync(options.spawnFile || 'git', [
     ...(options.spawnArgsPrefix || []),
@@ -15,7 +36,7 @@ function gitResult(root, args, options = {}) {
     encoding: 'utf8',
     timeout: Number(options.timeoutMs) || 8_000,
     ...(options.spawnOptions || {}),
-    env: options.env || process.env,
+    env: options.env || defaultGitEnv(),
     maxBuffer: 4 * 1024 * 1024,
   });
   if (result.error) throw result.error;

@@ -11,6 +11,14 @@ const CSRF_COOKIE = 'z_agent_csrf';
 function b64url(buffer) { return Buffer.from(buffer).toString('base64url'); }
 function unb64(value) { return Buffer.from(value, 'base64url'); }
 
+// Comparing tokens with === leaks their prefix through response timing.
+function safeEqual(a, b) {
+  const left = Buffer.from(String(a ?? ''), 'utf8');
+  const right = Buffer.from(String(b ?? ''), 'utf8');
+  if (left.length === 0 || left.length !== right.length) return false;
+  return crypto.timingSafeEqual(left, right);
+}
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
   const key = crypto.scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 });
@@ -51,7 +59,7 @@ function cookie(name, value, { httpOnly = true, maxAge = SESSION_TTL_MS } = {}) 
 export function issueLogin(email) {
   const token = crypto.randomBytes(32).toString('hex');
   const csrf = crypto.randomBytes(24).toString('hex');
-  createAuthSession(token, email);
+  createAuthSession(token, email, csrf);
   return {
     token,
     csrf,
@@ -81,7 +89,7 @@ export function authFromRequest(req) {
   const session = getAuthSession(token);
   if (!session || Date.now() - session.created_at > SESSION_TTL_MS) return null;
   const user = getUser(session.email);
-  return user ? { user, token } : null;
+  return user ? { user, token, session } : null;
 }
 
 export function requireAuth(req, res) {
@@ -93,13 +101,20 @@ export function requireAuth(req, res) {
   return null;
 }
 
-export function checkCsrf(req, res) {
+export function checkCsrf(req, res, auth = null) {
   if (['GET', 'HEAD', 'OPTIONS'].includes(req.method || 'GET')) return true;
   const url = String(req.url || '');
   if (/\/api\/auth\/(login|register)$/.test(url.split('?')[0])) return true;
   const cookies = parseCookies(req);
   const header = req.headers['x-csrf-token'];
-  const ok = typeof header === 'string' && header.length >= 16 && cookies[CSRF_COOKIE] === header;
+  let ok = typeof header === 'string' && header.length >= 16 && safeEqual(cookies[CSRF_COOKIE], header);
+  // Double submit on its own only proves the caller could write a cookie for
+  // this site — a sibling subdomain, or XSS on one, can do exactly that, and
+  // the pair was never tied to the logged-in session. Match the header against
+  // the token stored on the session row too. Sessions created before that
+  // column existed have no stored token and keep the old behaviour.
+  const issued = auth?.session?.csrf;
+  if (ok && typeof issued === 'string' && issued) ok = safeEqual(issued, header);
   if (ok) return true;
   const body = JSON.stringify({ error: 'CSRF validation failed' });
   res.writeHead(403, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(body) });

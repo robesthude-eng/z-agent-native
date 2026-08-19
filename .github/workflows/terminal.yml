@@ -24,6 +24,12 @@ jobs:
     name: Execute on server
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    # This workflow is a remote root shell on production. workflow_dispatch is
+    # available to anyone with write access, so restrict it to the repository
+    # owner and route it through an environment that can require a manual
+    # approval before the SSH key is ever exposed to the job.
+    if: github.actor == github.repository_owner
+    environment: production
 
     steps:
       - name: Setup SSH

@@ -32,8 +32,27 @@ function rootSandboxAvailable() {
   return rootSandboxProbe;
 }
 
+// Read the environment as well as the cached config constant so a test (or an
+// operator using a process manager that injects late) can still flip the flag.
+function unisolatedShellRequested() {
+  return ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
+}
+
+// The development fallback runs the agent's shell as the server user. When the
+// server user is root that is not "weaker isolation", it is none at all: the
+// model gets read/write access to data/master.key, the SQLite database and
+// every other session's workspace, plus the ability to re-enter the container's
+// capability set. Refuse that combination unless the operator opts in a second
+// time, so copying Z_AGENT_ALLOW_UNISOLATED_SHELL=1 out of a laptop .env into
+// the container cannot silently disable the sandbox.
+function unisolatedShellAllowed() {
+  if (!unisolatedShellRequested()) return false;
+  if (!isRootRuntime()) return true;
+  return process.env.Z_AGENT_ALLOW_ROOT_SHELL === '1';
+}
+
 export function shellSandboxAvailable() {
-  return rootSandboxAvailable() || ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
+  return rootSandboxAvailable() || unisolatedShellAllowed();
 }
 
 export function sandboxIdentity(sessionId) {
@@ -42,7 +61,10 @@ export function sandboxIdentity(sessionId) {
     if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error(`No sandbox identity for session ${sessionId}`);
     return { uid, gid: uid, isolated: true };
   }
-  if (ALLOW_UNISOLATED_SHELL || process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') return { isolated: false };
+  if (unisolatedShellAllowed()) return { isolated: false };
+  if (isRootRuntime() && unisolatedShellRequested()) {
+    throw new Error('Refusing to run the agent shell as root: setpriv-based isolation is unavailable and Z_AGENT_ALLOW_UNISOLATED_SHELL only covers non-root runtimes. Install util-linux (setpriv) in the image, run the server as a non-root user, or set Z_AGENT_ALLOW_ROOT_SHELL=1 to knowingly accept full host access for this process.');
+  }
   throw new Error('Shell sandbox is unavailable. Run Z Agent in Docker, or explicitly set Z_AGENT_ALLOW_UNISOLATED_SHELL=1 for an unsafe single-user development fallback.');
 }
 
@@ -137,4 +159,9 @@ export function assertRuntimeSecretsPrivate() {
   if (!isRootRuntime()) return;
   try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
   try { fs.chmodSync(WORKSPACES_DIR, 0o711); } catch {}
+  // Loud, once, at boot: this is the one configuration where the runtime hands
+  // the model the same privileges as the server itself.
+  if (unisolatedShellRequested() && !rootSandboxAvailable() && process.env.Z_AGENT_ALLOW_ROOT_SHELL === '1') {
+    console.warn('[z-agent] SECURITY: agent shell runs as root without setpriv isolation (Z_AGENT_ALLOW_ROOT_SHELL=1). Every session can read data/master.key and all other workspaces.');
+  }
 }

@@ -31,8 +31,13 @@ function writeJsonAtomic(file, value) {
   fs.renameSync(tmp, file);
 }
 
-function walkFingerprint(root, current, rows, counter) {
-  if (counter.count >= MAX_WALK_FILES) return;
+// The file counter alone does not bound recursion: a deep chain of directories
+// holding few files each (a symlink loop the lstat check does not follow, or a
+// generated tree) could exhaust the stack before the counter ever tripped.
+const MAX_WALK_DEPTH = 24;
+
+function walkFingerprint(root, current, rows, counter, depth = 0) {
+  if (counter.count >= MAX_WALK_FILES || depth > MAX_WALK_DEPTH) return;
   let entries = [];
   try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
   entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -45,7 +50,7 @@ function walkFingerprint(root, current, rows, counter) {
     try { stat = fs.lstatSync(full); } catch { continue; }
     counter.count += 1;
     rows.push(`${entry.isDirectory() ? 'd' : entry.isSymbolicLink() ? 'l' : 'f'}\0${relative}\0${stat.size}\0${Math.floor(stat.mtimeMs)}`);
-    if (entry.isDirectory()) walkFingerprint(root, full, rows, counter);
+    if (entry.isDirectory()) walkFingerprint(root, full, rows, counter, depth + 1);
   }
 }
 

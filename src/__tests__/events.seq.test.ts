@@ -86,8 +86,8 @@ describe("EventStream: нумерация кадров и replay", () => {
 
   test("сброс счётчика сервера (откат >= окна) принимается, история дотягивается", () => {
     const { received, es } = connected();
-    es.frame(1000);
-    es.frame(3); // 1000-3 >= 500 (RING_REPLAY_WINDOW) — это рестарт, не replay
+    es.frame(2000);
+    es.frame(3); // 2000-3 >= 1000 (RING_REPLAY_WINDOW = EVENT_RING_SIZE) — рестарт, не replay
     expect(msgs(received)).toBe(2);
     expect(reconnects(received)).toBe(1);
   });

@@ -83,9 +83,9 @@ export class EventStream {
   private lastSeq: number | null = null;
   private lastEpoch: string | null = null;
   private lastEventId: string | null = null;
-  // Должно соответствовать SSE_RING_SIZE на сервере: повтор старее
+  // Должно соответствовать EVENT_RING_SIZE на сервере: повтор старее
   // этого окна — не replay, а сброс счётчика (рестарт сервера).
-  private static readonly RING_REPLAY_WINDOW = 500;
+  private static readonly RING_REPLAY_WINDOW = 1000;
   private namedTypes: readonly string[];
   status: StreamStatus = "connecting";
 
