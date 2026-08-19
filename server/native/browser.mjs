@@ -1,4 +1,5 @@
 import { assertSafeExternalUrl } from './security.mjs';
+import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 
 const MAX_SNAPSHOT_CHARS = 40_000;
 const MAX_CONSOLE_ENTRIES = 200;
@@ -93,9 +94,38 @@ async function ensureSession(playwright, sessionId) {
     acceptDownloads: false,
     bypassCSP: false,
     javaScriptEnabled: true,
+    // Service workers can otherwise satisfy/fan out requests outside Playwright
+    // routing, bypassing the per-request network policy below.
+    serviceWorkers: 'block',
   });
+  const state = { browser, context, page: null, console: [], lastUsed: Date.now() };
+  await context.route('**/*', async (route) => {
+    const request = route.request();
+    const target = request.url();
+    try {
+      const parsed = new URL(target);
+      if (parsed.protocol === 'http:' || parsed.protocol === 'https:') {
+        assertAgentNetworkUrl(target, { tool: 'browser' });
+        // Browser sockets cannot use the native pinned-DNS transport, so each
+        // request is revalidated immediately before Chromium continues it.
+        // Strict deployments should combine allowlisting with host egress rules.
+        await assertSafeExternalUrl(target);
+      }
+      await route.continue();
+    } catch (error) {
+      state.console.push(`[blocked-request] ${request.method()} ${target.slice(0, 200)} :: ${String(error?.message || error).slice(0, 300)}`);
+      if (state.console.length > MAX_CONSOLE_ENTRIES) state.console.shift();
+      await route.abort('blockedbyclient').catch(() => {});
+    }
+  });
+  // WebSockets are not covered by ordinary request routing and are not needed
+  // for the agent's verification browser. Refuse them instead of leaving a
+  // second ungoverned egress/SSRF channel.
+  if (typeof context.routeWebSocket === 'function') {
+    await context.routeWebSocket('**/*', (socket) => socket.close());
+  }
   const page = await context.newPage();
-  const state = { browser, context, page, console: [], lastUsed: Date.now() };
+  state.page = page;
   const record = (entry) => {
     state.console.push(entry);
     if (state.console.length > MAX_CONSOLE_ENTRIES) state.console.shift();
@@ -182,6 +212,13 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
     };
   }
 
+  // Fail closed on destination policy before loading/launching Chromium.
+  if (action === 'open') {
+    const target = String(input.url || '').trim();
+    if (!target) throw new Error('open requires url');
+    assertAgentNetworkUrl(target, { tool: 'browser' });
+  }
+
   const playwright = await loadPlaywright();
   if (!playwright) throw new Error(browserUnavailableMessage());
 
@@ -200,6 +237,7 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
     // Same SSRF policy as webfetch: no loopback, no private ranges, no
     // non-http schemes. Navigation is still a live fetch, so this check is a
     // policy gate rather than a pinned connection.
+    assertAgentNetworkUrl(target, { tool: 'browser' });
     await assertSafeExternalUrl(target);
     const response = await page.goto(target, { timeout, waitUntil: 'domcontentloaded' });
     extra.push(`http status: ${response ? response.status() : 'unknown'}`);

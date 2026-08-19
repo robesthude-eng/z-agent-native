@@ -8,7 +8,7 @@ import { GIT_ACTIONS, buildGitArgs, executeGitTool, gitActionMutates } from '../
 import { buildTestCommand, formatTestReport, guessFramework, parseTestOutput } from '../server/native/test-runner.mjs';
 import { formatDiagnosticsReport, parseDiagnostics, planDiagnostics } from '../server/native/diagnostics.mjs';
 import { BROWSER_ACTIONS, browserUnavailableMessage, executeBrowserTool } from '../server/native/browser.mjs';
-import { getSubagentProfile, subagentKinds, subagentWrites } from '../server/native/subagents.mjs';
+import { getSubagentProfile, subagentKinds, subagentToolNames, subagentWrites } from '../server/native/subagents.mjs';
 import { TOOL_DEFINITIONS, availableToolDefinitions, mutatesWorkspace, requiresPermission } from '../server/native/tools.mjs';
 
 function tempRoot() {
@@ -260,6 +260,16 @@ test('implement is the only writing subagent profile', () => {
   }
 });
 
+test('parent and subagent prompts treat repository instructions as untrusted data', () => {
+  const parent = source('server/system-instruction.txt');
+  assert.match(parent, /prompt-injection|prompt injection/i);
+  assert.match(parent, /untrusted data/i);
+  assert.match(parent, /Only system\/runtime policy and the user's actual request/i);
+  for (const kind of subagentKinds()) {
+    assert.match(getSubagentProfile(kind).system, /untrusted data/i, `${kind} must inherit prompt-injection guidance`);
+  }
+});
+
 test('read-only subagent prompts forbid modification, implement demands verification', () => {
   for (const kind of ['explore', 'debug', 'review']) {
     assert.match(getSubagentProfile(kind).system, /Do not modify files/);
@@ -311,27 +321,43 @@ test('without a shell sandbox no process-spawning tool is advertised', () => {
   assert.ok(exposed.length === spawning.length || exposed.length === 0, `partial exposure: ${exposed.join(', ')}`);
 });
 
+test('websearch uses the DNS-pinned external transport rather than ambient fetch', () => {
+  const tools = source('server/native/tools.mjs');
+  const block = tools.slice(tools.indexOf("if (tool === 'websearch')"), tools.indexOf("if (tool === 'webfetch')"));
+  assert.match(block, /safeExternalRequest/);
+  assert.doesNotMatch(block, /await fetch\(/);
+});
+
+test('browser applies agent network policy to every routed request and blocks service-worker/websocket bypasses', () => {
+  const browser = source('server/native/browser.mjs');
+  assert.match(browser, /context\.route\('\*\*\/\*'/);
+  assert.match(browser, /assertAgentNetworkUrl\(target/);
+  assert.match(browser, /assertSafeExternalUrl\(target/);
+  assert.match(browser, /serviceWorkers: 'block'/);
+  assert.match(browser, /routeWebSocket/);
+});
+
 /* --------------------------- subagent wiring ---------------------------- */
 
-test('the writer subagent allowlist grants verification but not delegation', () => {
-  const agent = source('server/native/agent.mjs');
-  const block = agent.match(/const SUBAGENT_WRITER_TOOL_NAMES = \[[\s\S]*?\];/);
-  assert.ok(block, 'writer allowlist must exist');
+test('the writer subagent capability registry grants verification but not delegation', () => {
+  const writer = subagentToolNames('implement');
   for (const name of ['write', 'edit', 'bash', 'git', 'run_tests', 'diagnostics']) {
-    assert.ok(block[0].includes(`'${name}'`), `${name} must be delegable`);
+    assert.ok(writer.includes(name), `${name} must be delegable`);
   }
-  assert.ok(!block[0].includes("'task'"), 'subagents must not recursively delegate');
-  assert.ok(!block[0].includes("'question'"), 'subagents cannot reach the user');
+  assert.ok(!writer.includes('task'), 'subagents must not recursively delegate');
+  assert.ok(!writer.includes('question'), 'subagents cannot reach the user');
 });
 
 test('a writer subagent inherits the parent session sandbox and reports mutations', () => {
+  const runner = source('server/native/subagent-runner.mjs');
   const agent = source('server/native/agent.mjs');
-  assert.match(agent, /subagentWrites\(profile\.name\) \? \{ workspace, sessionId, signal \}/);
-  assert.match(agent, /mutatedPaths: subagent\.mutatedPaths \|\| \[\]/);
-  assert.match(agent, /runSubagent\([^)]*runtime\.projectContext, sessionId\)/);
+  assert.match(runner, /subagentWrites\(profile\.name\) \? \{ workspace, sessionId, signal \}/);
+  assert.match(runner, /mutatedPaths: \[\.\.\.mutatedPaths\]/);
+  assert.match(agent, /runSubagent\(\{[\s\S]*projectContext: runtime\.projectContext,[\s\S]*sessionId/);
 });
 
-test('subagent tools are resolved against sandbox availability, not a static list', () => {
-  const agent = source('server/native/agent.mjs');
-  assert.match(agent, /function subagentToolsFor\(profile\)[\s\S]*availableToolDefinitions\(\)/);
+test('subagent tools are resolved against sandbox availability, not a static advertised list', () => {
+  const runner = source('server/native/subagent-runner.mjs');
+  assert.match(runner, /function toolsFor\(profile\)[\s\S]*availableToolDefinitions\(\)/);
+  assert.match(runner, /subagentToolNames\(profile\?\.name\)/);
 });

@@ -64,7 +64,7 @@ No question answer is converted into a synthetic user turn. Tool output is never
 
 ## Context manager
 
-The context manager runs on every model step, including nested read-only subagents. It uses a deterministic character budget as a provider-neutral safety bound and applies two layers of compaction:
+The context manager runs on every model step, including nested subagents with profile-specific capabilities. It uses a deterministic character budget as a provider-neutral safety bound and applies two layers of compaction:
 
 - individual tool observations are clipped to a configurable maximum while preserving useful head/tail evidence;
 - oldest frames are dropped when the total budget is exceeded, while matching assistant tool calls and retained tool results stay coherent.
@@ -87,6 +87,7 @@ SSE is used for deterministic session events such as:
 - `question.asked` / `question.replied`
 - `file.edited`
 - `file.watcher.updated`
+- `turn.telemetry` (completed-turn counters/timings; no prompt/tool output bodies)
 
 Each session has an in-memory replay ring. Event IDs contain a process epoch and
 a per-session sequence, so a reconnect after server restart cannot discard new
@@ -98,6 +99,12 @@ from REST/SQLite after a restart.
 Every conversation owns one `workspaces/<session-id>/` directory. In the supplied production container every chat receives a unique monotonically allocated Unix UID. Arbitrary external processes (`bash`, `git apply`, terminal, workspace Git operations and automatic result snapshots) run under that UID with cleared supplementary groups and a minimal environment. Runtime data and sibling workspaces are not traversable by tool processes.
 
 First-party file tools still execute in the trusted runtime, but every path is resolved through the workspace boundary and symlink/traversal checks. Repository traversal tools skip heavy generated/vendor directories such as `.git`, `node_modules`, build outputs and caches. The `read` tool reads numbered line windows so large text files can be inspected without loading the entire file into memory/context.
+
+Agent execution has a second, model-specific defense-in-depth boundary in `workspace-policy.mjs`. The default shell `guarded` policy rejects direct network clients and direct references to common credential files; `tool-only` additionally rejects package-manager and remote-Git network operations. Sensitive workspace files are excluded from agent `read`/`grep` by default. Separately, `Z_AGENT_NETWORK_POLICY=allowlist|off` can constrain model-selected `webfetch`, `websearch` and browser destinations. Browser contexts block service workers/WebSockets and revalidate every HTTP(S) request instead of trusting only the initial navigation. These are application-layer guards, not a firewall: deployments needing a hard egress boundary must enforce it below the process.
+
+## Turn telemetry
+
+`turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records for operator diagnosis.
 
 ## Provider layer
 
@@ -111,4 +118,13 @@ Provider adapters normalize text, tool calls, usage and finish reasons into the 
 
 ## Specialized subagents
 
-`task` creates a nested model loop with a deliberately restricted tool set (`read`, `list`, `glob`, `grep`). The child cannot mutate the workspace, use the network, or ask the user. Its context is independently bounded, and it is instructed to return a concise evidence-based report with concrete file/line references to the parent turn.
+`task` creates a nested model loop with a profile-specific tool set. `explore`, `debug`, and `review` are read-only and cannot use shell/network tools or ask the user. `implement` is a scoped writer: it may edit the same workspace through the normal sandboxed mutation tools and is required to verify the resulting change. No subagent may recursively delegate or ask the user. Child context is independently bounded.
+
+<!-- BEGIN GENERATED SUBAGENT CAPABILITIES -->
+| Profile | Writes workspace | Max steps | Tools |
+| --- | --- | ---: | --- |
+| `explore` | no | 12 | `repo_map`, `read`, `list`, `glob`, `grep` |
+| `debug` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
+| `review` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
+| `implement` | yes | 24 | `repo_map`, `read`, `list`, `glob`, `grep`, `write`, `edit`, `apply_patch`, `bash`, `git`, `run_tests`, `diagnostics` |
+<!-- END GENERATED SUBAGENT CAPABILITIES -->

@@ -48,6 +48,11 @@ export default defineConfig({
 			Z_AGENT_WORKSPACES_DIR: path.join(tmp, "workspaces"),
 			Z_AGENT_ALLOW_OPEN_REGISTRATION: "1",
 			Z_AGENT_SECURE_COOKIES: "0",
+			// Deterministic model used only by this disposable E2E server. It runs
+			// through the real agent loop and tools, but never makes an external LLM call.
+			Z_AGENT_ENABLE_FIXTURE_PROVIDER: "1",
+			Z_AGENT_DEFAULT_MODEL: "fixture/coding-e2e",
+			Z_AGENT_ALLOW_UNISOLATED_SHELL: "1",
 			NODE_ENV: "production",
 		},
 	},

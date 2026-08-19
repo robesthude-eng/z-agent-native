@@ -107,11 +107,14 @@ test('persistent context carries repository map and recent completed work', () =
 });
 
 test('agent runtime is wired to Autopilot and persistent project context', () => {
-  const source = fs.readFileSync(new URL('../server/native/agent.mjs', import.meta.url), 'utf8');
-  assert.match(source, /buildModelPlan/);
-  assert.match(source, /callModelAutopilot/);
-  assert.match(source, /getProjectContext/);
-  assert.match(source, /rememberProjectTurn/);
-  assert.match(source, /taskStepBudget/);
-  assert.match(source, /subagentStepBudget/);
+  const agentSource = fs.readFileSync(new URL('../server/native/agent.mjs', import.meta.url), 'utf8');
+  const subagentSource = fs.readFileSync(new URL('../server/native/subagent-runner.mjs', import.meta.url), 'utf8');
+  assert.match(agentSource, /buildModelPlan/);
+  assert.match(agentSource, /callModelAutopilot/);
+  assert.match(agentSource, /getProjectContext/);
+  assert.match(agentSource, /rememberProjectTurn/);
+  assert.match(agentSource, /taskStepBudget/);
+  assert.match(agentSource, /runSubagent/);
+  assert.match(subagentSource, /subagentStepBudget/);
+  assert.match(subagentSource, /callModelAutopilot/);
 });

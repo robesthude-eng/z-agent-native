@@ -299,33 +299,6 @@ test('streaming waits out a 429 and continues the same turn', async () => {
   } finally { globalThis.fetch = original; }
 });
 
-test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting minutes', async () => {
-  const original = globalThis.fetch;
-  let calls = 0;
-  globalThis.fetch = async () => {
-    calls += 1;
-    return new Response(JSON.stringify({
-      error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
-    }), {
-      status: 429,
-      headers: { 'content-type': 'application/json' },
-    });
-  };
-  try {
-    const started = Date.now();
-    await assert.rejects(
-      () => providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-        system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-        onTextDelta: () => {},
-        failFastRateLimit: true,
-      }),
-      (err) => /rate limit/i.test(String(err?.message || '')),
-    );
-    assert.equal(calls, 1);
-    assert.ok(Date.now() - started < 1_000, 'must not sit on the 5–60s 429 ladder');
-  } finally { globalThis.fetch = original; }
-});
-
 test('a Console rate-limit payload is retryable even without HTTP 429', async () => {
   const original = globalThis.fetch;
   let calls = 0;
@@ -355,6 +328,33 @@ test('a Console rate-limit payload is retryable even without HTTP 429', async ()
       statusCode: 400,
       message: 'Error from provider (Console): Rate limit exceeded. Please try again later.',
     }), true);
+  } finally { globalThis.fetch = original; }
+});
+
+test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting minutes', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    return new Response(JSON.stringify({
+      error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+    }), {
+      status: 429,
+      headers: { 'content-type': 'application/json' },
+    });
+  };
+  try {
+    const started = Date.now();
+    await assert.rejects(
+      () => providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+        system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+        onTextDelta: () => {},
+        failFastRateLimit: true,
+      }),
+      (err) => /rate limit/i.test(String(err?.message || '')),
+    );
+    assert.equal(calls, 1);
+    assert.ok(Date.now() - started < 1_000, 'must not sit on the 5–60s 429 ladder');
   } finally { globalThis.fetch = original; }
 });
 

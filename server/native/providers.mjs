@@ -4,6 +4,64 @@ import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs'
 import { listProviderConfigs } from './provider-configs.mjs';
 
 
+
+const FIXTURE_PROVIDER_ID = 'fixture';
+const FIXTURE_MODEL_ID = 'coding-e2e';
+
+function fixtureProviderEnabled() {
+  return process.env.Z_AGENT_ENABLE_FIXTURE_PROVIDER === '1';
+}
+
+function fixtureToolCount(frames, name) {
+  return (Array.isArray(frames) ? frames : []).filter((frame) => frame?.role === 'tool' && frame?.name === name && !frame?.isError).length;
+}
+
+function fixturePrompt(frames) {
+  return (Array.isArray(frames) ? frames : []).filter((frame) => frame?.role === 'user').map((frame) => String(frame?.content || '')).join('\n');
+}
+
+function fixtureResponse(request) {
+  if (!fixtureProviderEnabled()) throw Object.assign(new Error('Fixture provider is disabled'), { statusCode: 403 });
+  const frames = request?.frames || [];
+  const prompt = fixturePrompt(frames);
+  const questionDone = fixtureToolCount(frames, 'question') > 0;
+  const writeCount = fixtureToolCount(frames, 'write');
+  const testsDone = fixtureToolCount(frames, 'run_tests') > 0;
+  let response;
+
+  if (/FIXTURE_ASK_USER/i.test(prompt) && !questionDone) {
+    response = {
+      text: '',
+      toolCalls: [{ id: 'fixture_question_1', name: 'question', arguments: { questions: [{ header: 'Fixture', question: 'Continue the deterministic fixture turn?', options: [{ label: 'Continue' }] }] } }],
+      finish: 'tool_calls',
+    };
+  } else if (writeCount < 2) {
+    response = {
+      text: 'I will create a tiny module and its regression test, then execute the test.',
+      toolCalls: [
+        { id: 'fixture_write_module', name: 'write', arguments: { path: 'hello.js', content: 'export const hello = () => "hello from fixture";\n' } },
+        { id: 'fixture_write_test', name: 'write', arguments: { path: 'hello.test.mjs', content: 'import assert from "node:assert/strict";\nimport fs from "node:fs";\nimport test from "node:test";\nconst source = fs.readFileSync(new URL("./hello.js", import.meta.url), "utf8");\ntest("fixture hello", () => assert.match(source, /hello from fixture/));\n' } },
+      ],
+      finish: 'tool_calls',
+    };
+  } else if (!testsDone) {
+    response = {
+      text: 'The files are written. I am running the exact regression test now.',
+      toolCalls: [{ id: 'fixture_run_tests', name: 'run_tests', arguments: { command: 'node --test hello.test.mjs' } }],
+      finish: 'tool_calls',
+    };
+  } else {
+    response = {
+      text: 'Fixture task completed and verified: hello.js is covered by hello.test.mjs.',
+      toolCalls: [],
+      finish: 'stop',
+    };
+  }
+
+  if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text);
+  return { ...response, usage: { prompt_tokens: 16, completion_tokens: 12 }, streamed: typeof request?.onTextDelta === 'function' };
+}
+
 // --- Optional relay wrapper (opt-in, off by default) ---
 // When Z_AGENT_RELAY_URL is set, external provider URLs are routed through that
 // relay. The relay therefore terminates TLS and observes provider API keys and
@@ -101,7 +159,7 @@ const reqTimeout = 30_000;
 export function isBuiltInProvider(providerId) { return Boolean(builtInSpecs[providerId]); }
 export function providerSpecs(ownerId = null) { return effectiveSpecs(ownerId); }
 export function providerList(ownerId = null) {
-  return Object.entries(effectiveSpecs(ownerId)).map(([id, spec]) => ({
+  const rows = Object.entries(effectiveSpecs(ownerId)).map(([id, spec]) => ({
     id,
     name: spec.name,
     protocol: spec.kind,
@@ -110,6 +168,8 @@ export function providerList(ownerId = null) {
     custom: Boolean(spec.custom),
     models: {},
   }));
+  if (fixtureProviderEnabled()) rows.unshift({ id: FIXTURE_PROVIDER_ID, name: 'Deterministic Fixture', protocol: 'fixture', baseURL: '', enabled: true, custom: false, models: {} });
+  return rows;
 }
 
 function timeoutSignal(ms = reqTimeout, outerSignal) {
@@ -552,6 +612,19 @@ export async function buildCatalog(ownerId, { force = false } = {}) {
       });
     }
   }
+  if (fixtureProviderEnabled()) {
+    providers[FIXTURE_PROVIDER_ID] = { status: 'live', count: 1 };
+    models.unshift({
+      providerID: FIXTURE_PROVIDER_ID,
+      sourceProviderID: FIXTURE_PROVIDER_ID,
+      providerName: 'Deterministic Fixture',
+      modelID: FIXTURE_MODEL_ID,
+      modelName: 'Coding E2E Fixture',
+      free: true,
+      source: 'fixture',
+      status: 'live',
+    });
+  }
   const unique = new Map();
   for (const m of models) unique.set(`${m.providerID}\0${m.modelID}`, m);
   const defaults = {};
@@ -569,6 +642,10 @@ export function resolveModel(ownerId, model) {
   const providerID = model?.providerID || '';
   const modelID = model?.modelID || '';
   if (!providerID || !modelID) throw Object.assign(new Error('Модель не выбрана'), { statusCode: 400 });
+  if (providerID === FIXTURE_PROVIDER_ID) {
+    if (!fixtureProviderEnabled() || modelID !== FIXTURE_MODEL_ID) throw Object.assign(new Error('Fixture model is unavailable'), { statusCode: 404 });
+    return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec: { id: providerID, name: 'Deterministic Fixture', kind: 'fixture', baseURL: '', enabled: true }, key: '', trustedBaseURL: true };
+  }
   const specs = effectiveSpecs(ownerId);
   if (providerID.startsWith('custom:')) {
     for (const [sourceId, spec] of Object.entries(specs)) {
@@ -857,6 +934,7 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
 
 export async function callModel(ownerId, model, request) {
   const resolved = resolveModel(ownerId, model);
+  if (resolved.spec.kind === 'fixture') return fixtureResponse(request);
   if (resolved.spec.kind === 'anthropic') return callAnthropic(resolved, request);
   if (resolved.spec.kind === 'google') return callGoogle(resolved, request);
   return callOpenAI(resolved, request);
