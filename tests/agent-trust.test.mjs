@@ -88,6 +88,49 @@ test('repeated identical tool observations stop the turn before the global step 
   }
 });
 
+test('truncated tool arguments are not executed', async () => {
+  agent.resetAgentStateForTests();
+  const sid = 'ses_trusttrunc1';
+  store.createChat(sid, ownerId, 'Новый чат');
+  const workspace = store.workspaceFor(sid);
+
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    if (providerCalls === 1) {
+      return sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_bad', function: { name: 'bash', arguments: '{"command":"printf hacked > PWNED.txt' } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
+    }
+    return sse([
+      { choices: [{ delta: { content: 'Остановился на обрезанном вызове.' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+
+  try {
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Сделай файл' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
+    assert.equal(fs.existsSync(path.join(workspace, 'PWNED.txt')), false);
+    const bash = assistant.parts.find((part) => part.type === 'tool' && part.tool === 'bash');
+    assert.equal(bash?.state?.status, 'error');
+    assert.equal(bash?.state?.metadata?.incompleteArguments, true);
+    assert.match(String(bash?.state?.output || ''), /обрезан/i);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});
+
 test('a transient webfetch failure is retried once inside the same tool call', async () => {
   agent.resetAgentStateForTests();
   const sid = 'ses_trustretry1';
