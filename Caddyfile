@@ -1,7 +1,36 @@
 agentwill.online {
-	encode zstd gzip
-	reverse_proxy z-agent:3000 {
-		flush_interval -1
+	# Never compress the event stream. gzip/zstd buffer SSE comments and
+	# mobile Chrome then aborts the HTTP/2 stream in a few milliseconds
+	# (Caddy: "aborting with incomplete response / context canceled").
+	encode zstd gzip {
+		match {
+			header Content-Type text/html*
+			header Content-Type text/css*
+			header Content-Type text/javascript*
+			header Content-Type application/javascript*
+			header Content-Type application/json*
+			header Content-Type image/svg+xml*
+			header Content-Type application/wasm*
+			header Content-Type font/*
+			header Content-Type application/font*
+		}
+	}
+
+	@sse path /api/event*
+	handle @sse {
+		reverse_proxy z-agent:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
+	handle {
+		reverse_proxy z-agent:3000 {
+			flush_interval -1
+		}
 	}
 }
 

@@ -203,6 +203,11 @@ export class EventStream {
       }
     };
     this.es.onerror = () => {
+      // Mobile Chrome fires onerror while the handshake is still CONNECTING
+      // (slow 4G, first byte delayed). Closing here aborts a stream that
+      // would have opened — Caddy then logs "context canceled" in 1–3ms
+      // and we flap. Let the native EventSource finish that attempt.
+      if (this.es && this.es.readyState === EventSource.CONNECTING) return;
       this.hadDrop = true;
       this.setStatus("closed");
       this.es?.close();
