@@ -17,6 +17,7 @@ import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy } from './workspace-policy.mjs';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
@@ -122,7 +123,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'bash',
-    description: 'Run a shell command in the current workspace. Use for tests, builds, git, package managers, ssh/scp/rsync and project tooling.',
+    description: 'Run a shell command in the current workspace. Direct network clients and credential-like files are blocked by the default guarded egress policy; use structured web/environment/git tools where possible.',
     inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 } }, ['command']),
   },
   {
@@ -489,7 +490,9 @@ export async function executeTool(name, input, ctx) {
   if (tool === 'question') return { kind: 'question', questions: Array.isArray(input?.questions) ? input.questions : [] };
 
   if (tool === 'read') {
-    const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
+    const requestedPath = String(input?.path || '');
+    assertAgentReadablePath(requestedPath);
+    const full = safeWorkspacePath(root, requestedPath, { allowMissing: false });
     const offset = Math.max(0, Number(input?.offset) || 0);
     const limit = Math.min(Math.max(1, Number(input?.limit) || 500), 4000);
     const body = await readUtf8Window(full, offset, limit);
@@ -526,7 +529,7 @@ export async function executeTool(name, input, ctx) {
 
     const files = [];
     for (const item of all) {
-      if (item.type !== 'file') continue;
+      if (item.type !== 'file' || isSensitiveWorkspacePath(item.path)) continue;
       try { files.push({ path: item.path, full: safeWorkspacePath(root, item.path, { allowMissing: false }) }); } catch { /* unreadable */ }
     }
 
@@ -588,6 +591,9 @@ export async function executeTool(name, input, ctx) {
   if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
 
   if (tool === 'ensure_environment') {
+    if (agentNetworkPolicy() !== 'public') {
+      throw Object.assign(new Error('ensure_environment is disabled when Z_AGENT_NETWORK_POLICY is allowlist/off because its package/toolchain installers can contact multiple external registries. Provision dependencies outside the autonomous turn or use public policy in a trusted environment.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+    }
     const kind = String(input?.kind || '').trim().toLowerCase();
     const plan = BASE_ENVIRONMENT_KINDS.includes(kind)
       ? prepareEnvironmentRequirement(root, input || {})
@@ -616,6 +622,7 @@ export async function executeTool(name, input, ctx) {
 
   if (tool === 'bash') {
     const command = String(input?.command || '');
+    assertShellCommandAllowed(command);
     const result = await execBash(root, command, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
     const hint = missingCommandHint(result);
     const body = [
@@ -628,11 +635,12 @@ export async function executeTool(name, input, ctx) {
       output: body,
       title: command,
       mutatedPaths: classifyBash(command) === 'read_only' ? [] : ['.'],
-      metadata: { exit: result.code, ...(hint ? { environmentHint: hint } : {}) },
+      metadata: { exit: result.code, shellNetworkPolicy: shellNetworkPolicy(), ...(hint ? { environmentHint: hint } : {}) },
     };
   }
 
   if (tool === 'websearch') {
+    assertAgentNetworkHost('api.search.brave.com', { tool: 'websearch' });
     const apiKey = process.env.BRAVE_SEARCH_API_KEY || '';
     if (!apiKey) throw new Error('BRAVE_SEARCH_API_KEY is not configured on the runtime');
     const query = String(input?.query || '').trim();
@@ -641,15 +649,20 @@ export async function executeTool(name, input, ctx) {
     const url = new URL('https://api.search.brave.com/res/v1/web/search');
     url.searchParams.set('q', query);
     url.searchParams.set('count', String(count));
-    const res = await fetch(url, { headers: { accept: 'application/json', 'x-subscription-token': apiKey, 'user-agent': 'Z-Agent-Native/1.0' }, signal: ctx.signal });
-    const text = await res.text();
-    if (!res.ok) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
+    const res = await safeExternalRequest(url.toString(), {
+      headers: { accept: 'application/json', 'x-subscription-token': apiKey, 'user-agent': 'Z-Agent-Native/1.0' },
+      signal: ctx.signal,
+      maxBytes: 2 * 1024 * 1024,
+    });
+    const text = res.text;
+    if (res.status < 200 || res.status >= 300) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
     let body; try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
     const rows = (body?.web?.results || []).slice(0, count).map((row, i) => `${i + 1}. ${row.title || row.url}\n${row.url}\n${row.description || ''}`);
     return { output: rows.join('\n\n'), title: query };
   }
 
   if (tool === 'webfetch') {
+    assertAgentNetworkUrl(input?.url, { tool: 'webfetch' });
     const maxChars = Math.min(Math.max(Number(input?.maxChars) || 50000, 1000), 200000);
     // safeExternalRequest reuses the exact address that passed the SSRF check,
     // which closes the DNS-rebinding window between validation and connect.

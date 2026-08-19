@@ -144,11 +144,55 @@ export function createTurnStrategy(goal = '') {
     verificationAttempts: 0,
     lastVerificationOk: null,
     toolErrors: 0,
+    mutationEpoch: 0,
+    verificationEpoch: -1,
+    changedPaths: [],
+    lastVerificationEvidence: null,
   };
 }
 
+function normalizeStrategyEvidence(state) {
+  if (!Number.isFinite(Number(state.mutationEpoch))) state.mutationEpoch = 0;
+  if (!Number.isFinite(Number(state.verificationEpoch))) state.verificationEpoch = -1;
+  if (!Array.isArray(state.changedPaths)) state.changedPaths = [];
+  if (!('lastVerificationEvidence' in state)) state.lastVerificationEvidence = null;
+  return state;
+}
+
+function noteMutation(state, paths = []) {
+  normalizeStrategyEvidence(state);
+  state.changed = true;
+  state.needsVerification = true;
+  state.lastVerificationOk = null;
+  state.mutationEpoch += 1;
+  state.lastVerificationEvidence = null;
+  for (const raw of paths) {
+    const changedPath = String(raw || '').trim();
+    if (!changedPath || state.changedPaths.includes(changedPath)) continue;
+    state.changedPaths.push(changedPath);
+    if (state.changedPaths.length > 50) state.changedPaths.shift();
+  }
+}
+
+function noteVerification(state, { ok, tool, detail = '' }) {
+  normalizeStrategyEvidence(state);
+  state.verificationAttempts += 1;
+  state.lastVerificationOk = Boolean(ok);
+  state.lastVerificationEvidence = {
+    tool: String(tool || ''),
+    detail: String(detail || '').slice(0, 500),
+    ok: Boolean(ok),
+    mutationEpoch: state.mutationEpoch,
+    at: Date.now(),
+  };
+  if (ok) {
+    state.needsVerification = false;
+    state.verificationEpoch = state.mutationEpoch;
+  }
+}
+
 export function observeTool(strategy, call, result) {
-  const state = strategy;
+  const state = normalizeStrategyEvidence(strategy);
   const name = String(call?.name || '').toLowerCase();
   if (result?.isError) state.toolErrors += 1;
 
@@ -163,9 +207,8 @@ export function observeTool(strategy, call, result) {
 
   if (['write', 'edit', 'apply_patch'].includes(name)) {
     if (!result?.isError) {
-      state.changed = true;
-      state.needsVerification = true;
-      state.lastVerificationOk = null;
+      const paths = result?.mutatedPaths?.length ? result.mutatedPaths : [call?.arguments?.path].filter(Boolean);
+      noteMutation(state, paths);
       if (name === 'write' || name === 'edit') {
         const changedPath = String(call?.arguments?.path || '').trim();
         if (changedPath && !state.pendingReadbacks.includes(changedPath)) state.pendingReadbacks.push(changedPath);
@@ -180,6 +223,8 @@ export function observeTool(strategy, call, result) {
     if (state.needsVerification && state.pendingReadbacks.length === 0) {
       state.needsVerification = false;
       state.verificationUnavailable = true;
+      state.verificationEpoch = state.mutationEpoch;
+      state.lastVerificationEvidence = { tool: 'read', detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
     }
     return state;
   }
@@ -187,17 +232,13 @@ export function observeTool(strategy, call, result) {
   if (name === 'bash') {
     const effect = classifyBash(call?.arguments?.command);
     if (effect === 'verification') {
-      state.verificationAttempts += 1;
       const exit = Number(result?.metadata?.exit);
       const ok = !result?.isError && (!Number.isFinite(exit) || exit === 0);
-      state.lastVerificationOk = ok;
-      if (ok) state.needsVerification = false;
+      noteVerification(state, { ok, tool: 'bash', detail: String(call?.arguments?.command || '') });
       return state;
     }
     if (effect === 'may_mutate' && !result?.isError) {
-      state.changed = true;
-      state.needsVerification = true;
-      state.lastVerificationOk = null;
+      noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
     }
     return state;
   }
@@ -207,19 +248,15 @@ export function observeTool(strategy, call, result) {
   // test/typecheck tools successfully and still be forced into a redundant
   // verification loop.
   if (name === 'run_tests') {
-    state.verificationAttempts += 1;
     const exit = Number(result?.metadata?.tests?.exit);
     const ok = !result?.isError && Number.isFinite(exit) && exit === 0;
-    state.lastVerificationOk = ok;
-    if (ok) state.needsVerification = false;
+    noteVerification(state, { ok, tool: 'run_tests', detail: String(call?.arguments?.command || 'auto') });
     return state;
   }
 
   if (name === 'diagnostics') {
-    state.verificationAttempts += 1;
     const ok = !result?.isError && result?.metadata?.diagnostics?.ok === true;
-    state.lastVerificationOk = ok;
-    if (ok) state.needsVerification = false;
+    noteVerification(state, { ok, tool: 'diagnostics', detail: String(call?.arguments?.kind || 'auto') });
     return state;
   }
 
@@ -228,9 +265,7 @@ export function observeTool(strategy, call, result) {
   // the changed/needs-verification state instead of being allowed to finish as
   // if the delegated work were read-only.
   if (name === 'task' && !result?.isError && result?.mutatedPaths?.length) {
-    state.changed = true;
-    state.needsVerification = true;
-    state.lastVerificationOk = null;
+    noteMutation(state, result.mutatedPaths);
   }
 
   return state;
@@ -263,9 +298,10 @@ export function strategyGuidance(strategy) {
     lines.push('Current plan:');
     for (const todo of strategy.plan.slice(0, 20)) lines.push(`- [${todo.status}] ${todo.content}`);
   }
-  if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion.');
+  if (strategy?.changedPaths?.length) lines.push(`Changed paths (latest tracked set): ${strategy.changedPaths.slice(-12).join(', ')}`);
+  if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion. Prefer a test/check that covers the changed paths above rather than an unrelated green command.');
   else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
-  else if (strategy?.changed && strategy?.lastVerificationOk) lines.push('Workspace state: latest known changes have a successful verification signal.');
+  else if (strategy?.changed && strategy?.lastVerificationOk) lines.push(`Workspace state: mutation epoch ${strategy.mutationEpoch ?? 0} has successful verification evidence${strategy.lastVerificationEvidence?.detail ? ` (${strategy.lastVerificationEvidence.tool}: ${strategy.lastVerificationEvidence.detail})` : ''}.`);
   else if (strategy?.changed && strategy?.verificationUnavailable) lines.push('Workspace state: changed files were read back successfully; executable verification was unavailable and must be disclosed in the final answer.');
   return lines.join('\n');
 }

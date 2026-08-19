@@ -1,48 +1,554 @@
 {
-  "version": 1,
-  "description": "Repository-grounded coding-agent evaluation prompts. These tasks are intentionally answerable from the checked-in code and require concrete evidence rather than style opinions.",
+  "version": 2,
+  "description": "Executable repository-grounded coding-agent evaluations. 30 cases cover explore/debug/review/implement behavior; eval:smoke uses the deterministic fixture provider to prove the real agent/tool/verification path in CI without external credentials.",
   "cases": [
+    {
+      "id": "fixture-harness-smoke",
+      "agent": "implement",
+      "ciSmoke": true,
+      "workspacePath": "evals/fixtures/counter-bug",
+      "prompt": "FIXTURE_EVAL_SMOKE: create the deterministic fixture module and regression test, execute the test, and report the verified result.",
+      "mustMentionPaths": [
+        "hello.js",
+        "hello.test.mjs"
+      ],
+      "mustMentionAny": [
+        "verified",
+        "fixture"
+      ],
+      "expectFiles": [
+        {
+          "path": "hello.js",
+          "contains": "hello from fixture"
+        },
+        {
+          "path": "hello.test.mjs",
+          "contains": "fixture hello"
+        }
+      ],
+      "verifyCommand": "node --test hello.test.mjs"
+    },
     {
       "id": "explore-native-turn-lifecycle",
       "agent": "explore",
       "prompt": "Map the native agent turn from a persisted user message through provider calls, tool execution, final persistence and session.idle. Identify the core functions and state boundaries.",
-      "mustMentionPaths": ["server/native/agent.mjs", "server/native/store.mjs", "server/native/providers.mjs"],
-      "mustMentionAny": ["runTurn", "callModel", "putMessage", "session.idle"]
+      "mustMentionPaths": [
+        "server/native/agent.mjs",
+        "server/native/store.mjs",
+        "server/native/providers.mjs"
+      ],
+      "mustMentionAny": [
+        "runTurn",
+        "callModel",
+        "putMessage",
+        "session.idle"
+      ],
+      "forbidMutation": true
     },
     {
-      "id": "debug-premature-completion",
-      "agent": "debug",
-      "prompt": "A model writes a source file and immediately says it is done without testing. Explain why the runtime should reject that completion, where the gate state is maintained, and what event clears it.",
-      "mustMentionPaths": ["server/native/context.mjs", "server/native/agent.mjs"],
-      "mustMentionAny": ["completionGate", "observeTool", "needsVerification", "verification"]
+      "id": "explore-durable-recovery",
+      "agent": "explore",
+      "prompt": "Trace durable turn recovery from the on-disk job checkpoint through startup rehydration and final cleanup. Explain which state prevents replay of ambiguous mutating tools.",
+      "mustMentionPaths": [
+        "server/native/durable-jobs.mjs",
+        "server/native/agent.mjs",
+        "server/native/agent-parts.mjs"
+      ],
+      "mustMentionAny": [
+        "startDurableRecovery",
+        "ambiguous",
+        "checkpoint",
+        "restart"
+      ],
+      "forbidMutation": true
     },
     {
-      "id": "review-shell-isolation",
-      "agent": "review",
-      "prompt": "Review the shell/workspace isolation boundary for ways an agent-controlled command could read runtime secrets or escape into a sibling workspace. Report only concrete findings or explain why the checked paths block the obvious escapes.",
-      "mustMentionPaths": ["server/native/sandbox.mjs", "server/native/security.mjs", "server/native/tools.mjs"],
-      "mustMentionAny": ["sandbox", "workspace", "symlink", "uid"]
+      "id": "explore-provider-fallback",
+      "agent": "explore",
+      "prompt": "Explain how a requested model becomes an autopilot model plan, when fallback is allowed, and why switching providers after visible streamed output is rejected.",
+      "mustMentionPaths": [
+        "server/native/autopilot.mjs",
+        "server/native/providers.mjs"
+      ],
+      "mustMentionAny": [
+        "runFallbackPlan",
+        "fallbackEligible",
+        "autopilotEmitted",
+        "onTextDelta"
+      ],
+      "forbidMutation": true
     },
     {
       "id": "explore-realtime-message-flow",
       "agent": "explore",
-      "prompt": "Trace how streamed assistant text/tool updates travel from the native runtime to the browser message state. Identify the server event emitters and the client-side merge/update layer.",
-      "mustMentionPaths": ["server/native/events.mjs", "server/native/agent.mjs", "src/store/helpers.ts"],
-      "mustMentionAny": ["message.part.delta", "message.part.updated", "patchPart", "patchPartDelta"]
+      "prompt": "Trace how streamed assistant text and tool updates travel from the native runtime to the browser message state, including sequencing and the client-side merge layer.",
+      "mustMentionPaths": [
+        "server/native/events.mjs",
+        "server/native/agent.mjs",
+        "src/store/helpers.ts"
+      ],
+      "mustMentionAny": [
+        "message.part.delta",
+        "message.part.updated",
+        "patchPart",
+        "seq"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "explore-sandbox-identity",
+      "agent": "explore",
+      "prompt": "Map how a chat receives a stable Unix sandbox identity and how bash, git and terminal processes actually drop privileges before touching the workspace.",
+      "mustMentionPaths": [
+        "server/native/store.mjs",
+        "server/native/sandbox.mjs",
+        "server/native/terminal.mjs"
+      ],
+      "mustMentionAny": [
+        "sandbox_uid",
+        "setpriv",
+        "no-new-privs",
+        "uid"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "explore-subagent-capabilities",
+      "agent": "explore",
+      "prompt": "Map specialized subagent profiles, their exact tool capabilities, how writer mutations return to the parent strategy, and how recursive delegation is prevented.",
+      "mustMentionPaths": [
+        "server/native/subagents.mjs",
+        "server/native/subagent-runner.mjs",
+        "server/native/context.mjs"
+      ],
+      "mustMentionAny": [
+        "implement",
+        "mutatedPaths",
+        "subagentToolNames",
+        "needsVerification"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "explore-telemetry-pipeline",
+      "agent": "explore",
+      "prompt": "Trace completed-turn telemetry from in-memory counters through final persistence and operator aggregation. Explain what content is deliberately not recorded and how optional cost estimation works.",
+      "mustMentionPaths": [
+        "server/native/turn-telemetry.mjs",
+        "server/native/agent.mjs",
+        "scripts/summarize-turn-telemetry.mjs"
+      ],
+      "mustMentionAny": [
+        "finalizeTurnTelemetry",
+        "toolRetries",
+        "estimatedCostUsd",
+        "JSONL"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "debug-premature-completion",
+      "agent": "debug",
+      "prompt": "A model writes a source file and immediately says it is done without testing. Explain why the runtime rejects completion, where gate state is maintained, and what successful evidence clears it.",
+      "mustMentionPaths": [
+        "server/native/context.mjs",
+        "server/native/agent.mjs"
+      ],
+      "mustMentionAny": [
+        "completionGate",
+        "observeTool",
+        "needsVerification",
+        "lastVerificationOk"
+      ],
+      "forbidMutation": true
     },
     {
       "id": "debug-literal-system-text",
       "agent": "debug",
-      "prompt": "A user message containing the literal text '[SYSTEM: example]' must remain unchanged in the UI. Find the normalization path and explain why stripping that text client-side would violate the current architecture.",
-      "mustMentionPaths": ["src/store/helpers.ts", "src/store/helpers.test.ts"],
-      "mustMentionAny": ["cleanSysText", "normalizeMessage", "server-owned"]
+      "prompt": "A user message containing the literal text '[SYSTEM: example]' must remain unchanged in the UI. Find the normalization path and explain why stripping it client-side violates the architecture.",
+      "mustMentionPaths": [
+        "src/store/helpers.ts",
+        "src/store/helpers.test.ts"
+      ],
+      "mustMentionAny": [
+        "cleanSysText",
+        "normalizeMessage",
+        "server-owned"
+      ],
+      "forbidMutation": true
     },
     {
-      "id": "review-question-permission-lifecycle",
+      "id": "debug-tool-retry-exit",
+      "agent": "debug",
+      "prompt": "A transient webfetch failure sometimes caused the Node process to exit while the agent was awaiting a retry. Trace the retry sleep path and identify the event-loop lifetime invariant.",
+      "mustMentionPaths": [
+        "server/native/agent.mjs",
+        "server/native/agent-parts.mjs",
+        "server/native/turn-trust.mjs"
+      ],
+      "mustMentionAny": [
+        "waitForRetry",
+        "retryDelayMs",
+        "setTimeout",
+        "retry"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "debug-question-restart",
+      "agent": "debug",
+      "prompt": "A runtime restarts while a question tool is waiting for the user. Trace how the same question and assistant tool part are recovered without creating a duplicate user turn.",
+      "mustMentionPaths": [
+        "server/native/agent.mjs",
+        "server/native/store.mjs",
+        "server/native/durable-jobs.mjs"
+      ],
+      "mustMentionAny": [
+        "resumePendingQuestion",
+        "findQuestionForRecovery",
+        "questionWaiters",
+        "recovered"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "debug-cluster-double-turn",
+      "agent": "debug",
+      "prompt": "Two replicas receive requests for the same session at nearly the same time. Trace the locking path that prevents concurrent turns and explain what happens when a holder dies.",
+      "mustMentionPaths": [
+        "server/native/cluster.mjs",
+        "server/native/agent.mjs"
+      ],
+      "mustMentionAny": [
+        "acquireTurnLock",
+        "renewTurnLock",
+        "releaseTurnLock",
+        "TTL"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "debug-diagnostics-false-success",
+      "agent": "debug",
+      "prompt": "A diagnostics checker fails to start with command-not-found but the agent must not treat that as successful verification. Trace the structured diagnostics result into the completion strategy.",
+      "mustMentionPaths": [
+        "server/native/diagnostics.mjs",
+        "server/native/tools.mjs",
+        "server/native/context.mjs"
+      ],
+      "mustMentionAny": [
+        "diagnostics",
+        "ok",
+        "errorCount",
+        "lastVerificationOk"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "debug-network-policy-bypass",
+      "agent": "debug",
+      "prompt": "A strict deployment sets the agent network policy to allowlist, but a browser page tries to fetch an unlisted host through a subresource or WebSocket. Trace the controls that must block it and identify the remaining DNS pinning limitation.",
+      "mustMentionPaths": [
+        "server/native/workspace-policy.mjs",
+        "server/native/browser.mjs",
+        "server/native/security.mjs"
+      ],
+      "mustMentionAny": [
+        "Z_AGENT_NETWORK_ALLOWLIST",
+        "context.route",
+        "routeWebSocket",
+        "DNS"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-shell-isolation",
       "agent": "review",
-      "prompt": "Review question and permission suspension/resume for lifecycle bugs: duplicated user turns, unresolved waiters, restart recovery, or stale pending gates. Cite the persistence and in-memory coordination paths.",
-      "mustMentionPaths": ["server/native/agent.mjs", "server/native/store.mjs"],
-      "mustMentionAny": ["questionWaiters", "permissionWaiters", "recoverInterruptedRuntimeState", "resolvePermission"]
+      "prompt": "Review the shell and workspace isolation boundary for concrete ways an agent-controlled command could read runtime secrets or escape into a sibling workspace. Report findings with evidence only.",
+      "mustMentionPaths": [
+        "server/native/sandbox.mjs",
+        "server/native/security.mjs",
+        "server/native/tools.mjs"
+      ],
+      "mustMentionAny": [
+        "sandbox",
+        "workspace",
+        "symlink",
+        "uid"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-question-lifecycle",
+      "agent": "review",
+      "prompt": "Review question suspension and resume for lifecycle defects: duplicated turns, unresolved waiters, restart recovery, stale pending gates, and incorrect idle projections.",
+      "mustMentionPaths": [
+        "server/native/agent.mjs",
+        "server/native/store.mjs"
+      ],
+      "mustMentionAny": [
+        "questionWaiters",
+        "recoverInterruptedRuntimeState",
+        "resumePendingQuestion",
+        "waiting_user_input"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-ssrf-pinning",
+      "agent": "review",
+      "prompt": "Review outbound URL handling for DNS rebinding, redirects, IPv4-mapped IPv6, private address bypasses and provider custom endpoint trust. Report only concrete residual risks.",
+      "mustMentionPaths": [
+        "server/native/security.mjs",
+        "server/native/providers.mjs"
+      ],
+      "mustMentionAny": [
+        "resolveSafeExternalTarget",
+        "lookup",
+        "redirect",
+        "IPv4"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-event-sequencing",
+      "agent": "review",
+      "prompt": "Review server-to-browser event sequencing and reconnect behavior for duplicate delivery, stale sequence acceptance, ring-buffer gaps and message merge corruption.",
+      "mustMentionPaths": [
+        "server/native/events.mjs",
+        "src/api/eventGuards.ts",
+        "src/store/helpers.ts"
+      ],
+      "mustMentionAny": [
+        "seq",
+        "reconnect",
+        "message.part.delta",
+        "duplicate"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-provider-secrets",
+      "agent": "review",
+      "prompt": "Review provider credential storage and process environment construction. Determine whether provider keys can reach autonomous shell or terminal subprocesses through inherited environment state.",
+      "mustMentionPaths": [
+        "server/native/secrets.mjs",
+        "server/native/store.mjs",
+        "server/native/environment.mjs",
+        "server/native/tools.mjs"
+      ],
+      "mustMentionAny": [
+        "encrypt",
+        "managedShellEnvironment",
+        "provider",
+        "environment"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-completion-evidence",
+      "agent": "review",
+      "prompt": "Review completion verification semantics after write, bash, run_tests, diagnostics and implement-subagent changes. Look for a path that could clear verification after a later mutation.",
+      "mustMentionPaths": [
+        "server/native/context.mjs",
+        "server/native/agent.mjs",
+        "server/native/subagent-runner.mjs"
+      ],
+      "mustMentionAny": [
+        "needsVerification",
+        "run_tests",
+        "diagnostics",
+        "mutatedPaths"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "review-prompt-injection-egress",
+      "agent": "review",
+      "prompt": "Review the defenses against repository prompt injection exfiltrating source or credentials through shell and model-selected network tools. Distinguish application-layer guards from guarantees that require host/container policy.",
+      "mustMentionPaths": [
+        "server/native/workspace-policy.mjs",
+        "server/native/tools.mjs",
+        "server/native/browser.mjs",
+        "SECURITY.md"
+      ],
+      "mustMentionAny": [
+        "guarded",
+        "allowlist",
+        "sensitive",
+        "firewall"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "implement-counter-fix",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/counter-bug",
+      "prompt": "The counter regression test fails because increment returns the wrong value. Fix the implementation minimally and run the relevant test until it passes.",
+      "mustMentionPaths": [
+        "counter.js",
+        "counter.test.mjs"
+      ],
+      "mustMentionAny": [
+        "test",
+        "pass",
+        "increment"
+      ],
+      "expectFiles": [
+        {
+          "path": "counter.js",
+          "contains": "value + 1"
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-config-default",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/config-defaults",
+      "prompt": "The config contract says APP_TIMEOUT_MS defaults to 30000ms, but the fixture currently returns zero. Make the smallest correct change and verify both tests.",
+      "mustMentionPaths": [
+        "config.js",
+        "config.test.mjs"
+      ],
+      "mustMentionAny": [
+        "30000",
+        "test",
+        "default"
+      ],
+      "expectFiles": [
+        {
+          "path": "config.js",
+          "contains": "30000"
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-event-duplicate",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/event-order",
+      "prompt": "Duplicate events with the same sequence number must be ignored instead of appended twice. Fix acceptEvent without changing the public API and run the regression test.",
+      "mustMentionPaths": [
+        "events.js",
+        "events.test.mjs"
+      ],
+      "mustMentionAny": [
+        "duplicate",
+        "sequence",
+        "test"
+      ],
+      "expectFiles": [
+        {
+          "path": "events.js",
+          "contains": "<="
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-path-prefix",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/path-guard",
+      "prompt": "The path guard incorrectly accepts a sibling whose name merely shares the workspace prefix. Fix containment portably and prove it with the existing tests.",
+      "mustMentionPaths": [
+        "path.js",
+        "path.test.mjs"
+      ],
+      "mustMentionAny": [
+        "path.sep",
+        "sibling",
+        "test"
+      ],
+      "expectFiles": [
+        {
+          "path": "path.js",
+          "contains": "path.sep"
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-cache-retry",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/async-cache",
+      "prompt": "A failed async cache load remains stuck in the pending map, so a later retry receives the same rejected promise. Fix the lifecycle without breaking concurrent de-duplication and run the test.",
+      "mustMentionPaths": [
+        "cache.js",
+        "cache.test.mjs"
+      ],
+      "mustMentionAny": [
+        "pending",
+        "retry",
+        "test"
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-cli-exit",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/cli-exit",
+      "prompt": "The CLI exit policy is reversed: warnings alone should succeed, but one or more errors must return exit code 1. Correct the implementation and verify the tests.",
+      "mustMentionPaths": [
+        "cli.js",
+        "cli.test.mjs"
+      ],
+      "mustMentionAny": [
+        "errors",
+        "warnings",
+        "test"
+      ],
+      "expectFiles": [
+        {
+          "path": "cli.js",
+          "contains": "errors > 0"
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-dedupe-order",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/dedupe-order",
+      "prompt": "uniqueInOrder removes duplicates but unexpectedly sorts the result. Preserve first-seen order with the smallest change and verify the existing regression test.",
+      "mustMentionPaths": [
+        "dedupe.js",
+        "dedupe.test.mjs"
+      ],
+      "mustMentionAny": [
+        "order",
+        "Set",
+        "test"
+      ],
+      "expectFiles": [
+        {
+          "path": "dedupe.js",
+          "contains": "new Set"
+        }
+      ],
+      "verifyCommand": "node --test"
+    },
+    {
+      "id": "implement-boolean-env",
+      "agent": "implement",
+      "workspacePath": "evals/fixtures/boolean-env",
+      "prompt": "envFlag treats the strings \"0\" and \"false\" as true. Correct common boolean environment spellings without breaking fallback behavior, then run the tests.",
+      "mustMentionPaths": [
+        "flags.js",
+        "flags.test.mjs"
+      ],
+      "mustMentionAny": [
+        "false",
+        "0",
+        "test"
+      ],
+      "expectFiles": [
+        {
+          "path": "flags.js",
+          "contains": "false"
+        }
+      ],
+      "verifyCommand": "node --test"
     }
   ]
 }

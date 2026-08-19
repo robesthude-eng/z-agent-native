@@ -37,12 +37,16 @@ function decodePathPart(value) {
  */
 export function listProviderChannels(ownerId) {
   const connected = new Set(listProviderKeyIds(ownerId));
-  return listProviderConfigs(ownerId).map((provider) => ({
+  const rows = listProviderConfigs(ownerId).map((provider) => ({
     ...provider,
     custom: true,
     connected: connected.has(provider.id),
     overridden: false,
   }));
+  if (process.env.Z_AGENT_ENABLE_FIXTURE_PROVIDER === '1') {
+    rows.unshift({ id: 'fixture', name: 'Deterministic Fixture', protocol: 'openai', baseURL: '', enabled: true, custom: false, connected: true, overridden: false });
+  }
+  return rows;
 }
 
 function providerExists(ownerId, providerId) {

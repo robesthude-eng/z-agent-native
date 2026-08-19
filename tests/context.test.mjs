@@ -28,13 +28,31 @@ test('turn strategy requires verification after edits and clears after a success
   const strategy = createTurnStrategy('Fix the failing parser');
   observeTool(strategy, { name: 'edit', arguments: { path: 'parser.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['parser.mjs'] });
   assert.equal(strategy.needsVerification, true);
+  assert.equal(strategy.mutationEpoch, 1);
+  assert.deepEqual(strategy.changedPaths, ['parser.mjs']);
   assert.match(completionGate(strategy) || '', /verification/i);
 
   observeTool(strategy, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] });
   assert.equal(strategy.verificationAttempts, 1);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(strategy.needsVerification, false);
+  assert.equal(strategy.verificationEpoch, strategy.mutationEpoch);
+  assert.equal(strategy.lastVerificationEvidence?.tool, 'bash');
   assert.equal(completionGate(strategy), null);
+});
+
+test('a later mutation invalidates earlier verification evidence', () => {
+  const strategy = createTurnStrategy('Verify, then change again');
+  observeTool(strategy, { name: 'edit', arguments: { path: 'a.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['a.mjs'] });
+  observeTool(strategy, { name: 'run_tests', arguments: { command: 'node --test a.test.mjs' } }, { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: [] });
+  assert.equal(strategy.needsVerification, false);
+  const verifiedEpoch = strategy.verificationEpoch;
+  observeTool(strategy, { name: 'edit', arguments: { path: 'b.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['b.mjs'] });
+  assert.equal(strategy.mutationEpoch, verifiedEpoch + 1);
+  assert.equal(strategy.needsVerification, true);
+  assert.equal(strategy.lastVerificationOk, null);
+  assert.equal(strategy.lastVerificationEvidence, null);
+  assert.match(completionGate(strategy) || '', /latest change/i);
 });
 
 test('failed verification keeps the completion gate active', () => {

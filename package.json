@@ -22,7 +22,13 @@
     "typecheck": "tsc -b",
     "lint": "biome check .",
     "format": "biome format --write .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "eval:run": "node scripts/run-agent-evals.mjs",
+    "eval:smoke": "node scripts/run-agent-evals.mjs --smoke",
+    "docs:check": "node scripts/check-capability-docs.mjs",
+    "telemetry:summary": "node scripts/summarize-turn-telemetry.mjs",
+    "lint:ci": "biome lint .",
+    "format:check": "biome format ."
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

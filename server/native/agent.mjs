@@ -10,7 +10,6 @@ import {
   callModelAutopilot,
   modelKey,
   promoteModelPlan,
-  subagentStepBudget,
   taskStepBudget,
 } from './autopilot.mjs';
 import {
@@ -26,7 +25,8 @@ import { clearProjectContext, getProjectContext, rememberProjectTurn } from './p
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
 import { isIncompleteToolCall } from './providers.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
-import { getSubagentProfile, subagentWrites } from './subagents.mjs';
+import { runSubagent } from './subagent-runner.mjs';
+import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from './turn-telemetry.mjs';
 import {
   classifyTaskOutcome,
   createLoopGuard,
@@ -189,91 +189,6 @@ async function resumePendingQuestion(sessionId, assistant, signal) {
   return true;
 }
 
-const SUBAGENT_READONLY_TOOL_NAMES = ['repo_map', 'read', 'list', 'glob', 'grep'];
-// Writer subagents additionally get the edit-and-verify loop. They never get
-// question (they cannot reach the user) or task (no recursive delegation).
-const SUBAGENT_WRITER_TOOL_NAMES = [
-  ...SUBAGENT_READONLY_TOOL_NAMES,
-  'write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests', 'diagnostics',
-];
-
-// Resolved per call against availableToolDefinitions() so a runtime without a
-// shell sandbox never advertises process-spawning tools to a subagent.
-function subagentToolsFor(profile) {
-  const allowed = subagentWrites(profile?.name) ? SUBAGENT_WRITER_TOOL_NAMES : SUBAGENT_READONLY_TOOL_NAMES;
-  return availableToolDefinitions().filter((tool) => allowed.includes(tool.name));
-}
-
-async function runSubagent(ownerId, modelPlan, input, workspace, signal, projectContext = '', sessionId = '') {
-  const prompt = String(input?.prompt || '').trim();
-  if (!prompt) throw new Error('Subagent prompt must not be empty');
-  const profile = getSubagentProfile(input?.agent);
-  const tools = subagentToolsFor(profile);
-  // A writer subagent runs the same sandboxed shell path as its parent turn, so
-  // it must carry the parent's session identity. Without it every
-  // process-spawning tool is correctly rejected for lack of isolation.
-  const toolContext = subagentWrites(profile.name) ? { workspace, sessionId, signal } : { workspace, signal };
-  const mutatedPaths = new Set();
-  let repositorySnapshot = '';
-  if (!projectContext) {
-    try {
-      const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
-      repositorySnapshot = toolOutputText(map).slice(0, 60_000);
-    } catch { /* repository map is an accelerator, not a hard dependency */ }
-  }
-  const frames = [{
-    role: 'user',
-    content: [prompt, repositorySnapshot && `[Automatic repository snapshot]\n${repositorySnapshot}`].filter(Boolean).join('\n\n'),
-  }];
-  const maxSteps = subagentStepBudget(profile, prompt);
-  let plan = modelPlan;
-  let selectedModel = plan?.candidates?.[0] || null;
-  for (let step = 0; step < maxSteps; step++) {
-    if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
-    const response = await callModelAutopilot(ownerId, plan, {
-      system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
-      frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
-      tools,
-      signal,
-    });
-    selectedModel = response.model || selectedModel;
-    plan = promoteModelPlan(plan, selectedModel);
-    const calls = response.toolCalls || [];
-    if (calls.length === 0) {
-      return {
-        report: response.text || `${profile.name} subagent completed without a written report.`,
-        kind: profile.name,
-        steps: step + 1,
-        repositorySnapshot: Boolean(repositorySnapshot || projectContext),
-        model: selectedModel ? modelKey(selectedModel) : '',
-        mutatedPaths: [...mutatedPaths],
-      };
-    }
-    frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
-    for (const call of calls) {
-      if (!tools.some((tool) => tool.name === call.name)) {
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Tool ${call.name} is not available to the ${profile.name} subagent.`, isError: true });
-        continue;
-      }
-      try {
-        const result = await executeTool(call.name, call.arguments || {}, toolContext);
-        for (const mutated of result?.mutatedPaths || []) mutatedPaths.add(mutated);
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: toolOutputText(result), isError: false });
-      } catch (err) {
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Error: ${err?.message || String(err)}`, isError: true });
-      }
-    }
-  }
-  return {
-    report: `${profile.name} subagent reached its ${maxSteps}-step investigation limit.`,
-    kind: profile.name,
-    steps: maxSteps,
-    repositorySnapshot: Boolean(repositorySnapshot || projectContext),
-    model: selectedModel ? modelKey(selectedModel) : '',
-    mutatedPaths: [...mutatedPaths],
-  };
-}
-
 function interruptedToolParts(assistant) {
   const ambiguous = [];
   let changed = false;
@@ -337,7 +252,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
     const workspace = workspaceFor(sessionId);
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
-      const subagent = await runSubagent(runtime.ownerId, runtime.modelPlan, call.arguments || {}, workspace, controller.signal, runtime.projectContext, sessionId);
+      const subagent = await runSubagent({ ownerId: runtime.ownerId, modelPlan: runtime.modelPlan, input: call.arguments || {}, workspace, signal: controller.signal, projectContext: runtime.projectContext, sessionId });
       result = {
         output: subagent.report,
         title: call.arguments?.description || `${subagent.kind} subagent report`,
@@ -422,8 +337,12 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
 function strategyInfo(strategy) {
   return {
     changed: strategy.changed,
+    changedPaths: Array.isArray(strategy.changedPaths) ? strategy.changedPaths.slice(-50) : [],
+    mutationEpoch: Number(strategy.mutationEpoch) || 0,
+    verificationEpoch: Number.isFinite(Number(strategy.verificationEpoch)) ? Number(strategy.verificationEpoch) : -1,
     verificationAttempts: strategy.verificationAttempts,
     lastVerificationOk: strategy.lastVerificationOk,
+    lastVerificationEvidence: strategy.lastVerificationEvidence || null,
     toolErrors: strategy.toolErrors,
   };
 }
@@ -439,7 +358,7 @@ function assistantHasProgress(assistant, strategy) {
   });
 }
 
-async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
+async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
   if (note) await emitText(assistant, note, 'text');
   assistant.time.completed = Date.now();
   assistant.info.finish = finish;
@@ -449,6 +368,7 @@ async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcom
   } : undefined;
   assistant.info.strategy = strategyInfo(strategy);
   assistant.info.outcome = outcome;
+  assistant.info.telemetry = finalizeTurnTelemetry(telemetry, { outcome, strategy, model: assistant.info.model || '', reason });
   assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
   if (error) assistant.info.error = { message: error?.message || String(error), name: error?.name || 'Error' };
   rememberProjectTurn(sessionId, {
@@ -459,6 +379,7 @@ async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcom
     summary: textParts(assistant).slice(-2_000),
   });
   persistAssistant(assistant);
+  if (assistant.info.telemetry) emit(sessionId, 'turn.telemetry', { telemetry: assistant.info.telemetry });
   try { markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed }); } catch { /* final message remains authoritative */ }
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
   emit(sessionId, 'session.idle', {});
@@ -505,13 +426,14 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
   let strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
+  let runtime = null;
 
   try {
     if (resume) await resumePendingQuestion(sessionId, assistant, controller.signal);
     const interrupted = resume ? interruptedToolParts(assistant) : [];
     const persistedAmbiguous = Array.isArray(job?.checkpoint?.ambiguousCalls) ? job.checkpoint.ambiguousCalls : [];
     const ambiguousSignatures = new Set([...persistedAmbiguous, ...interrupted]);
-    const runtime = {
+    runtime = {
       ownerId,
       modelPlan: job?.modelPlan?.candidates?.length ? job.modelPlan : await buildModelPlan(ownerId, requestedModel, goal),
       projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
@@ -523,6 +445,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         ambiguousSignatures,
         inspected: Boolean(job?.checkpoint?.recoveryInspected) || ambiguousSignatures.size === 0,
       },
+      telemetry: createTurnTelemetry({ sessionId, turnId: job?.turnId || getTurn(sessionId)?.turnId || '', goal, resumed: resume }),
     };
     const initialModel = runtime.modelPlan.candidates[0];
     assistant.info.model = assistant.info.model || modelKey(initialModel);
@@ -557,13 +480,16 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       runtime.stepsUsed = step;
       checkpointState(sessionId, runtime, strategy, { phase: 'before_model', stepsUsed: step });
       const live = liveTextSink(assistant);
+      const providerFrames = compactFrames(frames);
+      const modelStartedAt = Date.now();
       const response = await callModelAutopilot(ownerId, runtime.modelPlan, {
         system: [systemPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
-        frames: compactFrames(frames),
+        frames: providerFrames,
         tools: availableToolDefinitions(),
         signal: controller.signal,
         onTextDelta: (delta) => live.push(delta),
       });
+      recordModelCall(runtime.telemetry, { response, latencyMs: Date.now() - modelStartedAt, contextChars: JSON.stringify(providerFrames).length });
       const streamedText = live.finish();
       runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
       assistant.info.model = modelKey(response.model);
@@ -584,6 +510,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         const gate = completionGate(strategy);
         if (gate) {
           runtime.gateReminders += 1;
+          recordCompletionGate(runtime.telemetry);
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
           frames.push({ role: 'user', content: `${gate}\nReminder attempt: ${runtime.gateReminders}.` });
           checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
@@ -597,6 +524,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           strategy,
           usage: lastUsage,
           outcome,
+          telemetry: runtime?.telemetry,
           finish: response.finish || 'stop',
           lifecycle: 'completed',
           verdict: 'completed',
@@ -607,7 +535,9 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       if (response.text && !streamedText) await emitText(assistant, response.text, 'text');
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
       for (const call of calls) {
+        const toolStartedAt = Date.now();
         const result = await executeCall(sessionId, assistant, call, controller, runtime);
+        recordToolCall(runtime.telemetry, { call, result, latencyMs: Date.now() - toolStartedAt });
         observeTool(strategy, call, result);
         if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
@@ -633,6 +563,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       strategy,
       usage: lastUsage,
       outcome,
+      telemetry: runtime?.telemetry,
       finish: failed ? 'error' : 'stop',
       note,
       error: failed ? stopError : null,
@@ -653,6 +584,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         strategy,
         usage: lastUsage,
         outcome,
+        telemetry: runtime?.telemetry,
         finish: 'stop',
         lifecycle: 'cancelled',
         verdict: 'cancelled',
@@ -669,6 +601,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         strategy,
         usage: lastUsage,
         outcome,
+        telemetry: runtime?.telemetry,
         finish: 'error',
         note: `Работа остановилась из-за ошибки: ${err?.message || String(err)}. Выполненная часть сохранена.`,
         lifecycle: 'completed',
@@ -684,6 +617,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       strategy,
       usage: lastUsage,
       outcome,
+      telemetry: runtime?.telemetry,
       finish: 'error',
       error: err,
       lifecycle: 'failed',

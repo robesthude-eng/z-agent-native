@@ -1,6 +1,6 @@
 # Security model
 
-Z Agent Native is an autonomous agent execution environment. Tool calls are approved automatically by the runtime, so a model-selected shell command can run arbitrary programs and can reach hosts that are reachable from the runtime container. The security boundary therefore has to exist below the model, not in a browser confirmation dialog.
+Z Agent Native is an autonomous agent execution environment. Tool calls are approved automatically by the runtime, so model-selected processes must be treated as untrusted. Direct shell network clients are guarded by default, but application-layer command filtering is not a complete network sandbox. The security boundary therefore has to exist below the model, not in a browser confirmation dialog.
 
 ## Runtime secrets
 
@@ -55,6 +55,24 @@ validated public address is pinned into the socket connection, including for
 streaming provider requests, so DNS cannot change the destination between the
 check and connect.
 
+### Agent shell egress and workspace secrets
+
+`Z_AGENT_SHELL_NETWORK_POLICY=guarded` is the default. Before `bash` starts, the runtime rejects common direct network clients (`curl`, `wget`, `ssh`, `scp`, `sftp`, `nc`, etc.), obvious inline socket clients, and direct command references to common credential-like workspace files. `tool-only` additionally rejects package-manager network operations and remote Git operations. `open` restores the legacy unrestricted shell policy and should be reserved for trusted single-user workloads.
+
+`Z_AGENT_SENSITIVE_FILE_POLICY=block` also prevents the agent `read` tool from opening, and `grep` from scanning, common secret material such as `.env`, private SSH keys, `.netrc`, cloud credential stores and service-account/credential files. Example/template env files remain readable.
+
+These controls specifically reduce accidental and prompt-injection-driven exfiltration. Model-selected network tools have an additional destination policy: `Z_AGENT_NETWORK_POLICY=public` is the compatibility default, `allowlist` permits only hosts/subdomains named by `Z_AGENT_NETWORK_ALLOWLIST`, and `off` disables those external tools. In allowlist/off mode `ensure_environment` is also refused because package/toolchain installers can contact multiple registries that the runtime cannot pin to one configured destination.
+
+`webfetch` remains GET-only, SSRF-filtered and DNS-pinned. Browser automation disables service workers, revalidates every HTTP(S) request (including navigations/subresources), and blocks WebSockets. Chromium connections cannot reuse the native pinned-DNS socket transport, so browser validation still has a DNS-check-to-connect gap; strict deployments must pair hostname allowlisting with container/host egress rules or disable model browser networking. `websearch` is allowed in allowlist mode only when `api.search.brave.com` is itself allowlisted, and its Brave request uses the same DNS-pinned external transport as static fetches.
+
+These controls are **defense in depth, not a kernel egress firewall**: an arbitrary locally available interpreter/build/test tool may still be capable of opening a socket, and the interactive user terminal is intentionally not governed by the model-only policy. Multi-user deployments that require a hard no-egress boundary must enforce it at the container/namespace/firewall layer as well.
+
+## Prompt-injection boundary
+
+Repository files, comments, logs, attachments, webpages and tool results are explicitly treated as **untrusted data** in the parent and subagent system instructions. Instructions embedded in that content do not gain authority over the user's request or runtime policy, and the model is told not to use them to disclose secrets, weaken controls, reach unrelated destinations or escape the delegated scope. Repository build instructions may still be used as evidence when they are relevant to the user's requested task and are independently verified.
+
+This is defense in depth, not a security boundary by itself. A sufficiently capable or manipulated model can still make unsafe choices, so sensitive deployments should combine `Z_AGENT_NETWORK_POLICY=allowlist|off`, `Z_AGENT_SHELL_NETWORK_POLICY=tool-only`, the workspace secret policy, and host/container egress controls. The compatibility default `Z_AGENT_NETWORK_POLICY=public` intentionally preserves web features and therefore must not be interpreted as a hard anti-exfiltration mode.
+
 ## Automatic tool approval
 
 Write/edit/patch/bash/webfetch/websearch/environment tool calls do not stop for interactive permission confirmation. The native runtime approves those permission gates immediately so an agent turn can continue without depending on a browser tab or network round-trip.
@@ -95,6 +113,7 @@ For production:
 - `Z_AGENT_RELAY_URL` is empty by default. When set it must be an HTTPS host that is not loopback/private, and the operator is warned at startup that the relay observes provider API keys and prompt bodies in clear text.
 - `webfetch` and provider requests resolve DNS first, validate every returned address, and then connect to the validated address, so a DNS rebind between check and connect cannot reach loopback, link-local or private ranges.
 - Redirects are not followed for agent-initiated fetches.
+- Model `bash` uses the `guarded` shell egress policy by default; use `tool-only` plus container/network policy for stricter multi-user deployments. Do not treat command filtering as a firewall.
 
 ## Multi-user exposure
 

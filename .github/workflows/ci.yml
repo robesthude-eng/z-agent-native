@@ -31,6 +31,10 @@ jobs:
       - run: npm ci
       - name: Validate eval manifest
         run: npm run eval:validate
+      - name: Check capability documentation
+        run: npm run docs:check
+      - name: Deterministic agent smoke eval
+        run: npm run eval:smoke
       - name: Native runtime tests
         run: npm run test:native
 
@@ -45,7 +49,10 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      # `if: always()` so one red step still reports the other two instead of
+      # Correctness lint is blocking; formatting remains report-only below.
+      - name: Lint correctness
+        run: npm run lint:ci
+      # `if: always()` so one red step still reports the remaining checks instead of
       # hiding them behind the first failure.
       - name: Typecheck
         if: always()
@@ -92,16 +99,25 @@ jobs:
           retention-days: 5
           if-no-files-found: ignore
 
-  # ---------------------------------------------------------------------------
-  # Report-only. These surface debt without blocking a deploy: formatting churn
-  # and a fresh upstream advisory must not strand a runtime fix. Promote a step
-  # to the blocking jobs above once it is green and stays green.
-  # ---------------------------------------------------------------------------
-
-  quality:
-    name: Quality (report only)
+  security:
+    name: Runtime dependency security
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Block new high/critical runtime advisories
+        run: npm audit --omit=dev --audit-level=high
+
+  # Formatting churn is useful feedback but not a production correctness gate.
+  quality:
+    name: Formatting (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -110,9 +126,9 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - name: Lint
+      - name: Lint correctness
         if: always()
-        run: npm run lint
-      - name: Audit runtime dependencies
+        run: npm run lint:ci
+      - name: Check formatting
         if: always()
-        run: npm audit --omit=dev --audit-level=high
+        run: npm run format:check

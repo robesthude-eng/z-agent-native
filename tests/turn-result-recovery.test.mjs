@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-result-recovery-'));
+fs.chmodSync(root, 0o755); // allow the root-run per-session UID sandbox to traverse the test parent
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';

@@ -11,3 +11,5 @@ coverage/
 .e2e-tmp/
 playwright-report/
 test-results/
+evals/latest-*.json
+turn-telemetry.jsonl*
