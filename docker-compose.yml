@@ -25,11 +25,13 @@ services:
       - SETGID
       - KILL
     # Model-generated code runs in this container: bound the blast radius of a
-    # fork bomb, a runaway build or a memory leak.
+    # fork bomb, a runaway build or a memory leak. Caps must fit the host —
+    # Docker refuses to start if `cpus` exceeds nproc (this VPS is 2 / 3.8G,
+    # no swap). Raise them when the box grows.
     pids_limit: 2048
-    mem_limit: 6g
-    memswap_limit: 6g
-    cpus: 4.0
+    mem_limit: 3g
+    memswap_limit: 3g
+    cpus: 2.0
     ulimits:
       nofile:
         soft: 4096
