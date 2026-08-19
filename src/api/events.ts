@@ -33,7 +33,7 @@ const DEFAULT_NAMED_TYPES: readonly string[] = [
   "file.watcher.updated",
 ];
 
-export type StreamStatus = "connecting" | "open" | "closed";
+export type StreamStatus = "connecting" | "open" | "closed" | "idle";
 
 // Module-level mirror of the latest EventStream status. The app runs a single
 // EventStream instance (see router.tsx), so consumers outside React (e.g. the
@@ -104,6 +104,9 @@ export class EventStream {
     activeStreamSessionId = this.sessionId;
     this.url = url ?? eventUrl(this.sessionId);
     this.namedTypes = namedTypes ?? DEFAULT_NAMED_TYPES;
+    if (this.requiresSession && !this.sessionId) {
+      this.setStatus("idle");
+    }
   }
 
   /** Rebuild the URL with a fresh token (call after re-login). */
@@ -157,7 +160,9 @@ export class EventStream {
   connect() {
     this.connectRequested = true;
     if (this.requiresSession && !this.sessionId) {
-      this.setStatus("closed");
+      // Welcome / new-chat: there is no session-scoped bus yet. This is not
+      // a transport failure — the reconnect banner must stay hidden.
+      this.setStatus("idle");
       return;
     }
     // P1-fix: защита от двойного вызова connect() — если соединение уже

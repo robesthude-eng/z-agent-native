@@ -107,7 +107,7 @@ export interface SessionsSlice {
   currentID: string | null;
   status: Record<string, SessionStatus>;
   permissions: PermissionRequest[];
-  connection: "connecting" | "open" | "closed";
+  connection: "connecting" | "open" | "closed" | "idle";
   serverConnected: boolean | null;
   loading: boolean;
   error: string | null;
