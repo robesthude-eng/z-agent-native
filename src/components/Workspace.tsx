@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { changedFilesLabel, t } from "@/i18n";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { api, workspaceDownloadUrl } from "../api/client";
@@ -668,7 +669,7 @@ export default function Workspace() {
             {/* `text-white`, а не тон темы, здесь означало «невидимо в
                 светлой теме»: заголовок панели рисовался белым по почти
                 белому. */}
-            <span className="text-foreground">Files</span>
+            <span className="text-foreground">{t("workspace.files")}</span>
           </div>
           <div className="flex items-center gap-1">
             <Button
@@ -802,8 +803,7 @@ export default function Workspace() {
           <div className="border-b border-border px-3 pb-2 shrink-0">
             <div className="mb-1 flex items-center gap-2 py-1 text-xs text-muted-foreground">
               <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
-              {gitFiles.length} changed{" "}
-              {gitFiles.length === 1 ? "file" : "files"}
+              {changedFilesLabel(gitFiles.length)}
             </div>
             <div className="flex max-h-40 flex-col gap-0.5 overflow-y-auto">
               {gitFiles.slice(0, 8).map((f) => (

@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import { useStore } from "../store/useStore";
 import { markStopRequested } from "./stopUx";
 
@@ -9,24 +10,12 @@ const RESET_DELAY_MS = 6000;
 let dispose: (() => void) | null = null;
 const pendingTimers = new Set<number>();
 
-function compactText(value: string | null | undefined): string {
-  return String(value || "").replace(/\s+/g, " ").trim();
-}
-
 function later(run: () => void, delayMs: number) {
   const id = window.setTimeout(() => {
     pendingTimers.delete(id);
     run();
   }, delayMs);
   pendingTimers.add(id);
-}
-
-// TODO: the English label comes from src/components/Workspace.tsx. Translating
-// it there removes the need for this DOM pass and for installWorkspaceLabel.
-function localizeWorkspace(root: ParentNode) {
-  for (const span of root.querySelectorAll<HTMLSpanElement>("aside header span")) {
-    if (compactText(span.textContent) === "Files") span.textContent = "Файлы";
-  }
 }
 
 /**
@@ -40,7 +29,7 @@ function installStopFeedback(): () => void {
     const target = event.target;
     if (!(target instanceof Element)) return;
     const button = target.closest<HTMLButtonElement>(
-      'button[aria-label="Остановить генерацию"]',
+      `button[aria-label="${t("stop.action")}"]`,
     );
     if (!button || button.dataset.zStopping === "true") return;
 
@@ -59,8 +48,8 @@ function installStopFeedback(): () => void {
     }
 
     button.dataset.zStopping = "true";
-    button.setAttribute("aria-label", "Останавливаю ответ");
-    button.title = "Останавливаю…";
+    button.setAttribute("aria-label", t("stop.pending"));
+    button.title = t("stop.pendingShort");
     button.disabled = true;
 
     later(() => {
@@ -69,8 +58,8 @@ function installStopFeedback(): () => void {
       if (!button.isConnected || button.dataset.zStopping !== "true") return;
       delete button.dataset.zStopping;
       button.disabled = false;
-      button.setAttribute("aria-label", "Остановить генерацию");
-      button.title = "Остановить генерацию";
+      button.setAttribute("aria-label", t("stop.action"));
+      button.title = t("stop.action");
     }, RESET_DELAY_MS);
   };
 
@@ -78,23 +67,10 @@ function installStopFeedback(): () => void {
   return () => document.removeEventListener("click", onClick);
 }
 
-function installWorkspaceLabel(): () => void {
-  localizeWorkspace(document);
-  const onClick = (event: MouseEvent) => {
-    const target = event.target;
-    if (!(target instanceof Element)) return;
-    if (!target.closest('[data-testid="workspace-toggle"]')) return;
-    // Workspace is rendered by React after the click handler returns.
-    later(() => localizeWorkspace(document), 0);
-  };
-  document.addEventListener("click", onClick);
-  return () => document.removeEventListener("click", onClick);
-}
-
 /**
  * Tiny compatibility entrypoint retained for existing bootstrap imports.
- * No MutationObserver is installed: presentation work is bound only to the two
- * explicit user actions that still need legacy bridging. Calling it twice is a
+ * No MutationObserver is installed: presentation work is bound only to the one
+ * explicit user action that still needs legacy bridging. Calling it twice is a
  * no-op, and the returned disposer removes everything it installed.
  */
 export function initAutonomyUx(): () => void {
@@ -102,7 +78,7 @@ export function initAutonomyUx(): () => void {
     return () => {};
   }
   if (dispose) return dispose;
-  const cleanups = [installStopFeedback(), installWorkspaceLabel()];
+  const cleanups = [installStopFeedback()];
   dispose = () => {
     for (const cleanup of cleanups) cleanup();
     for (const id of pendingTimers) window.clearTimeout(id);

@@ -6,11 +6,20 @@ on:
     branches:
       - main
 
+# A superseded PR run has no value and only delays the queue. Never cancel main:
+# the Deploy workflow keys off a completed CI run for a specific SHA.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
-  # Deploy gate. Only checks that are known to pass may block production, so a
-  # red pre-existing frontend gate can never strand server fixes again.
-  tests:
-    name: Native tests
+  # ---------------------------------------------------------------------------
+  # Blocking gates. Deploy runs on `workflow_run: CI completed && success`, so
+  # every job below that is not `continue-on-error` is a real production gate.
+  # ---------------------------------------------------------------------------
+
+  native:
+    name: Native runtime tests
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -20,14 +29,79 @@ jobs:
           node-version: '24'
           cache: npm
       - run: npm ci
-      - run: npm run test:native
+      - name: Validate eval manifest
+        run: npm run eval:validate
+      - name: Native runtime tests
+        run: npm run test:native
 
-  # Report-only. continue-on-error keeps the workflow conclusion green so the
-  # Deploy workflow still runs, while every failure stays visible in the run.
+  frontend:
+    name: Frontend gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      # `if: always()` so one red step still reports the other two instead of
+      # hiding them behind the first failure.
+      - name: Typecheck
+        if: always()
+        run: npm run typecheck
+      - name: Unit tests
+        if: always()
+        run: npm test
+      - name: Build
+        if: always()
+        run: npm run build
+      - name: Upload build output
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist
+          retention-days: 5
+          if-no-files-found: ignore
+
+  e2e:
+    name: End-to-end
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - name: Install Playwright browser
+        run: npx playwright install --with-deps chromium
+      - name: Run end-to-end suite
+        run: npm run test:e2e
+        env:
+          # The e2e runtime is disposable and never holds provider credentials.
+          Z_AGENT_ALLOW_OPEN_REGISTRATION: '1'
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: playwright-report
+          retention-days: 5
+          if-no-files-found: ignore
+
+  # ---------------------------------------------------------------------------
+  # Report-only. These surface debt without blocking a deploy: formatting churn
+  # and a fresh upstream advisory must not strand a runtime fix. Promote a step
+  # to the blocking jobs above once it is green and stays green.
+  # ---------------------------------------------------------------------------
+
   quality:
     name: Quality (report only)
     runs-on: ubuntu-latest
-    timeout-minutes: 25
+    timeout-minutes: 20
     continue-on-error: true
     steps:
       - uses: actions/checkout@v4
@@ -39,15 +113,6 @@ jobs:
       - name: Lint
         if: always()
         run: npm run lint
-      - name: Frontend tests
-        if: always()
-        run: npm test
-      - name: Typecheck
-        if: always()
-        run: npm run typecheck
-      - name: Build
-        if: always()
-        run: npm run build
       - name: Audit runtime dependencies
         if: always()
         run: npm audit --omit=dev --audit-level=high
