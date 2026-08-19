@@ -134,7 +134,12 @@ test('non-streaming provider calls retry transient HTTP errors', async () => {
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
-    if (calls < 3) return new Response(JSON.stringify({ error: { message: 'busy' } }), { status: 429, headers: { 'content-type': 'application/json' } });
+    if (calls < 3) {
+      return new Response(JSON.stringify({ error: { message: 'busy' } }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '0' },
+      });
+    }
     return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
   };
   try {
@@ -263,6 +268,66 @@ test('provider URL is blocked before relay wrapping can hide a private destinati
     assert.equal(result.status, 'unavailable');
     assert.match(result.error, /Локальные|служебные/);
     assert.equal(calls, 0);
+  } finally { globalThis.fetch = original; }
+});
+
+test('streaming waits out a 429 and continues the same turn', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({
+        error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+      }), {
+        status: 429,
+        headers: { 'content-type': 'application/json', 'retry-after': '0' },
+      });
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.equal(calls, 2);
+  } finally { globalThis.fetch = original; }
+});
+
+test('a Console rate-limit payload is retryable even without HTTP 429', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      return new Response(JSON.stringify({
+        error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+      }), {
+        status: 400,
+        headers: { 'content-type': 'application/json', 'retry-after': '0' },
+      });
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.equal(calls, 2);
+    assert.equal(providers.isRateLimitProviderError({
+      statusCode: 400,
+      message: 'Error from provider (Console): Rate limit exceeded. Please try again later.',
+    }), true);
   } finally { globalThis.fetch = original; }
 });
 
