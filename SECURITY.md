@@ -67,7 +67,7 @@ For production:
 
 - The compose service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002`). Public exposure and TLS belong to the reverse proxy in front of it.
 - `no-new-privileges` is enabled and every Linux capability is dropped except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID` and `KILL`, which per-session UID isolation needs. If terminals or sandboxed shells stop working after an image change, add the missing capability explicitly instead of removing `cap_drop`.
-- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and the `nofile` ulimit bound a fork bomb or a runaway build started by the model.
+- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and the `nofile` ulimit bound a fork bomb or a runaway build started by the model. `cpus` and `mem_limit` must not exceed the host (`nproc` / RAM); Docker fails the container create otherwise. Current production is 2 CPU / 3.8G, so compose ships `cpus: 2.0` and `mem_limit: 3g`.
 - Network recon tooling (`netcat`, `ping`, `dig`, `psql`) is not installed in the runtime image.
 - Deployment verifies the server against a pinned host key from the `DEPLOY_SSH_HOST_KEY` secret. `ssh-keyscan` at deploy time is not used, because it trusts whatever answers on the network.
 - `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares `Z_AGENT_SECRET_KEY`. Without a shared disk the lock is global but the files are not.
