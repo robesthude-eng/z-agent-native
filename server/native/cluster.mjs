@@ -179,19 +179,33 @@ export function acquireLock(key, options = {}) {
   const { ttlMs = LOCK_TTL_MS, owner = null, now = Date.now(), instanceId = INSTANCE_ID } = options;
   if (!CLUSTER_ENABLED) return { ok: true, instanceId, owner, expiresAt: now + ttlMs, takeover: false };
   const handle = connect();
-  const current = handle.prepare('SELECT instance_id, owner, expires_at FROM cluster_locks WHERE key=?').get(key);
-  const expired = current ? Number(current.expires_at) <= now : false;
-  if (current && !expired && current.instance_id !== instanceId) {
-    return { ok: false, instanceId: current.instance_id, owner: current.owner ?? null, expiresAt: Number(current.expires_at), takeover: false };
+  // The guarded upsert below is atomic per statement, but the surrounding
+  // read-decide-write was not: between the first SELECT and the INSERT another
+  // replica could take the lock, and the early return would then report a
+  // holder that no longer exists. BEGIN IMMEDIATE takes the write lock up front
+  // so the whole decision is serialised; busy_timeout makes the loser wait
+  // instead of failing with SQLITE_BUSY.
+  handle.exec('BEGIN IMMEDIATE');
+  try {
+    const current = handle.prepare('SELECT instance_id, owner, expires_at FROM cluster_locks WHERE key=?').get(key);
+    const expired = current ? Number(current.expires_at) <= now : false;
+    if (current && !expired && current.instance_id !== instanceId) {
+      handle.exec('COMMIT');
+      return { ok: false, instanceId: current.instance_id, owner: current.owner ?? null, expiresAt: Number(current.expires_at), takeover: false };
+    }
+    // Two replicas racing for an expired lock both run this, and only one row
+    // survives.
+    handle
+      .prepare('INSERT INTO cluster_locks (key, instance_id, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET instance_id=excluded.instance_id, owner=excluded.owner, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE cluster_locks.expires_at <= ? OR cluster_locks.instance_id = ?')
+      .run(key, instanceId, owner, now, now + ttlMs, now, instanceId);
+    const after = handle.prepare('SELECT instance_id, owner, expires_at FROM cluster_locks WHERE key=?').get(key);
+    handle.exec('COMMIT');
+    const ok = after?.instance_id === instanceId;
+    return { ok, instanceId: after?.instance_id ?? null, owner: after?.owner ?? null, expiresAt: Number(after?.expires_at) || 0, takeover: ok && expired };
+  } catch (error) {
+    try { handle.exec('ROLLBACK'); } catch {}
+    throw error;
   }
-  // The guarded upsert is what actually makes this atomic: two replicas racing
-  // for an expired lock both run it, and only one row survives.
-  handle
-    .prepare('INSERT INTO cluster_locks (key, instance_id, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET instance_id=excluded.instance_id, owner=excluded.owner, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE cluster_locks.expires_at <= ? OR cluster_locks.instance_id = ?')
-    .run(key, instanceId, owner, now, now + ttlMs, now, instanceId);
-  const after = handle.prepare('SELECT instance_id, owner, expires_at FROM cluster_locks WHERE key=?').get(key);
-  const ok = after?.instance_id === instanceId;
-  return { ok, instanceId: after?.instance_id ?? null, owner: after?.owner ?? null, expiresAt: Number(after?.expires_at) || 0, takeover: ok && expired };
 }
 
 export function renewLock(key, options = {}) {

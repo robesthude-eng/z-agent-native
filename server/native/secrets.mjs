@@ -27,7 +27,20 @@ function masterKey() {
     if (existing.length === 32) return (cachedKey = existing);
   } catch {}
   const generated = crypto.randomBytes(32);
-  fs.writeFileSync(KEY_FILE, generated, { mode: 0o600, flag: 'wx' });
+  try {
+    fs.writeFileSync(KEY_FILE, generated, { mode: 0o600, flag: 'wx' });
+  } catch (error) {
+    // Two processes booting at once both miss the read above and both race to
+    // create the key. `wx` is what keeps the loser from overwriting the winner
+    // (which would make every already-encrypted provider key undecryptable),
+    // but the resulting EEXIST used to escape as a startup crash. Adopt the key
+    // that actually landed on disk instead.
+    if (error?.code !== 'EEXIST') throw error;
+    const existing = fs.readFileSync(KEY_FILE);
+    if (existing.length !== 32) throw error;
+    try { fs.chmodSync(KEY_FILE, 0o600); } catch {}
+    return (cachedKey = existing);
+  }
   try { fs.chmodSync(KEY_FILE, 0o600); } catch {}
   return (cachedKey = generated);
 }

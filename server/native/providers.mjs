@@ -366,7 +366,10 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2 } = {}
 
 function providerAuth(spec, key) {
   if (spec.kind === 'anthropic') return { 'x-api-key': key, 'anthropic-version': '2023-06-01' };
-  if (spec.kind === 'google') return {};
+  // The key used to travel in the query string, where it ends up in relay and
+  // proxy access logs, in Referer headers and in crash reports. Google accepts
+  // the same credential as a header, so it stays inside the TLS session.
+  if (spec.kind === 'google') return { 'x-goog-api-key': key };
   return { authorization: `Bearer ${key}` };
 }
 
@@ -394,11 +397,10 @@ async function routedProviderTarget(directUrl, trustedBaseURL, { preferDirect = 
   return { ...relayTarget, fallback: directTarget };
 }
 
-function modelListDirectUrl(spec, key) {
-  const base = spec.baseURL.replace(/\/$/, '');
-  return spec.kind === 'google'
-    ? `${base}/models?key=${encodeURIComponent(key)}`
-    : `${base}/models`;
+function modelListDirectUrl(spec) {
+  // Every provider now authenticates through providerAuth() headers, so the
+  // catalog URL no longer differs per kind.
+  return `${spec.baseURL.replace(/\/$/, '')}/models`;
 }
 
 async function fetchModelList(spec, key) {
@@ -408,7 +410,7 @@ async function fetchModelList(spec, key) {
     'user-agent': 'Z-Agent/1.0',
     ...providerAuth(spec, key),
   };
-  const direct = modelListDirectUrl(spec, key);
+  const direct = modelListDirectUrl(spec);
   if (!spec.trustedBaseURL) await assertSafeProviderUrl(direct);
   const urls = [...new Set([wrapProviderUrl(direct), direct])].map((url) => ({
     url,
@@ -567,7 +569,7 @@ export function resolveModel(ownerId, model) {
   }
   const spec = specs[providerID];
   const key = getProviderKey(ownerId, providerID);
-  if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
+  if (!spec) throw Object.assign(new Error(`Неизвестный п��овайдер: ${providerID}`), { statusCode: 400 });
   if (spec.enabled === false) throw Object.assign(new Error(`Провайдер ${spec.name} выключен`), { statusCode: 400 });
   if (!key) throw Object.assign(new Error(`API key для ${spec.name} не настроен`), { statusCode: 400 });
   return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };
@@ -800,7 +802,7 @@ function geminiContents(frames) {
 async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta }) {
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
-  const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}?${typeof onTextDelta === 'function' ? 'alt=sse&' : ''}key=${encodeURIComponent(resolved.key)}`;
+  const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}${typeof onTextDelta === 'function' ? '?alt=sse' : ''}`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
     preferDirect: typeof onTextDelta === 'function',
   });
@@ -810,7 +812,13 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
     tools: [{ functionDeclarations: tools.map((t) => ({ name: t.name, description: t.description, parameters: t.inputSchema })) }],
     generationConfig: { maxOutputTokens: 8192 },
   };
-  const headers = { 'content-type': 'application/json', accept: typeof onTextDelta === 'function' ? 'text/event-stream' : 'application/json' };
+  // Key in a header, not in the query string: the URL is what gets logged by
+  // the relay, by intermediate proxies and by our own error reporting.
+  const headers = {
+    'content-type': 'application/json',
+    accept: typeof onTextDelta === 'function' ? 'text/event-stream' : 'application/json',
+    'x-goog-api-key': resolved.key,
+  };
   const consume = (body, state) => {
     const candidate = body?.candidates?.[0];
     if (!candidate) return;

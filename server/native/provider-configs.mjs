@@ -9,6 +9,12 @@ export const PROVIDER_PROTOCOLS = ['openai', 'anthropic', 'google'];
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 const db = new DatabaseSync(DB_PATH);
 db.exec(`
+  -- Same database file as store.mjs. Journal mode is a property of the file, so
+  -- opening this handle in the default rollback mode fought with the WAL writer
+  -- instead of joining it; busy_timeout matches store.mjs so BEGIN IMMEDIATE
+  -- below waits its turn rather than failing with SQLITE_BUSY.
+  PRAGMA journal_mode=WAL;
+  PRAGMA busy_timeout=5000;
   PRAGMA foreign_keys=ON;
   CREATE TABLE IF NOT EXISTS provider_configs (
     owner_id TEXT NOT NULL,

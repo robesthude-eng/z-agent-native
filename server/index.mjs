@@ -13,18 +13,18 @@ import {
 import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES, TRUST_PROXY } from './native/config.mjs';
 import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.mjs';
 import { clearSessionEvents, emit, openSse } from './native/events.mjs';
-import { assertActionId, messageId, sessionId } from './native/ids.mjs';
+import { assertActionId, sessionId } from './native/ids.mjs';
 import { readJson, sendJson } from './native/json.mjs';
 import { handleProviderChannels } from './native/provider-channels.mjs';
 import { normalizeProviderBaseUrl } from './native/provider-configs.mjs';
 import {
-  buildCatalog, fetchModels, probeModel, providerList, providerSpecs,
+  buildCatalog, probeModel, providerList, providerSpecs,
 } from './native/providers.mjs';
 import { safeWorkspacePath } from './native/security.mjs';
 import { assertRuntimeSecretsPrivate, killSandboxProcesses, shellSandboxAvailable } from './native/sandbox.mjs';
 import {
   createChat, deleteChat, deleteManualModel, deleteMessagesFrom, deleteProviderKey,
-  dequeueAction, enqueueAction, getChat, getPrefs, getProviderKey, getTurn,
+  dequeueAction, enqueueAction, getChat, getPrefs, getTurn,
   listChats, listHiddenModels, listManualModels, listMessages, listPendingQuestions,
   listProviderKeyIds, listQueue, ownsChat, recoverInterruptedRuntimeState, renameChat, setHiddenModel, setPrefs,
   setProviderKey, upsertManualModel, workspaceFor,
@@ -60,8 +60,11 @@ function authRateKey(req) {
 
 let lastAuthSweep = 0;
 
+// The limiter counts failures only, and a success no longer resets it. Counting
+// every attempt and wiping the window on success meant an attacker could spray
+// 19 guesses at one account, log into an account they own to clear the counter,
+// and repeat from the same address forever.
 function checkAuthRate(req) {
-  const key = authRateKey(req);
   const now = Date.now();
   // Sweep on a timer, not only when the map is huge and the request happens to
   // be under the limit: expired entries used to survive indefinitely.
@@ -69,16 +72,18 @@ function checkAuthRate(req) {
     lastAuthSweep = now;
     for (const [k, value] of authAttempts) if (now >= value.resetAt) authAttempts.delete(k);
   }
-  const current = authAttempts.get(key);
-  if (!current || now >= current.resetAt) {
-    authAttempts.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
-    return true;
-  }
-  current.count += 1;
-  return current.count <= AUTH_MAX_ATTEMPTS;
+  const current = authAttempts.get(authRateKey(req));
+  if (!current || now >= current.resetAt) return true;
+  return current.count < AUTH_MAX_ATTEMPTS;
 }
 
-function clearAuthRate(req) { authAttempts.delete(authRateKey(req)); }
+function noteAuthFailure(req) {
+  const key = authRateKey(req);
+  const now = Date.now();
+  const current = authAttempts.get(key);
+  if (!current || now >= current.resetAt) authAttempts.set(key, { count: 1, resetAt: now + AUTH_WINDOW_MS });
+  else current.count += 1;
+}
 
 function securityHeaders(res) {
   res.setHeader('x-content-type-options', 'nosniff');
@@ -126,7 +131,10 @@ function sessionFromPath(pathname) {
 
 function mimeFor(full) {
   const ext = path.extname(full).toLowerCase();
-  return ({ '.html':'text/html; charset=utf-8','.htm':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.pdf':'application/pdf','.txt':'text/plain; charset=utf-8','.md':'text/markdown; charset=utf-8' })[ext] || 'application/octet-stream';
+  // Missing entries fell back to application/octet-stream, which makes the
+  // browser refuse the asset: .wasm never reaches instantiateStreaming, .ico
+  // and the fonts are dropped, and .map breaks devtools on the preview server.
+  return ({ '.html':'text/html; charset=utf-8','.htm':'text/html; charset=utf-8','.css':'text/css; charset=utf-8','.js':'text/javascript; charset=utf-8','.mjs':'text/javascript; charset=utf-8','.json':'application/json; charset=utf-8','.map':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.gif':'image/gif','.webp':'image/webp','.avif':'image/avif','.ico':'image/x-icon','.wasm':'application/wasm','.woff':'font/woff','.woff2':'font/woff2','.ttf':'font/ttf','.otf':'font/otf','.mp4':'video/mp4','.webm':'video/webm','.xml':'application/xml; charset=utf-8','.pdf':'application/pdf','.txt':'text/plain; charset=utf-8','.md':'text/markdown; charset=utf-8' })[ext] || 'application/octet-stream';
 }
 
 async function route(req, res) {
@@ -142,17 +150,19 @@ async function route(req, res) {
   if (p === '/api/auth/register' && req.method === 'POST') {
     if (!checkAuthRate(req)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     const body = await readJson(req, 64 * 1024);
-    const user = registerUser(body.email, body.password, body.inviteCode);
+    let user;
+    try { user = registerUser(body.email, body.password, body.inviteCode); }
+    catch (error) { noteAuthFailure(req); throw error; }
     const login = issueLogin(user.email);
-    clearAuthRate(req);
     return sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
   }
   if (p === '/api/auth/login' && req.method === 'POST') {
     if (!checkAuthRate(req)) return sendJson(res, 429, { error: 'Слишком много попыток. Повторите позже.' });
     const body = await readJson(req, 64 * 1024);
-    const user = loginUser(body.email, body.password);
+    let user;
+    try { user = loginUser(body.email, body.password); }
+    catch (error) { noteAuthFailure(req); throw error; }
     const login = issueLogin(user.email);
-    clearAuthRate(req);
     return sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
   }
   if (p === '/api/auth/me' && req.method === 'GET') {
@@ -161,7 +171,7 @@ async function route(req, res) {
   }
   if (p === '/api/auth/logout' && req.method === 'POST') {
     const auth = authFromRequest(req);
-    if (auth && !checkCsrf(req, res)) return;
+    if (auth && !checkCsrf(req, res, auth)) return;
     if (auth) logoutToken(auth.token);
     return sendJson(res, 200, { status: 'success' }, { 'set-cookie': clearCookies() });
   }
@@ -170,7 +180,7 @@ async function route(req, res) {
 
   const auth = requireAuth(req, res);
   if (!auth) return;
-  if (!checkCsrf(req, res)) return;
+  if (!checkCsrf(req, res, auth)) return;
   const ownerId = auth.user.email;
 
   if (p === '/api/ui-config' && req.method === 'GET') {

@@ -26,6 +26,17 @@ const OUTCOME_LABELS = {
   cancelled: 'Остановлено пользователем',
 };
 
+// Счётчики подставлялись в текст с жёстким «раза», поэтому при любом
+// значении лимита, кроме 2–4, пользователь видел «5 раза» или «1 раза».
+function plural(count, one, few, many) {
+  const n = Math.abs(Number(count) || 0) % 100;
+  if (n > 10 && n < 20) return many;
+  const tail = n % 10;
+  if (tail === 1) return one;
+  if (tail >= 2 && tail <= 4) return few;
+  return many;
+}
+
 function stableValue(value) {
   if (Array.isArray(value)) return value.map(stableValue);
   if (!value || typeof value !== 'object') return value;
@@ -148,7 +159,7 @@ export function observeToolLoop(guard, call, result) {
       code: 'repeated_tool_result',
       tool: name,
       repeats: guard.consecutive,
-      message: `Агент ${guard.consecutive} раза подряд повторил одно и то же действие «${name}» без нового результата.`,
+      message: `Агент ${guard.consecutive} ${plural(guard.consecutive, 'раз', 'раза', 'раз')} подряд повторил одно и то же действие «${name}» без нового результата.`,
     };
   }
   if (guard.callCounts[signature] >= guard.callRepeatLimit) {
@@ -156,7 +167,7 @@ export function observeToolLoop(guard, call, result) {
       code: 'repeated_tool_call',
       tool: name,
       repeats: guard.callCounts[signature],
-      message: `Агент ${guard.callCounts[signature]} раза повторил одно и то же действие «${name}» в этом ходе.`,
+      message: `Агент ${guard.callCounts[signature]} ${plural(guard.callCounts[signature], 'раз', 'раза', 'раз')} повторил одно и то же действие «${name}» в этом ходе.`,
     };
   }
   if (recentCount >= guard.recentLimit) {

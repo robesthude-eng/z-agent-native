@@ -337,13 +337,36 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
   });
 }
 
+function assertSafePatchPath(raw) {
+  let value = String(raw || '').trim().split('\t')[0];
+  if (!value || value === '/dev/null') return;
+  // git quotes paths containing spaces or non-ASCII bytes; unquote before
+  // checking so `"a/../../etc/passwd"` cannot walk past the naive prefix strip.
+  if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
+    try { value = JSON.parse(value); } catch { throw new Error(`Unsafe patch path: ${raw}`); }
+  }
+  value = value.replace(/^[ab]\//, '');
+  if (path.isAbsolute(value) || value.split(/[\\/]+/).includes('..') || value.includes('\0')) throw new Error(`Unsafe patch path: ${value}`);
+}
+
 function validatePatchPaths(patchText) {
   for (const line of String(patchText || '').split('\n')) {
-    if (!(line.startsWith('--- ') || line.startsWith('+++ '))) continue;
-    let value = line.slice(4).trim().split('\t')[0];
-    if (!value || value === '/dev/null') continue;
-    value = value.replace(/^[ab]\//, '');
-    if (path.isAbsolute(value) || value.split(/[\\/]+/).includes('..') || value.includes('\0')) throw new Error(`Unsafe patch path: ${value}`);
+    // `--- / +++` are not the only headers git apply reads a destination from:
+    // a rename or copy header carries its own paths, and for a pure rename
+    // there are no ---/+++ lines at all, so the old loop validated nothing.
+    if (line.startsWith('--- ') || line.startsWith('+++ ')) assertSafePatchPath(line.slice(4));
+    else if (line.startsWith('rename from ')) assertSafePatchPath(line.slice(12));
+    else if (line.startsWith('rename to ')) assertSafePatchPath(line.slice(10));
+    else if (line.startsWith('copy from ')) assertSafePatchPath(line.slice(10));
+    else if (line.startsWith('copy to ')) assertSafePatchPath(line.slice(8));
+    else if (line.startsWith('diff --git ')) {
+      // Two paths on one line, either of which may contain spaces. Checking
+      // every whitespace-separated token is coarse but fails safe: a fragment
+      // of a legitimate relative path is never absolute and never `..`.
+      for (const token of line.slice(11).split(/\s+/)) {
+        if (token) assertSafePatchPath(token);
+      }
+    }
   }
 }
 

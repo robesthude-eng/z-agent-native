@@ -86,7 +86,7 @@ async function req<T>(
   const querySidMatch = path.match(/[?&]sessionId=(ses_[A-Za-z0-9]+)/);
   const deadSid = sidMatch?.[1] ?? querySidMatch?.[1];
   const isDelete = init?.method === "DELETE";
-  if (deadSid && __deadSessions.has(deadSid) && !isDelete) {
+  if (deadSid && isSessionDead(deadSid) && !isDelete) {
     throw new SessionGoneError(deadSid, "session in local dead-list");
   }
 
@@ -217,9 +217,14 @@ export interface UserPrefs {
 
 // UX-fix: локальный чёрный список sessionID, отсутствие которых подтвердил сервер.
 // Дальнейшие запросы к таким ID мы обрываем на клиенте, не тратя сеть.
-const __deadSessions = new Set<string>();
+// Запись живёт ограниченное время. Бессрочный Set рос до перезагрузки
+// вкладки и навсегда блокировал sessionID, который вернул 404 из-за
+// временного сбоя или роллинга реплик: сессия уже доступна, а клиент
+// продолжал рвать запросы локально.
+const DEAD_SESSION_TTL_MS = 5 * 60 * 1000;
+const __deadSessions = new Map<string, number>();
 function _markSessionDead(sid: string) {
-  if (sid) __deadSessions.add(sid);
+  if (sid) __deadSessions.set(sid, Date.now() + DEAD_SESSION_TTL_MS);
 }
 
 export { _markSessionDead as markSessionDead };
@@ -227,7 +232,11 @@ export function unmarkSessionDead(sid: string) {
   if (sid) __deadSessions.delete(sid);
 }
 export function isSessionDead(sid: string): boolean {
-  return __deadSessions.has(sid);
+  const until = __deadSessions.get(sid);
+  if (until === undefined) return false;
+  if (Date.now() < until) return true;
+  __deadSessions.delete(sid);
+  return false;
 }
 
 export class SessionGoneError extends Error {
