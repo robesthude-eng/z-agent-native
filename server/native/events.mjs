@@ -106,7 +106,14 @@ export function openSse(req, res, sessionId, lastEventId = 0) {
     'cache-control': 'no-cache, no-transform',
     connection: 'keep-alive',
     'x-accel-buffering': 'no',
+    // Stop a reverse proxy from gzipping this response even if its default
+    // encode matcher includes text/*.
+    'content-encoding': 'identity',
   });
+  // retry tells EventSource how soon to come back after a drop. A named ping
+  // (not an SSE comment) actually reaches the client and keeps radio/NAT
+  // mappings alive on mobile networks that ignore `: comment` frames.
+  res.write('retry: 3000\n\n');
   res.write(': z-agent native stream\n\n');
 
   let unsubscribe = () => {};
@@ -142,8 +149,13 @@ export function openSse(req, res, sessionId, lastEventId = 0) {
 
   heartbeat = setInterval(() => {
     if (closed || res.writableEnded) return;
-    if (!res.write(`: ping ${Date.now()}\n\n`) && res.writableLength > MAX_SSE_BUFFER_BYTES) drop();
-  }, 15_000);
+    // Comment + named event: comments reset some proxies, named events reset
+    // EventSource and the phone radio. 10s is under typical carrier NAT/idle
+    // cuts (15–30s) without turning into chatter.
+    const okComment = res.write(`: ping ${Date.now()}\n\n`);
+    const okEvent = res.write('event: ping\ndata: {}\n\n');
+    if ((!okComment || !okEvent) && res.writableLength > MAX_SSE_BUFFER_BYTES) drop();
+  }, 10_000);
   heartbeat.unref?.();
 
   req.on('close', close);

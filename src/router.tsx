@@ -138,7 +138,7 @@ function AppShell() {
         if (sseDownTimer.current === null) {
           sseDownTimer.current = window.setTimeout(
             () => setSseDown(true),
-            3000,
+            8000,
           );
         }
       } else {
