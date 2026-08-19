@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { AUTO_MODEL, isAutoModel } from "../lib/autopilotModel";
+import { clampPopoverShift } from "../lib/popoverBounds";
 import { type ModelEntry, useStore } from "../store/useStore";
 import { CheckIcon, ChevronDownIcon } from "./icons";
 
@@ -38,6 +39,7 @@ export default function ModelSelector() {
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
@@ -46,6 +48,20 @@ export default function ModelSelector() {
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
   }, []);
+
+  useLayoutEffect(() => {
+    const el = menuRef.current;
+    if (!open || !el) return;
+    const place = () => {
+      el.style.setProperty("--menu-shift", "0px");
+      const rect = el.getBoundingClientRect();
+      const shift = clampPopoverShift(rect.left, rect.right, window.innerWidth);
+      el.style.setProperty("--menu-shift", `${shift}px`);
+    };
+    place();
+    window.addEventListener("resize", place);
+    return () => window.removeEventListener("resize", place);
+  }, [open, models.length]);
 
   const openModelSettings = () => {
     setOpen(false);
@@ -185,7 +201,10 @@ export default function ModelSelector() {
       </button>
 
       {open && (
-        <div className="absolute left-1/2 top-full z-50 mt-2 max-h-[60dvh] w-[320px] max-w-[calc(100vw-1rem)] -translate-x-1/2 overflow-y-auto rounded-xl border border-border bg-popover p-2 shadow-e2 sm:w-[360px]">
+        <div
+          ref={menuRef}
+          className="fixed left-2 right-2 top-14 z-50 max-h-[min(70dvh,calc(100dvh-4.5rem))] overflow-x-hidden overflow-y-auto overscroll-contain rounded-xl border border-border bg-popover p-2 shadow-e2 md:absolute md:left-1/2 md:right-auto md:top-full md:mt-2 md:w-[360px] md:max-w-[min(360px,calc(100vw-1rem))] md:translate-x-[calc(-50%+var(--menu-shift,0px))]"
+        >
           <div className="mb-2">
             <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
               Режим
