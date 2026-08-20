@@ -58,7 +58,7 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
 
   const register = await fetch(`${base}/api/auth/register`, {
     method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ email: 'admin@example.com', password: 'password123' }),
+    body: JSON.stringify({ email: 'admin@example.com', password: 'password12345' }),
   });
   assert.equal(register.status, 200);
   const cookies = cookieJar(register);

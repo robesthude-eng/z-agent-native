@@ -9,17 +9,29 @@ React browser
   └─ Socket.IO interactive terminal
        │
        ▼
-Native runtime
-  ├─ session + turn state
+Native runtime (trusted orchestrator)
+  ├─ session + explicit turn state machine
   ├─ agent loop + context/turn strategy
   ├─ direct provider streaming
-  ├─ tool executor + automatic approval policy
+  ├─ first-party file/git/web tool dispatch
   ├─ question suspension/resume
-  ├─ workspace + watcher + terminal
+  ├─ workspace + watcher
+  ├─ optional trusted human terminal (off in production Compose)
   └─ SQLite persistence + encrypted provider secrets
+       │ UDS                         │ UDS
+       ▼                             ▼
+Networkless executor             Browser service
+  arbitrary shell/build/test       root controller: UDS + UID launcher only
+  setpriv clear-groups + RLIMITs    per-chat unprivileged Chromium worker
+  no /data, network_mode:none       no /data/workspace mounts
+  active no-network attestation     internal-only Docker network
+                                        │
+                                        ▼
+                                   Browser egress proxy
+                                   policy + SSRF + pinned DNS
 ```
 
-There is no external agent daemon and no protocol adapter between the UI and the agent loop.
+There is no external **agent** daemon and no protocol adapter between the UI and the agent loop. The executor/browser siblings are deliberately narrow security boundaries: they do not own conversation state, model credentials, planning or persistence.
 
 ## Source of truth
 
@@ -96,15 +108,21 @@ from REST/SQLite after a restart.
 
 ## Workspace and process isolation
 
-Every conversation owns one `workspaces/<session-id>/` directory. In the supplied production container every chat receives a unique monotonically allocated Unix UID. Arbitrary external processes (`bash`, `git apply`, terminal, workspace Git operations and automatic result snapshots) run under that UID with cleared supplementary groups and a minimal environment. Runtime data and sibling workspaces are not traversable by tool processes.
+Every conversation owns one `workspaces/<session-id>/` directory and a unique monotonically allocated Unix UID. In production, arbitrary **autonomous code** (`bash`, tests, builds and diagnostics) is delegated over a Unix-domain socket to `z-agent-executor`; that container mounts the workspaces volume but not `/data`, has `network_mode:none`, attests that no non-loopback interface exists, and launches each command through `setpriv --clear-groups --no-new-privs` plus `prlimit` under outer Docker PID/CPU/memory caps. Sibling session roots remain inaccessible because each is mode 0700. Model-selected Git and snapshot operations that can execute repository-controlled hooks, clean/process filters, fsmonitor helpers or other subprocesses cross the same networkless executor boundary; only non-executing object plumbing remains in the orchestrator under the session UID with execution-capable Git features disabled. The interactive terminal is disabled in production Compose because it is a trusted human capability in the orchestrator rather than part of the autonomous no-network execution plane.
 
 First-party file tools still execute in the trusted runtime, but every path is resolved through the workspace boundary and symlink/traversal checks. Repository traversal tools skip heavy generated/vendor directories such as `.git`, `node_modules`, build outputs and caches. The `read` tool reads numbered line windows so large text files can be inspected without loading the entire file into memory/context.
 
-Agent execution has a second, model-specific defense-in-depth boundary in `workspace-policy.mjs`. The default shell `guarded` policy rejects direct network clients and direct references to common credential files; `tool-only` additionally rejects package-manager and remote-Git network operations. Sensitive workspace files are excluded from agent `read`/`grep` by default. Separately, `Z_AGENT_NETWORK_POLICY=allowlist|off` can constrain model-selected `webfetch`, `websearch` and browser destinations. Browser contexts block service workers/WebSockets and revalidate every HTTP(S) request instead of trusting only the initial navigation. These are application-layer guards, not a firewall: deployments needing a hard egress boundary must enforce it below the process.
+`workspace-policy.mjs` remains a second defense-in-depth layer: `guarded` rejects common direct network clients/credential references and `tool-only` rejects additional package-manager/remote-Git paths, while `read`/`grep` exclude common secret files. These textual policies are **not** the security boundary for arbitrary code; Docker `network_mode:none` on the executor is. Model-selected `webfetch`, `websearch` and browser networking are separately fail-closed by default (`Z_AGENT_NETWORK_POLICY=off`) and may be enabled only with an allowlist or explicit `public` compatibility mode. Chromium runs in its own service with no data/workspace/secret mounts. A minimal root controller owns only the browser UDS and launches each session worker through `setpriv --clear-groups --no-new-privs` as that session's dedicated UID, so separate chats do not share an OS browser identity. Service workers/WebSockets are blocked and HTTP(S) requests are revalidated. It shares no Docker network with the API and has no direct external network. A separate no-secret egress proxy is its only route outward and pins the validated destination address when opening the actual upstream connection.
 
 ## Turn telemetry
 
-`turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records for operator diagnosis.
+`turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records. Bearer-protected `/metrics` exposes low-cardinality Prometheus aggregates without user/session/turn labels.
+
+## Persistence and readiness
+
+SQLite schema evolution is explicit and versioned in `server/native/migrations.mjs`; released migration IDs are immutable and each migration is transactional. Every migration declares `minReaderVersion`; the release-wide `SCHEMA_MIN_READER_VERSION` is persisted in `schema_compatibility`, older code fails closed on an unknown future schema unless that contract permits it, and migration code never lowers `PRAGMA user_version`. Deploy records the currently running schema reader and rejects a candidate whose minimum compatible reader would make automatic image rollback unsafe, and requires incompatible changes to use a separate maintenance-only deployment procedure. `server/backup.mjs` refuses missing/empty/corrupt source databases, creates an online `VACUUM INTO` snapshot, and verifies it with `PRAGMA quick_check` before a candidate deploy.
+
+`/health/live` proves only process liveness. `/health/ready` proves a rollback-only database write, schema compatibility, encryption-key availability, data/workspace volume writes plus a configurable free-space floor, executor IPC plus no-network attestation, and browser/proxy IPC. Public readiness output deliberately omits raw exception/path details.
 
 ## Provider layer
 

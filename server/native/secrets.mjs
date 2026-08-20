@@ -64,3 +64,14 @@ export function decryptSecret(value) {
   decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
   return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64url')), decipher.final()]).toString('utf8');
 }
+
+export function secretStoreReadinessCheck() {
+  const key = masterKey();
+  if (!Buffer.isBuffer(key) || key.length !== 32) throw new Error('Master key is unavailable');
+  const configured = Boolean(parseConfiguredKey(process.env.Z_AGENT_SECRET_KEY));
+  if (!configured) {
+    const stat = fs.statSync(KEY_FILE);
+    if ((stat.mode & 0o077) !== 0) throw new Error('master.key permissions are too broad');
+  }
+  return { ok: true, source: configured ? 'env' : 'file' };
+}

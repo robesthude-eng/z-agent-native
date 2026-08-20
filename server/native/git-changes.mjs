@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import { safeWorkspacePath } from './security.mjs';
+import { executeInExecutorSync } from './executor-client.mjs';
 
 const MAX_DIFF_CHARS = 240_000;
 const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;
@@ -12,10 +13,12 @@ const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;
 // it. Pass only what git actually needs, and disable the config sources and
 // prompts that could reach outside the repository.
 const GIT_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR'];
+const SAFE_GIT_PREFIX = ['-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false'];
 
 function defaultGitEnv() {
   const env = {
     GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
     GIT_TERMINAL_PROMPT: '0',
     GIT_OPTIONAL_LOCKS: '0',
   };
@@ -28,23 +31,23 @@ function defaultGitEnv() {
 }
 
 function gitResult(root, args, options = {}) {
+  const timeoutMs = Number(options.timeoutMs) || 8_000;
+  const env = { ...defaultGitEnv(), ...(options.env || {}) };
+  const gitArgs = [...SAFE_GIT_PREFIX, ...args];
+  if (options.executor?.isolated) {
+    const remote = executeInExecutorSync({
+      workspace: root, uid: options.executor.uid, gid: options.executor.gid, file: 'git', args: gitArgs, env, timeoutMs,
+    });
+    if (remote) return { status: Number(remote.code) || 0, stdout: String(remote.stdout || ''), stderr: String(remote.stderr || '') };
+  }
   const result = spawnSync(options.spawnFile || 'git', [
     ...(options.spawnArgsPrefix || []),
-    ...args,
+    ...gitArgs,
   ], {
-    cwd: root,
-    encoding: 'utf8',
-    timeout: Number(options.timeoutMs) || 8_000,
-    ...(options.spawnOptions || {}),
-    env: options.env || defaultGitEnv(),
-    maxBuffer: 4 * 1024 * 1024,
+    cwd: root, encoding: 'utf8', timeout: timeoutMs, ...(options.spawnOptions || {}), env, maxBuffer: 4 * 1024 * 1024,
   });
   if (result.error) throw result.error;
-  return {
-    status: result.status ?? 1,
-    stdout: String(result.stdout || ''),
-    stderr: String(result.stderr || ''),
-  };
+  return { status: result.status ?? 1, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
 }
 
 function gitOrThrow(root, args, options = {}) {

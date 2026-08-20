@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR } from './config.mjs';
+import { observeTurnSummary } from './metrics.mjs';
 
 const TELEMETRY_FILE = path.resolve(process.env.Z_AGENT_TELEMETRY_FILE || path.join(DATA_DIR, 'turn-telemetry.jsonl'));
 const MAX_FILE_BYTES = Math.max(1_000_000, Number(process.env.Z_AGENT_TELEMETRY_MAX_BYTES) || 50 * 1024 * 1024);
@@ -131,5 +132,6 @@ export function finalizeTurnTelemetry(telemetry, { outcome = null, strategy = nu
     lastVerificationOk: strategy?.lastVerificationOk ?? null,
   };
   persist(summary);
+  observeTurnSummary(summary);
   return summary;
 }

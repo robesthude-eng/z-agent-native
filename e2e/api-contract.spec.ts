@@ -38,7 +38,7 @@ test.describe("http contract", () => {
 		});
 
 		expect(response.status()).toBe(400);
-		expect(await response.text()).toContain("минимум из 6 символов");
+		expect(await response.text()).toContain("минимум из 12 символов");
 	});
 
 	test("a state-changing request without the csrf header is rejected", async ({

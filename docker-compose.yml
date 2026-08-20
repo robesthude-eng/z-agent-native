@@ -2,6 +2,33 @@ services:
   z-agent:
     build: .
     restart: unless-stopped
+    depends_on:
+      z-agent-executor:
+        condition: service_healthy
+      z-agent-browser:
+        condition: service_healthy
+    environment:
+      # Never let the bare-metal defaults from .env (./data, ./workspaces)
+      # shadow the image's persistent Docker paths. These two values are part
+      # of the production volume contract.
+      Z_AGENT_DATA_DIR: /data
+      Z_AGENT_WORKSPACES_DIR: /workspaces
+      Z_AGENT_EXECUTOR_REQUIRED: '1'
+      Z_AGENT_EXECUTOR_SOCKET: /run/z-agent-executor/executor.sock
+      Z_AGENT_BROWSER_REQUIRED: '1'
+      # Interactive shells are trusted self-hosted functionality, not part of
+      # the multi-tenant production boundary. Enable explicitly only when the
+      # operator accepts that trust model.
+      Z_AGENT_TERMINAL_ENABLED: '0'
+      Z_AGENT_BROWSER_SOCKET: /run/z-agent-browser/browser.sock
+      # Deployment identity is injected by the release workflow and verified
+      # against the running container. Never infer the deployed revision from
+      # the checkout alone: a failed image build can leave git HEAD ahead of
+      # the still-running production container.
+      Z_AGENT_RELEASE_SHA: ${Z_AGENT_RELEASE_SHA:-dev}
+      # Model-selected web access is fail-closed by default. Opt in with an
+      # explicit allowlist/public policy only for deployments that need it.
+      Z_AGENT_NETWORK_POLICY: ${Z_AGENT_NETWORK_POLICY:-off}
     # Loopback only. TLS termination and public exposure belong to the reverse
     # proxy in front of this container, not to Docker's default 0.0.0.0 publish
     # rule. 3002 is the port the deploy health check probes.
@@ -24,20 +51,21 @@ services:
       - SETUID
       - SETGID
       - KILL
-    # Model-generated code runs in this container: bound the blast radius of a
-    # fork bomb, a runaway build or a memory leak. Caps must fit the host —
+    # The API/model orchestrator still owns persistence and provider calls;
+    # arbitrary code and Chromium run in sibling services. Bound this process
+    # too so parsing/model bugs cannot exhaust the host. Caps must fit the host —
     # Docker refuses to start if `cpus` exceeds nproc (this VPS is 2 / 3.8G,
     # no swap). Raise them when the box grows.
-    pids_limit: 2048
-    mem_limit: 3g
-    memswap_limit: 3g
-    cpus: 2.0
+    pids_limit: 1024
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 0.8
     ulimits:
       nofile:
         soft: 4096
         hard: 8192
     healthcheck:
-      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health"]
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:3000/health/ready"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -45,7 +73,137 @@ services:
     volumes:
       - z-agent-data:/data
       - z-agent-workspaces:/workspaces
+      - z-agent-executor-run:/run/z-agent-executor
+      - z-agent-browser-run:/run/z-agent-browser
+    networks:
+      - default
+      - runtime-egress
+
+  # Autonomous code execution lives in a separate container that has no Docker
+  # network at all and never mounts /data/provider credentials. The API runtime
+  # talks to it over a Unix-domain socket on a tiny shared volume.
+  z-agent-executor:
+    build: .
+    command: ["node", "server/executor.mjs"]
+    restart: unless-stopped
+    network_mode: none
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SETUID
+      - SETGID
+      - KILL
+    pids_limit: 768
+    mem_limit: 1g
+    memswap_limit: 1g
+    cpus: 0.7
+    tmpfs:
+      - /tmp:size=256m,noexec,nosuid,nodev
+    environment:
+      Z_AGENT_EXECUTOR_SOCKET: /run/z-agent-executor/executor.sock
+      Z_AGENT_WORKSPACES_DIR: /workspaces
+      # Readiness verifies that the executor sees loopback interfaces only; a
+      # Compose/network regression fails closed instead of trusting a label.
+      Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE: '1'
+    volumes:
+      - z-agent-workspaces:/workspaces
+      - z-agent-executor-run:/run/z-agent-executor
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('fs');const p='/run/z-agent-executor/executor.sock';const s=fs.statSync(p);if(!s.isSocket())process.exit(1)"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  # Chromium/web content is isolated from provider secrets and all workspace/data
+  # volumes. Only the model-selected browser command crosses the Unix socket.
+  z-agent-browser:
+    build:
+      context: .
+      dockerfile: Dockerfile.browser
+    restart: unless-stopped
+    depends_on:
+      z-agent-browser-egress:
+        condition: service_healthy
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # Root controller owns only the UDS and drops each web-content worker to the
+    # chat's unprivileged UID with cleared supplementary groups.
+    cap_add:
+      - SETUID
+      - SETGID
+      - KILL
+    pids_limit: 384
+    mem_limit: 768m
+    memswap_limit: 768m
+    cpus: 0.4
+    environment:
+      Z_AGENT_BROWSER_SOCKET: /run/z-agent-browser/browser.sock
+      Z_AGENT_BROWSER_PROXY: http://z-agent-browser-egress:8080
+      Z_AGENT_NETWORK_POLICY: ${Z_AGENT_NETWORK_POLICY:-off}
+      Z_AGENT_NETWORK_ALLOWLIST: ${Z_AGENT_NETWORK_ALLOWLIST:-}
+    tmpfs:
+      - /tmp:size=512m,nosuid,nodev
+    volumes:
+      - z-agent-browser-run:/run/z-agent-browser
+    networks:
+      - browser-sandbox
+    healthcheck:
+      test: ["CMD", "node", "-e", "const http=require('http');const b='{}';const q=http.request({socketPath:'/run/z-agent-browser/browser.sock',path:'/health',method:'POST',headers:{'content-type':'application/json','content-length':2}},r=>{r.resume();process.exit(r.statusCode===200?0:1)});q.on('error',()=>process.exit(1));q.end(b)"]
+      interval: 10s
+      timeout: 3s
+      retries: 8
+      start_period: 20s
+
+  # Browser has no direct Internet route and shares no network with the API.
+  # This tiny proxy is the only bridge from the internal browser network to
+  # egress; it reapplies agent destination policy, SSRF checks and DNS pinning.
+  z-agent-browser-egress:
+    build: .
+    command: ["node", "server/browser-egress.mjs"]
+    restart: unless-stopped
+    user: node
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 64
+    mem_limit: 128m
+    memswap_limit: 128m
+    cpus: 0.2
+    environment:
+      Z_AGENT_BROWSER_EGRESS_HOST: 0.0.0.0
+      Z_AGENT_BROWSER_EGRESS_PORT: 8080
+      Z_AGENT_NETWORK_POLICY: ${Z_AGENT_NETWORK_POLICY:-off}
+      Z_AGENT_NETWORK_ALLOWLIST: ${Z_AGENT_NETWORK_ALLOWLIST:-}
+    tmpfs:
+      - /tmp:size=64m,noexec,nosuid,nodev
+    networks:
+      - browser-sandbox
+      - browser-egress
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://127.0.0.1:8080/health',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
 
 volumes:
   z-agent-data:
   z-agent-workspaces:
+  z-agent-executor-run:
+  z-agent-browser-run:
+
+networks:
+  runtime-egress:
+  # Browser itself has no default route to the Internet and cannot address the
+  # API network; it can only reach the policy proxy on this internal network.
+  browser-sandbox:
+    internal: true
+  browser-egress:

@@ -14,6 +14,9 @@ services:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - z-agent-caddy-data:/data
       - z-agent-caddy-config:/config
+    networks:
+      - default
+      - runtime-egress
 
 volumes:
   z-agent-caddy-data:

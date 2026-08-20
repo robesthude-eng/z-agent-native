@@ -14,7 +14,6 @@ async function register(page: import("@playwright/test").Page) {
 
 test.describe("native coding-agent flow", () => {
   test("browser -> agent -> tools -> verification -> SSE/UI -> workspace", async ({ page }) => {
-    test.setTimeout(60_000);
     await register(page);
 
     const composer = page.getByRole("textbox", { name: "Сообщение ассистенту" });

@@ -61,11 +61,13 @@ test('agent network allowlist restricts model-selected external hosts', () => {
   const previousAllowlist = process.env.Z_AGENT_NETWORK_ALLOWLIST;
   try {
     process.env.Z_AGENT_NETWORK_POLICY = 'allowlist';
-    process.env.Z_AGENT_NETWORK_ALLOWLIST = 'docs.example.com, example.org';
+    process.env.Z_AGENT_NETWORK_ALLOWLIST = 'docs.example.com, *.example.org';
     assert.equal(policy.agentNetworkPolicy(), 'allowlist');
-    assert.deepEqual(policy.agentNetworkAllowlist(), ['docs.example.com', 'example.org']);
+    assert.deepEqual(policy.agentNetworkAllowlist(), ['docs.example.com', '*.example.org']);
     assert.doesNotThrow(() => policy.assertAgentNetworkUrl('https://docs.example.com/guide', { tool: 'webfetch' }));
     assert.doesNotThrow(() => policy.assertAgentNetworkUrl('https://sub.example.org/a', { tool: 'browser' }));
+    assert.throws(() => policy.assertAgentNetworkUrl('https://sub.docs.example.com/guide', { tool: 'webfetch' }), /allowlist/i);
+    assert.throws(() => policy.assertAgentNetworkUrl('https://example.org/a', { tool: 'browser' }), /allowlist/i);
     assert.throws(() => policy.assertAgentNetworkUrl('https://evil.example.net/leak', { tool: 'webfetch' }), /allowlist/i);
     assert.throws(() => policy.assertAgentNetworkHost('api.search.brave.com', { tool: 'websearch' }), /allowlist/i);
     process.env.Z_AGENT_NETWORK_POLICY = 'off';

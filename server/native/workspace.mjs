@@ -77,6 +77,7 @@ function gitOptions(sessionId, root) {
   const identity = prepareWorkspaceSandbox(sessionId, root);
   const launch = sandboxCommand(identity, 'git');
   return {
+    executor: identity,
     spawnFile: launch.file,
     spawnArgsPrefix: launch.args,
     spawnOptions: launch.options,

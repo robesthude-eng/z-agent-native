@@ -12,11 +12,12 @@ import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { GIT_ACTIONS, executeGitTool } from './git-tool.mjs';
 import { buildTestCommand, formatTestReport } from './test-runner.mjs';
 import { DIAGNOSTIC_KINDS, formatDiagnosticsReport, planDiagnostics } from './diagnostics.mjs';
-import { BROWSER_ACTIONS, executeBrowserTool } from './browser.mjs';
+import { BROWSER_ACTIONS, executeBrowserTool } from './browser-client.mjs';
 import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
-import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+import { prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+import { executeInExecutor, executorRequired } from './executor-client.mjs';
 import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy } from './workspace-policy.mjs';
 
 const MAX_READ_BYTES = 512 * 1024;
@@ -209,8 +210,13 @@ export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch',
 // like bash: without a session sandbox there is no isolation to run it in.
 const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser'];
 export function availableToolDefinitions() {
-  if (shellSandboxAvailable()) return TOOL_DEFINITIONS;
-  return TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
+  let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
+  // The hardened executor has no network by construction. Dependency installers
+  // therefore cannot be autonomous in production without creating a second
+  // code-execution egress path. Provision dependencies in the image/operator
+  // workflow instead; trusted local mode may explicitly retain this tool.
+  if (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1') tools = tools.filter((tool) => tool.name !== 'ensure_environment');
+  return tools;
 }
 
 function rel(root, full) { return path.relative(root, full).split(path.sep).join('/'); }
@@ -334,9 +340,6 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
   const identity = externalSpawnIdentity(ctx, root);
-  // Node's spawn({uid,gid}) keeps the parent's supplementary groups (root's), so
-  // route through setpriv when available, exactly like the PTY terminal path.
-  const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-c', command]);
   const env = managedShellEnvironment(root, {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
@@ -345,6 +348,23 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
     LC_ALL: process.env.LC_ALL || '',
     TERM: 'xterm-256color',
   });
+
+  // Production Docker routes all autonomous code execution through a sibling
+  // executor container with network_mode:none and no /data mount. This is the
+  // actual egress boundary; command-text heuristics remain defense in depth.
+  if (identity?.isolated) {
+    const remote = await executeInExecutor({
+      workspace: root, uid: identity.uid, gid: identity.gid,
+      file: '/bin/bash', args: ['--noprofile', '--norc', '-c', command],
+      env, timeoutMs, signal,
+    });
+    if (remote) return remote;
+  }
+
+  // Local execution exists only for tests and explicitly unsafe development
+  // deployments. In production Z_AGENT_EXECUTOR_REQUIRED=1 makes this path
+  // unreachable if the Unix-socket executor is unavailable.
+  const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-c', command]);
   return new Promise((resolve, reject) => {
     const child = spawn(launch.file, launch.args, {
       cwd: root,
@@ -435,9 +455,20 @@ async function applyGitPatch(root, patchText, signal, ctx) {
   const home = path.join(root, '.agent-home');
   fs.mkdirSync(home, { recursive: true });
   const identity = externalSpawnIdentity(ctx, root);
-  const launch = sandboxCommand(identity, 'git', ['apply', '--no-index', '--whitespace=nowarn', '-']);
+  const args = ['apply', '--no-index', '--whitespace=nowarn', '-'];
+  const env = { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+  if (identity?.isolated) {
+    const remote = await executeInExecutor({
+      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env, stdin: String(patchText || ''), timeoutMs: DEFAULT_TOOL_TIMEOUT_MS, signal,
+    });
+    if (remote) {
+      if (Number(remote.code) === 0) return { stdout: truncate(remote.stdout), stderr: truncate(remote.stderr) };
+      throw new Error(truncate(remote.stderr || remote.stdout || `git apply exited ${remote.code}`));
+    }
+  }
+  const launch = sandboxCommand(identity, 'git', args);
   return await new Promise((resolve, reject) => {
-    const child = spawn(launch.file, launch.args, { cwd: root, env: { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home }, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
+    const child = spawn(launch.file, launch.args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
     let stdout = ''; let stderr = '';
     child.stdout.on('data', (d) => { stdout = truncate(stdout + d.toString('utf8')); });
     child.stderr.on('data', (d) => { stderr = truncate(stderr + d.toString('utf8')); });
@@ -591,6 +622,7 @@ export async function executeTool(name, input, ctx) {
   if (tool === 'task') throw new Error('task is executed by the agent runtime, not the generic tool executor');
 
   if (tool === 'ensure_environment') {
+    if (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1') throw Object.assign(new Error('ensure_environment is disabled in hardened executor mode. Bake dependencies into the image or provision them through an operator-controlled workflow.'), { statusCode: 403, code: 'NETWORKED_INSTALLER_DISABLED' });
     if (agentNetworkPolicy() !== 'public') {
       throw Object.assign(new Error('ensure_environment is disabled when Z_AGENT_NETWORK_POLICY is allowlist/off because its package/toolchain installers can contact multiple external registries. Provision dependencies outside the autonomous turn or use public policy in a trusted environment.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
     }
@@ -742,7 +774,16 @@ export async function executeTool(name, input, ctx) {
   }
 
   if (tool === 'browser') {
-    return executeBrowserTool({ sessionId: ctx.sessionId, input: input || {}, signal: ctx.signal });
+    const action = String(input?.action || '').trim().toLowerCase();
+    // Reject browser use before resolving/creating any session sandbox. The
+    // browser egress proxy independently enforces the same policy, but this
+    // early gate keeps policy=off side-effect free and deterministic.
+    if (agentNetworkPolicy() === 'off' && action !== 'close') {
+      throw Object.assign(new Error('browser is disabled by Z_AGENT_NETWORK_POLICY=off.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+    }
+    if (action === 'open') assertAgentNetworkUrl(input?.url, { tool: 'browser' });
+    const identity = sandboxIdentity(ctx.sessionId);
+    return executeBrowserTool({ sessionId: ctx.sessionId, uid: identity?.isolated ? identity.uid : null, input: input || {}, signal: ctx.signal });
   }
 
   throw new Error(`Unknown tool: ${name}`);

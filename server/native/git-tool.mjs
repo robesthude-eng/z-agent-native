@@ -1,6 +1,7 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { sandboxCommand } from './sandbox.mjs';
+import { executeInExecutor } from './executor-client.mjs';
 import { safeWorkspacePath } from './security.mjs';
 
 const MAX_GIT_OUTPUT = 256 * 1024;
@@ -131,7 +132,14 @@ export function buildGitArgs(root, action, input = {}) {
   throw new Error(`Unsupported git action "${action}". Use one of: ${GIT_ACTIONS.join(', ')}`);
 }
 
-function runGit(root, identity, args, signal, timeoutMs) {
+async function runGit(root, identity, args, signal, timeoutMs) {
+  const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_GIT_TIMEOUT_MS, 1000), MAX_GIT_TIMEOUT_MS);
+  if (identity?.isolated) {
+    const remote = await executeInExecutor({
+      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env: gitEnv(root), timeoutMs: budget, signal,
+    });
+    if (remote) return { code: Number(remote.code) || 0, stdout: truncateGit(remote.stdout), stderr: truncateGit(remote.stderr) };
+  }
   const launch = sandboxCommand(identity, 'git', args);
   return new Promise((resolve, reject) => {
     const child = spawn(launch.file, launch.args, {
@@ -145,7 +153,6 @@ function runGit(root, identity, args, signal, timeoutMs) {
     child.stdout.on('data', (chunk) => { stdout = truncateGit(stdout + chunk.toString('utf8')); });
     child.stderr.on('data', (chunk) => { stderr = truncateGit(stderr + chunk.toString('utf8')); });
     const kill = () => { try { child.kill('SIGTERM'); } catch { /* already gone */ } };
-    const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_GIT_TIMEOUT_MS, 1000), MAX_GIT_TIMEOUT_MS);
     const timer = setTimeout(kill, budget);
     timer.unref?.();
     signal?.addEventListener('abort', kill, { once: true });

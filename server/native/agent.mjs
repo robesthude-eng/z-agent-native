@@ -39,6 +39,7 @@ import {
 import { acquireTurnLock, isClustered, releaseTurnLock, renewTurnLock, turnLockHolder } from './cluster.mjs';
 import { framesFromMessages, promptText, systemPrompt, textParts, userPartsFromPrompt } from './agent-frames.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, toolCallFromPart, toolCallSignature, toolMayHaveSideEffects, toolPart, waitForRetry } from './agent-parts.mjs';
+import { assertTurnTransition } from './turn-lifecycle.mjs';
 
 const activeTurns = new Map();
 const activeActions = new Map();
@@ -59,7 +60,7 @@ function notifyTurnIdle(sessionId) {
   }
 }
 
-function updateTurn(sessionId, state) {
+function updateTurn(sessionId, state, transitionOptions = {}) {
   const now = Date.now();
   const current = activeTurns.get(sessionId);
   const projection = {
@@ -69,6 +70,7 @@ function updateTurn(sessionId, state) {
     reason: state.reason ?? null,
     since: state.since ?? now,
   };
+  assertTurnTransition(getTurn(sessionId), projection, transitionOptions);
   setTurn(sessionId, projection);
   // `status` stays a three-value field for existing clients; `lifecycle` carries
   // the detail they need to tell "working" apart from "waiting for you".
@@ -747,7 +749,7 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
     notifyTurnIdle(sessionId);
     const settled = ['failed', 'cancelled', 'completed'].includes(String(getTurn(sessionId)?.lifecycle || ''));
     if (!settled) {
-      setTurn(sessionId, { turnId: tId, lifecycle: 'failed', verdict: 'failed', reason: err?.message || String(err), since: Date.now() });
+      { const next = { turnId: tId, lifecycle: 'failed', verdict: 'failed', reason: err?.message || String(err), since: Date.now() }; assertTurnTransition(getTurn(sessionId), next); setTurn(sessionId, next); }
       emit(sessionId, 'session.status', { status: 'error', lifecycle: 'failed', turnID: tId, waiting: false });
     }
     if (!actionId) clearDurableJob(sessionId);
@@ -769,7 +771,7 @@ function repairFinalizedJob(job, assistant) {
   }
   const lifecycle = failed ? 'failed' : cancelled ? 'cancelled' : 'completed';
   const verdict = failed ? 'failed' : cancelled ? 'cancelled' : 'completed';
-  setTurn(job.sessionId, { turnId: job.turnId, lifecycle, verdict, reason: 'runtime_recovered_final', since: Date.now() });
+  { const next = { turnId: job.turnId, lifecycle, verdict, reason: 'runtime_recovered_final', since: Date.now() }; assertTurnTransition(getTurn(job.sessionId), next); setTurn(job.sessionId, next); }
   emit(job.sessionId, 'session.status', { status: failed ? 'error' : 'idle' });
   emit(job.sessionId, 'session.idle', { reason: 'runtime_recovered_final' });
   clearDurableJob(job.sessionId);
@@ -821,7 +823,7 @@ export function startDurableRecovery() {
 
     const controller = new AbortController();
     activeTurns.set(job.sessionId, { controller, turnId: job.turnId, ownerId: job.ownerId, recovered: true });
-    updateTurn(job.sessionId, { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' });
+    updateTurn(job.sessionId, { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' }, { allowRuntimeRestartRecovery: true });
     const key = job.actionId ? `${job.sessionId}:${job.actionId}` : '';
     const promise = Promise.resolve()
       .then(() => resumeDurableJob(job, controller, assistant))
@@ -874,6 +876,7 @@ export function rejectQuestion(sessionId, id) {
 }
 
 export function isTurnActive(sessionId) { return activeTurns.has(sessionId); }
+export function activeTurnCount() { return activeTurns.size; }
 
 export async function waitForTurnIdle(sessionId, timeoutMs = 5000) {
   if (!activeTurns.has(sessionId)) return true;

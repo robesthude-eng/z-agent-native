@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { ALLOW_OPEN_REGISTRATION, INVITE_CODE, SECURE_COOKIES, SESSION_TTL_MS } from './config.mjs';
 import {
-  createAuthSession, createUser, deleteAuthSession, deleteOtherAuthSessions,
+  createAuthSession, createRegistrationUser, deleteAuthSession, deleteOtherAuthSessions,
   getAuthSession, getUser, pruneAuthSessions, updatePassword, userCount,
 } from './store.mjs';
 
@@ -124,17 +124,20 @@ export function checkCsrf(req, res, auth = null) {
 
 export function registerUser(email, password, inviteCode = '') {
   const clean = String(email || '').trim().toLowerCase();
-  if (!clean.includes('@') || String(password || '').length < 6) throw Object.assign(new Error('Введите корректный email и пароль минимум из 6 символов.'), { statusCode: 400 });
-  const bootstrap = userCount() === 0;
-  // Fail closed: only the very first (admin) account may be created without an
-  // invite code. Public registration must be enabled explicitly.
-  if (!bootstrap && !INVITE_CODE && !ALLOW_OPEN_REGISTRATION) {
+  const passwordText = String(password || '');
+  if (!clean.includes('@') || passwordText.length < 12) throw Object.assign(new Error('Введите корректный email и пароль минимум из 12 символов.'), { statusCode: 400 });
+  const bootstrapHint = userCount() === 0;
+  // Fast-fail the normal closed-registration path, then repeat the authorization
+  // decision inside an IMMEDIATE SQLite transaction. The second check is what
+  // prevents two concurrent first registrations from both becoming admin.
+  if (!bootstrapHint && !INVITE_CODE && !ALLOW_OPEN_REGISTRATION) {
     throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
   }
   if (INVITE_CODE && inviteCode !== INVITE_CODE) throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
   if (getUser(clean)) throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
-  const role = bootstrap ? 'admin' : 'user';
-  createUser(clean, hashPassword(password), role);
+  const result = createRegistrationUser(clean, hashPassword(passwordText), { allowAdditional: Boolean(INVITE_CODE || ALLOW_OPEN_REGISTRATION) });
+  if (result.status === 'closed') throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
+  if (result.status === 'exists') throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
   return getUser(clean);
 }
 
@@ -150,7 +153,7 @@ export function logoutToken(token) { if (token) deleteAuthSession(token); }
 export function changePassword(email, currentPassword, newPassword, keepToken) {
   const user = getUser(email);
   if (!user || !verifyPassword(currentPassword || '', user.password_hash)) throw Object.assign(new Error('Текущий пароль неверен.'), { statusCode: 400 });
-  if (String(newPassword || '').length < 6) throw Object.assign(new Error('Новый пароль должен содержать минимум 6 символов.'), { statusCode: 400 });
+  if (String(newPassword || '').length < 12) throw Object.assign(new Error('Новый пароль должен содержать минимум 12 символов.'), { statusCode: 400 });
   updatePassword(email, hashPassword(newPassword));
   return deleteOtherAuthSessions(email, keepToken);
 }

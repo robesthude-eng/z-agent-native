@@ -1,6 +1,6 @@
 # Security model
 
-Z Agent Native is an autonomous agent execution environment. Tool calls are approved automatically by the runtime, so model-selected processes must be treated as untrusted. Direct shell network clients are guarded by default, but application-layer command filtering is not a complete network sandbox. The security boundary therefore has to exist below the model, not in a browser confirmation dialog.
+Z Agent Native is an autonomous agent execution environment. Tool calls are approved automatically by the runtime, so model-selected processes are treated as untrusted. In the supplied production topology, arbitrary autonomous code crosses a Unix-domain socket into a sibling executor with **Docker `network_mode:none`** and no runtime-secret mount. Command-text filtering is defense in depth; the container/network/filesystem boundary is the security control.
 
 ## Runtime secrets
 
@@ -12,11 +12,11 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 ## Authentication
 
 - Passwords use scrypt with per-user random salt.
-- Login sessions use random HttpOnly cookies.
+- Login sessions use random HttpOnly cookies; only a SHA-256 digest of the 256-bit bearer token is persisted in SQLite, and legacy plaintext session rows are migrated in place.
 - Unsafe HTTP methods require a matching double-submit CSRF token.
 - Cookies are SameSite=Lax; production HTTPS should enable `Z_AGENT_SECURE_COOKIES=1`.
-- Login/register attempts are rate-limited per remote address.
-- Password changes revoke other login sessions.
+- Login/register failures are rate-limited through shared SQLite buckets for both normalized remote address and account identifier, so adding replicas does not multiply the brute-force budget. Bucket keys are one-way hashes, not raw IP/email values.
+- New registrations/password changes require at least 12 characters; legacy accounts may still authenticate with their existing password until it is changed. Password changes revoke other login sessions.
 
 ## Filesystem boundary
 
@@ -27,24 +27,18 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 
 ## External process boundary
 
-The supplied Docker deployment runs the trusted runtime as container root only so it can drop privileges for agent processes. Each chat gets a unique Unix UID; UIDs are never reused after chat deletion.
+Production is split into four responsibilities:
 
-The following run through `setpriv` as the chat UID, with supplementary groups
-cleared, `no-new-privs` set and a minimal environment:
+- **`z-agent` trusted orchestrator** — owns auth, provider credentials, SQLite, model calls, first-party path-checked tools and persistence. It starts as container root only to manage stable per-session Unix identities. The interactive terminal is disabled by the production Compose profile and is an explicit trusted self-hosted opt-in.
+- **`z-agent-executor` untrusted-code plane** — receives autonomous shell/build/test/diagnostic requests over a Unix-domain socket. It mounts only `/workspaces` plus the socket volume, never `/data`; Docker sets `network_mode:none`, read-only rootfs, `no-new-privileges`, bounded PID/CPU/memory, and the process uses `setpriv --clear-groups --no-new-privs` plus `prlimit` for every command. Production health also attests that the executor sees no non-loopback network interface. Commands run as the requesting session UID and cannot inherit the controller's supplementary groups.
+- **`z-agent-browser` web-content plane** — a tiny root controller has no `/data`, workspace, env-file or provider-secret mounts and owns only its private UDS. It launches one persistent Chromium worker per chat using `setpriv --clear-groups --no-new-privs` under that chat's dedicated UID. Web content therefore cannot use the controller identity or a sibling chat browser identity. The container is attached only to an internal Docker network, not the API network and not a direct egress network.
+- **`z-agent-browser-egress` policy proxy** — has no data/workspace/secret mounts and is the browser's only bridge from the internal network to Internet egress. It reapplies `off`/allowlist/public policy, SSRF validation and pinned DNS resolution for CONNECT/HTTP upstreams.
 
-- `bash`
-- `git apply` used by `apply_patch`
-- interactive terminal
-- Workspace Git status/diff/revert
-- automatic Git snapshots used by turn results and rollback
+Session workspace roots are mode 0700 and UIDs are never reused after chat deletion, so code in one workspace cannot traverse a sibling. `/data` is not present in the executor at all. The executor accepts only workspace paths underneath `/workspaces` and production sets `Z_AGENT_EXECUTOR_REQUIRED=1`, so an unavailable service fails closed rather than silently falling back to local arbitrary-code execution.
 
-The chat workspace is mode 0700. `/workspaces` is traversable but not listable; sibling session roots remain inaccessible. `/data` is mode 0700 and cannot be traversed by agent UIDs.
+Model-selected Git commands, `git apply`, UI Git operations, and snapshot steps such as `git add` that can activate repository hooks, clean/process filters, fsmonitor helpers or other external processes are routed through the networkless executor under the requesting session UID. Only non-executing Git object plumbing remains local, with repository hooks/fsmonitor and global/system Git configuration disabled. The interactive terminal, when explicitly enabled with `Z_AGENT_TERMINAL_ENABLED=1`, is a **trusted human-controlled capability**, not the autonomous no-network execution plane; production Compose keeps it disabled.
 
-Startup performs a real privilege-drop probe; merely running as UID 0 is not
-treated as proof that the sandbox works. On non-root bare metal, or when that
-probe fails, shell/terminal are disabled by default.
-`Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is an explicit unsafe single-user
-development fallback, not a production mode.
+Startup performs a real privilege-drop probe; merely running as UID 0 is not treated as proof that UID isolation works. Non-root bare-metal shell/terminal is disabled by default. `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` remains an explicit unsafe development fallback only.
 
 ## Network boundary
 
@@ -57,21 +51,21 @@ check and connect.
 
 ### Agent shell egress and workspace secrets
 
-`Z_AGENT_SHELL_NETWORK_POLICY=guarded` is the default. Before `bash` starts, the runtime rejects common direct network clients (`curl`, `wget`, `ssh`, `scp`, `sftp`, `nc`, etc.), obvious inline socket clients, and direct command references to common credential-like workspace files. `tool-only` additionally rejects package-manager network operations and remote Git operations. `open` restores the legacy unrestricted shell policy and should be reserved for trusted single-user workloads.
+For production autonomous `bash`, `run_tests` and diagnostics, the hard network rule is simple: the executor container has no Docker network. A model may invoke Python, Node, `/dev/tcp`, a compiler, a malicious test runner or an obfuscated binary; it still has no network interface to use. `guarded` and `tool-only` command policies remain useful pre-launch guardrails but are not trusted as a sandbox.
 
-`Z_AGENT_SENSITIVE_FILE_POLICY=block` also prevents the agent `read` tool from opening, and `grep` from scanning, common secret material such as `.env`, private SSH keys, `.netrc`, cloud credential stores and service-account/credential files. Example/template env files remain readable.
+`Z_AGENT_SENSITIVE_FILE_POLICY=block` prevents first-party `read`/`grep` from exposing common workspace secret material such as `.env`, private SSH keys, `.netrc`, cloud credential stores and service-account/credential files. Templates/examples remain readable. This reduces accidental disclosure in model context; it is independent of the executor's no-network boundary.
 
-These controls specifically reduce accidental and prompt-injection-driven exfiltration. Model-selected network tools have an additional destination policy: `Z_AGENT_NETWORK_POLICY=public` is the compatibility default, `allowlist` permits only hosts/subdomains named by `Z_AGENT_NETWORK_ALLOWLIST`, and `off` disables those external tools. In allowlist/off mode `ensure_environment` is also refused because package/toolchain installers can contact multiple registries that the runtime cannot pin to one configured destination.
+Model-selected network tools use a separate policy and are **fail-closed by default**: `Z_AGENT_NETWORK_POLICY=off`. `allowlist` permits only exact configured hosts or explicitly wildcarded `*.domain` subdomains; `public` is an explicit trusted compatibility mode. `ensure_environment` is disabled in hardened production unless an operator explicitly opts back into networked installers; dependency provisioning should normally happen in image/CI/operator workflows.
 
-`webfetch` remains GET-only, SSRF-filtered and DNS-pinned. Browser automation disables service workers, revalidates every HTTP(S) request (including navigations/subresources), and blocks WebSockets. Chromium connections cannot reuse the native pinned-DNS socket transport, so browser validation still has a DNS-check-to-connect gap; strict deployments must pair hostname allowlisting with container/host egress rules or disable model browser networking. `websearch` is allowed in allowlist mode only when `api.search.brave.com` is itself allowlisted, and its Brave request uses the same DNS-pinned external transport as static fetches.
+`webfetch` is GET-only, SSRF-filtered and DNS-pinned. Brave `websearch` uses the same pinned transport and requires `api.search.brave.com` to be permitted. Browser automation runs in the isolated Chromium service; it receives no workspace/data mounts, disables service workers and WebSockets, and revalidates every HTTP(S) request. The browser itself has no direct egress route. Its configured HTTP proxy resolves and validates the destination again and pins the upstream IP for CONNECT/HTTP, closing the browser's previous DNS-check-to-connect gap at the container boundary. The proxy has no private project/runtime data to disclose.
 
-These controls are **defense in depth, not a kernel egress firewall**: an arbitrary locally available interpreter/build/test tool may still be capable of opening a socket, and the interactive user terminal is intentionally not governed by the model-only policy. Multi-user deployments that require a hard no-egress boundary must enforce it at the container/namespace/firewall layer as well.
+Provider API calls are separate trusted-orchestrator traffic and remain HTTPS-only, SSRF-filtered and DNS-pinned. If an operator enables agent web access, the model can intentionally transmit text already present in its context to an allowed destination; allowlists are therefore a **data-egress authorization decision**, not just an SSRF setting. Keep agent web access `off` for workloads that require hard no-egress.
 
 ## Prompt-injection boundary
 
 Repository files, comments, logs, attachments, webpages and tool results are explicitly treated as **untrusted data** in the parent and subagent system instructions. Instructions embedded in that content do not gain authority over the user's request or runtime policy, and the model is told not to use them to disclose secrets, weaken controls, reach unrelated destinations or escape the delegated scope. Repository build instructions may still be used as evidence when they are relevant to the user's requested task and are independently verified.
 
-This is defense in depth, not a security boundary by itself. A sufficiently capable or manipulated model can still make unsafe choices, so sensitive deployments should combine `Z_AGENT_NETWORK_POLICY=allowlist|off`, `Z_AGENT_SHELL_NETWORK_POLICY=tool-only`, the workspace secret policy, and host/container egress controls. The compatibility default `Z_AGENT_NETWORK_POLICY=public` intentionally preserves web features and therefore must not be interpreted as a hard anti-exfiltration mode.
+Prompt instructions are defense in depth, not a security boundary. A manipulated model can still make unsafe choices, which is why production defaults agent web access to `off` and executes arbitrary autonomous code in the networkless sibling executor. If `allowlist`/`public` networking is enabled, treat every permitted destination as authorized to receive model-selected data.
 
 ## Automatic tool approval
 
@@ -83,9 +77,9 @@ This does **not** bypass the lower-level security controls: workspace path valid
 
 For production:
 
-1. Use the supplied Docker image.
-2. Mount only the dedicated `/data` and `/workspaces` volumes.
-3. Never mount the Docker socket or arbitrary host roots into the runtime.
+1. Use the supplied Compose topology (or preserve equivalent executor/browser isolation); do not collapse autonomous code back into the trusted API process.
+2. Keep `Z_AGENT_EXECUTOR_REQUIRED=1`, `Z_AGENT_BROWSER_REQUIRED=1`, `Z_AGENT_TERMINAL_ENABLED=0`, and model web networking `off` unless explicitly needed.
+3. Mount `/data` only into the trusted runtime; mount `/workspaces` into the runtime/executor, never into the browser. Never mount Docker socket or arbitrary host roots.
 4. Serve through HTTPS and enable secure cookies.
 5. Configure an invite code or an external access layer before public exposure.
 6. Store `Z_AGENT_SECRET_KEY` and optional search credentials in a secrets manager.
@@ -94,9 +88,10 @@ For production:
 
 ## Container and deployment hardening
 
-- The compose service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002`). Public exposure and TLS belong to the reverse proxy in front of it.
-- `no-new-privileges` is enabled and every Linux capability is dropped except `CHOWN`, `DAC_OVERRIDE`, `FOWNER`, `SETUID`, `SETGID` and `KILL`, which per-session UID isolation needs. If terminals or sandboxed shells stop working after an image change, add the missing capability explicitly instead of removing `cap_drop`.
-- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and the `nofile` ulimit bound a fork bomb or a runaway build started by the model. `cpus` and `mem_limit` must not exceed the host (`nproc` / RAM); Docker fails the container create otherwise. Current production is 2 CPU / 3.8G, so compose ships `cpus: 2.0` and `mem_limit: 3g`.
+- The API service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002`). Executor/browser expose no host TCP ports; IPC is Unix-socket-only. The browser proxy listens only on an unexposed dedicated Docker network. Public exposure and TLS belong to the reverse proxy.
+- Compose explicitly pins `Z_AGENT_DATA_DIR=/data` and `Z_AGENT_WORKSPACES_DIR=/workspaces` so bare-metal relative paths from `.env` cannot bypass persistent volumes.
+- `no-new-privileges` is enabled. Each service drops all capabilities and adds back only the minimum it needs: the API needs workspace ownership/identity capabilities; executor/browser controllers need only identity switching and process termination. Untrusted children are launched with supplementary groups cleared.
+- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and ulimits bound runaway services; the executor additionally applies inherited per-command RLIMITs so one session cannot consume the entire shared execution plane. Caps must fit the host.
 - Network recon tooling (`netcat`, `ping`, `dig`, `psql`) is not installed in the runtime image.
 - Deployment verifies the server against a pinned host key from the `DEPLOY_SSH_HOST_KEY` secret. `ssh-keyscan` at deploy time is not used, because it trusts whatever answers on the network.
 - `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares `Z_AGENT_SECRET_KEY`. Without a shared disk the lock is global but the files are not.
@@ -113,10 +108,17 @@ For production:
 - `Z_AGENT_RELAY_URL` is empty by default. When set it must be an HTTPS host that is not loopback/private, and the operator is warned at startup that the relay observes provider API keys and prompt bodies in clear text.
 - `webfetch` and provider requests resolve DNS first, validate every returned address, and then connect to the validated address, so a DNS rebind between check and connect cannot reach loopback, link-local or private ranges.
 - Redirects are not followed for agent-initiated fetches.
-- Model `bash` uses the `guarded` shell egress policy by default; use `tool-only` plus container/network policy for stricter multi-user deployments. Do not treat command filtering as a firewall.
+- Autonomous model shell/build/test traffic is networkless at the executor-container layer. `guarded`/`tool-only` remain defense in depth. Model web tools are `off` by default and must be explicitly authorized with an allowlist or `public` compatibility mode.
+
+## Operations integrity
+
+- SQLite migrations are explicit, transactional, forward-only and recorded in `schema_migrations`; released migration IDs are immutable. Each migration declares its oldest compatible schema reader and the resulting `schema_compatibility` marker advertises that contract. Older code refuses an unknown future schema unless compatibility is explicit, and the migration runner never lowers `PRAGMA user_version`. Automatic deploy compares the candidate minimum reader with the running release and refuses an image-rollback-unsafe migration and routes incompatible changes to a separate operator-controlled maintenance deployment.
+- Deploy creates and integrity-checks an online SQLite snapshot before candidate code can migrate the database. These same-volume snapshots are bounded to 30-day local retention and are rollback aids, not a substitute for off-host database + master-key backups.
+- `/health/live` is process-only. `/health/ready` performs a rollback-only DB write probe, checks schema compatibility, encryption-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. Raw readiness exceptions are not returned to unauthenticated health callers.
+- `/metrics` is disabled unless `Z_AGENT_METRICS_TOKEN` is set; when enabled it requires a bearer token and exports only low-cardinality aggregate labels.
 
 ## Multi-user exposure
 
 - Registration is fail-closed: after the bootstrap admin exists, a new account requires `Z_AGENT_INVITE_CODE` or an explicit `Z_AGENT_ALLOW_OPEN_REGISTRATION=1`.
-- Set `Z_AGENT_TRUST_PROXY=1` only behind a proxy that overwrites `X-Forwarded-For`; otherwise the login rate limit keys on the socket address.
+- Set `Z_AGENT_TRUST_PROXY=1` only behind a proxy that overwrites `X-Forwarded-For`; otherwise the shared login limiter uses the socket address plus a separate normalized-account bucket.
 - Set `Z_AGENT_ALLOWED_ORIGINS` when the public origin differs from the `Host` header, so websocket handshakes are checked against the real origin.
