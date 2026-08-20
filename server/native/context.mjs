@@ -324,6 +324,15 @@ export function observeTool(strategy, call, result) {
     noteMutation(state, result.mutatedPaths);
   }
 
+  if (name === 'browser' && !result?.isError) {
+    const action = String(call?.arguments?.action || '').toLowerCase();
+    const url = String(call?.arguments?.url || '');
+    const local = Boolean(call?.arguments?.html) || (url && !/^https?:\/\//i.test(url));
+    if ((action === 'open' || action === 'snapshot') && local && state.needsVerification) {
+      noteVerification(state, { ok: true, tool: 'browser', detail: url || 'workspace document' });
+    }
+  }
+
   return state;
 }
 
