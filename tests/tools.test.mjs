@@ -69,6 +69,18 @@ test('apply_patch changes workspace files and rejects traversal paths', async ()
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('write maps /tmp into the workspace so a stray absolute path still lands in the project', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-tmpwrite-'));
+  const ctx = { workspace: root, signal: new AbortController().signal };
+  const written = await executeTool('write', { path: '/tmp/checkers.js', content: 'export const ok = true;\n' }, ctx);
+  assert.deepEqual(written.mutatedPaths, ['checkers.js']);
+  assert.equal(fs.readFileSync(path.join(root, 'checkers.js'), 'utf8'), 'export const ok = true;\n');
+  const read = await executeTool('read', { path: '/tmp/checkers.js' }, ctx);
+  assert.match(read.output, /export const ok/);
+  await assert.rejects(() => executeTool('write', { path: '/etc/passwd', content: 'nope' }, ctx), /относительные пути/i);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('todowrite returns structured plan metadata without touching workspace', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-todo-'));
   const result = await executeTool('todowrite', { todos: [

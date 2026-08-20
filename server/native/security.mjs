@@ -19,9 +19,38 @@ export function assertSessionId(value, message = 'Invalid session id') {
   return id;
 }
 
-export function safeWorkspacePath(root, input = '.', { allowMissing = true } = {}) {
-  const raw = String(input || '.');
+function coerceWorkspaceRelativePath(root, input = '.') {
+  let raw = String(input ?? '.').trim() || '.';
   if (raw.includes('\0')) throw Object.assign(new Error('Некорректный путь'), { statusCode: 400 });
+  raw = raw.replace(/\\/g, '/');
+  if (/^file:/i.test(raw)) {
+    try {
+      const url = new URL(raw);
+      if (url.protocol !== 'file:') throw new Error('not file');
+      raw = decodeURIComponent(url.pathname || '') || '.';
+    } catch {
+      throw Object.assign(new Error('Некорректный путь'), { statusCode: 400 });
+    }
+  }
+  const base = path.resolve(root);
+  if (path.isAbsolute(raw)) {
+    const tmp = raw.match(/^\/(?:private\/)?(?:var\/)?tmp\/(.*)$/i);
+    if (tmp) raw = tmp[1] || '.';
+    else if (/^\/(?:private\/)?(?:var\/)?tmp\/?$/i.test(raw)) raw = '.';
+    else {
+      const resolvedAbs = path.resolve(raw);
+      if (resolvedAbs === base || resolvedAbs.startsWith(`${base}${path.sep}`)) {
+        raw = path.relative(base, resolvedAbs) || '.';
+      } else {
+        throw Object.assign(new Error('Разрешены только относительные пути workspace'), { statusCode: 400 });
+      }
+    }
+  }
+  return raw;
+}
+
+export function safeWorkspacePath(root, input = '.', { allowMissing = true } = {}) {
+  const raw = coerceWorkspaceRelativePath(root, input);
   if (path.isAbsolute(raw)) throw Object.assign(new Error('Разрешены только относительные пути workspace'), { statusCode: 400 });
   const base = path.resolve(root);
   const target = path.resolve(base, raw);

@@ -15,6 +15,7 @@ import { DIAGNOSTIC_KINDS, formatDiagnosticsReport, planDiagnostics } from './di
 import { BROWSER_ACTIONS, executeBrowserTool } from './browser-client.mjs';
 import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
+import { isPublicHttpUrl, readWorkspaceBrowserDocument } from './browser-local.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 import { executeInExecutor, executorRequired } from './executor-client.mjs';
@@ -189,10 +190,10 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'browser',
-    description: 'Drive a headless Chromium page: open, snapshot, click, fill, press, console, close. Returns page text plus interactive elements. Use for JavaScript-rendered pages and for verifying UI changes; use webfetch for static content.',
+    description: 'Drive a headless Chromium page: open, snapshot, click, fill, press, console, close. Returns page text plus interactive elements. For a local HTML file such as index.html, open that workspace-relative path — this works even when outbound network policy is off. Public http(s) URLs follow Z_AGENT_NETWORK_POLICY. Use webfetch for static public pages.',
     inputSchema: object({
       action: { type: 'string', enum: BROWSER_ACTIONS },
-      url: { type: 'string', description: 'Required for action=open.' },
+      url: { type: 'string', description: 'Workspace-relative HTML file (index.html) or public http(s) URL. Required for action=open.' },
       selector: { type: 'string', description: 'CSS selector for the target element.' },
       text: { type: 'string', description: 'Visible text used to locate the element when selector is not given.' },
       value: { type: 'string', description: 'Value for action=fill.' },
@@ -775,15 +776,24 @@ export async function executeTool(name, input, ctx) {
 
   if (tool === 'browser') {
     const action = String(input?.action || '').trim().toLowerCase();
-    // Reject browser use before resolving/creating any session sandbox. The
-    // browser egress proxy independently enforces the same policy, but this
-    // early gate keeps policy=off side-effect free and deterministic.
-    if (agentNetworkPolicy() === 'off' && action !== 'close') {
-      throw Object.assign(new Error('browser is disabled by Z_AGENT_NETWORK_POLICY=off.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+    let payload = input && typeof input === 'object' ? { ...input } : {};
+    if (action === 'open') {
+      const target = String(payload.url || '').trim();
+      if (!target) throw new Error('open requires url');
+      if (isPublicHttpUrl(target)) {
+        // Public pages still follow network policy. Local workspace HTML does
+        // not leave the runtime, so policy=off must not block index.html.
+        if (agentNetworkPolicy() === 'off') {
+          throw Object.assign(new Error('browser is disabled by Z_AGENT_NETWORK_POLICY=off.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+        }
+        assertAgentNetworkUrl(target, { tool: 'browser' });
+      } else {
+        const local = readWorkspaceBrowserDocument(root, target);
+        payload = { ...payload, html: local.html, url: local.href };
+      }
     }
-    if (action === 'open') assertAgentNetworkUrl(input?.url, { tool: 'browser' });
     const identity = sandboxIdentity(ctx.sessionId);
-    return executeBrowserTool({ sessionId: ctx.sessionId, uid: identity?.isolated ? identity.uid : null, input: input || {}, signal: ctx.signal });
+    return executeBrowserTool({ sessionId: ctx.sessionId, uid: identity?.isolated ? identity.uid : null, input: payload, signal: ctx.signal });
   }
 
   throw new Error(`Unknown tool: ${name}`);

@@ -102,6 +102,13 @@ test('strict agent network policy blocks network-capable tools before outbound w
     await assert.rejects(() => tools.executeTool('websearch', { query: 'should not leave runtime' }, { workspace }), /disabled/i);
     await assert.rejects(() => tools.executeTool('ensure_environment', { kind: 'python' }, { workspace }), /network_policy|network policy/i);
     await assert.rejects(() => tools.executeTool('browser', { action: 'open', url: 'https://example.com/' }, { workspace, sessionId: 'ses_policystrict1' }), /disabled/i);
+
+    fs.writeFileSync(path.join(workspace, 'index.html'), '<html><body>шашки</body></html>\n');
+    try {
+      await tools.executeTool('browser', { action: 'open', url: 'index.html' }, { workspace, sessionId: 'ses_policystrict1' });
+    } catch (err) {
+      assert.doesNotMatch(String(err?.message || err), /disabled|NETWORK_POLICY|AGENT_NETWORK_BLOCKED/i);
+    }
   } finally {
     if (previousPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousPolicy;
     if (previousAllowlist == null) delete process.env.Z_AGENT_NETWORK_ALLOWLIST; else process.env.Z_AGENT_NETWORK_ALLOWLIST = previousAllowlist;

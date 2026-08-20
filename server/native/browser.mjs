@@ -215,10 +215,12 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
   }
 
   // Fail closed on destination policy before loading/launching Chromium.
+  // Workspace HTML arrives as `html` and never hits the network.
   if (action === 'open') {
+    const html = String(input.html || '');
     const target = String(input.url || '').trim();
-    if (!target) throw new Error('open requires url');
-    assertAgentNetworkUrl(target, { tool: 'browser' });
+    if (!html && !target) throw new Error('open requires url');
+    if (!html) assertAgentNetworkUrl(target, { tool: 'browser' });
   }
 
   const playwright = await loadPlaywright();
@@ -234,15 +236,21 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
   const extra = [];
 
   if (action === 'open') {
+    const html = String(input.html || '');
     const target = String(input.url || '').trim();
-    if (!target) throw new Error('open requires url');
-    // Same SSRF policy as webfetch: no loopback, no private ranges, no
-    // non-http schemes. Navigation is still a live fetch, so this check is a
-    // policy gate rather than a pinned connection.
-    assertAgentNetworkUrl(target, { tool: 'browser' });
-    await assertSafeExternalUrl(target);
-    const response = await page.goto(target, { timeout, waitUntil: 'domcontentloaded' });
-    extra.push(`http status: ${response ? response.status() : 'unknown'}`);
+    if (html) {
+      await page.setContent(html, { timeout, waitUntil: 'domcontentloaded' });
+      extra.push(`workspace document: ${target || 'inline'}`);
+    } else {
+      if (!target) throw new Error('open requires url');
+      // Same SSRF policy as webfetch: no loopback, no private ranges, no
+      // non-http schemes. Navigation is still a live fetch, so this check is a
+      // policy gate rather than a pinned connection.
+      assertAgentNetworkUrl(target, { tool: 'browser' });
+      await assertSafeExternalUrl(target);
+      const response = await page.goto(target, { timeout, waitUntil: 'domcontentloaded' });
+      extra.push(`http status: ${response ? response.status() : 'unknown'}`);
+    }
   } else if (action === 'click') {
     await resolveLocator(page, input).click({ timeout });
     await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {});

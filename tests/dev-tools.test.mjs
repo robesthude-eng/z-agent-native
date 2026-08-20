@@ -335,6 +335,7 @@ test('browser applies agent network policy to every routed request and blocks se
   assert.match(browser, /assertSafeExternalUrl\(target/);
   assert.match(browser, /serviceWorkers: 'block'/);
   assert.match(browser, /routeWebSocket/);
+  assert.match(browser, /setContent\(/);
 });
 
 /* --------------------------- subagent wiring ---------------------------- */

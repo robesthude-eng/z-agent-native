@@ -161,3 +161,12 @@ test('completion gate stops nagging after a few reminders', () => {
   assert.equal(shouldEnforceCompletionGate(strategy, 2), true);
   assert.equal(shouldEnforceCompletionGate(strategy, 3), false);
 });
+
+test('opening local HTML in the browser satisfies the completion gate', () => {
+  const strategy = createTurnStrategy('Сделай браузерную игру шашки');
+  observeTool(strategy, { name: 'write', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });
+  observeTool(strategy, { name: 'browser', arguments: { action: 'open', url: 'index.html' } }, { isError: false });
+  assert.equal(strategy.needsVerification, false);
+  assert.equal(strategy.lastVerificationOk, true);
+  assert.equal(completionGate(strategy), null);
+});

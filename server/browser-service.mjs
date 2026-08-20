@@ -6,7 +6,7 @@ import readline from 'node:readline';
 import { spawn } from 'node:child_process';
 
 const SOCKET_PATH = process.env.Z_AGENT_BROWSER_SOCKET || '/run/z-agent-browser/browser.sock';
-const MAX_BODY = 512 * 1024;
+const MAX_BODY = 2 * 1024 * 1024;
 const IDLE_MS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_IDLE_MS) || 10 * 60 * 1000, 60_000), 60 * 60 * 1000);
 const MAX_WORKERS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_WORKERS) || 16, 1), 64);
 const MAX_PENDING_PER_WORKER = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_PENDING_PER_WORKER) || 2, 1), 8);

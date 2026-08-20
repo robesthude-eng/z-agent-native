@@ -21,6 +21,16 @@ test('workspace resolver blocks traversal and symlink escapes', () => {
   fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true });
 });
 
+test('absolute /tmp paths are rewritten into the workspace instead of rejected', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-security-tmp-'));
+  fs.writeFileSync(path.join(root, 'checkers.js'), 'ok');
+  assert.equal(safeWorkspacePath(root, '/tmp/checkers.js', { allowMissing: false }), path.join(root, 'checkers.js'));
+  assert.equal(safeWorkspacePath(root, 'file:///tmp/checkers.js', { allowMissing: false }), path.join(root, 'checkers.js'));
+  assert.throws(() => safeWorkspacePath(root, '/etc/passwd'), /относительные пути/i);
+  assert.throws(() => safeWorkspacePath(root, '/tmp/../etc/passwd'), /workspace|предел/i);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('SSRF guard rejects local and credentialed URLs before fetch', async () => {
   await assert.rejects(() => assertSafeExternalUrl('http://127.0.0.1:3000/private'), /локаль|служеб/i);
   await assert.rejects(() => assertSafeExternalUrl('http://169.254.169.254/latest/meta-data'), /локаль|служеб/i);
