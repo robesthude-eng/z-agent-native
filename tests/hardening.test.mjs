@@ -192,6 +192,9 @@ test('production compose isolates autonomous execution in a networkless sibling 
   const executorBlock = compose.split(/\n\s{2}z-agent-executor:\s*\n/)[1]?.split(/\nvolumes:\s*\n/)[0] || '';
   assert.match(executorBlock, /z-agent-workspaces:\/workspaces/);
   assert.doesNotMatch(executorBlock, /z-agent-data:\/data/);
+  // Session dirs are 0700. Without DAC_OVERRIDE, spawn({cwd}) is EACCES and
+  // Node misreports it as `spawn setpriv EACCES`, so bash/git/tests all die.
+  assert.match(executorBlock, /DAC_OVERRIDE/);
 });
 
 test('production browser has an internal-only network and a separate pinned egress proxy', () => {
