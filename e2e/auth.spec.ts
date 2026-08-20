@@ -26,7 +26,7 @@ test.describe("authentication", () => {
 		await page.locator("#confirm").fill("12345");
 		await page.getByRole("button", { name: "Зарегистрироваться" }).click();
 
-		await expect(page.getByText("Пароль должен содержать минимум 6 символов.")).toBeVisible();
+		await expect(page.getByText("Пароль должен содержать минимум 12 символов.")).toBeVisible();
 	});
 
 	test("registration rejects mismatched passwords", async ({ page }) => {
