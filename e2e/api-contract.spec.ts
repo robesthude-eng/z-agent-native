@@ -60,7 +60,7 @@ test.describe("http contract", () => {
 
 		// the very same call succeeds once the token from the readable cookie is echoed
 		const cookies = await api.storageState();
-		const token = cookies.cookies.find((c) => c.name === "z_agent_csrf")?.value ?? "";
+		const token = cookies.cookies.find((c) => c.name === "z_agent_csrf" || c.name === "__Host-z_agent_csrf")?.value ?? "";
 		expect(token.length).toBeGreaterThanOrEqual(16);
 
 		const accepted = await api.post("/api/session", {
