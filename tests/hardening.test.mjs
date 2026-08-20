@@ -307,6 +307,8 @@ test('production Dockerfiles pin the Node release instead of floating on major 2
   assert.match(api, /^FROM node:24\.19\.0-bookworm AS build/m);
   assert.match(api, /^FROM node:24\.19\.0-bookworm-slim AS runtime/m);
   assert.match(browser, /^FROM node:24\.19\.0-bookworm$/m);
+  assert.match(browser, /PLAYWRIGHT_BROWSERS_PATH=\/ms-playwright/);
+  assert.match(browser, /chmod -R a\+rX \/ms-playwright/);
 });
 
 test('production API drains active turns before Docker may SIGKILL it', () => {

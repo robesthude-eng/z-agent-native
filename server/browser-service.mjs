@@ -84,6 +84,7 @@ function startWorker(sessionId, uid) {
     Z_AGENT_BROWSER_PROXY: String(process.env.Z_AGENT_BROWSER_PROXY || ''),
     Z_AGENT_NETWORK_POLICY: String(process.env.Z_AGENT_NETWORK_POLICY || 'off'),
     Z_AGENT_NETWORK_ALLOWLIST: String(process.env.Z_AGENT_NETWORK_ALLOWLIST || ''),
+    PLAYWRIGHT_BROWSERS_PATH: String(process.env.PLAYWRIGHT_BROWSERS_PATH || '/ms-playwright'),
   };
   const envAssignments = Object.entries(env).map(([key, value]) => `${key}=${String(value)}`);
   const child = spawn(SETPRIV, [
