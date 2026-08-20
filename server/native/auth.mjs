@@ -95,11 +95,11 @@ export function issueLogin(email) {
   const token = crypto.randomBytes(32).toString('hex');
   const csrf = crypto.randomBytes(24).toString('hex');
   createAuthSession(token, email, csrf);
-  return {
-    token,
-    csrf,
-    cookies: [cookie(SESSION_COOKIE, token), cookie(CSRF_COOKIE, csrf, { httpOnly: false })],
-  };
+  const cookies = [cookie(SESSION_COOKIE, token), cookie(CSRF_COOKIE, csrf, { httpOnly: false })];
+  if (SECURE_COOKIES) {
+    cookies.push(cookie('z_agent_session', '', { maxAge: 0 }), cookie('z_agent_csrf', '', { maxAge: 0, httpOnly: false }));
+  }
+  return { token, csrf, cookies };
 }
 
 export function clearCookies() {
@@ -146,7 +146,8 @@ export function checkCsrf(req, res, auth = null) {
   if (/\/api\/auth\/(login|register)$/.test(url.split('?')[0])) return true;
   const cookies = parseCookies(req);
   const header = req.headers['x-csrf-token'];
-  let ok = typeof header === 'string' && header.length >= 16 && safeEqual(cookies[CSRF_COOKIE], header);
+  const cookieToken = cookies[CSRF_COOKIE] || cookies['z_agent_csrf'] || cookies['__Host-z_agent_csrf'] || '';
+  let ok = typeof header === 'string' && header.length >= 16 && safeEqual(cookieToken, header);
   // Double submit on its own only proves the caller could write a cookie for
   // this site — a sibling subdomain, or XSS on one, can do exactly that, and
   // the pair was never tied to the logged-in session. Match the header against

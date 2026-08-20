@@ -1,3 +1,5 @@
+import { csrfHeaders } from "../lib/csrfCookie";
+
 export type ProviderProtocol = "openai" | "anthropic" | "google";
 
 export interface ProviderChannel {
@@ -25,12 +27,6 @@ export interface ProviderChannelCatalogResult {
   count?: number;
   error?: string | null;
   models?: { id: string; name: string }[];
-}
-
-function csrfHeaders(): Record<string, string> {
-  if (typeof document === "undefined") return {};
-  const csrf = document.cookie.match(/(?:^|;\s*)(?:__Host-)?z_agent_csrf=([^;]+)/)?.[1];
-  return csrf ? { "x-csrf-token": decodeURIComponent(csrf) } : {};
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

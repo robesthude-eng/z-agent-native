@@ -1,3 +1,4 @@
+import { csrfHeaders as csrfFromCookie } from "../lib/csrfCookie";
 import { isTmpSession } from "../lib/ids";
 import { MAX_UPLOAD_BYTES, type ProcessedFile } from "./files";
 import type {
@@ -63,13 +64,7 @@ export async function jsonOrNull<T = unknown>(
 
 /** Same-origin JSON headers. Auth is HttpOnly cookie (credentials: include). */
 function csrfHeaders(): Record<string, string> {
-  const h: Record<string, string> = {};
-  // Double Submit Cookie: значение не-HttpOnly куки z_agent_csrf дублируется
-  // в заголовке для каждого мутирующего запроса, включая multipart/XHR.
-  if (typeof document === "undefined") return h;
-  const csrf = document.cookie.match(/(?:^|;\s*)(?:__Host-)?z_agent_csrf=([^;]+)/)?.[1];
-  if (csrf) h["x-csrf-token"] = decodeURIComponent(csrf);
-  return h;
+  return csrfFromCookie();
 }
 
 function headers(): Record<string, string> {

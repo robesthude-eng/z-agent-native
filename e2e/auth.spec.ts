@@ -58,8 +58,8 @@ test.describe("authentication", () => {
 		await expect(page.locator("#password")).toHaveCount(0, { timeout: 15_000 });
 
 		const cookies = await context.cookies();
-		const session = cookies.find((c) => c.name === "z_agent_session");
-		const csrf = cookies.find((c) => c.name === "z_agent_csrf");
+		const session = cookies.find((c) => c.name === "z_agent_session" || c.name === "__Host-z_agent_session");
+		const csrf = cookies.find((c) => c.name === "z_agent_csrf" || c.name === "__Host-z_agent_csrf");
 
 		expect(session, "session cookie must be set").toBeTruthy();
 		// Stealing the session via injected JS must stay impossible.
