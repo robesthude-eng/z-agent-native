@@ -8,11 +8,14 @@ import { spawn } from 'node:child_process';
 const SOCKET_PATH = process.env.Z_AGENT_BROWSER_SOCKET || '/run/z-agent-browser/browser.sock';
 const MAX_BODY = 512 * 1024;
 const IDLE_MS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_IDLE_MS) || 10 * 60 * 1000, 60_000), 60 * 60 * 1000);
+const MAX_WORKERS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_WORKERS) || 16, 1), 64);
+const MAX_PENDING_PER_WORKER = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_PENDING_PER_WORKER) || 2, 1), 8);
 const SETPRIV = ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv'].find((candidate) => fs.existsSync(candidate)) || null;
+const ENV = ['/usr/bin/env', '/bin/env'].find((candidate) => fs.existsSync(candidate)) || null;
 const WORKER_FILE = path.resolve(new URL('./browser-worker.mjs', import.meta.url).pathname);
 const RESPONSE_PREFIX = 'ZAGENT_BROWSER_RESPONSE ';
 const workers = new Map();
-if (!SETPRIV) throw new Error('Isolated browser service requires util-linux setpriv');
+if (!SETPRIV || !ENV) throw new Error('Isolated browser service requires util-linux setpriv and env');
 
 function json(res, status, body) {
   const data = Buffer.from(JSON.stringify(body));
@@ -82,10 +85,15 @@ function startWorker(sessionId, uid) {
     Z_AGENT_NETWORK_POLICY: String(process.env.Z_AGENT_NETWORK_POLICY || 'off'),
     Z_AGENT_NETWORK_ALLOWLIST: String(process.env.Z_AGENT_NETWORK_ALLOWLIST || ''),
   };
+  const envAssignments = Object.entries(env).map(([key, value]) => `${key}=${String(value)}`);
   const child = spawn(SETPRIV, [
     '--clear-groups', '--no-new-privs', `--reuid=${uid}`, `--regid=${uid}`,
-    process.execPath, WORKER_FILE, sessionId,
-  ], { env, stdio: ['pipe', 'pipe', 'pipe'], detached: false });
+    ENV, '-i', '--', ...envAssignments, process.execPath, WORKER_FILE, sessionId,
+  ], {
+    // Keep privileged launcher environment independent of browser/session data.
+    env: { PATH: '/usr/sbin:/usr/bin:/sbin:/bin', LANG: 'C.UTF-8', LC_ALL: 'C.UTF-8' },
+    stdio: ['pipe', 'pipe', 'pipe'], detached: false,
+  });
   const state = { sessionId, uid, child, home, pending: new Map(), lastUsed: Date.now(), stopping: false, stderr: '' };
   workers.set(sessionId, state);
   const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
@@ -121,10 +129,14 @@ function ensureWorker(sessionId, uid) {
     if (existing.child.exitCode == null && !existing.stopping) return existing;
     workers.delete(sessionId);
   }
+  if (workers.size >= MAX_WORKERS) throw Object.assign(new Error('Browser worker capacity reached'), { statusCode: 429, code: 'BROWSER_BUSY' });
   return startWorker(sessionId, uid);
 }
 function requestWorker(state, input, req) {
   state.lastUsed = Date.now();
+  if (state.pending.size >= MAX_PENDING_PER_WORKER) {
+    throw Object.assign(new Error('Browser session is busy'), { statusCode: 429, code: 'BROWSER_BUSY' });
+  }
   const id = crypto.randomUUID();
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -162,6 +174,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, proxy.ok ? 200 : 503, {
         ok: proxy.ok, isolated: true, workerIsolation: 'per-session-setpriv-uid', controllerUid: typeof process.getuid === 'function' ? process.getuid() : null,
         mounts: 'none', egressProxy: proxy.configured && proxy.ok, activeWorkers: workers.size,
+        capacity: { maxWorkers: MAX_WORKERS, maxPendingPerWorker: MAX_PENDING_PER_WORKER },
       });
     }
     if (req.url !== '/browser') return json(res, 404, { error: 'Not found' });

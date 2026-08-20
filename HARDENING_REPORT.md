@@ -4,13 +4,25 @@ This bundle is the production-hardening continuation of the Z Agent Native hando
 
 “10/10” in this report means the documented production profile satisfies the repository's current engineering/security/release checklist. It is not a claim of mathematical perfection, hyperscale architecture, or immunity to a compromised host kernel/root account.
 
+## Maximum hardening continuation — 2026-08-20
+
+The final adversarial pass focused on classes that are easy to miss after the obvious sandbox work:
+
+- **Privileged launcher environment:** tool-controlled environment variables previously reached root `setpriv` before UID drop. The executor now starts the privileged chain with a fixed trusted environment and applies user variables only after irreversible UID/GID/group drop and `no_new_privs`. Regression coverage exercises an `LD_PRELOAD` attack.
+- **Secret lifecycle:** provider ciphertext moved to a key-ID/AAD-bound `enc:v2` envelope with bounded old-key rotation/rewrap; production requires the encryption key and an independent audit key outside `/data`.
+- **Authentication evolution:** versioned scrypt parameters support transparent rehash; production uses Secure `__Host-` cookies; shared rate/capacity state prevents simple replica/account abuse amplification.
+- **Tamper evidence and DR:** security mutations are HMAC-chained, snapshots have authenticated manifests, and restore verification proves secret decryptability plus audit integrity instead of merely opening SQLite.
+- **Resource abuse:** global/per-owner model-turn leases, executor per-UID/global command caps, browser worker/pending caps and egress connection/byte budgets complement Docker/RLIMIT hard limits.
+- **Supply chain:** remote CI actions are SHA-pinned; CI boots the production topology before publication and Deploy consumes immutable image digests instead of rebuilding on the host.
+- **Safe operations:** production configuration is fail-closed, `prod:env:init` generates strong separate keys, graceful drain keeps normal releases out of crash-recovery paths, and `OPERATIONS.md` documents restore/key-rotation/release procedures.
+
 ## Security boundary
 
 ### Autonomous code plane
 
 - `bash`, tests, builds, diagnostics and process-capable Git operations execute in the sibling `z-agent-executor` service.
 - The executor has Docker `network_mode: none`, no `/data` mount and only the workspace + private UDS volumes.
-- Every command is launched through `setpriv --clear-groups --no-new-privs` as the chat's monotonic Unix UID, then bounded by `prlimit` and outer Docker PID/CPU/memory caps.
+- Every command starts with a fixed trusted privileged environment, then crosses `setpriv --clear-groups --no-new-privs` to the chat's monotonic Unix UID before user-controlled environment variables are applied; `prlimit` and outer Docker PID/CPU/memory caps bound the resulting process.
 - Executor IPC binds the requested UID/GID to the actual workspace owner. A request cannot combine another session identity with a workspace it does not own.
 - The private executor socket directory is root-only; regression coverage proves a session process cannot reconnect to the privileged UDS.
 - Production health attests that the executor sees no non-loopback network interface.
@@ -39,8 +51,8 @@ The public TLS configuration now supplies HSTS, `nosniff`, strict referrer/permi
 
 ## Authentication and abuse controls
 
-- Passwords use scrypt; new registrations/password changes require at least 12 characters without locking out legacy-account login.
-- Browser session bearer tokens are random and stored only as SHA-256 digests in SQLite; legacy plaintext session rows migrate transparently.
+- Password hashes are versioned scrypt records with bounded parameters; successful login transparently upgrades legacy hashes. New registrations/password changes require at least 12 characters without locking out legacy-account login.
+- Browser session bearer tokens are random and stored only as SHA-256 digests in SQLite; legacy plaintext session rows migrate transparently. Production uses Secure `__Host-` cookie names to remove Domain/path shadowing ambiguity.
 - Bootstrap-admin registration is atomic.
 - Registration closes after bootstrap unless an invite/open-registration policy is explicitly configured.
 - Login throttling is stored in shared SQLite using hashed IP/account buckets, so multiple replicas cannot bypass an in-memory limiter.
@@ -71,19 +83,21 @@ The repository ships the benchmark **infrastructure and example manifest**, not 
 
 - SQLite migrations are explicit, immutable-ID, transactional and forward-only.
 - Every migration declares `minReaderVersion`; `SCHEMA_MIN_READER_VERSION` is persisted in `schema_compatibility`.
-- Automatic deployment records the running schema reader, builds the candidate, and refuses to start a candidate whose schema would make automatic image rollback unsafe. There is intentionally no bypass flag in the automatic workflow; breaking migrations require a separate maintenance procedure.
+- Automatic deployment records the running schema reader and refuses a candidate whose schema would make automatic image rollback unsafe. There is intentionally no bypass flag in the automatic workflow; breaking migrations require a separate maintenance procedure.
 - Migration code never lowers a future `PRAGMA user_version`; unknown future schemas fail closed unless they explicitly advertise compatibility.
-- Pre-deploy backup refuses missing/empty/corrupt source databases, uses SQLite online `VACUUM INTO`, and verifies `PRAGMA quick_check`.
-- Same-volume pre-deploy snapshots are bounded to 30-day local retention and are documented as rollback aids, **not disaster recovery**. Production still requires off-host backup of SQLite plus the master key/stable `Z_AGENT_SECRET_KEY` and workspace data.
-- `/health/live` is process liveness only. `/health/ready` checks rollback-only DB write, schema compatibility, secret store, persistent-volume writes, minimum free-space floor, executor IPC + no-network attestation and browser/proxy IPC.
-- Public readiness output does not expose raw exception/path details.
-- Deploy identity comes from `Z_AGENT_RELEASE_SHA` inside the running container, never from checkout HEAD. The rollback trap is installed before reset/build and stale images are pruned only after candidate readiness.
+- Pre-deploy backup refuses missing/empty/corrupt source databases, uses SQLite online `VACUUM INTO`, verifies `PRAGMA quick_check`, and emits an HMAC-authenticated sidecar manifest containing snapshot size, SHA-256 and schema version.
+- `db:restore-verify` checks manifest authenticity, SQLite/foreign-key integrity, schema compatibility, provider-secret decryptability and the HMAC audit chain; `db:drill` exercises snapshot + restore verification. Same-volume deploy snapshots remain rollback aids, **not disaster recovery**. Production requires independent off-host database/workspace backups plus both external cryptographic keys.
+- `/health/live` is process liveness only. `/health/ready` checks rollback-only DB write, schema compatibility, external-key state, persistent-volume writes, minimum free-space floor, executor IPC + no-network attestation and browser/proxy IPC. SIGTERM makes readiness fail immediately while active turns receive a bounded drain period.
+- Public readiness output does not expose raw exception/path details. The public proxy also blocks `/metrics`.
+- CI uses build-once/deploy-by-digest: the exact boot-tested production images are pushed and their immutable registry digests are handed to Deploy. Deploy never rebuilds the release on the server, verifies the live release SHA and actual image identities, and retains the previous immutable images until candidate readiness.
 
 ## Observability and maintenance
 
 - Per-turn telemetry records privacy-minimized model/tool timings and counts, fallbacks, retries, tokens, context size, verification/gate activity, outcome and optional operator-supplied cost estimates without prompt/tool-output/file bodies.
+- Shared SQLite capacity leases bound global/per-owner model turns; executor/browser/proxy layers have separate global/per-session connection/process/byte budgets to shed abusive load.
 - Bearer-protected `/metrics` exposes low-cardinality Prometheus metrics with no user/session/turn IDs as labels.
-- CI generates a CycloneDX npm SBOM.
+- Security-sensitive mutations are recorded in the same SQLite transaction into a pseudonymized HMAC-chained audit trail; verification detects row tampering.
+- CI generates a CycloneDX npm SBOM, remote GitHub Actions are pinned to immutable full commit SHAs, and the release path records immutable OCI digests/provenance for the tested images.
 - Dependabot is configured for npm, GitHub Actions and Docker dependencies.
 - Production CI validates Compose, validates the Caddyfile, builds both runtime images, boots the full four-service topology, waits for readiness and verifies the live release SHA before Deploy can run.
 - High/critical runtime npm advisories, correctness lint, typecheck, unit tests, build and Playwright E2E are blocking release gates; formatting remains report-only.
@@ -99,7 +113,7 @@ Passed locally:
 - `npm run eval:validate` — 30 executable cases (explore=7, debug=7, review=7, implement=8, smoke=1).
 - `npm run eval:benchmark:validate` — production real-repository benchmark contract valid.
 - `npm run eval:smoke` — **100/100**, 1/1 deterministic case through the real native agent/tool/verification path.
-- `npm run test:native` — **224 tests: 222 passed, 0 failed, 2 skipped**.
+- `npm run test:native` — **251 tests: 249 passed, 0 failed, 2 skipped**.
 
 The two skipped native tests are existing platform-conditional branches; no failure is hidden as a skip.
 
@@ -115,7 +129,7 @@ This design materially isolates untrusted model/repository code, but no single-h
 
 - a compromised host kernel, Docker daemon or root/operator account;
 - container/kernel escape vulnerabilities;
-- strict per-tenant cgroup fairness or hyperscale scheduling (the executor is a shared bounded service, so hostile compute can still create availability pressure within its outer caps);
+- strict per-tenant kernel/cgroup fairness or hyperscale scheduling (application concurrency leases, RLIMITs and Docker service caps load-shed aggressively, but this remains a shared single-host execution plane);
 - intentional data egress after an operator explicitly enables model web access to a destination allowed by policy;
 - disaster recovery without independent off-host backups;
 - model-quality guarantees beyond the real-repository benchmark corpus the operator actually runs.

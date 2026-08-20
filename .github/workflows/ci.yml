@@ -12,6 +12,9 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   # ---------------------------------------------------------------------------
   # Blocking gates. Deploy runs on `workflow_run: CI completed && success`, so
@@ -23,8 +26,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm
@@ -35,6 +38,8 @@ jobs:
         run: npm run eval:benchmark:validate
       - name: Check capability documentation
         run: npm run docs:check
+      - name: Enforce immutable GitHub Action pins
+        run: npm run supplychain:check
       - name: Deterministic agent smoke eval
         run: npm run eval:smoke
         env:
@@ -47,8 +52,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm
@@ -66,7 +71,7 @@ jobs:
         run: npm run build
       - name: Upload build output
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: dist
           path: dist
@@ -78,8 +83,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm
@@ -93,7 +98,7 @@ jobs:
           Z_AGENT_ALLOW_OPEN_REGISTRATION: '1'
       - name: Upload Playwright report
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: playwright-report
           path: playwright-report
@@ -105,39 +110,51 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
       - name: Block new high/critical runtime advisories
         run: npm audit --omit=dev --audit-level=high
+      - name: Verify npm registry package signatures/provenance
+        run: npm audit signatures
 
 
   containers:
     name: Production container contract
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     timeout-minutes: 35
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Validate Compose topology
         run: |
           cp .env.example .env
+          printf 'Z_AGENT_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
+          printf 'Z_AGENT_AUDIT_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
           docker compose config -q
       - name: Validate public Caddy security config
         run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
-      - name: Build API/executor image
+      - name: Build API/executor image once
         run: docker build --pull -t z-agent-native:ci .
-      - name: Build isolated browser image
+      - name: Build isolated browser image once
         run: docker build --pull -f Dockerfile.browser -t z-agent-browser:ci .
       - name: Boot production topology and require full readiness
         run: |
           set -euo pipefail
           export Z_AGENT_RELEASE_SHA=ci-${GITHUB_SHA}
+          export Z_AGENT_API_IMAGE=z-agent-native:ci
+          export Z_AGENT_BROWSER_IMAGE=z-agent-browser:ci
           cleanup() { docker compose down -v --remove-orphans >/dev/null 2>&1 || true; }
           trap cleanup EXIT
-          docker compose up -d --build --remove-orphans
+          docker compose up -d --no-build --remove-orphans
           READY=0
           for attempt in $(seq 1 60); do
             if curl -fsS http://127.0.0.1:3002/health/ready > /tmp/z-agent-ci-ready.json 2>/dev/null; then
@@ -158,20 +175,88 @@ jobs:
           docker compose ps --status running z-agent-browser | grep -q z-agent-browser
           docker compose ps --status running z-agent-browser-egress | grep -q z-agent-browser-egress
 
+
+      - name: Publish exactly-tested images by commit
+        id: publish_images
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GHCR_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          REGISTRY_REPO="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          API_TAG="$REGISTRY_REPO/z-agent-api:$GITHUB_SHA"
+          BROWSER_TAG="$REGISTRY_REPO/z-agent-browser:$GITHUB_SHA"
+          docker tag z-agent-native:ci "$API_TAG"
+          docker tag z-agent-browser:ci "$BROWSER_TAG"
+          docker push "$API_TAG"
+          docker push "$BROWSER_TAG"
+          # Pull the registry objects back before reading RepoDigests. `docker push`
+          # alone does not guarantee that every engine version updates the local
+          # RepoDigests array, while a pull of the exact commit tag does.
+          docker pull "$API_TAG"
+          docker pull "$BROWSER_TAG"
+          API_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$API_TAG")"
+          BROWSER_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$BROWSER_TAG")"
+          test -n "$API_DIGEST" && test -n "$BROWSER_DIGEST"
+          API_SUBJECT="${API_DIGEST%@*}"
+          API_SUBJECT_DIGEST="${API_DIGEST#*@}"
+          BROWSER_SUBJECT="${BROWSER_DIGEST%@*}"
+          BROWSER_SUBJECT_DIGEST="${BROWSER_DIGEST#*@}"
+          {
+            printf 'api_subject=%s\n' "$API_SUBJECT"
+            printf 'api_digest=%s\n' "$API_SUBJECT_DIGEST"
+            printf 'browser_subject=%s\n' "$BROWSER_SUBJECT"
+            printf 'browser_digest=%s\n' "$BROWSER_SUBJECT_DIGEST"
+          } >> "$GITHUB_OUTPUT"
+          {
+            printf 'Z_AGENT_RELEASE_SHA=%s\n' "$GITHUB_SHA"
+            printf 'Z_AGENT_API_IMAGE=%s\n' "$API_DIGEST"
+            printf 'Z_AGENT_BROWSER_IMAGE=%s\n' "$BROWSER_DIGEST"
+          } > production-images.env
+          sha256sum production-images.env > production-images.env.sha256
+
+      - name: Attest published API image provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish_images.outputs.api_subject }}
+          subject-digest: ${{ steps.publish_images.outputs.api_digest }}
+          push-to-registry: true
+
+      - name: Attest published browser image provenance
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.event.repository.visibility == 'public'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: ${{ steps.publish_images.outputs.browser_subject }}
+          subject-digest: ${{ steps.publish_images.outputs.browser_digest }}
+          push-to-registry: true
+
+      - name: Upload immutable production image references
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: production-images
+          path: |
+            production-images.env
+            production-images.env.sha256
+          retention-days: 30
+          if-no-files-found: error
+
   sbom:
     name: Dependency inventory
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm
       - run: npm ci
       - name: Generate CycloneDX dependency inventory
         run: npm sbom --sbom-format=cyclonedx > sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
@@ -184,8 +269,8 @@ jobs:
     timeout-minutes: 15
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
           node-version: '24'
           cache: npm

@@ -1,4 +1,4 @@
-FROM node:24-bookworm AS build
+FROM node:24.19.0-bookworm AS build
 WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends python3 make g++ git ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY package.json package-lock.json ./
@@ -10,7 +10,7 @@ COPY . .
 # to block a deploy that ships already-tested runtime code.
 RUN npx --no vite build && npm prune --omit=dev --legacy-peer-deps
 
-FROM node:24-bookworm-slim AS runtime
+FROM node:24.19.0-bookworm-slim AS runtime
 WORKDIR /app
 # Keep a broad but bounded development substrate in the image. Agent sessions
 # still run as unprivileged per-session UIDs; language packages and extra SDKs

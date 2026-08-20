@@ -1,7 +1,7 @@
 import {
   clearTurn, claimAction, completeAction, createQuestion, failAction, findQuestionForRecovery, getAction, getChat, getQuestion,
   getTurn, listMessages, putMessage, renameChat, resetAction, resolveQuestion,
-  setTurn, workspaceFor,
+  setTurn, workspaceFor, reserveTurnCapacity, renewTurnCapacity, releaseTurnCapacity,
 } from './store.mjs';
 import { emit } from './events.mjs';
 import { assertActionId, messageId, partId, questionId, turnId } from './ids.mjs';
@@ -40,6 +40,7 @@ import { acquireTurnLock, isClustered, releaseTurnLock, renewTurnLock, turnLockH
 import { framesFromMessages, promptText, systemPrompt, textParts, userPartsFromPrompt } from './agent-frames.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, toolCallFromPart, toolCallSignature, toolMayHaveSideEffects, toolPart, waitForRetry } from './agent-parts.mjs';
 import { assertTurnTransition } from './turn-lifecycle.mjs';
+import { recordTurnCapacityRejection } from './metrics.mjs';
 
 const activeTurns = new Map();
 const activeActions = new Map();
@@ -47,11 +48,16 @@ const questionWaiters = new Map();
 // sessionId -> Set<resolver>. Lets waitForTurnIdle react to the moment a turn
 // ends instead of polling activeTurns every 20 ms.
 const idleWaiters = new Map();
+const MAX_ACTIVE_TURNS = Math.min(Math.max(Number(process.env.Z_AGENT_MAX_ACTIVE_TURNS) || 32, 1), 256);
+const MAX_ACTIVE_TURNS_PER_OWNER = Math.min(Math.max(Number(process.env.Z_AGENT_MAX_ACTIVE_TURNS_PER_OWNER) || 4, 1), MAX_ACTIVE_TURNS);
+const TURN_CAPACITY_TTL_MS = Math.min(Math.max(Number(process.env.Z_AGENT_TURN_CAPACITY_TTL_MS) || 120_000, 30_000), 30 * 60 * 1000);
+
 
 function notifyTurnIdle(sessionId) {
   // A finished turn must stop being this replica's property: without an explicit
   // release another node could only take the session over after the lock TTL.
   if (isClustered()) { try { releaseTurnLock(sessionId); } catch { /* teardown must not depend on the lock table */ } }
+  try { releaseTurnCapacity(sessionId); } catch { /* TTL is the crash backstop */ }
   const waiters = idleWaiters.get(sessionId);
   if (!waiters) return;
   idleWaiters.delete(sessionId);
@@ -428,6 +434,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
   let strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
+  let capacityPulse = null;
   let runtime = null;
 
   try {
@@ -467,6 +474,10 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       }, 5_000);
       lockPulse.unref?.();
     }
+    capacityPulse = setInterval(() => {
+      try { renewTurnCapacity(sessionId, { ttlMs: TURN_CAPACITY_TTL_MS }); } catch { /* TTL/recovery are the backstop */ }
+    }, Math.min(30_000, Math.max(10_000, Math.floor(TURN_CAPACITY_TTL_MS / 3))));
+    capacityPulse.unref?.();
 
     const workspace = workspaceFor(sessionId);
     const messages = listMessages(sessionId);
@@ -629,6 +640,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     throw err;
   } finally {
     if (lockPulse) clearInterval(lockPulse);
+    if (capacityPulse) clearInterval(capacityPulse);
     activeTurns.delete(sessionId);
     notifyTurnIdle(sessionId);
     setTimeout(() => {
@@ -674,6 +686,12 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
   if (isClustered() && !acquireTurnLock(sessionId).ok) {
     throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409, holder: turnLockHolder(sessionId)?.instanceId || null });
   }
+  const capacity = reserveTurnCapacity(sessionId, ownerId, { maxGlobal: MAX_ACTIVE_TURNS, maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER, ttlMs: TURN_CAPACITY_TTL_MS });
+  if (!capacity.ok) {
+    if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
+    recordTurnCapacityRejection(capacity.reason);
+    throw Object.assign(new Error('Лимит одновременных задач исчерпан. Повторите позже.'), { statusCode: 429, code: 'TURN_CAPACITY', reason: capacity.reason });
+  }
   const tId = turnId();
   const goal = promptText(parts);
   const stepBudget = taskStepBudget(goal);
@@ -693,6 +711,7 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
     });
   } catch (err) {
     if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
+    try { releaseTurnCapacity(sessionId); } catch {}
     throw err;
   }
 
@@ -820,6 +839,12 @@ export function startDurableRecovery() {
     if (activeTurns.has(job.sessionId)) continue;
     // Another replica may already be recovering this durable job.
     if (isClustered() && !acquireTurnLock(job.sessionId).ok) continue;
+    const capacity = reserveTurnCapacity(job.sessionId, job.ownerId, { maxGlobal: MAX_ACTIVE_TURNS, maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER, ttlMs: TURN_CAPACITY_TTL_MS });
+    if (!capacity.ok) {
+      if (isClustered()) { try { releaseTurnLock(job.sessionId); } catch {} }
+      recordTurnCapacityRejection(capacity.reason);
+      continue;
+    }
 
     const controller = new AbortController();
     activeTurns.set(job.sessionId, { controller, turnId: job.turnId, ownerId: job.ownerId, recovered: true });

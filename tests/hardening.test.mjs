@@ -260,3 +260,58 @@ test('12-character password policy does not lock out legacy-login passwords in t
   assert.match(login, /if \(isRegistering && password\.length < 12\)/);
   assert.doesNotMatch(login, /if \(!password \|\| password\.length < 12\)/);
 });
+
+
+test('production requires strict external encryption and audit keys', () => {
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  assert.match(api, /Z_AGENT_SECRET_KEY_STRICT:\s*['"]?1['"]?/);
+  assert.match(api, /Z_AGENT_REQUIRE_EXTERNAL_KEYS:\s*['"]?1['"]?/);
+  const secrets = fs.readFileSync(path.join(repoRoot, 'server/native/secrets.mjs'), 'utf8');
+  const audit = fs.readFileSync(path.join(repoRoot, 'server/native/audit.mjs'), 'utf8');
+  assert.match(secrets, /Z_AGENT_SECRET_KEY_FILE/);
+  assert.match(secrets, /Production requires Z_AGENT_SECRET_KEY/);
+  assert.match(audit, /Z_AGENT_AUDIT_KEY_FILE/);
+  assert.match(audit, /Production requires Z_AGENT_AUDIT_KEY/);
+});
+
+test('public reverse proxy refuses the operator metrics endpoint', () => {
+  const caddy = fs.readFileSync(path.join(repoRoot, 'Caddyfile'), 'utf8');
+  assert.match(caddy, /@metrics path \/metrics[\s\S]*respond @metrics 404/);
+});
+
+test('release pipeline deploys exactly the images tested by CI', () => {
+  const ci = fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+  const deploy = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  assert.match(ci, /docker compose up -d --no-build/);
+  assert.match(ci, /docker push "\$API_TAG"[\s\S]*docker pull "\$API_TAG"[\s\S]*RepoDigests/);
+  assert.match(ci, /production-images\.env\.sha256/);
+  assert.match(deploy, /gh run download[\s\S]*production-images/);
+  assert.match(deploy, /sha256sum -c production-images\.env\.sha256/);
+  assert.match(deploy, /docker pull "\$Z_AGENT_API_IMAGE"/);
+  assert.match(deploy, /docker compose run --rm --no-deps --entrypoint node z-agent[\s\S]*server\/backup\.mjs/);
+  assert.doesNotMatch(deploy, /docker compose exec -T z-agent node \/tmp\/z-agent-backup\.mjs/);
+  assert.match(deploy, /docker compose up -d --no-build/);
+  assert.doesNotMatch(deploy, /docker compose build/);
+  assert.match(compose, /image: \$\{Z_AGENT_API_IMAGE:-z-agent-native:local\}/);
+  assert.match(compose, /image: \$\{Z_AGENT_BROWSER_IMAGE:-z-agent-browser:local\}/);
+});
+
+test('production Dockerfiles pin the Node release instead of floating on major 24', () => {
+  const api = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
+  const browser = fs.readFileSync(path.join(repoRoot, 'Dockerfile.browser'), 'utf8');
+  assert.match(api, /^FROM node:24\.19\.0-bookworm AS build/m);
+  assert.match(api, /^FROM node:24\.19\.0-bookworm-slim AS runtime/m);
+  assert.match(browser, /^FROM node:24\.19\.0-bookworm$/m);
+});
+
+test('production API drains active turns before Docker may SIGKILL it', () => {
+  const server = fs.readFileSync(path.join(repoRoot, 'server/index.mjs'), 'utf8');
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  assert.match(server, /DRAINING = true/);
+  assert.match(server, /activeTurnCount\(\) > 0/);
+  assert.match(server, /Z_AGENT_SHUTDOWN_GRACE_MS/);
+  assert.match(server, /status: 'draining'/);
+  assert.match(compose, /z-agent:[\s\S]*stop_grace_period:\s*75s/);
+});

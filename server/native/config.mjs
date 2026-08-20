@@ -34,3 +34,31 @@ export const MAX_INFLIGHT_UPLOAD_BYTES = Number.parseInt(process.env.Z_AGENT_MAX
 export const SECURE_COOKIES = process.env.Z_AGENT_SECURE_COOKIES === '1';
 
 export const ALLOW_UNISOLATED_SHELL = process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
+
+
+export const PRODUCTION_MODE = process.env.Z_AGENT_PRODUCTION === '1';
+
+export function assertProductionPolicy(env = process.env) {
+  if (env.Z_AGENT_PRODUCTION !== '1') return true;
+  const violations = [];
+  const requireOne = (key, expected, message) => {
+    if (String(env[key] ?? '') !== expected) violations.push(message || `${key} must be ${expected}`);
+  };
+  requireOne('Z_AGENT_SECURE_COOKIES', '1', 'production requires Secure session cookies');
+  requireOne('Z_AGENT_EXECUTOR_REQUIRED', '1', 'production requires the isolated executor');
+  requireOne('Z_AGENT_BROWSER_REQUIRED', '1', 'production requires the isolated browser service');
+  requireOne('Z_AGENT_TERMINAL_ENABLED', '0', 'production disables the in-process interactive terminal');
+  requireOne('Z_AGENT_SECRET_KEY_STRICT', '1', 'production requires strict 256-bit secret keys');
+  requireOne('Z_AGENT_REQUIRE_EXTERNAL_KEYS', '1', 'production requires external encryption/audit keys');
+  if (env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') violations.push('production forbids unisolated shell fallback');
+  if (String(env.Z_AGENT_NETWORK_POLICY || 'off').toLowerCase() === 'public' && env.Z_AGENT_ALLOW_PUBLIC_WEB !== '1') {
+    violations.push('public model-selected web egress requires explicit Z_AGENT_ALLOW_PUBLIC_WEB=1');
+  }
+  for (const [key, value] of [['Z_AGENT_DATA_DIR', env.Z_AGENT_DATA_DIR], ['Z_AGENT_WORKSPACES_DIR', env.Z_AGENT_WORKSPACES_DIR]]) {
+    if (!String(value || '').startsWith('/')) violations.push(`${key} must be an absolute path in production`);
+  }
+  if (violations.length) throw new Error(`Unsafe production configuration: ${violations.join('; ')}`);
+  return true;
+}
+
+if (PRODUCTION_MODE) assertProductionPolicy();

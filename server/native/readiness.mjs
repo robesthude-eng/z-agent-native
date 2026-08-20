@@ -4,6 +4,7 @@ import { DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { executorRequired, probeExecutor } from './executor-client.mjs';
 import { probeBrowserService } from './browser-client.mjs';
 import { secretStoreReadinessCheck } from './secrets.mjs';
+import { auditKeyReadinessCheck } from './audit.mjs';
 import { storeReadinessCheck } from './store.mjs';
 
 let cached = null;
@@ -48,6 +49,7 @@ export async function readinessCheck({ force = false } = {}) {
 
   await run('database', () => storeReadinessCheck());
   await run('secretStore', () => secretStoreReadinessCheck());
+  await run('auditKey', () => auditKeyReadinessCheck());
   await run('dataVolume', () => writableDirectory(DATA_DIR, 'data volume'));
   await run('workspaceVolume', () => writableDirectory(WORKSPACES_DIR, 'workspace volume'));
   await run('executor', async () => {

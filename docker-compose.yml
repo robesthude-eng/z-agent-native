@@ -1,7 +1,11 @@
 services:
   z-agent:
+    image: ${Z_AGENT_API_IMAGE:-z-agent-native:local}
     build: .
     restart: unless-stopped
+    # Longer than Z_AGENT_SHUTDOWN_GRACE_MS so normal deploys drain turns before
+    # Docker escalates SIGTERM to SIGKILL.
+    stop_grace_period: 75s
     depends_on:
       z-agent-executor:
         condition: service_healthy
@@ -13,9 +17,18 @@ services:
       # of the production volume contract.
       Z_AGENT_DATA_DIR: /data
       Z_AGENT_WORKSPACES_DIR: /workspaces
+      Z_AGENT_PRODUCTION: '1'
+      Z_AGENT_SECURE_COOKIES: '1'
+      # Caddy is the only supported public ingress in this profile; trust its
+      # forwarded client address so distributed auth throttling keys on users.
+      Z_AGENT_TRUST_PROXY: '1'
       Z_AGENT_EXECUTOR_REQUIRED: '1'
       Z_AGENT_EXECUTOR_SOCKET: /run/z-agent-executor/executor.sock
       Z_AGENT_BROWSER_REQUIRED: '1'
+      # Production key material must be external to /data so a lost/corrupt
+      # data volume cannot destroy both ciphertext and its only decryption key.
+      Z_AGENT_SECRET_KEY_STRICT: '1'
+      Z_AGENT_REQUIRE_EXTERNAL_KEYS: '1'
       # Interactive shells are trusted self-hosted functionality, not part of
       # the multi-tenant production boundary. Enable explicitly only when the
       # operator accepts that trust model.
@@ -76,13 +89,13 @@ services:
       - z-agent-executor-run:/run/z-agent-executor
       - z-agent-browser-run:/run/z-agent-browser
     networks:
-      - default
       - runtime-egress
 
   # Autonomous code execution lives in a separate container that has no Docker
   # network at all and never mounts /data/provider credentials. The API runtime
   # talks to it over a Unix-domain socket on a tiny shared volume.
   z-agent-executor:
+    image: ${Z_AGENT_API_IMAGE:-z-agent-native:local}
     build: .
     command: ["node", "server/executor.mjs"]
     restart: unless-stopped
@@ -121,6 +134,7 @@ services:
   # Chromium/web content is isolated from provider secrets and all workspace/data
   # volumes. Only the model-selected browser command crosses the Unix socket.
   z-agent-browser:
+    image: ${Z_AGENT_BROWSER_IMAGE:-z-agent-browser:local}
     build:
       context: .
       dockerfile: Dockerfile.browser
@@ -164,6 +178,7 @@ services:
   # This tiny proxy is the only bridge from the internal browser network to
   # egress; it reapplies agent destination policy, SSRF checks and DNS pinning.
   z-agent-browser-egress:
+    image: ${Z_AGENT_API_IMAGE:-z-agent-native:local}
     build: .
     command: ["node", "server/browser-egress.mjs"]
     restart: unless-stopped

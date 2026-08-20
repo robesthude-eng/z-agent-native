@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, WORKSPACES_DIR } from './config.mjs';
-import { decryptSecret, encryptSecret } from './secrets.mjs';
+import { decryptSecret, encryptSecret, rewrapSecret } from './secrets.mjs';
 import { LATEST_SCHEMA_VERSION, inspectSchemaCompatibility, runMigrations } from './migrations.mjs';
+import { auditIdentity, auditTarget, signAuditEvent, verifyAuditRows } from './audit.mjs';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(WORKSPACES_DIR, { recursive: true });
@@ -186,10 +187,17 @@ for (const row of db.prepare("SELECT token FROM auth_sessions WHERE token NOT LI
   db.prepare('UPDATE auth_sessions SET token=? WHERE token=?').run(authSessionKey(row.token), row.token);
 }
 
-// One-time transparent migration from the prototype's plaintext provider keys.
-for (const row of db.prepare("SELECT owner_id,provider_id,api_key FROM provider_keys WHERE api_key <> '' AND api_key NOT LIKE 'enc:v1:%'").all()) {
-  db.prepare('UPDATE provider_keys SET api_key=?,updated_at=? WHERE owner_id=? AND provider_id=?')
-    .run(encryptSecret(row.api_key), Date.now(), row.owner_id, row.provider_id);
+// Transparent provider-secret migration/rotation. v2 envelopes bind the
+// ciphertext to its owner/provider record through AES-GCM AAD. Supplying a new
+// primary key plus the previous key in Z_AGENT_SECRET_KEYS_JSON rewraps every
+// row at startup; the old key can be removed after readiness succeeds.
+for (const row of db.prepare("SELECT owner_id,provider_id,api_key FROM provider_keys WHERE api_key <> ''").all()) {
+  const context = `provider:${row.owner_id}:${row.provider_id}:api_key`;
+  const next = rewrapSecret(row.api_key, context); // also authenticates AAD/current envelope
+  if (next !== row.api_key) {
+    db.prepare('UPDATE provider_keys SET api_key=?,updated_at=? WHERE owner_id=? AND provider_id=?')
+      .run(next, Date.now(), row.owner_id, row.provider_id);
+  }
 }
 
 function allocateSandboxUid() {
@@ -233,6 +241,7 @@ export function createRegistrationUser(email, passwordHash, { allowAdditional = 
     }
     const role = bootstrap ? 'admin' : 'user';
     db.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)').run(email, passwordHash, role, Date.now());
+    insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.register', target: email, details: { role, bootstrap } });
     db.exec('COMMIT');
     return { status: 'created', role };
   } catch (error) {
@@ -247,13 +256,47 @@ export function userCount() { return db.prepare('SELECT COUNT(*) c FROM users').
 export function updatePassword(email, passwordHash) {
   db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(passwordHash, email);
 }
+export function updatePasswordAndRevokeSessions(email, passwordHash, keepToken) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(passwordHash, email);
+    const revoked = db.prepare('DELETE FROM auth_sessions WHERE email=? AND token<>?').run(email, authSessionKey(keepToken)).changes;
+    insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.password_change', target: email, details: { revokedSessions: Number(revoked) } });
+    db.exec('COMMIT');
+    return Number(revoked);
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 export function createAuthSession(token, email, csrf = null) {
-  db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(authSessionKey(token), email, Date.now(), csrf || null);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(authSessionKey(token), email, Date.now(), csrf || null);
+    insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.session_issued', target: email });
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
 }
 export function getAuthSession(token) {
   return db.prepare('SELECT token,email,created_at,csrf FROM auth_sessions WHERE token=?').get(authSessionKey(token)) || null;
 }
-export function deleteAuthSession(token) { db.prepare('DELETE FROM auth_sessions WHERE token=?').run(authSessionKey(token)); }
+export function deleteAuthSession(token) {
+  const key = authSessionKey(token);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const email = String(db.prepare('SELECT email FROM auth_sessions WHERE token=?').get(key)?.email || '');
+    const changes = db.prepare('DELETE FROM auth_sessions WHERE token=?').run(key).changes;
+    if (changes && email) insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.logout', target: email });
+    db.exec('COMMIT');
+    return Boolean(changes);
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
 export function deleteOtherAuthSessions(email, keepToken) {
   return db.prepare('DELETE FROM auth_sessions WHERE email=? AND token<>?').run(email, authSessionKey(keepToken)).changes;
 }
@@ -298,7 +341,15 @@ function chatRow(row) {
 }
 export function createChat(id, ownerId, title = 'Новый чат') {
   const now = Date.now();
-  db.prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at,sandbox_uid) VALUES(?,?,?,?,?,?)').run(id, ownerId, title, now, now, allocateSandboxUid());
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at,sandbox_uid) VALUES(?,?,?,?,?,?)').run(id, ownerId, title, now, now, allocateSandboxUid());
+    insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'chat.create', target: id });
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
   workspaceFor(id);
   return chatRow(db.prepare('SELECT * FROM chats WHERE id=?').get(id));
 }
@@ -321,9 +372,19 @@ export function renameChat(id, ownerId, title) {
 }
 export function touchChat(id) { db.prepare('UPDATE chats SET updated_at=? WHERE id=?').run(Date.now(), id); }
 export function deleteChat(id, ownerId) {
-  const result = db.prepare('DELETE FROM chats WHERE id=? AND owner_id=?').run(id, ownerId);
-  if (result.changes) fs.rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });
-  return Boolean(result.changes);
+  db.exec('BEGIN IMMEDIATE');
+  let deleted = false;
+  try {
+    const result = db.prepare('DELETE FROM chats WHERE id=? AND owner_id=?').run(id, ownerId);
+    deleted = Boolean(result.changes);
+    if (deleted) insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'chat.delete', target: id });
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+  if (deleted) fs.rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });
+  return deleted;
 }
 
 function messageRow(row) {
@@ -377,6 +438,53 @@ export function getTurn(sessionId) {
   return { turnId: row.turn_id, lifecycle: row.lifecycle, verdict: row.verdict, reason: row.reason, since: row.since };
 }
 export function clearTurn(sessionId) { db.prepare('DELETE FROM turns WHERE session_id=?').run(sessionId); }
+
+
+export function reserveTurnCapacity(sessionId, ownerId, { maxGlobal = 32, maxPerOwner = 4, ttlMs = 120_000, now = Date.now() } = {}) {
+  const globalLimit = Math.min(Math.max(Number(maxGlobal) || 32, 1), 1024);
+  const ownerLimit = Math.min(Math.max(Number(maxPerOwner) || 4, 1), globalLimit);
+  const ttl = Math.min(Math.max(Number(ttlMs) || 120_000, 30_000), 30 * 60 * 1000);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare('DELETE FROM turn_capacity_leases WHERE expires_at<=?').run(now);
+    const existing = db.prepare('SELECT owner_id FROM turn_capacity_leases WHERE session_id=?').get(sessionId);
+    if (existing) {
+      if (String(existing.owner_id) !== String(ownerId)) throw new Error('Turn capacity lease ownership mismatch');
+      db.prepare('UPDATE turn_capacity_leases SET expires_at=?,updated_at=? WHERE session_id=?').run(now + ttl, now, sessionId);
+      db.exec('COMMIT');
+      return { ok: true, existing: true };
+    }
+    const globalCount = Number(db.prepare('SELECT COUNT(*) AS n FROM turn_capacity_leases').get()?.n || 0);
+    const ownerCount = Number(db.prepare('SELECT COUNT(*) AS n FROM turn_capacity_leases WHERE owner_id=?').get(ownerId)?.n || 0);
+    if (globalCount >= globalLimit || ownerCount >= ownerLimit) {
+      db.exec('ROLLBACK');
+      return { ok: false, reason: globalCount >= globalLimit ? 'global_limit' : 'owner_limit', globalCount, ownerCount, maxGlobal: globalLimit, maxPerOwner: ownerLimit };
+    }
+    db.prepare('INSERT INTO turn_capacity_leases(session_id,owner_id,expires_at,updated_at) VALUES(?,?,?,?)').run(sessionId, ownerId, now + ttl, now);
+    db.exec('COMMIT');
+    return { ok: true, existing: false, globalCount: globalCount + 1, ownerCount: ownerCount + 1 };
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
+
+export function renewTurnCapacity(sessionId, { ttlMs = 120_000, now = Date.now() } = {}) {
+  const ttl = Math.min(Math.max(Number(ttlMs) || 120_000, 30_000), 30 * 60 * 1000);
+  return db.prepare('UPDATE turn_capacity_leases SET expires_at=?,updated_at=? WHERE session_id=?').run(now + ttl, now, sessionId).changes > 0;
+}
+
+export function releaseTurnCapacity(sessionId) {
+  return db.prepare('DELETE FROM turn_capacity_leases WHERE session_id=?').run(sessionId).changes > 0;
+}
+
+export function turnCapacityCounts(ownerId, now = Date.now()) {
+  db.prepare('DELETE FROM turn_capacity_leases WHERE expires_at<=?').run(now);
+  return {
+    global: Number(db.prepare('SELECT COUNT(*) AS n FROM turn_capacity_leases').get()?.n || 0),
+    owner: ownerId ? Number(db.prepare('SELECT COUNT(*) AS n FROM turn_capacity_leases WHERE owner_id=?').get(ownerId)?.n || 0) : 0,
+  };
+}
 
 /**
  * Fail everything the previous process left mid-flight.
@@ -443,22 +551,40 @@ export function setPrefs(ownerId, prefs) {
 }
 
 export function listProviderKeys(ownerId) {
-  return Object.fromEntries(db.prepare('SELECT provider_id,api_key FROM provider_keys WHERE owner_id=?').all(ownerId).map((r) => [r.provider_id, decryptSecret(r.api_key)]));
+  return Object.fromEntries(db.prepare('SELECT provider_id,api_key FROM provider_keys WHERE owner_id=?').all(ownerId).map((r) => [r.provider_id, decryptSecret(r.api_key, `provider:${ownerId}:${r.provider_id}:api_key`)]));
 }
 export function listProviderKeyIds(ownerId) {
   return db.prepare('SELECT provider_id FROM provider_keys WHERE owner_id=? ORDER BY provider_id').all(ownerId).map((r) => r.provider_id);
 }
 export function getProviderKey(ownerId, providerId) {
   const stored = db.prepare('SELECT api_key FROM provider_keys WHERE owner_id=? AND provider_id=?').get(ownerId, providerId)?.api_key;
-  return stored ? decryptSecret(stored) : null;
+  return stored ? decryptSecret(stored, `provider:${ownerId}:${providerId}:api_key`) : null;
 }
 export function setProviderKey(ownerId, providerId, key) {
-  db.prepare(`INSERT INTO provider_keys(owner_id,provider_id,api_key,updated_at) VALUES(?,?,?,?)
-              ON CONFLICT(owner_id,provider_id) DO UPDATE SET api_key=excluded.api_key,updated_at=excluded.updated_at`)
-    .run(ownerId, providerId, encryptSecret(key), Date.now());
+  const encrypted = encryptSecret(key, `provider:${ownerId}:${providerId}:api_key`);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    db.prepare(`INSERT INTO provider_keys(owner_id,provider_id,api_key,updated_at) VALUES(?,?,?,?)
+                ON CONFLICT(owner_id,provider_id) DO UPDATE SET api_key=excluded.api_key,updated_at=excluded.updated_at`)
+      .run(ownerId, providerId, encrypted, Date.now());
+    insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'provider.secret_set', target: providerId });
+    db.exec('COMMIT');
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
 }
 export function deleteProviderKey(ownerId, providerId) {
-  db.prepare('DELETE FROM provider_keys WHERE owner_id=? AND provider_id=?').run(ownerId, providerId);
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const changes = db.prepare('DELETE FROM provider_keys WHERE owner_id=? AND provider_id=?').run(ownerId, providerId).changes;
+    if (changes) insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'provider.secret_delete', target: providerId });
+    db.exec('COMMIT');
+    return Boolean(changes);
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
 }
 
 function manualRow(r) { return { model_id:r.model_id,name:r.name ?? null,base_url:r.base_url ?? null,is_free:Boolean(r.is_free),pattern:Boolean(r.pattern),enabled:Boolean(r.enabled) }; }
@@ -521,6 +647,65 @@ export function enqueueAction(sessionId, actionId, payload) {
 }
 export function dequeueAction(sessionId, actionId) {
   return Boolean(db.prepare('DELETE FROM action_queue WHERE session_id=? AND action_id=?').run(sessionId, actionId).changes);
+}
+
+function sanitizeAuditDetails(details) {
+  const source = details && typeof details === 'object' && !Array.isArray(details) ? details : {};
+  const safe = {};
+  for (const [rawKey, rawValue] of Object.entries(source).slice(0, 32)) {
+    const key = String(rawKey).slice(0, 80);
+    if (/pass(word)?|secret|token|api.?key|authorization|cookie|credential/i.test(key)) {
+      safe[key] = '[redacted]';
+      continue;
+    }
+    if (rawValue === null || ['boolean', 'number'].includes(typeof rawValue)) safe[key] = rawValue;
+    else if (typeof rawValue === 'string') safe[key] = rawValue.slice(0, 512);
+    else safe[key] = '[structured]';
+  }
+  const json = JSON.stringify(safe);
+  return Buffer.byteLength(json) <= 8192 ? json : JSON.stringify({ truncated: true });
+}
+
+/**
+ * Append a tamper-evident security audit event. User/account and target values
+ * are HMAC-pseudonymised before persistence; request bodies and secrets are
+ * never accepted. The chain is serialized with BEGIN IMMEDIATE so concurrent
+ * requests cannot fork the previous-hash head.
+ */
+function insertAuditEventInCurrentTransaction({ actor = '', action, target = '', details = {} } = {}) {
+  const actionText = String(action || '').trim();
+  if (!/^[a-z0-9_.:-]{2,96}$/i.test(actionText)) throw new Error('Invalid audit action');
+  const event = {
+    event_id: crypto.randomUUID(), ts: Date.now(), actor_hash: auditIdentity(actor), action: actionText,
+    target_hash: auditTarget(target), detail_json: sanitizeAuditDetails(details),
+    prev_hash: String(db.prepare('SELECT event_hash FROM audit_events ORDER BY seq DESC LIMIT 1').get()?.event_hash || ''),
+  };
+  const eventHash = signAuditEvent(event);
+  db.prepare(`INSERT INTO audit_events(event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash)
+              VALUES(?,?,?,?,?,?,?,?)`)
+    .run(event.event_id, event.ts, event.actor_hash, event.action, event.target_hash, event.detail_json, event.prev_hash, eventHash);
+  return { eventId: event.event_id, eventHash };
+}
+
+export function recordAuditEvent(event) {
+  db.exec('BEGIN IMMEDIATE');
+  try {
+    const result = insertAuditEventInCurrentTransaction(event);
+    db.exec('COMMIT');
+    return result;
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
+  }
+}
+
+export function verifyAuditLog() {
+  const rows = db.prepare('SELECT seq,event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash FROM audit_events ORDER BY seq').all();
+  return verifyAuditRows(rows);
+}
+
+export function auditEventCount() {
+  return Number(db.prepare('SELECT COUNT(*) AS n FROM audit_events').get()?.n || 0);
 }
 
 export function closeStore() { db.close(); }

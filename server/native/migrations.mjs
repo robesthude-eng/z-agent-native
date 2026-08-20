@@ -63,6 +63,46 @@ export const MIGRATIONS = [
       `);
     },
   },
+  {
+    version: 5,
+    id: '20260820_005_tamper_evident_audit_log',
+    minReaderVersion: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS audit_events (
+          seq INTEGER PRIMARY KEY AUTOINCREMENT,
+          event_id TEXT NOT NULL UNIQUE,
+          ts INTEGER NOT NULL,
+          actor_hash TEXT NOT NULL,
+          action TEXT NOT NULL,
+          target_hash TEXT NOT NULL,
+          detail_json TEXT NOT NULL,
+          prev_hash TEXT NOT NULL,
+          event_hash TEXT NOT NULL UNIQUE
+        );
+        CREATE INDEX IF NOT EXISTS idx_audit_events_ts ON audit_events(ts);
+        CREATE INDEX IF NOT EXISTS idx_audit_events_action ON audit_events(action);
+      `);
+    },
+  },
+  {
+    version: 6,
+    id: '20260820_006_turn_capacity_leases',
+    minReaderVersion: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS turn_capacity_leases (
+          session_id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          expires_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_turn_capacity_owner ON turn_capacity_leases(owner_id, expires_at);
+        CREATE INDEX IF NOT EXISTS idx_turn_capacity_expiry ON turn_capacity_leases(expires_at);
+      `);
+    },
+  }
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;

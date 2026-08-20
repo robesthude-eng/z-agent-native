@@ -30,7 +30,7 @@ export interface TurnResult {
 
 function csrfHeaders(): Record<string, string> {
   if (typeof document === "undefined") return {};
-  const csrf = document.cookie.match(/(?:^|;\s*)z_agent_csrf=([^;]+)/)?.[1];
+  const csrf = document.cookie.match(/(?:^|;\s*)(?:__Host-)?z_agent_csrf=([^;]+)/)?.[1];
   return csrf ? { "x-csrf-token": decodeURIComponent(csrf) } : {};
 }
 

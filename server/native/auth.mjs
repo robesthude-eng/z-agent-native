@@ -1,12 +1,12 @@
 import crypto from 'node:crypto';
 import { ALLOW_OPEN_REGISTRATION, INVITE_CODE, SECURE_COOKIES, SESSION_TTL_MS } from './config.mjs';
 import {
-  createAuthSession, createRegistrationUser, deleteAuthSession, deleteOtherAuthSessions,
-  getAuthSession, getUser, pruneAuthSessions, updatePassword, userCount,
+  createAuthSession, createRegistrationUser, deleteAuthSession,
+  getAuthSession, getUser, pruneAuthSessions, updatePassword, updatePasswordAndRevokeSessions, userCount,
 } from './store.mjs';
 
-const SESSION_COOKIE = 'z_agent_session';
-const CSRF_COOKIE = 'z_agent_csrf';
+const SESSION_COOKIE = SECURE_COOKIES ? '__Host-z_agent_session' : 'z_agent_session';
+const CSRF_COOKIE = SECURE_COOKIES ? '__Host-z_agent_csrf' : 'z_agent_csrf';
 
 function b64url(buffer) { return Buffer.from(buffer).toString('base64url'); }
 function unb64(value) { return Buffer.from(value, 'base64url'); }
@@ -19,19 +19,54 @@ function safeEqual(a, b) {
   return crypto.timingSafeEqual(left, right);
 }
 
+const PASSWORD_SCHEME = 'scrypt';
+const PASSWORD_VERSION = 'v2';
+const PASSWORD_SCRYPT = Object.freeze({ N: 32768, r: 8, p: 1, maxmem: 96 * 1024 * 1024 });
+const LEGACY_SCRYPT = Object.freeze({ N: 16384, r: 8, p: 1, maxmem: 64 * 1024 * 1024 });
+
 export function hashPassword(password) {
   const salt = crypto.randomBytes(16);
-  const key = crypto.scryptSync(String(password), salt, 64, { N: 16384, r: 8, p: 1 });
-  return `scrypt$${b64url(salt)}$${b64url(key)}`;
+  const key = crypto.scryptSync(String(password), salt, 64, PASSWORD_SCRYPT);
+  return `${PASSWORD_SCHEME}$${PASSWORD_VERSION}$${PASSWORD_SCRYPT.N}$${PASSWORD_SCRYPT.r}$${PASSWORD_SCRYPT.p}$${b64url(salt)}$${b64url(key)}`;
+}
+
+function passwordHashParams(encoded) {
+  if (typeof encoded !== 'string' || !encoded.startsWith(`${PASSWORD_SCHEME}$`)) return null;
+  const parts = encoded.split('$');
+  if (parts.length === 3) {
+    const [, saltText, keyText] = parts;
+    return { version: 'v1', ...LEGACY_SCRYPT, saltText, keyText };
+  }
+  if (parts.length !== 7 || parts[1] !== PASSWORD_VERSION) return null;
+  const N = Number(parts[2]);
+  const r = Number(parts[3]);
+  const p = Number(parts[4]);
+  if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p) || N < 16384 || N > 1_048_576 || r < 1 || r > 32 || p < 1 || p > 16) return null;
+  // maxmem is deliberately bounded independently of values stored in the DB so
+  // a corrupt/malicious password_hash row cannot turn login into memory DoS.
+  const required = 128 * N * r + 16 * 1024 * 1024;
+  if (required > 128 * 1024 * 1024) return null;
+  return { version: parts[1], N, r, p, maxmem: Math.max(64 * 1024 * 1024, required), saltText: parts[5], keyText: parts[6] };
+}
+
+export function passwordHashNeedsUpgrade(encoded) {
+  const params = passwordHashParams(encoded);
+  return !params || params.version !== PASSWORD_VERSION || params.N < PASSWORD_SCRYPT.N || params.r < PASSWORD_SCRYPT.r || params.p < PASSWORD_SCRYPT.p;
 }
 
 export function verifyPassword(password, encoded) {
-  if (typeof encoded !== 'string' || !encoded.startsWith('scrypt$')) return false;
-  const [, saltText, keyText] = encoded.split('$');
-  if (!saltText || !keyText) return false;
-  const expected = unb64(keyText);
-  const actual = crypto.scryptSync(String(password), unb64(saltText), expected.length, { N: 16384, r: 8, p: 1 });
-  return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  const params = passwordHashParams(encoded);
+  if (!params?.saltText || !params?.keyText) return false;
+  try {
+    const expected = unb64(params.keyText);
+    if (expected.length < 32 || expected.length > 128) return false;
+    const salt = unb64(params.saltText);
+    if (salt.length < 16 || salt.length > 64) return false;
+    const actual = crypto.scryptSync(String(password), salt, expected.length, { N: params.N, r: params.r, p: params.p, maxmem: params.maxmem });
+    return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
+  } catch {
+    return false;
+  }
 }
 
 function parseCookies(req) {
@@ -68,7 +103,11 @@ export function issueLogin(email) {
 }
 
 export function clearCookies() {
-  return [cookie(SESSION_COOKIE, '', { maxAge: 0 }), cookie(CSRF_COOKIE, '', { maxAge: 0, httpOnly: false })];
+  const out = [cookie(SESSION_COOKIE, '', { maxAge: 0 }), cookie(CSRF_COOKIE, '', { maxAge: 0, httpOnly: false })];
+  if (SECURE_COOKIES) {
+    out.push(cookie('z_agent_session', '', { maxAge: 0 }), cookie('z_agent_csrf', '', { maxAge: 0, httpOnly: false }));
+  }
+  return out;
 }
 
 // Expired-session cleanup is a full table scan; once a minute is plenty and
@@ -145,7 +184,11 @@ export function loginUser(email, password) {
   const clean = String(email || '').trim().toLowerCase();
   const user = getUser(clean);
   if (!user || !verifyPassword(password || '', user.password_hash)) throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
-  return user;
+  // Opportunistic rehash keeps long-lived self-hosted accounts on the current
+  // password KDF without forcing a fleet-wide reset. Verification happens
+  // first, so only the legitimate password can trigger migration.
+  if (passwordHashNeedsUpgrade(user.password_hash)) updatePassword(clean, hashPassword(password));
+  return getUser(clean) || user;
 }
 
 export function logoutToken(token) { if (token) deleteAuthSession(token); }
@@ -154,6 +197,5 @@ export function changePassword(email, currentPassword, newPassword, keepToken) {
   const user = getUser(email);
   if (!user || !verifyPassword(currentPassword || '', user.password_hash)) throw Object.assign(new Error('Текущий пароль неверен.'), { statusCode: 400 });
   if (String(newPassword || '').length < 12) throw Object.assign(new Error('Новый пароль должен содержать минимум 12 символов.'), { statusCode: 400 });
-  updatePassword(email, hashPassword(newPassword));
-  return deleteOtherAuthSessions(email, keepToken);
+  return updatePasswordAndRevokeSessions(email, hashPassword(newPassword), keepToken);
 }
