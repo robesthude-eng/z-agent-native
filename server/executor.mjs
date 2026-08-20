@@ -10,12 +10,49 @@ const MAX_BODY = 2 * 1024 * 1024;
 const MAX_OUTPUT = 256 * 1024;
 const PRLIMIT = ['/usr/bin/prlimit', '/bin/prlimit'].find((candidate) => fs.existsSync(candidate)) || null;
 const SETPRIV = ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv'].find((candidate) => fs.existsSync(candidate)) || null;
-if (!PRLIMIT || !SETPRIV) throw new Error('Secure executor requires util-linux setpriv and prlimit');
+const ENV = ['/usr/bin/env', '/bin/env'].find((candidate) => fs.existsSync(candidate)) || null;
+if (!PRLIMIT || !SETPRIV || !ENV) throw new Error('Secure executor requires util-linux setpriv/prlimit and env');
 const LIMIT_NPROC = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_NPROC) || 256, 32), 1024);
 const LIMIT_NOFILE = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_NOFILE) || 2048, 256), 8192);
 const LIMIT_FILE_BYTES = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_FILE_BYTES) || 512 * 1024 * 1024, 16 * 1024 * 1024), 2 * 1024 * 1024 * 1024);
 const EXPECT_NETWORK_NONE = process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE === '1';
+const MAX_ACTIVE_GLOBAL = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE) || 8, 1), 64);
+const MAX_ACTIVE_PER_UID = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE_PER_UID) || 2, 1), 8);
 const activeByUid = new Map();
+
+
+function trustedLauncherEnvironment() {
+  // Never pass tool-controlled variables to a privileged dynamic executable.
+  // LD_PRELOAD/NODE_OPTIONS-style values are only applied after setpriv has
+  // irreversibly dropped uid/gid and no-new-privs is active.
+  return {
+    PATH: '/usr/sbin:/usr/bin:/sbin:/bin',
+    LANG: 'C.UTF-8',
+    LC_ALL: 'C.UTF-8',
+  };
+}
+
+function normalizeChildEnvironment(input) {
+  const out = [];
+  for (const [rawKey, rawValue] of Object.entries(input || {}).slice(0, 256)) {
+    const key = String(rawKey);
+    const value = String(rawValue);
+    if (!/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(key)) {
+      throw Object.assign(new Error(`Invalid environment key ${JSON.stringify(key)}`), { statusCode: 400 });
+    }
+    if (value.includes('\0') || value.length > 32 * 1024) {
+      throw Object.assign(new Error(`Invalid environment value for ${key}`), { statusCode: 400 });
+    }
+    out.push(`${key}=${value}`);
+  }
+  return out;
+}
+
+function activeCount() {
+  let total = 0;
+  for (const set of activeByUid.values()) total += set.size;
+  return total;
+}
 
 function networkBoundaryStatus() {
   const external = [];
@@ -98,7 +135,11 @@ async function execRequest(req, res, input) {
   const args = Array.isArray(input.args) ? input.args.map((value) => String(value)).slice(0, 256) : [];
   const timeoutMs = Math.min(Math.max(Number(input.timeoutMs) || 600_000, 1000), 1_800_000);
   const envInput = input.env && typeof input.env === 'object' && !Array.isArray(input.env) ? input.env : {};
-  const env = Object.fromEntries(Object.entries(envInput).slice(0, 256).map(([k, v]) => [String(k), String(v)]));
+  const envAssignments = normalizeChildEnvironment(envInput);
+  const uidActive = activeByUid.get(uid)?.size || 0;
+  if (activeCount() >= MAX_ACTIVE_GLOBAL || uidActive >= MAX_ACTIVE_PER_UID) {
+    throw Object.assign(new Error('Executor concurrency limit reached'), { statusCode: 429, code: 'EXECUTOR_BUSY' });
+  }
 
   // Per-command limits prevent one session from consuming the entire shared
   // executor service. Docker caps remain the outer host boundary; these rlimits
@@ -115,11 +156,11 @@ async function execRequest(req, res, input) {
     `--nproc=${LIMIT_NPROC}:${LIMIT_NPROC}`,
     `--nofile=${LIMIT_NOFILE}:${LIMIT_NOFILE}`,
     `--fsize=${LIMIT_FILE_BYTES}:${LIMIT_FILE_BYTES}`,
-    '--core=0:0', '--', file, ...args,
+    '--core=0:0', '--', ENV, '-i', '--', ...envAssignments, file, ...args,
   ];
   const child = spawn(launchFile, launchArgs, {
     cwd: workspace,
-    env,
+    env: trustedLauncherEnvironment(),
     detached: true,
     stdio: ['pipe', 'pipe', 'pipe'],
   });
@@ -166,7 +207,9 @@ const server = http.createServer(async (req, res) => {
       const network = networkBoundaryStatus();
       return json(res, network.ok ? 200 : 503, {
         ok: network.ok, pid: process.pid, networkBoundary: network.ok && network.expectedNone ? 'verified-loopback-only' : (network.expectedNone ? 'network-interface-leak' : 'not-attested'),
-        network, privilegeDrop: 'setpriv-clear-groups-no-new-privs', rlimits: { nproc: LIMIT_NPROC, nofile: LIMIT_NOFILE, fileBytes: LIMIT_FILE_BYTES, enforced: true },
+        network, privilegeDrop: 'setpriv-clear-groups-no-new-privs', privilegedEnv: 'fixed-before-drop',
+        concurrency: { active: activeCount(), maxActive: MAX_ACTIVE_GLOBAL, maxPerUid: MAX_ACTIVE_PER_UID },
+        rlimits: { nproc: LIMIT_NPROC, nofile: LIMIT_NOFILE, fileBytes: LIMIT_FILE_BYTES, enforced: true },
       });
     }
     if (req.url === '/kill') {

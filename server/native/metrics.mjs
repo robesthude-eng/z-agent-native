@@ -57,6 +57,11 @@ export function observeTurnSummary(summary) {
   }
 }
 
+export function recordTurnCapacityRejection(reason = 'unknown') {
+  const safe = ['owner_limit', 'global_limit'].includes(String(reason)) ? String(reason) : 'unknown';
+  inc('z_agent_turn_capacity_rejections_total', 1, { reason: safe });
+}
+
 export function prometheusMetrics({ activeTurns = 0 } = {}) {
   const lines = [
     '# HELP z_agent_info Static runtime information.',

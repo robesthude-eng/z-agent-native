@@ -1,13 +1,13 @@
-const canIsolate = typeof process.getuid === 'function' && process.getuid() === 0;
-const describeExec = canIsolate ? test : test.skip;
-
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+
+const canIsolate = typeof process.getuid === 'function' && process.getuid() === 0;
+const describeExec = canIsolate ? test : test.skip;
 
 const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const temp = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-executor-test-'));
@@ -59,6 +59,30 @@ describeExec('executor IPC runs autonomous commands as the requested sandbox uid
   assert.equal(result.code, 0);
   assert.equal(result.stdout.trim(), '20000\n20000\n20000');
   assert.equal(fs.readFileSync(path.join(workspace, 'proof.txt'), 'utf8'), 'isolated');
+});
+
+describeExec('executor never exposes privileged launcher to tool-controlled loader environment', async (t) => {
+  const compiler = spawnSync('cc', ['--version'], { stdio: 'ignore' });
+  if (compiler.status !== 0) return t.skip('C compiler unavailable for LD_PRELOAD regression probe');
+  const source = path.join(workspace, 'preload-probe.c');
+  const library = path.join(workspace, 'preload-probe.so');
+  const privilegedProof = path.join(run, 'preload-root-proof');
+  fs.writeFileSync(source, `#include <fcntl.h>\n#include <unistd.h>\n#include <stdio.h>\n__attribute__((constructor)) static void p(void){int f=open(${JSON.stringify(privilegedProof)},O_WRONLY|O_CREAT|O_APPEND,0600);if(f>=0){dprintf(f,"%d\\n",(int)geteuid());close(f);}}\n`);
+  const built = spawnSync('cc', ['-shared', '-fPIC', source, '-o', library], { encoding: 'utf8' });
+  assert.equal(built.status, 0, built.stderr);
+  try { fs.chownSync(library, 20000, 20000); } catch {}
+  const result = await client.executeInExecutor({
+    workspace, uid: 20000, gid: 20000, file: '/bin/true',
+    env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: workspace, LD_PRELOAD: library }, timeoutMs: 5000,
+  });
+  assert.equal(result.code, 0, result.stderr);
+  assert.equal(fs.existsSync(privilegedProof), false, 'LD_PRELOAD must not execute before uid/gid drop');
+});
+
+describeExec('executor rejects abusive environment keys before launch', async () => {
+  await assert.rejects(() => client.executeInExecutor({
+    workspace, uid: 20000, gid: 20000, file: '/bin/true', env: { 'BAD=KEY': 'x' }, timeoutMs: 5000,
+  }), /Invalid environment key/);
 });
 
 describeExec('executor child cannot reconnect to the privileged executor Unix socket', async () => {

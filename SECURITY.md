@@ -5,16 +5,17 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 ## Runtime secrets
 
 - Provider keys are encrypted with AES-256-GCM before SQLite persistence.
-- The encryption key comes from `Z_AGENT_SECRET_KEY` or a runtime-generated `data/master.key` with mode 0600.
+- Provider secrets use an `enc:v2` AES-256-GCM envelope with key ID and AAD binding to owner/provider/field. Production requires an external 256-bit `Z_AGENT_SECRET_KEY` or `Z_AGENT_SECRET_KEY_FILE`; `Z_AGENT_SECRET_KEYS_JSON` supplies old keys only for rotation/rewrap. The runtime-generated `data/master.key` fallback is development-only and is rejected by the supplied production profile.
+- A separate external `Z_AGENT_AUDIT_KEY`/`Z_AGENT_AUDIT_KEY_FILE` authenticates the append-only audit chain and backup manifests; do not store it on the same `/data` volume it protects.
 - Provider keys and runtime secrets are never injected into tool/terminal environments.
 - HTTP 5xx responses return a request ID instead of internal exception details.
 
 ## Authentication
 
-- Passwords use scrypt with per-user random salt.
+- Password hashes are versioned scrypt records with bounded parameters and per-user random salt. Successful login transparently upgrades legacy hashes to the current parameters.
 - Login sessions use random HttpOnly cookies; only a SHA-256 digest of the 256-bit bearer token is persisted in SQLite, and legacy plaintext session rows are migrated in place.
 - Unsafe HTTP methods require a matching double-submit CSRF token.
-- Cookies are SameSite=Lax; production HTTPS should enable `Z_AGENT_SECURE_COOKIES=1`.
+- Cookies are SameSite=Lax. Production requires HTTPS/Secure cookies and uses the `__Host-` prefix (root path, no Domain) to resist cookie shadowing/fixation.
 - Login/register failures are rate-limited through shared SQLite buckets for both normalized remote address and account identifier, so adding replicas does not multiply the brute-force budget. Bucket keys are one-way hashes, not raw IP/email values.
 - New registrations/password changes require at least 12 characters; legacy accounts may still authenticate with their existing password until it is changed. Password changes revoke other login sessions.
 
@@ -82,19 +83,20 @@ For production:
 3. Mount `/data` only into the trusted runtime; mount `/workspaces` into the runtime/executor, never into the browser. Never mount Docker socket or arbitrary host roots.
 4. Serve through HTTPS and enable secure cookies.
 5. Configure an invite code or an external access layer before public exposure.
-6. Store `Z_AGENT_SECRET_KEY` and optional search credentials in a secrets manager.
+6. Store the provider-encryption key **and the separate audit/backup-integrity key** outside `/data` in a secrets manager. Use `Z_AGENT_SECRET_KEYS_JSON` only for bounded rotation windows.
 7. Treat every enabled tool as autonomously executable by the model; expose only networks, credentials and mounts that the agent is allowed to reach.
-8. Back up both runtime data and workspaces; retain the encryption key needed to decrypt provider credentials.
+8. Back up both runtime data and workspaces off-host. Treat a backup as usable only after `db:restore-verify`/`db:drill` succeeds with the independent production keys.
+9. Deploy CI-tested images by immutable registry digest; do not rebuild a release on the production host.
 
 ## Container and deployment hardening
 
 - The API service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002`). Executor/browser expose no host TCP ports; IPC is Unix-socket-only. The browser proxy listens only on an unexposed dedicated Docker network. Public exposure and TLS belong to the reverse proxy.
 - Compose explicitly pins `Z_AGENT_DATA_DIR=/data` and `Z_AGENT_WORKSPACES_DIR=/workspaces` so bare-metal relative paths from `.env` cannot bypass persistent volumes.
 - `no-new-privileges` is enabled. Each service drops all capabilities and adds back only the minimum it needs: the API needs workspace ownership/identity capabilities; executor/browser controllers need only identity switching and process termination. Untrusted children are launched with supplementary groups cleared.
-- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and ulimits bound runaway services; the executor additionally applies inherited per-command RLIMITs so one session cannot consume the entire shared execution plane. Caps must fit the host.
+- `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and ulimits bound runaway services; the executor additionally applies per-command RLIMITs and global/per-UID concurrency caps. Browser workers/proxy connections and shared model turns also have bounded global/per-owner/session capacity. Caps must fit the host.
 - Network recon tooling (`netcat`, `ping`, `dig`, `psql`) is not installed in the runtime image.
 - Deployment verifies the server against a pinned host key from the `DEPLOY_SSH_HOST_KEY` secret. `ssh-keyscan` at deploy time is not used, because it trusts whatever answers on the network.
-- `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares `Z_AGENT_SECRET_KEY`. Without a shared disk the lock is global but the files are not.
+- `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares the same provider-encryption keyring **and audit key**. Without a shared disk the lock is global but the files are not.
 
 ## Toolchain integrity
 
@@ -113,9 +115,11 @@ For production:
 ## Operations integrity
 
 - SQLite migrations are explicit, transactional, forward-only and recorded in `schema_migrations`; released migration IDs are immutable. Each migration declares its oldest compatible schema reader and the resulting `schema_compatibility` marker advertises that contract. Older code refuses an unknown future schema unless compatibility is explicit, and the migration runner never lowers `PRAGMA user_version`. Automatic deploy compares the candidate minimum reader with the running release and refuses an image-rollback-unsafe migration and routes incompatible changes to a separate operator-controlled maintenance deployment.
-- Deploy creates and integrity-checks an online SQLite snapshot before candidate code can migrate the database. These same-volume snapshots are bounded to 30-day local retention and are rollback aids, not a substitute for off-host database + master-key backups.
-- `/health/live` is process-only. `/health/ready` performs a rollback-only DB write probe, checks schema compatibility, encryption-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. Raw readiness exceptions are not returned to unauthenticated health callers.
-- `/metrics` is disabled unless `Z_AGENT_METRICS_TOKEN` is set; when enabled it requires a bearer token and exports only low-cardinality aggregate labels.
+- Deploy creates an online SQLite snapshot before candidate code can migrate the database. The sidecar manifest authenticates snapshot name/size/SHA-256/schema with an HMAC under the independent audit key. These same-volume snapshots are bounded to 30-day local retention and are rollback aids, not a substitute for off-host data/workspace/key backups.
+- `db:restore-verify` proves SQLite/foreign-key integrity, schema compatibility, provider-secret decryptability and audit-chain integrity; `db:drill` performs an isolated snapshot + verification drill.
+- CI follows build-once/deploy-by-digest: production images are tested/booted before publication and deployment consumes the recorded immutable `@sha256:` references instead of rebuilding on the server. Remote GitHub Actions are themselves pinned to full commit SHAs.
+- `/health/live` is process-only. `/health/ready` performs a rollback-only DB write probe, checks schema compatibility, external-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. During graceful shutdown it immediately becomes unready while active turns receive a bounded drain window. Raw readiness exceptions are not returned to unauthenticated health callers.
+- `/metrics` is disabled unless `Z_AGENT_METRICS_TOKEN` is set; when enabled it requires a bearer token and exports only low-cardinality aggregate labels. The supplied public Caddy vhost blocks `/metrics` entirely.
 
 ## Multi-user exposure
 

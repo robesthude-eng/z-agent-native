@@ -54,7 +54,8 @@ test.after(() => {
   store.closeStore();
   const verify = new DatabaseSync(dbPath);
   const encrypted = verify.prepare("SELECT api_key FROM provider_keys WHERE owner_id='legacy@example.com' AND provider_id='openai'").get().api_key;
-  assert.match(encrypted, /^enc:v1:/);
+  assert.match(encrypted, /^enc:v2:[0-9a-f]{16}:/);
+  assert.doesNotMatch(encrypted, /legacy-plaintext-key/);
   verify.close();
   fs.rmSync(data, { recursive: true, force: true });
   fs.rmSync(workspaces, { recursive: true, force: true });

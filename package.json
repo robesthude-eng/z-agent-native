@@ -32,7 +32,13 @@
     "eval:benchmark": "node --env-file-if-exists=.env scripts/run-repo-benchmark.mjs",
     "eval:benchmark:validate": "node scripts/validate-repo-benchmark.mjs",
     "db:migrate": "node --env-file-if-exists=.env server/migrate.mjs",
-    "db:backup": "node --env-file-if-exists=.env server/backup.mjs"
+    "db:backup": "node --env-file-if-exists=.env server/backup.mjs",
+    "supplychain:check": "node scripts/check-workflow-pins.mjs",
+    "audit:verify": "node --env-file-if-exists=.env server/audit-verify.mjs",
+    "db:restore-verify": "node --env-file-if-exists=.env server/restore-verify.mjs",
+    "db:drill": "node --env-file-if-exists=.env scripts/dr-drill.mjs",
+    "prod:env:init": "node scripts/init-production-env.mjs",
+    "release:check": "npm run supplychain:check && npm run docs:check && npm run eval:validate && npm run eval:benchmark:validate && npm run eval:smoke && npm run test:native"
   },
   "dependencies": {
     "@radix-ui/react-dialog": "^1.1.23",

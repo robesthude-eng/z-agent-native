@@ -28,6 +28,12 @@ agentwill.online {
 		}
 	}
 
+	# Metrics are an operator surface even though the application also requires
+	# a bearer token. Do not expose the endpoint through the public TLS vhost at
+	# all; scrape it over the loopback/private runtime path instead.
+	@metrics path /metrics
+	respond @metrics 404
+
 	@sse path /api/event*
 	handle @sse {
 		reverse_proxy z-agent:3000 {

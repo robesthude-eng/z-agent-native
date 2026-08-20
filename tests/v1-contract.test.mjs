@@ -30,7 +30,10 @@ test('assistant replies expose exact turn result action', () => {
 test('CI boots the production compose topology and requires readiness before deploy can succeed', () => {
   const ci = source('.github/workflows/ci.yml');
   assert.match(ci, /Boot production topology and require full readiness/);
-  assert.match(ci, /docker compose up -d --build --remove-orphans/);
+  assert.match(ci, /docker compose up -d --no-build --remove-orphans/);
+  assert.match(ci, /Publish exactly-tested images by commit/);
+  assert.match(ci, /production-images\.env/);
+  assert.match(ci, /RepoDigests/);
   assert.match(ci, /127\.0\.0\.1:3002\/health\/ready/);
   assert.match(ci, /z-agent-executor[\s\S]*z-agent-browser[\s\S]*z-agent-browser-egress/);
   assert.match(ci, /docker compose down -v --remove-orphans/);
@@ -44,9 +47,12 @@ test('production deploy is gated by successful CI and pins the verified SHA', ()
   assert.match(deploy, /workflow_run\.head_branch == 'main'/);
   assert.match(deploy, /ref:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
   assert.match(deploy, /DEPLOY_SHA:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(deploy, /LATEST_SHA=.*origin\/main/);
   assert.match(deploy, /RUNNING_SHA=.*Z_AGENT_RELEASE_SHA/);
-  assert.match(deploy, /trap rollback ERR[\s\S]*git reset --hard "\$DEPLOY_SHA"[\s\S]*docker compose build --pull/);
+  assert.match(deploy, /production-images\.env/);
+  assert.match(deploy, /Z_AGENT_API_IMAGE/);
+  assert.match(deploy, /@sha256:\[0-9a-f\]\{64\}/);
+  assert.match(deploy, /trap rollback ERR[\s\S]*git reset --hard "\$DEPLOY_SHA"[\s\S]*docker pull "\$Z_AGENT_API_IMAGE"[\s\S]*docker compose up -d --no-build/);
+  assert.doesNotMatch(deploy, /docker compose build/);
   assert.match(deploy, /ACTUAL_SHA=.*Z_AGENT_RELEASE_SHA/);
   assert.doesNotMatch(deploy, /\n\s*push:\s*\n/);
 });

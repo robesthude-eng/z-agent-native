@@ -67,7 +67,7 @@ function csrfHeaders(): Record<string, string> {
   // Double Submit Cookie: значение не-HttpOnly куки z_agent_csrf дублируется
   // в заголовке для каждого мутирующего запроса, включая multipart/XHR.
   if (typeof document === "undefined") return h;
-  const csrf = document.cookie.match(/(?:^|;\s*)z_agent_csrf=([^;]+)/)?.[1];
+  const csrf = document.cookie.match(/(?:^|;\s*)(?:__Host-)?z_agent_csrf=([^;]+)/)?.[1];
   if (csrf) h["x-csrf-token"] = decodeURIComponent(csrf);
   return h;
 }

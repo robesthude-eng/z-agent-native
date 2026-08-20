@@ -13,6 +13,7 @@ concurrency:
 
 permissions:
   contents: read
+  actions: read
 
 jobs:
   deploy:
@@ -28,9 +29,48 @@ jobs:
 
     steps:
       - name: Checkout verified commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Download immutable image digests from the successful CI run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CI_RUN_ID: ${{ github.event.workflow_run.id }}
+          DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/z-agent-production-images
+          mkdir -p /tmp/z-agent-production-images
+          gh run download "$CI_RUN_ID" --repo "$GITHUB_REPOSITORY" --name production-images --dir /tmp/z-agent-production-images
+          cd /tmp/z-agent-production-images
+          sha256sum -c production-images.env.sha256
+          read_release_value() {
+            local key="$1" value count
+            count="$(grep -c "^${key}=" production-images.env || true)"
+            test "$count" = 1
+            value="$(sed -n "s/^${key}=//p" production-images.env)"
+            printf '%s' "$value"
+          }
+          Z_AGENT_RELEASE_SHA="$(read_release_value Z_AGENT_RELEASE_SHA)"
+          Z_AGENT_API_IMAGE="$(read_release_value Z_AGENT_API_IMAGE)"
+          Z_AGENT_BROWSER_IMAGE="$(read_release_value Z_AGENT_BROWSER_IMAGE)"
+          test "$Z_AGENT_RELEASE_SHA" = "$DEPLOY_SHA"
+          printf '%s\n' "$Z_AGENT_API_IMAGE" | grep -Eq '^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$'
+          printf '%s\n' "$Z_AGENT_BROWSER_IMAGE" | grep -Eq '^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$'
+
+      - name: Verify published image provenance
+        if: github.event.repository.visibility == 'public'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          cd /tmp/z-agent-production-images
+          image() { sed -n "s/^$1=//p" production-images.env; }
+          API_IMAGE="$(image Z_AGENT_API_IMAGE)"
+          BROWSER_IMAGE="$(image Z_AGENT_BROWSER_IMAGE)"
+          gh attestation verify "oci://$API_IMAGE" --repo "$GITHUB_REPOSITORY"
+          gh attestation verify "oci://$BROWSER_IMAGE" --repo "$GITHUB_REPOSITORY"
 
       - name: Setup SSH
         env:
@@ -55,7 +95,19 @@ jobs:
       - name: Deploy verified commit to server
         env:
           DEPLOY_SHA: ${{ github.event.workflow_run.head_sha }}
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_READ_TOKEN: ${{ secrets.GHCR_READ_TOKEN }}
         run: |
+          set -euo pipefail
+          test -n "$GHCR_USERNAME"
+          test -n "$GHCR_READ_TOKEN"
+          scp -i ~/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            /tmp/z-agent-production-images/production-images.env \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:/tmp/z-agent-production-images.env
+          printf '%s' "$GHCR_READ_TOKEN" | ssh -i ~/.ssh/deploy_key \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
+            ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+            "docker login ghcr.io -u '$GHCR_USERNAME' --password-stdin"
           ssh -i ~/.ssh/deploy_key \
             -o StrictHostKeyChecking=yes \
             -o UserKnownHostsFile="$HOME/.ssh/known_hosts" \
@@ -63,6 +115,21 @@ jobs:
             "DEPLOY_SHA='$DEPLOY_SHA' bash -s" << 'DEPLOY'
             set -euo pipefail
             cd ~/z-agent-native
+            test -f /tmp/z-agent-production-images.env
+            read_release_value() {
+              local key="$1" value count
+              count="$(grep -c "^${key}=" /tmp/z-agent-production-images.env || true)"
+              test "$count" = 1
+              value="$(sed -n "s/^${key}=//p" /tmp/z-agent-production-images.env)"
+              printf '%s' "$value"
+            }
+            Z_AGENT_RELEASE_SHA="$(read_release_value Z_AGENT_RELEASE_SHA)"
+            Z_AGENT_API_IMAGE="$(read_release_value Z_AGENT_API_IMAGE)"
+            Z_AGENT_BROWSER_IMAGE="$(read_release_value Z_AGENT_BROWSER_IMAGE)"
+            export Z_AGENT_RELEASE_SHA Z_AGENT_API_IMAGE Z_AGENT_BROWSER_IMAGE
+            test "$Z_AGENT_RELEASE_SHA" = "$DEPLOY_SHA"
+            printf '%s\n' "$Z_AGENT_API_IMAGE" | grep -Eq '^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$'
+            printf '%s\n' "$Z_AGENT_BROWSER_IMAGE" | grep -Eq '^ghcr\.io/[A-Za-z0-9._/-]+@sha256:[0-9a-f]{64}$'
 
             echo "→ Fetching main and verified commit..."
             git fetch origin main
@@ -78,6 +145,8 @@ jobs:
 
             CHECKOUT_SHA="$(git rev-parse HEAD 2>/dev/null || true)"
             RUNNING_SHA="$(docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA 2>/dev/null | tr -d '\r' || true)"
+            CURRENT_API_IMAGE="$(docker inspect "$(docker compose ps -q z-agent 2>/dev/null)" --format '{{.Config.Image}}' 2>/dev/null || true)"
+            CURRENT_BROWSER_IMAGE="$(docker inspect "$(docker compose ps -q z-agent-browser 2>/dev/null)" --format '{{.Config.Image}}' 2>/dev/null || true)"
             CURRENT_SHA="$RUNNING_SHA"
             CURRENT_SCHEMA_READER=""
             if docker compose ps --status running z-agent | grep -q z-agent; then
@@ -89,54 +158,44 @@ jobs:
               # running container, not the checkout, is authoritative.
               CURRENT_SHA="$CHECKOUT_SHA"
             fi
-            if [ "$RUNNING_SHA" = "$DEPLOY_SHA" ] && curl -sf http://127.0.0.1:3002/health/ready > /dev/null 2>&1; then
+            if [ "$RUNNING_SHA" = "$DEPLOY_SHA" ] && [ "$CURRENT_API_IMAGE" = "$Z_AGENT_API_IMAGE" ] && [ "$CURRENT_BROWSER_IMAGE" = "$Z_AGENT_BROWSER_IMAGE" ] && curl -sf http://127.0.0.1:3002/health/ready > /dev/null 2>&1; then
               echo "✓ Verified SHA is already deployed and ready: $DEPLOY_SHA"
               exit 0
             fi
 
-            # Install rollback before touching the checkout or building. A build
-            # failure must not leave git HEAD at the candidate while old
+            # Install rollback before touching the checkout or pulling a candidate.
+            # A release failure must not leave git HEAD at the candidate while old
             # containers keep serving, otherwise a retry could falsely conclude
             # that the candidate is already deployed.
             rollback() {
               echo "✗ Candidate failed; restoring code/runtime to $CURRENT_SHA" >&2
               docker compose logs --tail=100 z-agent z-agent-executor z-agent-browser z-agent-browser-egress || true
-              if printf '%s' "$CURRENT_SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+              if printf '%s' "$CURRENT_SHA" | grep -Eq '^[0-9a-f]{40}$' && [ -n "$CURRENT_API_IMAGE" ] && [ -n "$CURRENT_BROWSER_IMAGE" ]; then
                 git reset --hard "$CURRENT_SHA"
                 export Z_AGENT_RELEASE_SHA="$CURRENT_SHA"
-                docker compose build
-                docker compose up -d --remove-orphans
+                export Z_AGENT_API_IMAGE="$CURRENT_API_IMAGE"
+                export Z_AGENT_BROWSER_IMAGE="$CURRENT_BROWSER_IMAGE"
+                docker compose up -d --no-build --remove-orphans
                 sleep 5
                 curl -fsS http://127.0.0.1:3002/health/ready >/dev/null || true
               fi
             }
             trap rollback ERR
 
-            # Keep a transactionally consistent SQLite snapshot before any code
-            # that can advance the schema is started. The script is copied into
-            # the currently running container so the old image need not contain it.
-            BACKUP_NAME="pre-deploy-${DEPLOY_SHA}-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
-            if docker compose ps --status running z-agent | grep -q z-agent; then
-              git show "$DEPLOY_SHA:server/backup.mjs" > /tmp/z-agent-backup.mjs
-              docker compose cp /tmp/z-agent-backup.mjs z-agent:/tmp/z-agent-backup.mjs
-              docker compose exec -T z-agent node /tmp/z-agent-backup.mjs "/data/backups/$BACKUP_NAME"
-              rm -f /tmp/z-agent-backup.mjs
-              echo "✓ Database snapshot: /data/backups/$BACKUP_NAME"
-            fi
-
             git reset --hard "$DEPLOY_SHA"
             echo "→ Deploying verified SHA: $(git rev-parse HEAD)"
 
             export Z_AGENT_RELEASE_SHA="$DEPLOY_SHA"
-            echo "→ Building candidate images..."
-            docker compose build --pull
+            echo "→ Pulling exactly-tested immutable image digests..."
+            docker pull "$Z_AGENT_API_IMAGE"
+            docker pull "$Z_AGENT_BROWSER_IMAGE"
 
             # A code rollback is safe after migration only when the candidate
             # schema explicitly remains readable by the currently running
             # release. Destructive migrations require an operator-controlled
             # maintenance window instead of pretending the image rollback is
             # lossless.
-            CANDIDATE_SCHEMA_CONTRACT="$(docker compose run --rm --no-deps --entrypoint node z-agent --input-type=module -e "import('./server/native/migrations.mjs').then(m=>console.log(m.LATEST_SCHEMA_VERSION+':'+m.SCHEMA_MIN_READER_VERSION))")"
+            CANDIDATE_SCHEMA_CONTRACT="$(docker run --rm --entrypoint node "$Z_AGENT_API_IMAGE" --input-type=module -e "import('./server/native/migrations.mjs').then(m=>console.log(m.LATEST_SCHEMA_VERSION+':'+m.SCHEMA_MIN_READER_VERSION))")"
             CANDIDATE_SCHEMA_VERSION="${CANDIDATE_SCHEMA_CONTRACT%%:*}"
             CANDIDATE_MIN_READER="${CANDIDATE_SCHEMA_CONTRACT##*:}"
             if docker compose ps --status running z-agent | grep -q z-agent; then
@@ -152,8 +211,20 @@ jobs:
             fi
             echo "✓ Schema rollback contract: candidate=$CANDIDATE_SCHEMA_VERSION min-reader=$CANDIDATE_MIN_READER current-reader=${CURRENT_SCHEMA_READER:-fresh}"
 
+            # Snapshot with the *candidate image* and current production env,
+            # while the old service is still the only live runtime. This keeps
+            # the backup before any candidate migration/startup, but guarantees
+            # the manifest is authenticated with the external audit key required
+            # by the release instead of an obsolete key environment in the old
+            # running container.
+            BACKUP_NAME="pre-deploy-${DEPLOY_SHA}-$(date -u +%Y%m%dT%H%M%SZ).sqlite"
+            if docker compose ps --status running z-agent | grep -q z-agent; then
+              docker compose run --rm --no-deps --entrypoint node z-agent                 server/backup.mjs "/data/backups/$BACKUP_NAME"
+              echo "✓ Database snapshot: /data/backups/$BACKUP_NAME"
+            fi
+
             echo "→ Starting candidate..."
-            docker compose up -d --remove-orphans
+            docker compose up -d --no-build --remove-orphans
 
             echo "→ Waiting for readiness (DB + key + volumes + isolated executor + browser egress)..."
             READY=0
@@ -175,16 +246,23 @@ jobs:
             docker compose ps --status running z-agent-browser-egress | grep -q z-agent-browser-egress
             ACTUAL_SHA="$(docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA | tr -d '\r')"
             test "$ACTUAL_SHA" = "$DEPLOY_SHA"
+            EXPECTED_API_ID="$(docker image inspect "$Z_AGENT_API_IMAGE" --format '{{.Id}}')"
+            EXPECTED_BROWSER_ID="$(docker image inspect "$Z_AGENT_BROWSER_IMAGE" --format '{{.Id}}')"
+            test "$(docker inspect "$(docker compose ps -q z-agent)" --format '{{.Image}}')" = "$EXPECTED_API_ID"
+            test "$(docker inspect "$(docker compose ps -q z-agent-executor)" --format '{{.Image}}')" = "$EXPECTED_API_ID"
+            test "$(docker inspect "$(docker compose ps -q z-agent-browser-egress)" --format '{{.Image}}')" = "$EXPECTED_API_ID"
+            test "$(docker inspect "$(docker compose ps -q z-agent-browser)" --format '{{.Image}}')" = "$EXPECTED_BROWSER_ID"
 
             trap - ERR
             echo "✓ Candidate is ready"
             # Deployment snapshots are short-term rollback aids, not disaster
             # recovery. Bound their local retention so a healthy deploy process
             # cannot slowly fill the same persistent disk it is protecting.
-            docker compose exec -T z-agent sh -lc "find /data/backups -type f -name 'pre-deploy-*.sqlite' -mtime +30 -delete" || true
+            docker compose exec -T z-agent sh -lc "find /data/backups -type f \( -name 'pre-deploy-*.sqlite' -o -name 'pre-deploy-*.sqlite.manifest.json' \) -mtime +30 -delete" || true
             # Preserve recent images for fast manual rollback; only remove stale
             # dangling layers after the candidate has passed readiness.
             docker image prune -f --filter 'until=168h' || true
+            rm -f /tmp/z-agent-production-images.env
           DEPLOY
 
       - name: Cleanup SSH key

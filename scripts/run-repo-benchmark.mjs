@@ -135,20 +135,50 @@ for (const [caseIndex, item] of cases.entries()) {
     if (!cli.keep && !unsafeLocalExecutor) fs.rmSync(workspace, { recursive: true, force: true });
   }
   const passed = runs.filter((r) => r.pass).length;
-  reportCases.push({ id: item.id, passed, repetitions, passRate: passed / repetitions, meanDurationMs: Math.round(runs.reduce((sum, r) => sum + r.durationMs, 0) / runs.length), runs });
+  reportCases.push({
+    id: item.id,
+    passed,
+    repetitions,
+    passRate: passed / repetitions,
+    meanDurationMs: Math.round(runs.reduce((sum, r) => sum + r.durationMs, 0) / runs.length),
+    meanToolCalls: Number((runs.reduce((sum, r) => sum + Number(r.tools?.calls || 0), 0) / runs.length).toFixed(2)),
+    runs,
+  });
 }
 const totalRuns = reportCases.reduce((sum, c) => sum + c.repetitions, 0);
 const passedRuns = reportCases.reduce((sum, c) => sum + c.passed, 0);
 const minPassRate = Number(cli['min-pass-rate'] || process.env.Z_AGENT_BENCHMARK_MIN_PASS_RATE || 0.8);
+const baselinePath = String(cli.baseline || process.env.Z_AGENT_BENCHMARK_BASELINE || '').trim();
+const maxPassRateRegression = Math.min(Math.max(Number(cli['max-pass-rate-regression'] || process.env.Z_AGENT_BENCHMARK_MAX_PASS_RATE_REGRESSION || 0.1), 0), 1);
+const maxToolRegression = Math.max(Number(cli['max-tool-regression'] || process.env.Z_AGENT_BENCHMARK_MAX_TOOL_REGRESSION || 0.25), 0);
+const maxDurationRegression = Math.max(Number(cli['max-duration-regression'] || process.env.Z_AGENT_BENCHMARK_MAX_DURATION_REGRESSION || 0.35), 0);
+const regressions = [];
+let baseline = null;
+if (baselinePath) {
+  baseline = JSON.parse(fs.readFileSync(path.resolve(baselinePath), 'utf8'));
+  const oldCases = new Map((baseline.cases || []).map((item) => [String(item.id), item]));
+  for (const current of reportCases) {
+    const old = oldCases.get(current.id);
+    if (!old) continue;
+    const passDrop = Number(old.passRate || 0) - current.passRate;
+    if (passDrop > maxPassRateRegression + 1e-9) regressions.push({ id: current.id, metric: 'passRate', baseline: Number(old.passRate || 0), current: current.passRate, delta: -passDrop });
+    const oldTools = Number(old.meanToolCalls || 0);
+    if (oldTools > 0 && current.meanToolCalls > oldTools * (1 + maxToolRegression)) regressions.push({ id: current.id, metric: 'meanToolCalls', baseline: oldTools, current: current.meanToolCalls, ratio: current.meanToolCalls / oldTools });
+    const oldDuration = Number(old.meanDurationMs || 0);
+    if (oldDuration > 0 && current.meanDurationMs > oldDuration * (1 + maxDurationRegression)) regressions.push({ id: current.id, metric: 'meanDurationMs', baseline: oldDuration, current: current.meanDurationMs, ratio: current.meanDurationMs / oldDuration });
+  }
+}
 const report = {
-  version: 1, generatedAt: new Date().toISOString(), manifest: manifestPath, model: `${model.providerID}/${model.modelID}`,
+  version: 2, generatedAt: new Date().toISOString(), manifest: manifestPath, model: `${model.providerID}/${model.modelID}`,
   cases: reportCases, totalRuns, passedRuns, passRate: totalRuns ? passedRuns / totalRuns : 0,
   casePassRate: reportCases.length ? reportCases.filter((c) => c.passRate >= minPassRate).length / reportCases.length : 0,
   requiredPassRate: minPassRate,
+  baseline: baselinePath ? { path: path.resolve(baselinePath), model: baseline?.model || '', regressions, tolerances: { maxPassRateRegression, maxToolRegression, maxDurationRegression } } : null,
 };
 const output = path.resolve(cli.output || path.join(repoRoot, 'evals/latest-production-benchmark.json'));
 fs.writeFileSync(output, JSON.stringify(report, null, 2));
 console.log(`Benchmark: ${(report.passRate * 100).toFixed(1)}% run pass rate; ${(report.casePassRate * 100).toFixed(1)}% cases meet >=${(minPassRate * 100).toFixed(0)}% stability`);
+if (baselinePath) console.log(`Baseline regressions: ${regressions.length}`);
 console.log(`Report: ${output}`);
-if (report.passRate < minPassRate || report.casePassRate < minPassRate) process.exitCode = 1;
+if (report.passRate < minPassRate || report.casePassRate < minPassRate || regressions.length) process.exitCode = 1;
 if (!cli.keep) fs.rmSync(temp, { recursive: true, force: true });

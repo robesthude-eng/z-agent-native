@@ -95,20 +95,19 @@ Vite proxies `/api`, `/health` and `/socket.io` to the native runtime on port 30
 
 ## Docker
 
+For a production-style local host, generate the required external cryptographic keys instead of copying the development template verbatim:
+
 ```bash
-cp .env.example .env
+npm run prod:env:init
+# review .env, especially registration and model-selected web policy
 docker compose up --build -d
 ```
 
-Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state/secrets are stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins the container paths to `/data` and `/workspaces` even though `.env.example` uses convenient relative paths for bare-metal development. Each chat has a stable low-privilege Unix UID, so autonomous code cannot read `/data` or another chat workspace. When serving through HTTPS, set:
-
-```env
-Z_AGENT_SECURE_COOKIES=1
-```
+`prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, disables the interactive terminal, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
 
 ## Models
 
-Provider API keys are added from **Settings → Models**. They are stored encrypted with AES-256-GCM. On a single-node installation, a random key is generated at `data/master.key` (0600). For reproducible backups or multiple replicas, provide a stable `Z_AGENT_SECRET_KEY` through the environment/secrets manager.
+Provider API keys are added from **Settings → Models**. They are stored in an `enc:v2` AES-256-GCM envelope with a key ID and authenticated context binding the ciphertext to the owner/provider/field. Production requires an external 256-bit `Z_AGENT_SECRET_KEY` (or `Z_AGENT_SECRET_KEY_FILE`) and supports old-key rotation through `Z_AGENT_SECRET_KEYS_JSON`; successfully read legacy/old-key records are rewrapped on the current primary. Bare-metal development may still use a mode-0600 `data/master.key` fallback, but production Compose deliberately rejects that fallback so loss of `/data` cannot also destroy the only decryption key.
 
 The provider registry starts empty. Add an owner-scoped channel in Settings and
 choose one of the supported protocols: OpenAI-compatible, Anthropic Messages,
@@ -146,7 +145,7 @@ For production:
 - never mount the Docker socket or arbitrary host paths into any service;
 - keep model web access `off` unless the task genuinely requires it; prefer an explicit allowlist over `public`;
 - keep `/data` private to the trusted runtime and keep `Z_AGENT_EXECUTOR_REQUIRED=1` / `Z_AGENT_BROWSER_REQUIRED=1` so missing isolation fails closed;
-- serve through HTTPS with `Z_AGENT_SECURE_COOKIES=1`, close registration with an invite/access layer, and store `Z_AGENT_SECRET_KEY` in a secrets manager;
+- serve through HTTPS; production Compose forces Secure `__Host-` session/CSRF cookies. Close registration with an invite/access layer and keep `Z_AGENT_SECRET_KEY` plus the separate `Z_AGENT_AUDIT_KEY` outside `/data` in a secrets manager;
 - keep the interactive terminal disabled in multi-user production (`Z_AGENT_TERMINAL_ENABLED=0`, the Compose default). It is a trusted self-hosted opt-in because its shell lives in the orchestrator container rather than the networkless executor.
 
 On non-root bare metal, autonomous shell falls back only when `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is explicitly enabled for unsafe single-user development; the interactive terminal additionally requires `Z_AGENT_TERMINAL_ENABLED=1`. See `SECURITY.md` for the exact trust boundaries and residual assumptions.
@@ -172,6 +171,8 @@ npm run eval:run -- --model anthropic/your-model-id  # real model, isolated work
 npm run eval:run -- --model anthropic/your-model-id --baseline evals/baseline.json --fail-on-regression --regression-tolerance 5
 # release benchmark over pinned real repositories (use a private 100–300 case manifest)
 npm run eval:benchmark -- --manifest evals/production-benchmark.json --model anthropic/your-model-id
+# gate a candidate against a saved real-repo baseline (pass-rate/tool-count/duration regressions)
+npm run eval:benchmark -- --manifest evals/production-benchmark.json --model anthropic/your-model-id --baseline evals/production-baseline.json
 ```
 
 The bundled manifest contains **30 executable regression cases** across explore/debug/review/implement plus the deterministic smoke. `eval:run` produces scored JSON reports, can run repository/fixture tasks with file expectations and an external verification command, and can compare case scores with a saved baseline so quality regressions are visible rather than inferred from infrastructure tests. CI runs the deterministic smoke so the complete provider → agent loop → tool → verification path is regression-tested without provider credentials. Real-model baselines remain operator-controlled because provider/model output is stochastic and credentialed.
@@ -192,20 +193,24 @@ data/
   z-agent.sqlite
   z-agent.sqlite-wal
   z-agent.sqlite-shm
-  master.key
+  master.key       # bare-metal/dev fallback only; production keys stay external
+  audit.key        # bare-metal/dev fallback only; production audit key stays external
 
 workspaces/
   ses_.../
 ```
 
-Back up both persistent volumes **off-host**. The automatic pre-deploy SQLite snapshot is only a short-term rollback aid on the same volume (locally retained for 30 days), not disaster recovery. Back up the SQLite database **and** the master key (or retain the same `Z_AGENT_SECRET_KEY`) if provider credentials must remain decryptable after restore. Schema changes are versioned in `schema_migrations`; each migration declares the oldest schema-aware reader it remains compatible with. Automatic deploy refuses a candidate whose schema would make the currently running release unable to roll back; an incompatible migration is rejected by the automatic workflow and requires a separate operator-controlled maintenance deployment with a data-preservation/rollback plan.
+Back up both persistent volumes **off-host** and retain the production `Z_AGENT_SECRET_KEY` **and** `Z_AGENT_AUDIT_KEY` (or their secret-file equivalents) in an independent secret store. The automatic pre-deploy SQLite snapshot is only a short-term rollback aid on the same volume (locally retained for 30 days), not disaster recovery. Each snapshot has a sidecar integrity manifest containing byte size, SHA-256, schema version and an HMAC under the external audit key. A restore is not considered proven until SQLite integrity/foreign keys, schema compatibility, provider-secret decryptability and the tamper-evident audit chain all verify. Schema changes are versioned in `schema_migrations`; each migration declares the oldest schema-aware reader it remains compatible with. Automatic deploy refuses a candidate whose schema would make the currently running release unable to roll back; an incompatible migration requires a separate operator-controlled maintenance deployment with a data-preservation/rollback plan.
 
 ```bash
-npm run db:backup -- /path/to/z-agent.sqlite   # online, integrity-checked snapshot
-npm run db:migrate                              # explicit migration/quick-check entry point
+npm run db:backup -- /path/to/z-agent.sqlite   # online snapshot + signed integrity manifest
+npm run db:restore-verify -- /path/to/snapshot.sqlite
+npm run db:drill                               # backup + isolated restore verification
+npm run audit:verify                           # verify the HMAC-chained audit trail
+npm run db:migrate                             # explicit migration/quick-check entry point
 ```
 
-Production deploy takes an integrity-checked online SQLite snapshot before touching the candidate, records the running schema-reader version, builds the candidate, verifies the candidate's minimum rollback-reader contract **before startup**, injects a release SHA, waits on `/health/ready` (DB read/write + compatible schema marker, key, writable/free-space checks on both volumes, executor network-boundary attestation and browser/proxy IPC), verifies the live release SHA, and keeps the previous code/image path available for rollback before pruning stale layers.
+Release CI follows **build once, deploy by immutable digest**: it builds and tests the production images, boots that exact topology, records the registry digests, emits SBOM/provenance artifacts, and Deploy pulls those exact `@sha256:` images instead of rebuilding on the server. Before promotion, Deploy snapshots the database, checks the rollback-reader contract, enters graceful drain on the old runtime, waits on `/health/ready` for the candidate (DB rollback-write + schema, external keys, writable/free-space checks, executor no-network attestation and browser/proxy IPC), verifies the live release SHA and actual image digests, and retains the previous immutable images for rollback until the candidate is healthy.
 
 ## Turn telemetry
 
@@ -216,7 +221,7 @@ npm run telemetry:summary
 npm run telemetry:summary -- --last 200
 ```
 
-Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound it. Per-turn telemetry is also attached to the completed assistant message and emitted as `turn.telemetry`. For scraping, set `Z_AGENT_METRICS_TOKEN`; `/metrics` then exposes low-cardinality Prometheus counters/gauges with no user/session/turn IDs in labels.
+Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound it. Per-turn telemetry is also attached to the completed assistant message and emitted as `turn.telemetry`. For scraping, set `Z_AGENT_METRICS_TOKEN`; `/metrics` exposes low-cardinality Prometheus counters/gauges with no user/session/turn IDs in labels. The supplied public Caddy vhost returns 404 for `/metrics`; scrape the private runtime path instead of exposing the endpoint publicly.
 
 ## Security-relevant configuration
 
@@ -226,7 +231,7 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_ALLOW_OPEN_REGISTRATION` | `0` | Explicit opt-in to open registration. Without it and without an invite code, registration is closed. |
 | `Z_AGENT_TRUST_PROXY` | `0` | Trust the first `X-Forwarded-For` hop for auth rate limiting. Enable only behind a proxy that rewrites it. |
 | `Z_AGENT_ALLOWED_ORIGINS` | empty | Comma-separated browser origins accepted by the terminal websocket when the public origin differs from `Host`. |
-| `Z_AGENT_SECURE_COOKIES` | `0` | Set to `1` behind HTTPS. |
+| `Z_AGENT_SECURE_COOKIES` | `0` dev / `1` production | Production forces Secure `__Host-` session/CSRF cookies and refuses to start if disabled. |
 | `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. Streaming prefers the direct provider URL and only falls back to the relay. The relay sees API keys and prompts. Serverless relays (Cloudflare Workers) typically cut streams after ~30–100s and cannot carry a 30-minute turn. |
 | `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `guarded`, `tool-only`, or `open` application-layer shell egress policy. `tool-only` is the stricter multi-user option; neither mode replaces a network firewall. |
 | `Z_AGENT_SENSITIVE_FILE_POLICY` | `block` | Blocks agent content access to common workspace credential files. `allow` is an explicit compatibility escape hatch. |
@@ -236,6 +241,20 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_BROWSER_REQUIRED` | `1` in Compose | Fail closed when the isolated Chromium service is missing. |
 | `Z_AGENT_TERMINAL_ENABLED` | `0` in Compose | Trusted self-hosted opt-in for the interactive terminal. Keep `0` for multi-user production because the terminal is not the autonomous no-network executor. |
 | `Z_AGENT_METRICS_TOKEN` | empty | Enables bearer-protected `/metrics`; empty returns 404. |
+| `Z_AGENT_SECRET_KEY` / `Z_AGENT_SECRET_KEY_FILE` | empty dev / required production | Primary 256-bit provider-secret encryption key, kept outside `/data`; env and file forms are mutually exclusive. |
+| `Z_AGENT_SECRET_KEYS_JSON` | empty | JSON array of previous decryption keys used only during rotation/rewrap. |
+| `Z_AGENT_AUDIT_KEY` / `Z_AGENT_AUDIT_KEY_FILE` | empty dev / required production | Separate 256-bit key for the HMAC audit chain and backup-manifest integrity. |
+| `Z_AGENT_MAX_ACTIVE_TURNS` | `32` | Shared SQLite global active-turn lease budget. |
+| `Z_AGENT_MAX_ACTIVE_TURNS_PER_OWNER` | `4` | Per-owner model-turn concurrency budget; prevents one account from consuming all provider/runtime capacity. |
+| `Z_AGENT_TURN_CAPACITY_TTL_MS` | `120000` | Crash-expiring capacity lease TTL; running turns renew it periodically. |
+| `Z_AGENT_EXECUTOR_MAX_ACTIVE` | `8` | Global concurrent executor command cap. |
+| `Z_AGENT_EXECUTOR_MAX_ACTIVE_PER_UID` | `2` | Per-session executor concurrency cap. |
+| `Z_AGENT_BROWSER_MAX_WORKERS` | `16` | Global persistent browser-worker cap. |
+| `Z_AGENT_BROWSER_MAX_PENDING_PER_WORKER` | `2` | Per-browser-worker pending-operation cap. |
+| `Z_AGENT_BROWSER_EGRESS_MAX_CONNECTIONS` | `64` | Global browser-proxy connection cap. |
+| `Z_AGENT_BROWSER_EGRESS_MAX_BODY_BYTES` | `16777216` | Maximum proxied HTTP body budget. |
+| `Z_AGENT_BROWSER_EGRESS_MAX_TUNNEL_BYTES` | `67108864` | Maximum bytes forwarded through one CONNECT tunnel. |
+| `Z_AGENT_SHUTDOWN_GRACE_MS` | `60000` | Graceful drain window before forced shutdown/recovery. |
 | `Z_AGENT_TELEMETRY_FILE` | `data/turn-telemetry.jsonl` | Privacy-minimized completed-turn metrics JSONL. |
 | `Z_AGENT_MODEL_PRICING_JSON` | empty | Optional model → USD/1M input/output token map used only for telemetry cost estimates. |
 | `Z_AGENT_TOOLCHAIN_SHA256` | empty | JSON map of pinned toolchain digests, e.g. `{"java:21":"<sha256>"}`. |
@@ -249,4 +268,4 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_DURABLE_JOB_TTL_MS` | `86400000` | After this age a crashed durable turn can be taken over instead of blocking the session. |
 | `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Maximum aggregate body size of one folder-upload request. |
 
-See `SECURITY.md` for the container, deployment and toolchain hardening notes.
+See `SECURITY.md` for the trust boundaries and `OPERATIONS.md` for production bootstrap, backup/restore, key rotation, benchmarks and release operations.

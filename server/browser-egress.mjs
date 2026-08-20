@@ -6,6 +6,10 @@ import { parseConnectAuthority, resolveBrowserEgress } from './native/browser-eg
 const HOST = process.env.Z_AGENT_BROWSER_EGRESS_HOST || '0.0.0.0';
 const PORT = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_EGRESS_PORT) || 8080, 1), 65535);
 const MAX_HEADER_BYTES = 64 * 1024;
+const MAX_CONNECTIONS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_EGRESS_MAX_CONNECTIONS) || 64, 4), 512);
+const MAX_HTTP_BODY_BYTES = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_EGRESS_MAX_BODY_BYTES) || 16 * 1024 * 1024, 1024 * 1024), 128 * 1024 * 1024);
+const MAX_TUNNEL_BYTES = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_EGRESS_MAX_TUNNEL_BYTES) || 64 * 1024 * 1024, 4 * 1024 * 1024), 512 * 1024 * 1024);
+const sockets = new Set();
 
 function denySocket(socket, status = 403, message = 'Forbidden') {
   try { socket.end(`HTTP/1.1 ${status} ${message}\r\nConnection: close\r\nContent-Length: 0\r\n\r\n`); } catch { try { socket.destroy(); } catch {} }
@@ -20,7 +24,7 @@ function publicError(res, status = 403) {
 const server = http.createServer(async (req, res) => {
   if (req.url === '/health' && (req.method === 'GET' || req.method === 'HEAD')) {
     res.writeHead(200, { 'content-type': 'application/json', 'cache-control': 'no-store' });
-    return res.end(req.method === 'HEAD' ? '' : JSON.stringify({ ok: true, policyProxy: true }));
+    return res.end(req.method === 'HEAD' ? '' : JSON.stringify({ ok: true, policyProxy: true, activeConnections: sockets.size, limits: { maxConnections: MAX_CONNECTIONS, maxBodyBytes: MAX_HTTP_BODY_BYTES, maxTunnelBytes: MAX_TUNNEL_BYTES } }));
   }
   try {
     const raw = String(req.url || '');
@@ -43,13 +47,28 @@ const server = http.createServer(async (req, res) => {
         ? callback(null, [{ address: target.address, family: target.family }])
         : callback(null, target.address, target.family),
     }, (upstreamRes) => {
+      const declared = Number(upstreamRes.headers['content-length'] || 0);
+      if (declared > MAX_HTTP_BODY_BYTES) {
+        upstreamRes.destroy();
+        return publicError(res, 413);
+      }
       const responseHeaders = { ...upstreamRes.headers };
       delete responseHeaders['proxy-authenticate'];
       res.writeHead(upstreamRes.statusCode || 502, responseHeaders);
+      let received = 0;
+      upstreamRes.on('data', (chunk) => {
+        received += chunk.length;
+        if (received > MAX_HTTP_BODY_BYTES) { upstreamRes.destroy(); res.destroy(); }
+      });
       upstreamRes.pipe(res);
     });
     upstream.setTimeout(30_000, () => upstream.destroy(new Error('browser egress timeout')));
     upstream.on('error', () => { if (!res.headersSent) publicError(res, 502); else res.destroy(); });
+    let sent = 0;
+    req.on('data', (chunk) => {
+      sent += chunk.length;
+      if (sent > MAX_HTTP_BODY_BYTES) { upstream.destroy(); req.destroy(); }
+    });
     req.pipe(upstream);
   } catch (error) {
     publicError(res, Number(error?.statusCode) === 400 ? 400 : 403);
@@ -65,6 +84,13 @@ server.on('connect', async (req, clientSocket, head) => {
     upstream.setTimeout(30_000, () => upstream.destroy());
     upstream.once('connect', () => {
       clientSocket.write('HTTP/1.1 200 Connection Established\r\nProxy-Agent: z-agent-browser-egress\r\n\r\n');
+      let transferred = head?.length || 0;
+      const account = (chunk) => {
+        transferred += chunk.length;
+        if (transferred > MAX_TUNNEL_BYTES) { clientSocket.destroy(); upstream.destroy(); }
+      };
+      clientSocket.on('data', account);
+      upstream.on('data', account);
       if (head?.length) upstream.write(head);
       clientSocket.pipe(upstream);
       upstream.pipe(clientSocket);
@@ -75,6 +101,12 @@ server.on('connect', async (req, clientSocket, head) => {
   } catch (error) {
     denySocket(clientSocket, Number(error?.statusCode) === 400 ? 400 : 403, Number(error?.statusCode) === 400 ? 'Bad Request' : 'Forbidden');
   }
+});
+
+server.on('connection', (socket) => {
+  if (sockets.size >= MAX_CONNECTIONS) { socket.destroy(); return; }
+  sockets.add(socket);
+  socket.once('close', () => sockets.delete(socket));
 });
 
 server.maxHeadersCount = 100;

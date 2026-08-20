@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { isPinnedCommit, resolveLocalBenchmarkSource, validateBenchmarkManifest } from '../scripts/repo-benchmark-manifest.mjs';
 
@@ -32,4 +33,13 @@ test('local benchmark sources are confined to the configured corpus root', () =>
   const root = path.resolve('/tmp/benchmark-corpus');
   assert.equal(resolveLocalBenchmarkSource(root, 'repo-a'), path.join(root, 'repo-a'));
   assert.throws(() => resolveLocalBenchmarkSource(root, '../secret'), /escapes/);
+});
+
+
+test('benchmark runner supports per-case baseline regression gates', () => {
+  const runner = fs.readFileSync(new URL('../scripts/run-repo-benchmark.mjs', import.meta.url), 'utf8');
+  assert.match(runner, /Z_AGENT_BENCHMARK_BASELINE/);
+  assert.match(runner, /max-pass-rate-regression/);
+  assert.match(runner, /meanToolCalls/);
+  assert.match(runner, /regressions\.length/);
 });

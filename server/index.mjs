@@ -39,6 +39,9 @@ import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
 
 const STARTED_AT = Date.now();
+let DRAINING = false;
+let SHUTTING_DOWN = false;
+const SHUTDOWN_GRACE_MS = Math.min(Math.max(Number(process.env.Z_AGENT_SHUTDOWN_GRACE_MS) || 60_000, 5_000), 10 * 60 * 1000);
 pruneExpiredDurableJobs();
 // Resumable sessions must be identified BEFORE the generic recovery sweep,
 // otherwise the sweep rejects the pending questions and permissions that those
@@ -152,6 +155,7 @@ async function route(req, res) {
     return res.end(body);
   }
   if (p === '/health' || p === '/health/ready' || p === '/api/global/health' || p === '/global/health') {
+    if (DRAINING) return sendJson(res, 503, { status: 'draining', runtime: 'z-agent-native', version: '1.0.0', uptime: Math.floor((Date.now() - STARTED_AT) / 1000), checks: {} });
     const readiness = await readinessCheck();
     // Health is commonly exposed through a reverse proxy. Never reflect raw
     // exception strings/paths from DB, volume or IPC probes to unauthenticated
@@ -512,10 +516,24 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Z Agent Native listening on http://0.0.0.0:${PORT}${RECOVERED_TURNS ? ` · resumed ${RECOVERED_TURNS} durable turn(s)` : ''}`);
 });
 
-function shutdown() {
+async function shutdown(signal = 'SIGTERM') {
+  if (SHUTTING_DOWN) return;
+  SHUTTING_DOWN = true;
+  DRAINING = true;
+  console.log(`[shutdown] ${signal}: draining up to ${SHUTDOWN_GRACE_MS}ms (${activeTurnCount()} active turn(s))`);
+  // Stop accepting new TCP connections immediately. Existing SSE/provider work
+  // may finish while the agent's durable checkpoint remains recoverable.
+  server.close();
+  const deadline = Date.now() + SHUTDOWN_GRACE_MS;
+  while (activeTurnCount() > 0 && Date.now() < deadline) {
+    await new Promise((resolve) => setTimeout(resolve, 250));
+  }
+  const forced = activeTurnCount() > 0;
+  if (forced) console.warn(`[shutdown] grace expired with ${activeTurnCount()} turn(s); durable recovery will resume them`);
   closeAllWorkspaceWatchers();
-  server.close(() => process.exit(0));
-  setTimeout(() => process.exit(1), 5000).unref?.();
+  try { server.closeIdleConnections?.(); } catch {}
+  try { server.closeAllConnections?.(); } catch {}
+  process.exit(forced ? 1 : 0);
 }
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
+process.on('SIGTERM', () => { shutdown('SIGTERM').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
+process.on('SIGINT', () => { shutdown('SIGINT').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
