@@ -28,6 +28,8 @@ test('absolute /tmp paths are rewritten into the workspace instead of rejected',
   assert.equal(safeWorkspacePath(root, 'file:///tmp/checkers.js', { allowMissing: false }), path.join(root, 'checkers.js'));
   assert.throws(() => safeWorkspacePath(root, '/etc/passwd'), /относительные пути/i);
   assert.throws(() => safeWorkspacePath(root, '/tmp/../etc/passwd'), /workspace|предел/i);
+  assert.equal(safeWorkspacePath(root, 'file:///workspace/index.html', { allowMissing: true }), path.join(root, 'index.html'));
+  assert.equal(safeWorkspacePath(root, '/workspace/index.html', { allowMissing: true }), path.join(root, 'index.html'));
   fs.rmSync(root, { recursive: true, force: true });
 });
 

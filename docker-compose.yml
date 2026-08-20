@@ -154,6 +154,11 @@ services:
     # Root controller owns only the UDS and drops each web-content worker to the
     # chat's unprivileged UID with cleared supplementary groups.
     cap_add:
+      # Per-session Chromium workers get a HOME under /tmp/z-agent-browser-<uid>.
+      # cap_drop=ALL removes CHOWN, so mkdir+chown of that directory is EPERM
+      # and local HTML preview never starts.
+      - CHOWN
+      - FOWNER
       - SETUID
       - SETGID
       - KILL

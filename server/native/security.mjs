@@ -23,6 +23,9 @@ function coerceWorkspaceRelativePath(root, input = '.') {
   let raw = String(input ?? '.').trim() || '.';
   if (raw.includes('\0')) throw Object.assign(new Error('Некорректный путь'), { statusCode: 400 });
   raw = raw.replace(/\\/g, '/');
+  if (/^workspace:/i.test(raw)) {
+    raw = raw.replace(/^workspace:\/+/i, '');
+  }
   if (/^file:/i.test(raw)) {
     try {
       const url = new URL(raw);
@@ -34,16 +37,15 @@ function coerceWorkspaceRelativePath(root, input = '.') {
   }
   const base = path.resolve(root);
   if (path.isAbsolute(raw)) {
-    const tmp = raw.match(/^\/(?:private\/)?(?:var\/)?tmp\/(.*)$/i);
-    if (tmp) raw = tmp[1] || '.';
-    else if (/^\/(?:private\/)?(?:var\/)?tmp\/?$/i.test(raw)) raw = '.';
-    else {
-      const resolvedAbs = path.resolve(raw);
-      if (resolvedAbs === base || resolvedAbs.startsWith(`${base}${path.sep}`)) {
-        raw = path.relative(base, resolvedAbs) || '.';
-      } else {
-        throw Object.assign(new Error('Разрешены только относительные пути workspace'), { statusCode: 400 });
-      }
+    const resolvedAbs = path.resolve(raw);
+    if (resolvedAbs === base || resolvedAbs.startsWith(`${base}${path.sep}`)) {
+      raw = path.relative(base, resolvedAbs) || '.';
+    } else {
+      const tmp = raw.match(/^\/(?:private\/)?(?:var\/)?tmp\/(.*)$/i);
+      if (tmp) raw = tmp[1] || '.';
+      else if (/^\/(?:private\/)?(?:var\/)?tmp\/?$/i.test(raw)) raw = '.';
+      else if (/^\/+workspace\//i.test(raw)) raw = raw.replace(/^\/+workspace\/+/i, '') || '.';
+      else throw Object.assign(new Error('Разрешены только относительные пути workspace'), { statusCode: 400 });
     }
   }
   return raw;

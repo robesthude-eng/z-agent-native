@@ -203,7 +203,7 @@ test('production browser has an internal-only network and a separate pinned egre
   const proxyBlock = compose.match(/^  z-agent-browser-egress:\n([\s\S]*?)(?=^volumes:)/m)?.[1] || '';
   const apiBlock = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
   assert.match(browserBlock, /Dockerfile\.browser/);
-  assert.match(browserBlock, /cap_add:[\s\S]*SETUID[\s\S]*SETGID/);
+  assert.match(browserBlock, /cap_add:[\s\S]*CHOWN[\s\S]*FOWNER[\s\S]*SETUID[\s\S]*SETGID/);
   assert.match(browserBlock, /Z_AGENT_BROWSER_PROXY:\s*http:\/\/z-agent-browser-egress:8080/);
   assert.match(browserBlock, /- browser-sandbox/);
   assert.doesNotMatch(browserBlock, /- runtime-egress|- browser-egress/);
