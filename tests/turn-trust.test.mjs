@@ -43,6 +43,27 @@ test('loop guard allows the same check again after an edit', () => {
   assert.equal(observeToolLoop(guard, testCmd, { content: 'ok', isError: false }), null);
 });
 
+test('loop guard allows the same check again after a mutating bash write', () => {
+  const guard = createLoopGuard({ callRepeatLimit: 3 });
+  const testCmd = { name: 'bash', arguments: { command: 'cd app && pytest -q' } };
+  const patch = { name: 'bash', arguments: { command: "sed -i 's/a/b/' app.py" } };
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'fail', isError: false }), null);
+  assert.equal(observeToolLoop(guard, patch, { content: 'edited', isError: false }), null);
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'fail2', isError: false }), null);
+  assert.equal(observeToolLoop(guard, patch, { content: 'edited', isError: false }), null);
+  assert.equal(observeToolLoop(guard, testCmd, { content: 'ok', isError: false }), null);
+});
+
+test('loop guard does not treat distinct python -c checks as the same bash call', () => {
+  const guard = createLoopGuard({ callRepeatLimit: 3 });
+  const a = { name: 'bash', arguments: { command: 'python3 -c "print(1)"' } };
+  const b = { name: 'bash', arguments: { command: 'python3 -c "print(2)"' } };
+  const c = { name: 'bash', arguments: { command: 'python3 -c "print(3)"' } };
+  assert.equal(observeToolLoop(guard, a, { content: '1', isError: false }), null);
+  assert.equal(observeToolLoop(guard, b, { content: '2', isError: false }), null);
+  assert.equal(observeToolLoop(guard, c, { content: '3', isError: false }), null);
+});
+
 test('loop guard stops the same call even when other tools are in between', () => {
   const guard = createLoopGuard({ callRepeatLimit: 3 });
   const compile = { name: 'bash', arguments: { command: 'python -m py_compile app.py' } };

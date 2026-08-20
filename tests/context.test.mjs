@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
-const { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } = await import('../server/native/context.mjs');
+const { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } = await import('../server/native/context.mjs');
 
 test('compactFrames bounds large tool observations and preserves recent tool coherence', () => {
   const frames = [
@@ -119,4 +119,45 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('git log -5 --oneline'), 'read_only');
   assert.equal(classifyBash('npm install foo'), 'may_mutate');
   assert.equal(classifyBash('npm test && sed -i s/a/b/ file.txt'), 'may_mutate');
+  assert.equal(classifyBash('npm test 2>&1'), 'verification');
+  assert.equal(classifyBash('wc -l index.html'), 'read_only');
+  assert.equal(classifyBash('sha256sum app.tar'), 'read_only');
+  assert.equal(classifyBash('python3 -c "assert len(open(\'index.html\').read()) > 100"'), 'verification');
+  assert.equal(classifyBash('node -e "console.log(1)"'), 'verification');
+  assert.equal(classifyBash('python3 -c "open(\'f\',\'w\').write(\'x\')"'), 'may_mutate');
+  assert.equal(classifyBash('echo hi > out.txt'), 'may_mutate');
+  assert.equal(classifyBash('python checkers_test.js'), 'verification');
+  assert.equal(classifyBash('cd app && pytest -q'), 'verification');
+  assert.equal(classifyBash('cd app && pytest -q | tail -20'), 'verification');
+});
+
+test('python -c checks and static HTML read-back satisfy the gate; wc does not reopen it', () => {
+  const strategy = createTurnStrategy('Сделай браузерную игру шашки');
+  observeTool(strategy, { name: 'write', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });
+  assert.equal(strategy.needsVerification, true);
+
+  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 -c "print(open(\'index.html\').read())"' } }, { isError: false, metadata: { exit: 0 } });
+  assert.equal(strategy.needsVerification, false);
+  assert.equal(strategy.lastVerificationOk, true);
+  assert.equal(completionGate(strategy), null);
+
+  observeTool(strategy, { name: 'bash', arguments: { command: 'wc -l index.html' } }, { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] });
+  assert.equal(strategy.needsVerification, false);
+  assert.equal(completionGate(strategy), null);
+
+  const html = createTurnStrategy('Добавь визуализации');
+  observeTool(html, { name: 'edit', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });
+  observeTool(html, { name: 'read', arguments: { path: 'index.html' } }, { isError: false });
+  assert.equal(html.needsVerification, false);
+  assert.equal(html.lastVerificationOk, true);
+  assert.equal(completionGate(html), null);
+  assert.equal(shouldEnforceCompletionGate(html, 0), false);
+});
+
+test('completion gate stops nagging after a few reminders', () => {
+  const strategy = createTurnStrategy('Fix parser');
+  observeTool(strategy, { name: 'edit', arguments: { path: 'parser.mjs' } }, { isError: false, mutatedPaths: ['parser.mjs'] });
+  assert.equal(shouldEnforceCompletionGate(strategy, 0), true);
+  assert.equal(shouldEnforceCompletionGate(strategy, 2), true);
+  assert.equal(shouldEnforceCompletionGate(strategy, 3), false);
 });

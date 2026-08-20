@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { classifyBash } from './context.mjs';
 
 const RETRY_SAFE_TOOLS = new Set([
   'read',
@@ -102,8 +103,11 @@ export function createLoopGuard(options = {}) {
 
 const WORKSPACE_MUTATING_TOOLS = new Set(['write', 'edit', 'apply_patch', 'ensure_environment']);
 
-function callMutatesWorkspace(call) {
-  return WORKSPACE_MUTATING_TOOLS.has(String(call?.name || '').trim().toLowerCase());
+function callMutatesWorkspace(call, result) {
+  const name = String(call?.name || '').trim().toLowerCase();
+  if (WORKSPACE_MUTATING_TOOLS.has(name)) return true;
+  if (name === 'bash') return classifyBash(call?.arguments?.command) === 'may_mutate';
+  return name === 'task' && Array.isArray(result?.mutatedPaths) && result.mutatedPaths.length > 0;
 }
 
 function repeatingCycle(calls, periodMin, periodMax) {
@@ -134,8 +138,8 @@ export function observeToolLoop(guard, call, result) {
   const name = String(call?.name || 'действие');
   const signature = callSignature(call);
   const index = guard.calls.length;
-  // edit/write between two identical checks (pytest → edit → pytest) is progress.
-  if (callMutatesWorkspace(call) && !result?.isError) guard.lastMutationAt = index;
+  // edit/write/mutating bash between two identical checks is progress.
+  if (callMutatesWorkspace(call, result) && !result?.isError) guard.lastMutationAt = index;
   if (!guard.callLastSeen) guard.callLastSeen = Object.create(null);
   const lastSeen = Number.isInteger(guard.callLastSeen[signature]) ? guard.callLastSeen[signature] : -1;
   if (lastSeen >= 0 && Number(guard.lastMutationAt) > lastSeen) guard.callCounts[signature] = 0;
