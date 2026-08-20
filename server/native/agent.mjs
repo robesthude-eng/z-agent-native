@@ -24,7 +24,7 @@ import {
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
 import { isIncompleteToolCall } from './providers.mjs';
-import { compactFrames, completionGate, createTurnStrategy, observeTool, strategyGuidance } from './context.mjs';
+import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from './context.mjs';
 import { runSubagent } from './subagent-runner.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from './turn-telemetry.mjs';
 import {
@@ -520,8 +520,8 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       checkpointState(sessionId, runtime, strategy, { phase: 'after_model', stepsUsed: step + 1, lastUsage });
       const calls = response.toolCalls || [];
       if (calls.length === 0) {
-        const gate = completionGate(strategy);
-        if (gate) {
+        if (shouldEnforceCompletionGate(strategy, runtime.gateReminders)) {
+          const gate = completionGate(strategy);
           runtime.gateReminders += 1;
           recordCompletionGate(runtime.telemetry);
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });

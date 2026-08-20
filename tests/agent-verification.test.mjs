@@ -112,4 +112,106 @@ test('runtime auto-approves tool calls and still forces executable verification 
   }
 });
 
+test('static HTML read-back lets a simple page task finish without a shell check', async () => {
+  agent.resetAgentStateForTests();
+  events.resetEventsForTests();
+  const sid = 'ses_verificationhtml1';
+  store.createChat(sid, ownerId, 'Новый чат');
+  const original = globalThis.fetch;
+  let streamCall = 0;
+
+  globalThis.fetch = async () => {
+    streamCall += 1;
+    if (streamCall === 1) {
+      const args = JSON.stringify({ path: 'index.html', content: '<html><body>шашки</body></html>\n' });
+      return sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_write', function: { name: 'write', arguments: args } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
+    }
+    if (streamCall === 2) {
+      const args = JSON.stringify({ path: 'index.html' });
+      return sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_read', function: { name: 'read', arguments: args } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
+    }
+    return sse([
+      { choices: [{ delta: { content: 'Игра готова.' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+
+  try {
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Сделай браузерную игру шашки' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
+    assert.equal(streamCall, 3);
+    assert.equal(assistant.info.strategy?.changed, true);
+    assert.equal(assistant.info.strategy?.lastVerificationOk, true);
+    assert.equal(assistant.info?.outcome?.status, 'completed');
+    assert.match(fs.readFileSync(path.join(store.workspaceFor(sid), 'index.html'), 'utf8'), /шашки/);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+    events.resetEventsForTests();
+  }
+});
+
+test('completion gate gives up after a few reminders instead of burning the step budget', async () => {
+  agent.resetAgentStateForTests();
+  events.resetEventsForTests();
+  const sid = 'ses_verificationcap1';
+  store.createChat(sid, ownerId, 'Новый чат');
+  const original = globalThis.fetch;
+  let streamCall = 0;
+  let gateReminders = 0;
+
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    streamCall += 1;
+    if (streamCall === 1) {
+      const args = JSON.stringify({ path: 'parser.mjs', content: 'export const ok = true;\n' });
+      return sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_write', function: { name: 'write', arguments: args } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
+    }
+    const lastUser = [...body.messages].reverse().find((message) => message.role === 'user');
+    if (/Runtime completion gate/.test(String(lastUser?.content || ''))) gateReminders += 1;
+    return sse([
+      { choices: [{ delta: { content: 'Готово без проверки.' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+
+  try {
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Почини parser.mjs' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
+    assert.equal(gateReminders, 3);
+    assert.ok(streamCall <= 6, `burned too many model steps: ${streamCall}`);
+    assert.equal(assistant.info?.outcome?.status, 'partial');
+    assert.equal(assistant.info.strategy?.changed, true);
+    assert.equal(assistant.info.strategy?.lastVerificationOk, null);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+    events.resetEventsForTests();
+  }
+});
+
 test.after(() => providers.setProviderTransportForTests(null));

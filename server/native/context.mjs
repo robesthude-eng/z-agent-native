@@ -94,15 +94,20 @@ const VERIFY_PATTERNS = [
   /\b(?:npm|pnpm|yarn|bun)\s+(?:test|run\s+(?:test|lint|typecheck|check|build))\b/i,
   /\b(?:pytest|python\s+-m\s+pytest|go\s+test|cargo\s+(?:test|check)|mvn\s+test|gradle\s+test|\.\/gradlew\s+test)\b/i,
   /\b(?:tsc\b|eslint\b|biome\s+check\b|ruff\s+check\b|mypy\b)/i,
-  /\bnode\s+--check\b/i,
-  /\bpython3?\s+-m\s+(?:compileall|json\.tool)\b/i,
+  /\bnode\s+--(?:check|test)\b/i,
+  /\bpython3?\s+-m\s+(?:compileall|json\.tool|py_compile)\b/i,
+  /\b(?:python3?|node)\s+\S*(?:test|spec|check)\S*/i,
 ];
 
 const READ_ONLY_BASH_PATTERNS = [
-  /^\s*(?:pwd|ls\b|find\b|cat\b|head\b|tail\b|sed\s+-n\b|grep\b|rg\b)/i,
-  /^\s*git\s+(?:status|diff|log|show|branch|rev-parse)\b/i,
+  /^\s*(?:pwd|ls\b|find\b|cat\b|head\b|tail\b|sed\s+-n\b|grep\b|rg\b|wc\b|du\b|file\b|stat\b|md5sum\b|sha1sum\b|sha256sum\b|cksum\b|echo\b|printf\b|date\b|id\b|whoami\b|uname\b|true\b|false\b|test\b|\[|dirname\b|basename\b|realpath\b|readlink\b|which\b|type\b|cut\b|sort\b|uniq\b|tr\b|nl\b|od\b|hexdump\b|cmp\b|diff\b|comm\b|awk\b|column\b|cd\b|export\b|unset\b)/i,
+  /^\s*git\s+(?:status|diff|log|show|branch|rev-parse|blame)\b/i,
   /^\s*(?:node|python|python3)\s+--version\b/i,
 ];
+
+const STATIC_ASSET_EXTENSIONS = new Set(['html', 'htm', 'css', 'svg', 'md', 'txt', 'json', 'xml', 'csv']);
+
+const ONE_SHOT_MUTATION = /\b(?:writeFileSync|writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync|write_text|write_bytes|os\.(?:remove|unlink|rmdir|replace)|shutil|pathlib|sed\s+-i|\btee\b|open\s*\([^)]*['"](?:[wax]|r\+))/i;
 
 /** Split a command line into the individual commands it will actually run. */
 function bashSegments(text) {
@@ -112,17 +117,43 @@ function bashSegments(text) {
     .filter(Boolean);
 }
 
+function stripQuotedStrings(text) {
+  return String(text || '').replace(/(['"])(?:\\.|(?!\1).)*\1/g, ' ');
+}
+
+function stripFdRedirects(text) {
+  return String(text || '').replace(/\s+\d*>&\d+\b/g, '');
+}
+
+function hasUnquotedRedirectOrSubstitution(text) {
+  const stripped = stripQuotedStrings(stripFdRedirects(text));
+  return />/.test(stripped) || /\$\(|`/.test(stripped);
+}
+
+function classifyOneShotSegment(segment) {
+  if (!/^\s*(?:python3?|node)\s+-[ce]\s+/i.test(segment)) return null;
+  if (ONE_SHOT_MUTATION.test(segment)) return 'may_mutate';
+  return 'verification';
+}
+
 export function classifyBash(command) {
   const text = String(command || '').trim();
   if (!text) return 'read_only';
-  // Redirections and command substitution can write no matter which command runs.
-  if (/>/.test(text) || /\$\(|`/.test(text)) return 'may_mutate';
+  // Only unquoted redirections/substitutions write. `2>&1` and `>` inside
+  // `python -c "..."` must not turn a check into a fake workspace mutation.
+  if (hasUnquotedRedirectOrSubstitution(text)) return 'may_mutate';
   // Classify every segment. A verification command followed by a mutation
   // (`npm test && sed -i ...`) must not clear the completion gate.
   const segments = bashSegments(text);
   if (!segments.length) return 'read_only';
   let hasVerification = false;
   for (const segment of segments) {
+    const oneShot = classifyOneShotSegment(segment);
+    if (oneShot === 'may_mutate') return 'may_mutate';
+    if (oneShot === 'verification') {
+      hasVerification = true;
+      continue;
+    }
     if (VERIFY_PATTERNS.some((rx) => rx.test(segment))) {
       hasVerification = true;
       continue;
@@ -131,6 +162,27 @@ export function classifyBash(command) {
     return 'may_mutate';
   }
   return hasVerification ? 'verification' : 'read_only';
+}
+
+function isStaticAssetPath(value) {
+  const rel = String(value || '').trim().replace(/\\/g, '/');
+  if (!rel || rel === '.' || rel.includes('..') || rel.endsWith('/')) return false;
+  const base = rel.split('/').pop() || '';
+  const dot = base.lastIndexOf('.');
+  if (dot <= 0) return false;
+  return STATIC_ASSET_EXTENSIONS.has(base.slice(dot + 1).toLowerCase());
+}
+
+function staticAssetsVerified(state) {
+  const paths = [...new Set([...(state.changedPaths || []), ...(state.pendingReadbacks || [])])];
+  return paths.length > 0 && paths.every(isStaticAssetPath);
+}
+
+export const MAX_COMPLETION_GATE_REMINDERS = 3;
+
+export function shouldEnforceCompletionGate(strategy, reminders = 0) {
+  if (!completionGate(strategy)) return false;
+  return Number(reminders) < MAX_COMPLETION_GATE_REMINDERS;
 }
 
 export function createTurnStrategy(goal = '') {
@@ -217,14 +269,18 @@ export function observeTool(strategy, call, result) {
     return state;
   }
 
-  if (name === 'read' && !result?.isError && !shellSandboxAvailable()) {
+  if (name === 'read' && !result?.isError) {
     const readPath = String(call?.arguments?.path || '').trim();
     state.pendingReadbacks = state.pendingReadbacks.filter((changedPath) => changedPath !== readPath);
     if (state.needsVerification && state.pendingReadbacks.length === 0) {
-      state.needsVerification = false;
-      state.verificationUnavailable = true;
-      state.verificationEpoch = state.mutationEpoch;
-      state.lastVerificationEvidence = { tool: 'read', detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
+      if (!shellSandboxAvailable()) {
+        state.needsVerification = false;
+        state.verificationUnavailable = true;
+        state.verificationEpoch = state.mutationEpoch;
+        state.lastVerificationEvidence = { tool: 'read', detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
+      } else if (staticAssetsVerified(state)) {
+        noteVerification(state, { ok: true, tool: 'read', detail: 'static assets read back after the latest change' });
+      }
     }
     return state;
   }
