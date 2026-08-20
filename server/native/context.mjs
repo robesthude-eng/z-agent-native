@@ -118,7 +118,7 @@ function bashSegments(text) {
 }
 
 function stripQuotedStrings(text) {
-  return String(text || '').replace(/(['"])(?:\\.|(?!\1).)*\1/g, ' ');
+  return String(text || '').replace(/(['"])(?:\\.|(?!\1)[\s\S])*\1/g, ' ');
 }
 
 function stripFdRedirects(text) {
@@ -142,6 +142,10 @@ export function classifyBash(command) {
   // Only unquoted redirections/substitutions write. `2>&1` and `>` inside
   // `python -c "..."` must not turn a check into a fake workspace mutation.
   if (hasUnquotedRedirectOrSubstitution(text)) return 'may_mutate';
+  // A quoted python/node one-liner may contain newlines. Segmenting on `\n`
+  // would treat the script body as extra shell commands and never count as a check.
+  const oneShotWhole = classifyOneShotSegment(text);
+  if (oneShotWhole) return oneShotWhole;
   // Classify every segment. A verification command followed by a mutation
   // (`npm test && sed -i ...`) must not clear the completion gate.
   const segments = bashSegments(text);

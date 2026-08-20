@@ -129,6 +129,7 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('python checkers_test.js'), 'verification');
   assert.equal(classifyBash('cd app && pytest -q'), 'verification');
   assert.equal(classifyBash('cd app && pytest -q | tail -20'), 'verification');
+  assert.equal(classifyBash(`node -e "\nconst fs = require('fs');\nconst html = fs.readFileSync('index.html', 'utf8');\nif (html.length > 100) console.log('ok');\n"`), 'verification');
 });
 
 test('python -c checks and static HTML read-back satisfy the gate; wc does not reopen it', () => {

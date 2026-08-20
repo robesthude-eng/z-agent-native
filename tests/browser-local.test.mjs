@@ -26,6 +26,8 @@ test('workspace HTML is inlined for Chromium without touching the network', () =
   assert.doesNotMatch(doc.html, /href="style\.css"/);
   const fromTmp = readWorkspaceBrowserDocument(root, '/tmp/index.html');
   assert.equal(fromTmp.path, 'index.html');
+  const fromAlias = readWorkspaceBrowserDocument(root, 'file:///workspace/index.html');
+  assert.equal(fromAlias.path, 'index.html');
   assert.throws(() => readWorkspaceBrowserDocument(root, 'missing.html'), /not found/i);
   fs.rmSync(root, { recursive: true, force: true });
 });
