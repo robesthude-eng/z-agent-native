@@ -1,13 +1,16 @@
 FROM node:24.19.0-bookworm
 WORKDIR /app
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev \
     && npx playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright \
     && apt-get update && apt-get install -y --no-install-recommends util-linux \
     && rm -rf /var/lib/apt/lists/* \
     && npm cache clean --force
 COPY server ./server
 RUN mkdir -p /run/z-agent-browser && chown root:root /run/z-agent-browser && chmod 0700 /run/z-agent-browser
 ENV Z_AGENT_BROWSER_SOCKET=/run/z-agent-browser/browser.sock \
-    Z_AGENT_NETWORK_POLICY=off
+    Z_AGENT_NETWORK_POLICY=off \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 CMD ["node", "server/browser-service.mjs"]
