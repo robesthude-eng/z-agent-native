@@ -675,7 +675,7 @@ export async function executeTool(name, input, ctx) {
 
   if (tool === 'websearch') {
     const apiKey = String(process.env.BRAVE_SEARCH_API_KEY || '').trim();
-    assertAgentNetworkHost(apiKey ? 'api.search.brave.com' : 'html.duckduckgo.com', { tool: 'websearch' });
+    assertAgentNetworkHost(apiKey ? 'api.search.brave.com' : 'api.duckduckgo.com', { tool: 'websearch' });
     return await runWebSearch({
       query: input?.query,
       count: input?.count,

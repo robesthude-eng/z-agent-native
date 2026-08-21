@@ -1,6 +1,15 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { formatSearchRows, parseBraveResults, parseDuckDuckGoHtml, runWebSearch } from '../server/native/websearch.mjs';
+import {
+  formatSearchRows,
+  parseBraveResults,
+  parseDuckDuckGoHtml,
+  parseDuckDuckGoInstant,
+  parseWikipediaOpensearch,
+  runWebSearch,
+} from '../server/native/websearch.mjs';
+
+process.env.Z_AGENT_NETWORK_POLICY = 'public';
 
 const DDG_HTML = `
 <html><body>
@@ -20,6 +29,25 @@ test('DuckDuckGo HTML parser keeps public results and unwraps uddg links', () =>
   assert.match(rows[0].snippet, /strategy board/i);
   assert.equal(rows[1].url, 'https://www.example.com/play');
   assert.equal(rows[1].title, 'Play now');
+});
+
+test('DuckDuckGo Instant Answer parser reads abstract and related topics', () => {
+  const rows = parseDuckDuckGoInstant({
+    Heading: 'Gukesh Dommaraju',
+    Abstract: 'Current world chess champion.',
+    AbstractURL: 'https://en.wikipedia.org/wiki/Gukesh_Dommaraju',
+    RelatedTopics: [
+      { Text: 'World Chess Championship', FirstURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship' },
+      { Topics: [{ Text: 'Nested', FirstURL: 'https://en.wikipedia.org/wiki/Chess' }] },
+    ],
+  }, 5);
+  assert.equal(rows[0].url, 'https://en.wikipedia.org/wiki/Gukesh_Dommaraju');
+  assert.equal(rows.length, 3);
+});
+
+test('Wikipedia OpenSearch parser reads the 4-tuple array', () => {
+  const rows = parseWikipediaOpensearch(['q', ['Alpha'], ['desc'], ['https://en.wikipedia.org/wiki/Alpha']], 5);
+  assert.deepEqual(rows, [{ title: 'Alpha', url: 'https://en.wikipedia.org/wiki/Alpha', snippet: 'desc' }]);
 });
 
 test('Brave parser reads web.results and skips junk URLs', () => {
@@ -46,7 +74,17 @@ test('runWebSearch uses Brave when a key is present and DuckDuckGo otherwise', a
         text: JSON.stringify({ web: { results: [{ title: 'Brave Hit', url: 'https://example.net/b', description: 'ok' }] } }),
       };
     }
-    return { status: 200, text: DDG_HTML };
+    if (String(url).includes('api.duckduckgo.com')) {
+      return {
+        status: 200,
+        text: JSON.stringify({
+          Heading: 'Draughts',
+          Abstract: 'Board game',
+          AbstractURL: 'https://en.wikipedia.org/wiki/Draughts',
+        }),
+      };
+    }
+    return { status: 200, text: JSON.stringify(['q', [], [], []]) };
   };
 
   const brave = await runWebSearch({ query: 'checkers', apiKey: 'test-key', request });
@@ -57,7 +95,7 @@ test('runWebSearch uses Brave when a key is present and DuckDuckGo otherwise', a
   const ddg = await runWebSearch({ query: 'checkers', apiKey: '', request });
   assert.equal(ddg.metadata.websearch.provider, 'duckduckgo');
   assert.match(ddg.output, /en\.wikipedia\.org\/wiki\/Draughts/);
-  assert.ok(calls[1].includes('html.duckduckgo.com'));
+  assert.ok(calls.some((url) => url.includes('api.duckduckgo.com')));
 });
 
 test('runWebSearch refuses an empty query', async () => {
