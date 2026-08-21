@@ -411,9 +411,7 @@ test('ended free-model promotions are unavailable and not advertised to the user
   assert.doesNotMatch(publicText, /https?:\/\//i);
 });
 
-test('catalog refresh omits ended OpenCode Zen free SKUs and remembers them as hidden', async () => {
-  assert.equal(providers.isPromotionalCatalogModel({ name: 'OpenCode Zen', baseURL: 'https://opencode.ai/zen' }, { id: 'glm-free' }), true);
-  assert.equal(providers.isPromotionalCatalogModel({ name: 'Z.AI', baseURL: 'https://api.example.com/v1' }, { id: 'glm-5' }), false);
+test('catalog refresh keeps whatever the provider API listed', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ data: [
     { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free' },
@@ -421,10 +419,8 @@ test('catalog refresh omits ended OpenCode Zen free SKUs and remembers them as h
   ] }), { status: 200, headers: { 'content-type': 'application/json' } });
   try {
     const result = await providers.fetchModels(ownerId, 'openai', { force: true });
-    assert.deepEqual(result.models.map((model) => model.id), ['gpt-test']);
+    assert.deepEqual(result.models.map((model) => model.id), ['deepseek-v4-flash-free', 'gpt-test']);
   } finally { globalThis.fetch = original; }
-  assert.equal(providers.hideUnavailableModel(ownerId, { providerID: 'openai', modelID: 'deepseek-v4-flash-free' }, Object.assign(new Error('Free promotion has ended'), { statusCode: 400 })), true);
-  assert.ok(store.listHiddenModels(ownerId, 'openai').includes('deepseek-v4-flash-free'));
 });
 
 test('truncated tool-call JSON is marked incomplete instead of becoming _raw', () => {
