@@ -98,6 +98,16 @@ test('writer subagent mutations propagate into the parent completion strategy', 
   assert.match(completionGate(strategy) || '', /verification/i);
 });
 
+test('strategy guidance tells the agent to put a page at index.html for Preview', () => {
+  const strategy = createTurnStrategy('Создай браузерную игру шашки');
+  observeTool(strategy, { name: 'write', arguments: { path: 'checkers.html' } }, { isError: false, mutatedPaths: ['checkers.html'] });
+  assert.match(strategyGuidance(strategy), /index\.html/);
+  assert.match(strategyGuidance(strategy), /checkers\.html/);
+
+  observeTool(strategy, { name: 'write', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });
+  assert.doesNotMatch(strategyGuidance(strategy), /copy or write the main page to index\.html/i);
+});
+
 test('todowrite becomes pinned strategy guidance', () => {
   const strategy = createTurnStrategy('Implement feature');
   observeTool(strategy, { name: 'todowrite' }, {

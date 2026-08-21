@@ -12,6 +12,17 @@ const RETRY_SAFE_TOOLS = new Set([
   'websearch',
 ]);
 
+const EXECUTOR_RETRY_TOOLS = new Set([
+  'bash',
+  'git',
+  'run_tests',
+  'diagnostics',
+  'browser',
+  'apply_patch',
+]);
+
+const EXECUTOR_UNAVAILABLE_RE = /executor\.sock|Secure executor is required but unavailable|EXECUTOR_UNAVAILABLE/i;
+
 const TRANSIENT_ERROR_PATTERNS = [
   /\b(?:ETIMEDOUT|ECONNRESET|EAI_AGAIN|ECONNREFUSED|UND_ERR_CONNECT_TIMEOUT)\b/i,
   /\b(?:timeout|timed out|temporarily unavailable|temporary failure|socket hang up|network error|fetch failed)\b/i,
@@ -199,11 +210,19 @@ export function observeToolLoop(guard, call, result) {
  * transport/transient. Mutating tools, environment provisioning, bash, task and
  * question are deliberately excluded to prevent duplicate side effects.
  */
+export function isExecutorUnavailableError(error) {
+  const message = `${error?.code || ''} ${error?.message || String(error || '')}`;
+  return error?.code === 'EXECUTOR_UNAVAILABLE' || EXECUTOR_UNAVAILABLE_RE.test(message);
+}
+
 export function shouldRetryToolCall(call, error, attempt = 0) {
-  if (attempt >= 1) return false;
   const name = String(call?.name || '').trim().toLowerCase();
-  if (!RETRY_SAFE_TOOLS.has(name)) return false;
   const message = `${error?.name || ''} ${error?.code || ''} ${error?.message || String(error || '')}`;
+  // A brief executor-socket drop during compose restart used to surface as
+  // three identical bash errors and trip the loop guard mid-task.
+  if (isExecutorUnavailableError(error) && EXECUTOR_RETRY_TOOLS.has(name) && attempt < 2) return true;
+  if (attempt >= 1) return false;
+  if (!RETRY_SAFE_TOOLS.has(name)) return false;
   return TRANSIENT_ERROR_PATTERNS.some((pattern) => pattern.test(message));
 }
 

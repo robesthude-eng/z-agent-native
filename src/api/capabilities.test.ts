@@ -5,6 +5,7 @@ import {
   canOpen,
   capabilityGate,
   parseCapabilities,
+  parsePreviewPath,
   reasonFor,
 } from "./capabilities";
 
@@ -65,7 +66,23 @@ describe("reasonFor", () => {
   });
 
   it("у превью причина своя: показывать нечего, а не сломано", () => {
-    expect(reasonFor("preview", "unavailable")).toContain("index.html");
+    expect(reasonFor("preview", "unavailable")).toContain("HTML");
+  });
+});
+
+describe("parsePreviewPath", () => {
+  it("берёт безопасное имя HTML из ответа", () => {
+    expect(parsePreviewPath({ previewPath: "checkers.html" })).toBe(
+      "checkers.html",
+    );
+    expect(parsePreviewPath({ previewPath: "index.html" })).toBe("index.html");
+  });
+
+  it("отбрасывает обход пути и чужой тип", () => {
+    expect(parsePreviewPath({ previewPath: "../secret.html" })).toBeNull();
+    expect(parsePreviewPath({ previewPath: "dir/page.html" })).toBeNull();
+    expect(parsePreviewPath({ previewPath: 1 })).toBeNull();
+    expect(parsePreviewPath(null)).toBeNull();
   });
 });
 

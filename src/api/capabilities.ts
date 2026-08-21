@@ -85,7 +85,7 @@ export function reasonFor(
       return `${what}: окружение отключается`;
     case "unavailable":
       return kind === "preview"
-        ? "Превью: в workspace ещё нет index.html — показывать нечего"
+        ? "Превью: в workspace ещё нет HTML-страницы — показывать нечего"
         : `${what}: окружение ещё не создано. Отправьте сообщение в чат`;
     default:
       // Состояние неизвестно — сервер не ответил или ответил незнакомым словом.
@@ -102,6 +102,18 @@ export function reasonFor(
  * приходит по сети, и падение разбора не должно ронять интерфейс. `null` затем
  * читается как «нельзя открыть» — то есть неизвестность толкуется осторожно.
  */
+/**
+ * Путь HTML для панели превью. Сервер предпочитает index.html, иначе
+ * единственный (или самый свежий) HTML в корне workspace.
+ */
+export function parsePreviewPath(input: unknown): string | null {
+  if (!input || typeof input !== "object") return null;
+  const raw = (input as { previewPath?: unknown }).previewPath;
+  if (typeof raw !== "string") return null;
+  if (!/^[A-Za-z0-9._-]{1,80}\.html?$/i.test(raw)) return null;
+  return raw;
+}
+
 export function parseCapabilities(
   input: unknown,
 ): Record<CapabilityKind, CapabilityState | null> {
