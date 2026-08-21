@@ -84,6 +84,9 @@ test('runWebSearch uses Brave when a key is present and DuckDuckGo otherwise', a
         }),
       };
     }
+    if (String(url).includes('ru.wikipedia.org')) {
+      return { status: 200, text: JSON.stringify(['q', ['Шахматы'], ['игра'], ['https://ru.wikipedia.org/wiki/Шахматы']]) };
+    }
     return { status: 200, text: JSON.stringify(['q', [], [], []]) };
   };
 

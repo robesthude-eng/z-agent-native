@@ -201,20 +201,25 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
   }
 
   if (rows.length < n) {
-    const wikiUrl = new URL('https://en.wikipedia.org/w/api.php');
-    wikiUrl.searchParams.set('action', 'opensearch');
-    wikiUrl.searchParams.set('search', q);
-    wikiUrl.searchParams.set('limit', String(n));
-    wikiUrl.searchParams.set('namespace', '0');
-    wikiUrl.searchParams.set('format', 'json');
-    assertAgentNetworkUrl(wikiUrl.toString(), { tool: 'websearch' });
-    const wiki = await fetchUrl(wikiUrl.toString(), {
-      headers: { accept: 'application/json', 'user-agent': SEARCH_UA },
-      signal,
-      maxBytes: 2 * 1024 * 1024,
-    });
-    if (wiki.status >= 200 && wiki.status < 300) {
-      try { merge(parseWikipediaOpensearch(JSON.parse(String(wiki.text || '[]')), n)); } catch { /* ignore */ }
+    const cyrillic = /[\u0400-\u04FF]/.test(q);
+    const hosts = cyrillic ? ['ru.wikipedia.org', 'en.wikipedia.org'] : ['en.wikipedia.org', 'ru.wikipedia.org'];
+    for (const host of hosts) {
+      if (rows.length >= n) break;
+      const wikiUrl = new URL(`https://${host}/w/api.php`);
+      wikiUrl.searchParams.set('action', 'opensearch');
+      wikiUrl.searchParams.set('search', q);
+      wikiUrl.searchParams.set('limit', String(n));
+      wikiUrl.searchParams.set('namespace', '0');
+      wikiUrl.searchParams.set('format', 'json');
+      assertAgentNetworkUrl(wikiUrl.toString(), { tool: 'websearch' });
+      const wiki = await fetchUrl(wikiUrl.toString(), {
+        headers: { accept: 'application/json', 'user-agent': SEARCH_UA },
+        signal,
+        maxBytes: 2 * 1024 * 1024,
+      });
+      if (wiki.status >= 200 && wiki.status < 300) {
+        try { merge(parseWikipediaOpensearch(JSON.parse(String(wiki.text || '[]')), n)); } catch { /* ignore */ }
+      }
     }
   }
 
