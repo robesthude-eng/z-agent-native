@@ -1,4 +1,5 @@
 import { safeExternalRequest } from './security.mjs';
+import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 
 const SEARCH_UA = 'Z-Agent-Native/1.0';
 const MAX_COUNT = 10;
@@ -82,6 +83,42 @@ export function parseBraveResults(body, count = 5) {
   return rows;
 }
 
+export function parseDuckDuckGoInstant(body, count = 5) {
+  const limit = boundedCount(count);
+  const rows = [];
+  const seen = new Set();
+  const heading = String(body?.Heading || '').trim();
+  const abstract = String(body?.Abstract || body?.AbstractText || '').trim();
+  if (body?.AbstractURL) {
+    pushRow(rows, seen, { title: heading || body.AbstractURL, url: body.AbstractURL, snippet: abstract }, limit);
+  }
+  for (const row of body?.Results || []) {
+    pushRow(rows, seen, { title: row?.Text || row?.FirstURL, url: row?.FirstURL, snippet: row?.Text || '' }, limit);
+  }
+  const walk = (topics) => {
+    for (const topic of topics || []) {
+      if (rows.length >= limit) return;
+      if (topic?.FirstURL) pushRow(rows, seen, { title: topic.Text || topic.FirstURL, url: topic.FirstURL, snippet: topic.Text || '' }, limit);
+      if (Array.isArray(topic?.Topics)) walk(topic.Topics);
+    }
+  };
+  walk(body?.RelatedTopics);
+  return rows;
+}
+
+export function parseWikipediaOpensearch(body, count = 5) {
+  const limit = boundedCount(count);
+  const rows = [];
+  const seen = new Set();
+  const titles = Array.isArray(body?.[1]) ? body[1] : [];
+  const snippets = Array.isArray(body?.[2]) ? body[2] : [];
+  const urls = Array.isArray(body?.[3]) ? body[3] : [];
+  for (let i = 0; i < urls.length && rows.length < limit; i++) {
+    pushRow(rows, seen, { title: titles[i] || urls[i], url: urls[i], snippet: snippets[i] || '' }, limit);
+  }
+  return rows;
+}
+
 export function parseDuckDuckGoHtml(html, count = 5) {
   const limit = boundedCount(count);
   const rows = [];
@@ -142,16 +179,45 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
     return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
   }
 
-  const url = new URL('https://html.duckduckgo.com/html/');
-  url.searchParams.set('q', q);
-  const res = await fetchUrl(url.toString(), {
-    headers: { accept: 'text/html', 'user-agent': SEARCH_UA },
+  const rows = [];
+  const seen = new Set();
+  const merge = (items) => {
+    for (const item of items || []) pushRow(rows, seen, item, n);
+  };
+
+  const instantUrl = new URL('https://api.duckduckgo.com/');
+  instantUrl.searchParams.set('q', q);
+  instantUrl.searchParams.set('format', 'json');
+  instantUrl.searchParams.set('no_html', '1');
+  instantUrl.searchParams.set('skip_disambig', '1');
+  assertAgentNetworkUrl(instantUrl.toString(), { tool: 'websearch' });
+  const instant = await fetchUrl(instantUrl.toString(), {
+    headers: { accept: 'application/json', 'user-agent': SEARCH_UA },
     signal,
     maxBytes: 2 * 1024 * 1024,
   });
-  const text = String(res?.text || '');
-  if (res.status < 200 || res.status >= 300) throw new Error(`Web search HTTP ${res.status}: ${text.slice(0, 500)}`);
-  const rows = parseDuckDuckGoHtml(text, n);
+  if (instant.status >= 200 && instant.status < 300) {
+    try { merge(parseDuckDuckGoInstant(JSON.parse(String(instant.text || '{}')), n)); } catch { /* fall through */ }
+  }
+
+  if (rows.length < n) {
+    const wikiUrl = new URL('https://en.wikipedia.org/w/api.php');
+    wikiUrl.searchParams.set('action', 'opensearch');
+    wikiUrl.searchParams.set('search', q);
+    wikiUrl.searchParams.set('limit', String(n));
+    wikiUrl.searchParams.set('namespace', '0');
+    wikiUrl.searchParams.set('format', 'json');
+    assertAgentNetworkUrl(wikiUrl.toString(), { tool: 'websearch' });
+    const wiki = await fetchUrl(wikiUrl.toString(), {
+      headers: { accept: 'application/json', 'user-agent': SEARCH_UA },
+      signal,
+      maxBytes: 2 * 1024 * 1024,
+    });
+    if (wiki.status >= 200 && wiki.status < 300) {
+      try { merge(parseWikipediaOpensearch(JSON.parse(String(wiki.text || '[]')), n)); } catch { /* ignore */ }
+    }
+  }
+
   if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
   return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'duckduckgo', count: rows.length } } };
 }
