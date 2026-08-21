@@ -73,6 +73,8 @@ test('strict explicit model only falls back for transient failures', () => {
   assert.equal(fallbackEligible(Object.assign(new Error('auth'), { statusCode: 401 }), { strict: true }), false);
   assert.equal(fallbackEligible(Object.assign(new Error('rate'), { statusCode: 429 }), { strict: true }), true);
   assert.equal(fallbackEligible(Object.assign(new Error('server'), { statusCode: 503 }), { strict: true }), true);
+  assert.equal(fallbackEligible(new Error('Client network socket disconnected before secure TLS connection was established'), { strict: true }), true);
+  assert.equal(fallbackEligible(Object.assign(new Error('user stop'), { name: 'AbortError' }), { strict: true }), false);
 });
 
 test('long tasks receive a larger bounded autonomous step budget', () => {

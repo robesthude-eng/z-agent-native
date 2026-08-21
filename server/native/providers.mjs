@@ -251,6 +251,14 @@ export function isRateLimitProviderError(err) {
   return RATE_LIMIT_RE.test(message);
 }
 
+const NETWORK_TRANSPORT_RE = /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|EPROTO|UND_ERR|ERR_SSL|ERR_SOCKET|socket hang up|network error|fetch failed|terminated|other side closed|disconnected before secure TLS|TLS connection was established|ssl routines|handshake failure/i;
+const NETWORK_EXTRA_RETRIES = 2;
+
+export function isNetworkTransportError(err) {
+  const message = `${err?.code || ''} ${err?.cause?.code || ''} ${err?.cause?.message || ''} ${err?.message || String(err || '')}`;
+  return NETWORK_TRANSPORT_RE.test(message);
+}
+
 function isTransientProviderError(err, outerSignal) {
   // User-cancelled turns must stay cancelled. A timer abort (no outer abort)
   // is a dropped socket and is worth another try.
@@ -258,9 +266,8 @@ function isTransientProviderError(err, outerSignal) {
   if (isRateLimitProviderError(err)) return true;
   if (transientStatus(Number(err?.statusCode))) return true;
   if (Number(err?.statusCode) > 0) return false;
-  const message = `${err?.code || ''} ${err?.cause?.code || ''} ${err?.message || String(err || '')}`;
-  return /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|UND_ERR|socket hang up|network error|fetch failed|terminated|other side closed/i.test(message)
-    || err?.name === 'AbortError';
+  if (isNetworkTransportError(err)) return true;
+  return err?.name === 'AbortError';
 }
 
 function retrySleepMs(err, attempt) {
@@ -314,6 +321,7 @@ async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateL
   const state = {
     attemptsLeft: retries + 1,
     rateLimitExtra: failFastRateLimit ? 0 : RATE_LIMIT_EXTRA_RETRIES,
+    networkExtra: NETWORK_EXTRA_RETRIES,
     failFastRateLimit,
   };
   let attempt = 0;
@@ -336,7 +344,7 @@ async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateL
         current = fallback;
         fallback = null;
         if (state.attemptsLeft < 1) state.attemptsLeft = 1;
-      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state)) {
+      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state) && !grantNetworkRetry(lastError, state)) {
         throw lastError;
       }
     } finally {
@@ -357,6 +365,7 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2, failF
   const state = {
     attemptsLeft: retries + 1,
     rateLimitExtra: failFastRateLimit ? 0 : RATE_LIMIT_EXTRA_RETRIES,
+    networkExtra: NETWORK_EXTRA_RETRIES,
     failFastRateLimit,
   };
   let attempt = 0;
@@ -423,7 +432,7 @@ async function fetchSse(target, init, outerSignal, onEvent, { retries = 2, failF
         current = fallback;
         fallback = null;
         if (state.attemptsLeft < 1) state.attemptsLeft = 1;
-      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state)) {
+      } else if (state.attemptsLeft < 1 && !grantRateLimitRetry(lastError, state) && !grantNetworkRetry(lastError, state)) {
         throw lastError;
       }
     } finally {

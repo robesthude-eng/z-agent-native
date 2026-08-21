@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, MAX_AGENT_STEPS, MAX_AGENT_STEPS_CEILING } from './config.mjs';
-import { buildCatalog, callModel as callProviderModel } from './providers.mjs';
+import { buildCatalog, callModel as callProviderModel, isNetworkTransportError } from './providers.mjs';
 
 const HEALTH_FILE = path.join(DATA_DIR, 'autopilot-model-health.json');
 const MAX_CANDIDATES = 5;

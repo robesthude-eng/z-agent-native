@@ -104,6 +104,30 @@ test('Gemini provider streams text and function calls', async () => {
   } finally { globalThis.fetch = original; }
 });
 
+test('streaming provider calls retry a TLS handshake drop before the first token', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls === 1) {
+      throw new Error('Client network socket disconnected before secure TLS connection was established');
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.equal(calls, 2);
+    assert.equal(providers.isNetworkTransportError(new Error('Client network socket disconnected before secure TLS connection was established')), true);
+  } finally { globalThis.fetch = original; }
+});
+
 test('streaming provider calls retry read ECONNRESET before the first token', async () => {
   const original = globalThis.fetch;
   let calls = 0;
