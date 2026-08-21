@@ -101,6 +101,25 @@ test('runWebSearch uses Brave when a key is present and DuckDuckGo otherwise', a
   assert.ok(calls.some((url) => url.includes('api.duckduckgo.com')));
 });
 
+test('Cyrillic queries search Russian Wikipedia when Instant Answer is empty', async () => {
+  const calls = [];
+  const request = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes('api.duckduckgo.com')) {
+      return { status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) };
+    }
+    if (String(url).includes('ru.wikipedia.org')) {
+      return { status: 200, text: JSON.stringify(['q', ['Чемпион мира по шахматам'], ['титул'], ['https://ru.wikipedia.org/wiki/Чемпион_мира_по_шахматам']]) };
+    }
+    return { status: 200, text: JSON.stringify(['q', [], [], []]) };
+  };
+  const result = await runWebSearch({ query: 'чемпион мира по шахматам', apiKey: '', request });
+  assert.match(result.output, /ru\.wikipedia\.org/);
+  assert.ok(calls.some((url) => url.includes('ru.wikipedia.org')));
+  const wikiOrder = calls.filter((url) => url.includes('wikipedia.org')).map((url) => (url.includes('ru.wikipedia.org') ? 'ru' : 'en'));
+  assert.equal(wikiOrder[0], 'ru');
+});
+
 test('runWebSearch refuses an empty query', async () => {
   await assert.rejects(() => runWebSearch({ query: '  ', request: async () => ({ status: 200, text: '' }) }), /query must not be empty/);
 });
