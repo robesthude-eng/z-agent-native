@@ -172,7 +172,7 @@ test('local env loading stays developer-friendly while production forces hard bo
   assert.match(envExample, /^Z_AGENT_TERMINAL_ENABLED=1$/m);
   assert.match(api, /Z_AGENT_EXECUTOR_REQUIRED:\s*['"]?1['"]?/);
   assert.match(api, /Z_AGENT_BROWSER_REQUIRED:\s*['"]?1['"]?/);
-  assert.match(api, /Z_AGENT_TERMINAL_ENABLED:\s*\$\{Z_AGENT_TERMINAL_ENABLED:-0\}/);
+  assert.match(api, /Z_AGENT_TERMINAL_ENABLED:\s*['"]?0['"]?/);
 });
 
 test('production compose pins persistent runtime paths instead of inheriting bare-metal .env paths', () => {

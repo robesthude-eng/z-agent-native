@@ -2,6 +2,10 @@ services:
   z-agent:
     ports: !override
       - "127.0.0.1:3002:3000"
+    environment:
+      Z_AGENT_TERMINAL_ENABLED: '1'
+      Z_AGENT_ALLOW_PRODUCTION_TERMINAL: '1'
+      Z_AGENT_ALLOW_NETWORKED_INSTALLERS: '1'
   # Trusted single-tenant opt-in: package installs need outbound network.
   # Stay off the API network so agent code cannot reach /data or provider keys.
   # Default compose remains network_mode: none.
