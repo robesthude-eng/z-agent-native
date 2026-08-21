@@ -87,6 +87,14 @@ describe("errorMessage", () => {
     expect(errorMessage({ data: {} })).toBeUndefined();
     expect(errorMessage(123)).toBeUndefined();
   });
+
+  it("does not show third-party subscription copy from a dead free model", () => {
+    const raw =
+      "Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go";
+    expect(errorMessage(raw)).toMatch(/недоступна/i);
+    expect(errorMessage(raw)).not.toMatch(/opencode/i);
+    expect(errorMessage({ message: raw })).not.toMatch(/opencode\.ai/i);
+  });
 });
 
 describe("isAbortedError — прерывание отличается от поломки", () => {

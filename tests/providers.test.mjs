@@ -402,6 +402,15 @@ test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting m
   } finally { globalThis.fetch = original; }
 });
 
+test('ended free-model promotions are unavailable and not advertised to the user', () => {
+  const err = Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 });
+  assert.equal(providers.isModelUnavailableError(err), true);
+  const publicText = providers.publicProviderErrorMessage(err);
+  assert.match(publicText, /недоступна/i);
+  assert.doesNotMatch(publicText, /opencode/i);
+  assert.doesNotMatch(publicText, /https?:\/\//i);
+});
+
 test('truncated tool-call JSON is marked incomplete instead of becoming _raw', () => {
   assert.deepEqual(providers.parseToolArguments('{"path":"a.ts"}'), { ok: true, value: { path: 'a.ts' } });
   const broken = providers.parseToolArguments('{"command":"rm -rf');

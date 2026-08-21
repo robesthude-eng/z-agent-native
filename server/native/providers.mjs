@@ -259,6 +259,28 @@ export function isNetworkTransportError(err) {
   return NETWORK_TRANSPORT_RE.test(message);
 }
 
+const MODEL_UNAVAILABLE_RE = /promotion has ended|no longer available|model (?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go/i;
+const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
+const PUBLIC_MODEL_UNAVAILABLE = 'Выбранная модель сейчас недоступна. Повторите сообщение — агент возьмёт другую.';
+
+function providerErrorText(err) {
+  return `${err?.code || ''} ${err?.message || ''} ${JSON.stringify(err?.body || '')}`;
+}
+
+/** This specific model is retired, unpaid, or a ended free SKU. Try another. */
+export function isModelUnavailableError(err) {
+  const status = Number(err?.statusCode) || 0;
+  if (status === 402) return true;
+  return MODEL_UNAVAILABLE_RE.test(providerErrorText(err));
+}
+
+/** User-visible provider failures must not advertise a third-party product. */
+export function publicProviderErrorMessage(err) {
+  const raw = String(err?.message || err || '').trim();
+  if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw)) return PUBLIC_MODEL_UNAVAILABLE;
+  return raw.replace(/https?:\/\/\S*opencode\S*/gi, '').trim() || 'Провайдер не смог завершить этот ответ.';
+}
+
 function isTransientProviderError(err, outerSignal) {
   // User-cancelled turns must stay cancelled. A timer abort (no outer abort)
   // is a dropped socket and is worth another try.
