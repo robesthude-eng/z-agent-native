@@ -104,6 +104,29 @@ test('Gemini provider streams text and function calls', async () => {
   } finally { globalThis.fetch = original; }
 });
 
+test('streaming provider calls keep retrying TLS after the default attempt budget', async () => {
+  const original = globalThis.fetch;
+  let calls = 0;
+  globalThis.fetch = async () => {
+    calls += 1;
+    if (calls <= 3) {
+      throw new Error('Client network socket disconnected before secure TLS connection was established');
+    }
+    return sseResponse([
+      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
+  };
+  try {
+    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
+      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
+      onTextDelta: () => {},
+    });
+    assert.equal(result.text, 'OK');
+    assert.equal(calls, 4);
+  } finally { globalThis.fetch = original; }
+});
+
 test('streaming provider calls retry a TLS handshake drop before the first token', async () => {
   const original = globalThis.fetch;
   let calls = 0;
@@ -189,7 +212,7 @@ test('model discovery falls back to the direct endpoint after relay transport te
     const result = await providers.fetchModels(ownerId, 'openai', { force: true });
     assert.equal(result.status, 'live');
     assert.deepEqual(result.models.map((model) => model.id), ['glm-test', 'glm-test-2']);
-    assert.equal(urls.filter((url) => url.startsWith('https://1.1.1.2/relay/')).length, 3);
+    assert.equal(urls.filter((url) => url.startsWith('https://1.1.1.2/relay/')).length, 5);
     assert.equal(urls.at(-1), 'https://1.1.1.1/v1/models');
   } finally { globalThis.fetch = original; }
 });

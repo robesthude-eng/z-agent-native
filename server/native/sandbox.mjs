@@ -132,6 +132,25 @@ export function syncSandboxOwnership(sessionId, workspace, target = workspace) {
   try { fs.chmodSync(root, 0o700); } catch {}
 }
 
+const MANAGED_HOME_DIRS = ['cache/pip', 'cache/npm', 'venvs', 'bin', '.local/bin'];
+
+/**
+ * Session HOME lives at workspace/.agent-home. The API process is root in
+ * Docker, so a bare mkdirSync leaves that tree owned by root and the session
+ * UID cannot create venvs or pip cache. Always mkdir then chown to the sandbox.
+ */
+export function ensureManagedHome(sessionId, workspace) {
+  const root = path.resolve(workspace);
+  const home = path.join(root, '.agent-home');
+  fs.mkdirSync(home, { recursive: true });
+  for (const dir of MANAGED_HOME_DIRS) {
+    fs.mkdirSync(path.join(home, dir), { recursive: true });
+  }
+  try { fs.chmodSync(home, 0o700); } catch {}
+  if (sessionId) syncSandboxOwnership(sessionId, root, home);
+  return home;
+}
+
 export function killSandboxProcesses(sessionId) {
   if (!isRootRuntime()) return 0;
   const uid = getSandboxUid(sessionId);

@@ -18,7 +18,7 @@ import { classifyBash } from './context.mjs';
 import { isPublicHttpUrl, readWorkspaceBrowserDocument } from './browser-local.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { runWebSearch } from './websearch.mjs';
-import { prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
+import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 import { executeInExecutor, executorRequired } from './executor-client.mjs';
 import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy } from './workspace-policy.mjs';
 
@@ -339,9 +339,8 @@ async function grepInWorker(files, pattern, max, timeoutMs, regex) {
 }
 
 async function execBash(root, command, timeoutMs, signal, ctx) {
-  const home = path.join(root, '.agent-home');
-  fs.mkdirSync(home, { recursive: true });
   const identity = externalSpawnIdentity(ctx, root);
+  const home = ensureManagedHome(ctx?.sessionId, root);
   const env = managedShellEnvironment(root, {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
@@ -454,9 +453,8 @@ function validatePatchPaths(patchText) {
 
 async function applyGitPatch(root, patchText, signal, ctx) {
   validatePatchPaths(patchText);
-  const home = path.join(root, '.agent-home');
-  fs.mkdirSync(home, { recursive: true });
   const identity = externalSpawnIdentity(ctx, root);
+  const home = ensureManagedHome(ctx?.sessionId, root);
   const args = ['apply', '--no-index', '--whitespace=nowarn', '-'];
   const env = { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
   if (identity?.isolated) {
@@ -632,11 +630,12 @@ export async function executeTool(name, input, ctx) {
     const plan = BASE_ENVIRONMENT_KINDS.includes(kind)
       ? prepareEnvironmentRequirement(root, input || {})
       : prepareToolchainRequirement(root, input || {});
+    if (ctx.sessionId) ensureManagedHome(ctx.sessionId, root);
     const result = await execBash(root, plan.script, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
     const body = [result.stdout, result.stderr].filter(Boolean).join('\n').trim();
     if (result.code !== 0) throw new Error(body || `${plan.title} provisioning exited ${result.code}`);
     const manifest = commitEnvironmentRequirement(root, plan);
-    if (ctx.sessionId) syncSandboxOwnership(ctx.sessionId, root, path.join(root, '.agent-home'));
+    if (ctx.sessionId) ensureManagedHome(ctx.sessionId, root);
     return {
       output: [body || `${plan.title} ready`, '', 'Managed environment:', JSON.stringify(describeManagedEnvironment(root), null, 2)].join('\n'),
       title: plan.title,
@@ -704,6 +703,7 @@ export async function executeTool(name, input, ctx) {
       identity: externalSpawnIdentity(ctx, root),
       input: input || {},
       signal: ctx.signal,
+      sessionId: ctx.sessionId,
     });
     // Only history-writing actions touch the working tree. Reporting reads as
     // mutations would make every git status dirty the workspace snapshot.

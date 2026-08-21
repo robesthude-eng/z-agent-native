@@ -6,7 +6,7 @@ import { diffGitChange, listGitChanges, revertGitChange } from './git-changes.mj
 import { sendJson } from './json.mjs';
 import { boundaryFromContentType, fileSink, parseMultipartStream, PART_TOO_LARGE } from './multipart.mjs';
 import { safeWorkspacePath } from './security.mjs';
-import { prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
+import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
 import { workspaceFor } from './store.mjs';
 import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
 
@@ -72,9 +72,8 @@ function uniqueUploadPath(root, name) {
 }
 
 function gitOptions(sessionId, root) {
-  const home = path.join(root, '.agent-home');
-  fs.mkdirSync(home, { recursive: true });
   const identity = prepareWorkspaceSandbox(sessionId, root);
+  const home = ensureManagedHome(sessionId, root);
   const launch = sandboxCommand(identity, 'git');
   return {
     executor: identity,

@@ -290,6 +290,13 @@ function grantRateLimitRetry(err, state) {
   return true;
 }
 
+function grantNetworkRetry(err, state) {
+  if (!isNetworkTransportError(err) || state.networkExtra <= 0) return false;
+  state.networkExtra -= 1;
+  if (state.attemptsLeft < 1) state.attemptsLeft = 1;
+  return true;
+}
+
 function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
     const cleanup = () => signal?.removeEventListener('abort', onAbort);
