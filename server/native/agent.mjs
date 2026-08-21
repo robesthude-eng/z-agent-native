@@ -23,7 +23,7 @@ import {
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
-import { isIncompleteToolCall, isNetworkTransportError } from './providers.mjs';
+import { isIncompleteToolCall, isNetworkTransportError, publicProviderErrorMessage } from './providers.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from './context.mjs';
 import { runSubagent } from './subagent-runner.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from './turn-telemetry.mjs';
@@ -652,14 +652,14 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         outcome,
         telemetry: runtime?.telemetry,
         finish: 'error',
-        note: `Работа остановилась из-за ошибки: ${err?.message || String(err)}. Выполненная часть сохранена.`,
+        note: `Работа остановилась из-за ошибки: ${publicProviderErrorMessage(err)}. Выполненная часть сохранена.`,
         lifecycle: 'completed',
         verdict: 'completed',
         reason: outcome.reason,
       });
     }
 
-    if (!(assistant.parts || []).some((p) => p.type === 'text')) await emitText(assistant, `Ошибка агента: ${err?.message || String(err)}`, 'text');
+    if (!(assistant.parts || []).some((p) => p.type === 'text')) await emitText(assistant, `Ошибка агента: ${publicProviderErrorMessage(err)}`, 'text');
     await finalizeAssistant({
       sessionId,
       assistant,

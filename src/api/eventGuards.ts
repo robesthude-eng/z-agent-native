@@ -109,11 +109,23 @@ export function statusText(raw: unknown): string {
  * "text" | { message: string } | { data: { message: string } }.
  * Заменяет as any-касты в MessageItem/ToolCard.
  */
+const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
+const PUBLIC_MODEL_UNAVAILABLE =
+  "Выбранная модель сейчас недоступна. Нажмите «Повторить» — агент возьмёт другую.";
+
+export function publicErrorText(text: string): string {
+  if (PROVIDER_SALES_RE.test(text)) return PUBLIC_MODEL_UNAVAILABLE;
+  return text;
+}
+
 export function errorMessage(err: unknown): string | undefined {
-  if (typeof err === "string") return err;
+  if (typeof err === "string") return publicErrorText(err);
   const direct = strField(err, "message");
-  if (direct) return direct;
-  if (isRecord(err)) return strField(err.data, "message");
+  if (direct) return publicErrorText(direct);
+  if (isRecord(err)) {
+    const nested = strField(err.data, "message");
+    if (nested) return publicErrorText(nested);
+  }
   return undefined;
 }
 

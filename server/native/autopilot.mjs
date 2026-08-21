@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DATA_DIR, MAX_AGENT_STEPS, MAX_AGENT_STEPS_CEILING } from './config.mjs';
-import { buildCatalog, callModel as callProviderModel, isNetworkTransportError } from './providers.mjs';
+import { buildCatalog, callModel as callProviderModel, isModelUnavailableError, isNetworkTransportError } from './providers.mjs';
 
 const HEALTH_FILE = path.join(DATA_DIR, 'autopilot-model-health.json');
 const MAX_CANDIDATES = 5;
@@ -97,6 +97,7 @@ export function rankModelCandidates(models, requested = null, health = {}, confi
       score -= Math.min(20_000, Number(h.consecutiveFailures || 0) * 900);
       if (Number(h.lastSuccessAt || 0) > Date.now() - 24 * 60 * 60 * 1000) score += 600;
       if (Number(h.lastFailureAt || 0) > Date.now() - 5 * 60 * 1000) score -= 1_500;
+      if (isModelUnavailableError({ message: h.lastError })) score -= 50_000;
       const id = `${candidate.modelID} ${candidate.modelName || ''}`.toLowerCase();
       if (/\b(code|coder|coding)\b/.test(id)) score += 120;
       if (complex >= 2 && /reason|think|pro|sonnet|opus|max/.test(id)) score += 80 * complex;
@@ -155,6 +156,7 @@ export async function buildModelPlan(ownerId, requested = null, goal = '') {
 
 export function fallbackEligible(error, { strict = false } = {}) {
   if (error?.name === 'AbortError') return false;
+  if (isNetworkTransportError(error) || isModelUnavailableError(error)) return true;
   const status = Number(error?.statusCode) || 0;
   if (!status) return true;
   if ([408, 409, 425, 429].includes(status) || status >= 500) return true;

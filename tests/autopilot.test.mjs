@@ -75,6 +75,29 @@ test('strict explicit model only falls back for transient failures', () => {
   assert.equal(fallbackEligible(Object.assign(new Error('server'), { statusCode: 503 }), { strict: true }), true);
   assert.equal(fallbackEligible(new Error('Client network socket disconnected before secure TLS connection was established'), { strict: true }), true);
   assert.equal(fallbackEligible(Object.assign(new Error('user stop'), { name: 'AbortError' }), { strict: true }), false);
+  assert.equal(fallbackEligible(Object.assign(new Error('bad request'), { statusCode: 400 }), { strict: true }), false);
+  assert.equal(fallbackEligible(Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 }), { strict: true }), true);
+  assert.equal(fallbackEligible(Object.assign(new Error('payment required'), { statusCode: 402 }), { strict: true }), true);
+});
+
+test('fallback switches away from an ended free-model SKU before visible output', async () => {
+  const calls = [];
+  const plan = {
+    explicit: false,
+    candidates: [
+      { providerID: 'a', modelID: 'deepseek-v4-flash-free' },
+      { providerID: 'b', modelID: 'coder' },
+    ],
+  };
+  const result = await runFallbackPlan(plan, { onTextDelta() {} }, async (model) => {
+    calls.push(`${model.providerID}/${model.modelID}`);
+    if (model.providerID === 'a') {
+      throw Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free'), { statusCode: 400 });
+    }
+    return { text: 'ok', toolCalls: [] };
+  });
+  assert.deepEqual(calls, ['a/deepseek-v4-flash-free', 'b/coder']);
+  assert.equal(result.text, 'ok');
 });
 
 test('long tasks receive a larger bounded autonomous step budget', () => {

@@ -13,6 +13,7 @@ import rehypeSanitize from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { cn } from "@/lib/utils";
+import { publicErrorText } from "../api/eventGuards";
 import { isVisible, presentationFor } from "../api/partPresentation";
 import type { Part, ToolPart } from "../api/types";
 import { extractAttachments } from "../lib/attachments";
@@ -423,7 +424,7 @@ const OptimizedPartView = ({
     }
     case "text": {
       if (!p.text) return null;
-      const txt = asText(p.text);
+      const txt = publicErrorText(asText(p.text));
       // Если это старое или текущее вложенное текстовое сообщение формата «📄 filename\n```...```»,
       // превращаем «📄 filename\n```...```» в «📎 filename → uploads/filename», чтобы отрендерить чипом!
       const normalizedTxt = txt.replace(
