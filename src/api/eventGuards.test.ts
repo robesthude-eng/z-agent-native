@@ -95,6 +95,16 @@ describe("errorMessage", () => {
     expect(errorMessage(raw)).not.toMatch(/opencode/i);
     expect(errorMessage({ message: raw })).not.toMatch(/opencode\.ai/i);
   });
+
+  it("does not dump opaque Console JSON into the chat", () => {
+    expect(errorMessage('{"model":"mimo-v2.5-free"}')).toMatch(/недоступна/i);
+    expect(errorMessage('{"model":"mimo-v2.5-free"}')).not.toMatch(/mimo/i);
+    expect(
+      errorMessage(
+        "Error from provider (Console): Upstream request failed: Model is unavailable.",
+      ),
+    ).toMatch(/недоступна/i);
+  });
 });
 
 describe("isAbortedError — прерывание отличается от поломки", () => {

@@ -78,6 +78,8 @@ test('strict explicit model only falls back for transient failures', () => {
   assert.equal(fallbackEligible(Object.assign(new Error('bad request'), { statusCode: 400 }), { strict: true }), false);
   assert.equal(fallbackEligible(Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 }), { strict: true }), true);
   assert.equal(fallbackEligible(Object.assign(new Error('payment required'), { statusCode: 402 }), { strict: true }), true);
+  assert.equal(fallbackEligible(Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), { statusCode: 400 }), { strict: true }), true);
+  assert.equal(fallbackEligible(Object.assign(new Error('{"model":"mimo-v2.5-free"}'), { statusCode: 400 }), { strict: true }), true);
 });
 
 test('fallback switches away from an ended free-model SKU before visible output', async () => {
