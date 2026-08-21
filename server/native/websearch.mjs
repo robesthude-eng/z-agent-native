@@ -150,35 +150,23 @@ export function formatSearchRows(rows) {
 }
 
 /**
- * Brave when an API key is configured; otherwise DuckDuckGo HTML search.
- * Callers must already have passed the agent network policy gate for the
- * host that will actually be contacted.
+ * Brave when an API key is configured; otherwise DuckDuckGo Instant Answer
+ * plus Wikipedia OpenSearch. Callers must already have passed the agent
+ * network policy gate for the host that will actually be contacted.
  */
-export async function runWebSearch({ query, count, signal, apiKey = '', request = safeExternalRequest } = {}) {
+function queryVariants(query) {
   const q = String(query || '').trim();
-  if (!q) throw new Error('query must not be empty');
-  const n = boundedCount(count);
-  const key = String(apiKey || '').trim();
-  const fetchUrl = typeof request === 'function' ? request : safeExternalRequest;
+  const out = [];
+  const push = (value) => {
+    const next = String(value || '').replace(/\s+/g, ' ').trim();
+    if (next && !out.includes(next)) out.push(next);
+  };
+  push(q);
+  push(q.replace(/\b20\d{2}\b/g, ' '));
+  return out;
+}
 
-  if (key) {
-    const url = new URL('https://api.search.brave.com/res/v1/web/search');
-    url.searchParams.set('q', q);
-    url.searchParams.set('count', String(n));
-    const res = await fetchUrl(url.toString(), {
-      headers: { accept: 'application/json', 'x-subscription-token': key, 'user-agent': SEARCH_UA },
-      signal,
-      maxBytes: 2 * 1024 * 1024,
-    });
-    const text = String(res?.text || '');
-    if (res.status < 200 || res.status >= 300) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
-    let body;
-    try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
-    const rows = parseBraveResults(body, n);
-    if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
-    return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
-  }
-
+async function collectPublicResults(q, n, fetchUrl, signal) {
   const rows = [];
   const seen = new Set();
   const merge = (items) => {
@@ -222,7 +210,39 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
       }
     }
   }
+  return rows;
+}
 
+export async function runWebSearch({ query, count, signal, apiKey = '', request = safeExternalRequest } = {}) {
+  const q = String(query || '').trim();
+  if (!q) throw new Error('query must not be empty');
+  const n = boundedCount(count);
+  const key = String(apiKey || '').trim();
+  const fetchUrl = typeof request === 'function' ? request : safeExternalRequest;
+
+  if (key) {
+    const url = new URL('https://api.search.brave.com/res/v1/web/search');
+    url.searchParams.set('q', q);
+    url.searchParams.set('count', String(n));
+    const res = await fetchUrl(url.toString(), {
+      headers: { accept: 'application/json', 'x-subscription-token': key, 'user-agent': SEARCH_UA },
+      signal,
+      maxBytes: 2 * 1024 * 1024,
+    });
+    const text = String(res?.text || '');
+    if (res.status < 200 || res.status >= 300) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
+    let body;
+    try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
+    const rows = parseBraveResults(body, n);
+    if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
+    return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
+  }
+
+  let rows = [];
+  for (const variant of queryVariants(q)) {
+    rows = await collectPublicResults(variant, n, fetchUrl, signal);
+    if (rows.length) break;
+  }
   if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
   return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'duckduckgo', count: rows.length } } };
 }
