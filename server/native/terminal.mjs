@@ -1,11 +1,10 @@
 import { spawn } from 'node:child_process';
-import fs from 'node:fs';
 import { authFromRequest } from './auth.mjs';
 import { ALLOWED_ORIGINS } from './config.mjs';
 import { isSessionId } from './security.mjs';
 import { managedShellEnvironment } from './environment.mjs';
 import { ownsChat, workspaceFor } from './store.mjs';
-import { prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable } from './sandbox.mjs';
+import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable } from './sandbox.mjs';
 import { ensureWorkspaceWatcher } from './watcher.mjs';
 
 let ptySpawn = null;
@@ -39,9 +38,8 @@ export function sameOrigin(req) {
   return parsed.host === String(req.headers?.host || '');
 }
 
-function shellEnv(workspace) {
-  const home = `${workspace}/.agent-home`;
-  fs.mkdirSync(home, { recursive: true });
+function shellEnv(workspace, sessionId) {
+  const home = ensureManagedHome(sessionId, workspace);
   return managedShellEnvironment(workspace, {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
@@ -85,8 +83,8 @@ export async function initTerminal(httpServer) {
     }
     const cwd = workspaceFor(sid);
     ensureWorkspaceWatcher(sid, cwd);
-    const env = shellEnv(cwd);
     const identity = prepareWorkspaceSandbox(sid, cwd);
+    const env = shellEnv(cwd, sid);
     if (ptySpawn) {
       const launch = sandboxCommand(identity, '/bin/bash', ['--noprofile', '--norc', '-i']);
       const pty = ptySpawn(launch.file, launch.args, { name: 'xterm-256color', cols: 80, rows: 24, cwd, env, ...launch.options });

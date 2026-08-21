@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
-import { sandboxCommand } from './sandbox.mjs';
+import { ensureManagedHome, sandboxCommand } from './sandbox.mjs';
 import { executeInExecutor } from './executor-client.mjs';
 import { safeWorkspacePath } from './security.mjs';
 
@@ -165,7 +165,8 @@ async function runGit(root, identity, args, signal, timeoutMs) {
   });
 }
 
-export async function executeGitTool({ root, identity, input = {}, signal }) {
+export async function executeGitTool({ root, identity, input = {}, signal, sessionId = null }) {
+  ensureManagedHome(sessionId, root);
   const action = String(input.action || '').trim().toLowerCase();
   if (!GIT_ACTIONS.includes(action)) {
     throw new Error(`Unsupported git action "${input.action}". Use one of: ${GIT_ACTIONS.join(', ')}`);

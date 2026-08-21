@@ -62,6 +62,30 @@ test('isolated shell cannot read runtime secrets or another session workspace', 
   assert.doesNotMatch(result.output, /super-secret-provider-key/);
 });
 
+test('managed home creates session-writable cache and venv directories', () => {
+  store.createChat('ses_sandboxh1', 'sandbox@example.com', 'H');
+  const root = store.workspaceFor('ses_sandboxh1');
+  fs.mkdirSync(root, { recursive: true });
+  // Simulate the API mkdir'ing HOME as the server user before the session shell runs.
+  fs.mkdirSync(path.join(root, '.agent-home'), { recursive: true });
+  const home = sandbox.ensureManagedHome('ses_sandboxh1', root);
+  assert.equal(home, path.join(root, '.agent-home'));
+  assert.equal(fs.statSync(path.join(home, 'venvs')).isDirectory(), true);
+  assert.equal(fs.statSync(path.join(home, 'cache', 'pip')).isDirectory(), true);
+  assert.equal(fs.statSync(path.join(home, 'cache', 'npm')).isDirectory(), true);
+});
+
+test('session uid can mkdir venvs after the API created .agent-home', { skip: !secureSandboxAvailable }, async () => {
+  const aRoot = store.workspaceFor('ses_sandboxa1');
+  fs.mkdirSync(path.join(aRoot, '.agent-home'), { recursive: true });
+  sandbox.ensureManagedHome('ses_sandboxa1', aRoot);
+  const result = await executeTool('bash', {
+    command: 'mkdir -p "$HOME/venvs/python" "$HOME/cache/pip" && test -w "$HOME/venvs" && test -w "$HOME/cache/pip" && echo writable',
+  }, { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal });
+  assert.equal(result.metadata.exit, 0);
+  assert.match(result.output, /writable/);
+});
+
 test('secure mode refuses shell when UID isolation is unavailable unless unsafe fallback is explicit', { skip: secureSandboxAvailable }, () => {
   assert.equal(sandbox.shellSandboxAvailable(), false);
   assert.throws(() => sandbox.sandboxIdentity('ses_sandboxa1'), /sandbox is unavailable/i);

@@ -23,7 +23,7 @@ import {
 } from './durable-jobs.mjs';
 import { clearProjectContext, getProjectContext, rememberProjectTurn } from './project-context.mjs';
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
-import { isIncompleteToolCall } from './providers.mjs';
+import { isIncompleteToolCall, isNetworkTransportError } from './providers.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from './context.mjs';
 import { runSubagent } from './subagent-runner.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from './turn-telemetry.mjs';
@@ -488,6 +488,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     const rebuilt = resume ? rebuildLoopGuard(assistant) : { guard: createLoopGuard(), stop: null };
     const loopGuard = rebuilt.guard;
     let guardedStop = rebuilt.stop ? guardStopError(rebuilt.stop) : null;
+    let networkModelRetries = 0;
 
     for (let step = runtime.stepsUsed; step < maxSteps && !guardedStop; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
@@ -496,13 +497,29 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       const live = liveTextSink(assistant);
       const providerFrames = compactFrames(frames);
       const modelStartedAt = Date.now();
-      const response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-        system: [systemPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
-        frames: providerFrames,
-        tools: availableToolDefinitions(),
-        signal: controller.signal,
-        onTextDelta: (delta) => live.push(delta),
-      });
+      let response;
+      try {
+        response = await callModelAutopilot(ownerId, runtime.modelPlan, {
+          system: [systemPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          frames: providerFrames,
+          tools: availableToolDefinitions(),
+          signal: controller.signal,
+          onTextDelta: (delta) => live.push(delta),
+        });
+      } catch (err) {
+        if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
+        // Provider handshake drops after tools already ran used to finalize the
+        // turn as "Работа остановилась" even though the work was done. One more
+        // full model-plan attempt keeps the same turn going.
+        if (isNetworkTransportError(err) && networkModelRetries < 2) {
+          networkModelRetries += 1;
+          live.finish();
+          await waitForRetry(retryDelayMs(networkModelRetries - 1), controller.signal);
+          step -= 1;
+          continue;
+        }
+        throw err;
+      }
       recordModelCall(runtime.telemetry, { response, latencyMs: Date.now() - modelStartedAt, contextChars: JSON.stringify(providerFrames).length });
       const streamedText = live.finish();
       runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
