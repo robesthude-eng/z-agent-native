@@ -165,6 +165,53 @@ test('static HTML read-back lets a simple page task finish without a shell check
   }
 });
 
+test('repeating a successful check is a completed turn, not a loop failure', async () => {
+  agent.resetAgentStateForTests();
+  events.resetEventsForTests();
+  const sid = 'ses_verificationloop1';
+  store.createChat(sid, ownerId, 'Новый чат');
+  const original = globalThis.fetch;
+  let streamCall = 0;
+
+  globalThis.fetch = async () => {
+    streamCall += 1;
+    if (streamCall === 1) {
+      const args = JSON.stringify({ path: 'app.js', content: 'console.log(42);\n' });
+      return sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_write', function: { name: 'write', arguments: args } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
+    }
+    const args = JSON.stringify({ command: 'node --check app.js' });
+    return sse([
+      { choices: [{ delta: { tool_calls: [{ index: 0, id: `call_check_${streamCall}`, function: { name: 'bash', arguments: args } }] } }] },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      '[DONE]',
+    ]);
+  };
+
+  try {
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Создай app.js, проверь и исправь' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
+    assert.equal(assistant.info?.outcome?.status, 'completed');
+    assert.equal(assistant.info.strategy?.lastVerificationOk, true);
+    const note = assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+    assert.doesNotMatch(note, /остановлена, чтобы не продолжать цикл/);
+    assert.doesNotMatch(note, /без нового результата/);
+    assert.ok(streamCall >= 4);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+    events.resetEventsForTests();
+  }
+});
+
 test('completion gate gives up after a few reminders instead of burning the step budget', async () => {
   agent.resetAgentStateForTests();
   events.resetEventsForTests();

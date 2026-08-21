@@ -121,7 +121,7 @@ one after validation.
 
 ## Web search
 
-`webfetch` works without an external search service for a URL the model already knows. The `websearch` tool uses Brave Search when `BRAVE_SEARCH_API_KEY` is configured.
+`webfetch` works without an external search service for a URL the model already knows. The `websearch` tool uses Brave Search when `BRAVE_SEARCH_API_KEY` is configured, and otherwise DuckDuckGo HTML search. Both require `Z_AGENT_NETWORK_POLICY` other than `off` (`public` also needs `Z_AGENT_ALLOW_PUBLIC_WEB=1` in production).
 
 ## Workspace and remote servers
 

@@ -17,6 +17,7 @@ import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
 import { isPublicHttpUrl, readWorkspaceBrowserDocument } from './browser-local.mjs';
 import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
+import { runWebSearch } from './websearch.mjs';
 import { prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 import { executeInExecutor, executorRequired } from './executor-client.mjs';
 import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy } from './workspace-policy.mjs';
@@ -135,7 +136,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'websearch',
-    description: 'Search the public web with the server-configured Brave Search API. Returns titles, URLs and snippets.',
+    description: 'Search the public web. Uses Brave Search when BRAVE_SEARCH_API_KEY is set, otherwise DuckDuckGo. Returns titles, URLs and snippets.',
     inputSchema: object({ query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']),
   },
   {
@@ -673,25 +674,14 @@ export async function executeTool(name, input, ctx) {
   }
 
   if (tool === 'websearch') {
-    assertAgentNetworkHost('api.search.brave.com', { tool: 'websearch' });
-    const apiKey = process.env.BRAVE_SEARCH_API_KEY || '';
-    if (!apiKey) throw new Error('BRAVE_SEARCH_API_KEY is not configured on the runtime');
-    const query = String(input?.query || '').trim();
-    if (!query) throw new Error('query must not be empty');
-    const count = Math.min(Math.max(Number(input?.count) || 5, 1), 10);
-    const url = new URL('https://api.search.brave.com/res/v1/web/search');
-    url.searchParams.set('q', query);
-    url.searchParams.set('count', String(count));
-    const res = await safeExternalRequest(url.toString(), {
-      headers: { accept: 'application/json', 'x-subscription-token': apiKey, 'user-agent': 'Z-Agent-Native/1.0' },
+    const apiKey = String(process.env.BRAVE_SEARCH_API_KEY || '').trim();
+    assertAgentNetworkHost(apiKey ? 'api.search.brave.com' : 'html.duckduckgo.com', { tool: 'websearch' });
+    return await runWebSearch({
+      query: input?.query,
+      count: input?.count,
       signal: ctx.signal,
-      maxBytes: 2 * 1024 * 1024,
+      apiKey,
     });
-    const text = res.text;
-    if (res.status < 200 || res.status >= 300) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
-    let body; try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
-    const rows = (body?.web?.results || []).slice(0, count).map((row, i) => `${i + 1}. ${row.title || row.url}\n${row.url}\n${row.description || ''}`);
-    return { output: rows.join('\n\n'), title: query };
   }
 
   if (tool === 'webfetch') {

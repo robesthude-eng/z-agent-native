@@ -31,6 +31,7 @@ import {
   classifyTaskOutcome,
   createLoopGuard,
   guardStopError,
+  loopStopSatisfiesTask,
   observeToolLoop,
   retryDelayMs,
   shouldRetryToolCall,
@@ -561,6 +562,24 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           break;
         }
       }
+    }
+
+    if (guardedStop && loopStopSatisfiesTask(strategy)) {
+      const outcome = classifyTaskOutcome({ strategy, kind: 'completed', reason: 'verified_repeat_stop' });
+      const hasText = (assistant.parts || []).some((part) => part.type === 'text' && String(part.text || '').trim());
+      if (!hasText) await emitText(assistant, 'Готово.', 'text');
+      return await finalizeAssistant({
+        sessionId,
+        assistant,
+        strategy,
+        usage: lastUsage,
+        outcome,
+        telemetry: runtime?.telemetry,
+        finish: 'stop',
+        lifecycle: 'completed',
+        verdict: 'completed',
+        reason: outcome.reason,
+      });
     }
 
     const stopError = guardedStop || stepLimitError(maxSteps);

@@ -323,8 +323,11 @@ test('without a shell sandbox no process-spawning tool is advertised', () => {
 
 test('websearch uses the DNS-pinned external transport rather than ambient fetch', () => {
   const tools = source('server/native/tools.mjs');
+  const search = source('server/native/websearch.mjs');
   const block = tools.slice(tools.indexOf("if (tool === 'websearch')"), tools.indexOf("if (tool === 'webfetch')"));
-  assert.match(block, /safeExternalRequest/);
+  assert.match(block, /runWebSearch/);
+  assert.match(search, /safeExternalRequest/);
+  assert.doesNotMatch(search, /await fetch\(/);
   assert.doesNotMatch(block, /await fetch\(/);
 });
 

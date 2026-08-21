@@ -42,6 +42,7 @@ services:
       # Model-selected web access is fail-closed by default. Opt in with an
       # explicit allowlist/public policy only for deployments that need it.
       Z_AGENT_NETWORK_POLICY: ${Z_AGENT_NETWORK_POLICY:-off}
+      Z_AGENT_ALLOW_PUBLIC_WEB: ${Z_AGENT_ALLOW_PUBLIC_WEB:-0}
     # Loopback only. TLS termination and public exposure belong to the reverse
     # proxy in front of this container, not to Docker's default 0.0.0.0 publish
     # rule. 3002 is the port the deploy health check probes.

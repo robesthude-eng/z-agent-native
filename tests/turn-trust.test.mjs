@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   classifyTaskOutcome,
   createLoopGuard,
+  loopStopSatisfiesTask,
   observeToolLoop,
   shouldRetryToolCall,
 } from '../server/native/turn-trust.mjs';
@@ -132,4 +133,12 @@ test('task outcome distinguishes complete, partial and failed work', () => {
   const failedWithoutProgress = classifyTaskOutcome({ strategy: { plan: [] }, kind: 'failed', progress: false });
   assert.equal(failedWithoutProgress.status, 'failed');
   assert.equal(failedWithoutProgress.label, 'Ошибка');
+});
+
+test('a loop stop after successful verification counts as a finished task', () => {
+  assert.equal(loopStopSatisfiesTask({ needsVerification: false, lastVerificationOk: true }), true);
+  assert.equal(loopStopSatisfiesTask({ needsVerification: true, lastVerificationOk: true }), false);
+  assert.equal(loopStopSatisfiesTask({ needsVerification: false, lastVerificationOk: false }), false);
+  assert.equal(loopStopSatisfiesTask({ needsVerification: false, lastVerificationOk: null }), false);
+  assert.equal(loopStopSatisfiesTask(null), false);
 });
