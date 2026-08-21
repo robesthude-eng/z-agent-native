@@ -220,7 +220,13 @@ function applyFieldDelta(
   const leaf = keys[keys.length - 1] as string;
   const cur = obj[leaf];
   if (typeof cur === "string" || typeof delta === "string") {
-    obj[leaf] = (typeof cur === "string" ? cur : "") + String(delta);
+    const next = String(delta);
+    const prev = typeof cur === "string" ? cur : "";
+    // Повтор длинной SSE-дельты после реконнекта: короткий токен вроде «с»
+    // всё равно дописываем, иначе стрим встанет. Пропускаем только кусок,
+    // который уже есть как суффикс или как начало текущего текста.
+    if (next.length >= 12 && (prev.endsWith(next) || prev.startsWith(next))) return;
+    obj[leaf] = prev + next;
   } else {
     obj[leaf] = delta;
   }

@@ -245,6 +245,27 @@ describe("patchPart() / patchPartDelta() — P3 edge cases", () => {
       expect((msgs[0]?.parts[0] as any)?.text).toBe("Hello, world!");
     });
 
+    it("does not append a long SSE paragraph that is already the suffix", () => {
+      const paragraph = "Проверю корректность логики — запущу тесты.";
+      const start = [shell([{ id: "p1", type: "text", text: paragraph } as any])];
+      const res = patchPartDelta(start, "m1", "p1", "text", paragraph);
+      expect((res[0]?.parts[0] as any)?.text).toBe(paragraph);
+    });
+
+    it("does not append a long replayed first chunk already at the start", () => {
+      const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+      const first = full.slice(0, 24);
+      const start = [shell([{ id: "p1", type: "text", text: full } as any])];
+      const res = patchPartDelta(start, "m1", "p1", "text", first);
+      expect((res[0]?.parts[0] as any)?.text).toBe(full);
+    });
+
+    it("still appends a short token even if it matches the last character", () => {
+      const start = [shell([{ id: "p1", type: "text", text: "с" } as any])];
+      const res = patchPartDelta(start, "m1", "p1", "text", "с");
+      expect((res[0]?.parts[0] as any)?.text).toBe("сс");
+    });
+
     it("replaces the field for non-string deltas (e.g. tool state object)", () => {
       const start = [shell([{ id: "p1", type: "tool", tool: "bash" } as any])];
       const state = { status: "running" };

@@ -147,6 +147,31 @@ describe("mergeMessages deterministic", () => {
     expect(textOf(merged[0]?.parts[0])).toBe("first");
   });
 
+  test("does not append a local text part whose wording already exists on the server", () => {
+    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const server: Message[] = [
+      {
+        id: "msg_1",
+        role: "assistant",
+        parts: [{ id: "p_server", type: "text", text: paragraph }],
+        info: {},
+      },
+    ];
+    const local: Message[] = [
+      {
+        id: "msg_1",
+        role: "assistant",
+        parts: [
+          { id: "p_server", type: "text", text: paragraph },
+          { id: "p_local", type: "text", text: paragraph },
+        ],
+      },
+    ];
+    const merged = mergeMessages(server, local);
+    expect(merged[0]?.parts).toHaveLength(1);
+    expect(merged[0]?.parts[0]?.id).toBe("p_server");
+  });
+
   test("preserves local attachment when server has none", () => {
     const server: Message[] = [
       {
