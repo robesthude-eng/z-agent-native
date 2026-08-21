@@ -29,9 +29,8 @@ services:
       # data volume cannot destroy both ciphertext and its only decryption key.
       Z_AGENT_SECRET_KEY_STRICT: '1'
       Z_AGENT_REQUIRE_EXTERNAL_KEYS: '1'
-      # Interactive shells are trusted self-hosted functionality, not part of
-      # the multi-tenant production boundary. Enable explicitly only when the
-      # operator accepts that trust model.
+      # Interactive shells are trusted self-hosted functionality. This host
+      # opts in through docker-compose.override.yml plus ALLOW_PRODUCTION_TERMINAL.
       Z_AGENT_TERMINAL_ENABLED: '0'
       Z_AGENT_BROWSER_SOCKET: /run/z-agent-browser/browser.sock
       # Deployment identity is injected by the release workflow and verified

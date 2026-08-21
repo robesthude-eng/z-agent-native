@@ -103,7 +103,7 @@ npm run prod:env:init
 docker compose up --build -d
 ```
 
-`prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, disables the interactive terminal, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
+`prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, keeps the interactive terminal off unless opted in, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
 
 ## Models
 
@@ -131,7 +131,7 @@ Every real chat has exactly one isolated directory:
 workspaces/<session-id>/
 ```
 
-In Docker each chat also gets a distinct, monotonically allocated Unix UID starting at 20000; identities are never reused after chat deletion. Autonomous `bash`, `run_tests` and diagnostics execute as that UID inside the sibling **networkless executor container**. Model-selected Git and snapshot operations that can activate repository hooks, clean/process filters, fsmonitor helpers or other external processes cross the same executor boundary; only non-executing Git object plumbing stays in the trusted runtime under the session UID. The interactive human terminal is disabled by the production Compose profile; trusted self-hosted operators may explicitly enable it with `Z_AGENT_TERMINAL_ENABLED=1`. All of them therefore create files in the same workspace that the right sidebar shows, while sibling workspaces remain mode-0700 boundaries. Hardened mode intentionally disables networked dependency installers; bake dependencies into the image/operator workflow instead of giving arbitrary agent code Internet access.
+In Docker each chat also gets a distinct, monotonically allocated Unix UID starting at 20000; identities are never reused after chat deletion. Autonomous `bash`, `run_tests` and diagnostics execute as that UID inside the sibling **networkless executor container**. Model-selected Git and snapshot operations that can activate repository hooks, clean/process filters, fsmonitor helpers or other external processes cross the same executor boundary; only non-executing Git object plumbing stays in the trusted runtime under the session UID. The interactive human terminal is off in production unless both `Z_AGENT_TERMINAL_ENABLED=1` and `Z_AGENT_ALLOW_PRODUCTION_TERMINAL=1` are set. All of them therefore create files in the same workspace that the right sidebar shows, while sibling workspaces remain mode-0700 boundaries. Hardened mode disables networked dependency installers unless `Z_AGENT_ALLOW_NETWORKED_INSTALLERS=1` and the executor is given outbound network.
 
 ## Security model
 
@@ -146,7 +146,7 @@ For production:
 - keep model web access `off` unless the task genuinely requires it; prefer an explicit allowlist over `public`;
 - keep `/data` private to the trusted runtime and keep `Z_AGENT_EXECUTOR_REQUIRED=1` / `Z_AGENT_BROWSER_REQUIRED=1` so missing isolation fails closed;
 - serve through HTTPS; production Compose forces Secure `__Host-` session/CSRF cookies. Close registration with an invite/access layer and keep `Z_AGENT_SECRET_KEY` plus the separate `Z_AGENT_AUDIT_KEY` outside `/data` in a secrets manager;
-- keep the interactive terminal disabled in multi-user production (`Z_AGENT_TERMINAL_ENABLED=0`, the Compose default). It is a trusted self-hosted opt-in because its shell lives in the orchestrator container rather than the networkless executor.
+- keep the interactive terminal off in multi-user production. A trusted single-tenant host may enable it with `Z_AGENT_TERMINAL_ENABLED=1` and `Z_AGENT_ALLOW_PRODUCTION_TERMINAL=1`. The shell lives in the orchestrator container, not the executor.
 
 On non-root bare metal, autonomous shell falls back only when `Z_AGENT_ALLOW_UNISOLATED_SHELL=1` is explicitly enabled for unsafe single-user development; the interactive terminal additionally requires `Z_AGENT_TERMINAL_ENABLED=1`. See `SECURITY.md` for the exact trust boundaries and residual assumptions.
 
@@ -239,7 +239,7 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_NETWORK_ALLOWLIST` | empty | Comma-separated host patterns for `allowlist`: exact hostnames are exact; use `*.example.com` to explicitly authorize subdomains. |
 | `Z_AGENT_EXECUTOR_REQUIRED` | `1` in Compose | Fail closed instead of executing autonomous shell code in the trusted runtime when the networkless executor is missing. |
 | `Z_AGENT_BROWSER_REQUIRED` | `1` in Compose | Fail closed when the isolated Chromium service is missing. |
-| `Z_AGENT_TERMINAL_ENABLED` | `0` in Compose | Trusted self-hosted opt-in for the interactive terminal. Keep `0` for multi-user production because the terminal is not the autonomous no-network executor. |
+| `Z_AGENT_TERMINAL_ENABLED` | `0` in Compose | Trusted self-hosted opt-in for the interactive terminal. Production also needs `Z_AGENT_ALLOW_PRODUCTION_TERMINAL=1`. |
 | `Z_AGENT_METRICS_TOKEN` | empty | Enables bearer-protected `/metrics`; empty returns 404. |
 | `Z_AGENT_SECRET_KEY` / `Z_AGENT_SECRET_KEY_FILE` | empty dev / required production | Primary 256-bit provider-secret encryption key, kept outside `/data`; env and file forms are mutually exclusive. |
 | `Z_AGENT_SECRET_KEYS_JSON` | empty | JSON array of previous decryption keys used only during rotation/rewrap. |

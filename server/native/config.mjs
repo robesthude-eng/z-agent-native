@@ -47,12 +47,14 @@ export function assertProductionPolicy(env = process.env) {
   requireOne('Z_AGENT_SECURE_COOKIES', '1', 'production requires Secure session cookies');
   requireOne('Z_AGENT_EXECUTOR_REQUIRED', '1', 'production requires the isolated executor');
   requireOne('Z_AGENT_BROWSER_REQUIRED', '1', 'production requires the isolated browser service');
-  requireOne('Z_AGENT_TERMINAL_ENABLED', '0', 'production disables the in-process interactive terminal');
   requireOne('Z_AGENT_SECRET_KEY_STRICT', '1', 'production requires strict 256-bit secret keys');
   requireOne('Z_AGENT_REQUIRE_EXTERNAL_KEYS', '1', 'production requires external encryption/audit keys');
   if (env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1') violations.push('production forbids unisolated shell fallback');
   if (String(env.Z_AGENT_NETWORK_POLICY || 'off').toLowerCase() === 'public' && env.Z_AGENT_ALLOW_PUBLIC_WEB !== '1') {
     violations.push('public model-selected web egress requires explicit Z_AGENT_ALLOW_PUBLIC_WEB=1');
+  }
+  if (String(env.Z_AGENT_TERMINAL_ENABLED || '0') === '1' && env.Z_AGENT_ALLOW_PRODUCTION_TERMINAL !== '1') {
+    violations.push('interactive terminal in production requires explicit Z_AGENT_ALLOW_PRODUCTION_TERMINAL=1');
   }
   for (const [key, value] of [['Z_AGENT_DATA_DIR', env.Z_AGENT_DATA_DIR], ['Z_AGENT_WORKSPACES_DIR', env.Z_AGENT_WORKSPACES_DIR]]) {
     if (!String(value || '').startsWith('/')) violations.push(`${key} must be an absolute path in production`);
