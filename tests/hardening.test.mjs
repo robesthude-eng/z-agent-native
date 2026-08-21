@@ -163,7 +163,7 @@ test('local env loading stays developer-friendly while production forces hard bo
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
-  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  const api = compose.match(/^ {2}z-agent:\n([\s\S]*?)(?=^ {2}z-agent-executor:)/m)?.[1] || '';
 
   assert.match(pkg.scripts.start, /--env-file-if-exists=\.env/);
   assert.match(pkg.scripts.dev, /--env-file-if-exists=\.env/);
@@ -177,7 +177,7 @@ test('local env loading stays developer-friendly while production forces hard bo
 
 test('production compose pins persistent runtime paths instead of inheriting bare-metal .env paths', () => {
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
-  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  const api = compose.match(/^ {2}z-agent:\n([\s\S]*?)(?=^ {2}z-agent-executor:)/m)?.[1] || '';
   assert.match(api, /Z_AGENT_DATA_DIR:\s*\/data/);
   assert.match(api, /Z_AGENT_WORKSPACES_DIR:\s*\/workspaces/);
   assert.match(api, /z-agent-data:\/data/);
@@ -199,9 +199,9 @@ test('production compose isolates autonomous execution in a networkless sibling 
 
 test('production browser has an internal-only network and a separate pinned egress proxy', () => {
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
-  const browserBlock = compose.match(/^  z-agent-browser:\n([\s\S]*?)(?=^  z-agent-browser-egress:)/m)?.[1] || '';
-  const proxyBlock = compose.match(/^  z-agent-browser-egress:\n([\s\S]*?)(?=^volumes:)/m)?.[1] || '';
-  const apiBlock = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  const browserBlock = compose.match(/^ {2}z-agent-browser:\n([\s\S]*?)(?=^ {2}z-agent-browser-egress:)/m)?.[1] || '';
+  const proxyBlock = compose.match(/^ {2}z-agent-browser-egress:\n([\s\S]*?)(?=^volumes:)/m)?.[1] || '';
+  const apiBlock = compose.match(/^ {2}z-agent:\n([\s\S]*?)(?=^ {2}z-agent-executor:)/m)?.[1] || '';
   assert.match(browserBlock, /Dockerfile\.browser/);
   assert.match(browserBlock, /cap_add:[\s\S]*CHOWN[\s\S]*FOWNER[\s\S]*SETUID[\s\S]*SETGID/);
   assert.match(browserBlock, /Z_AGENT_BROWSER_PROXY:\s*http:\/\/z-agent-browser-egress:8080/);
@@ -267,7 +267,7 @@ test('12-character password policy does not lock out legacy-login passwords in t
 
 test('production requires strict external encryption and audit keys', () => {
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
-  const api = compose.match(/^  z-agent:\n([\s\S]*?)(?=^  z-agent-executor:)/m)?.[1] || '';
+  const api = compose.match(/^ {2}z-agent:\n([\s\S]*?)(?=^ {2}z-agent-executor:)/m)?.[1] || '';
   assert.match(api, /Z_AGENT_SECRET_KEY_STRICT:\s*['"]?1['"]?/);
   assert.match(api, /Z_AGENT_REQUIRE_EXTERNAL_KEYS:\s*['"]?1['"]?/);
   const secrets = fs.readFileSync(path.join(repoRoot, 'server/native/secrets.mjs'), 'utf8');

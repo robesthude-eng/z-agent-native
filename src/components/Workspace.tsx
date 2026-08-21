@@ -355,7 +355,7 @@ export default function Workspace() {
     };
     input.addEventListener("change", handler);
     return () => input.removeEventListener("change", handler);
-  }, [refresh]);
+  }, [refresh, currentID]);
 
   expandedRef.current = expanded;
 

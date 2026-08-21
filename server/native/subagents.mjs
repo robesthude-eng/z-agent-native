@@ -71,7 +71,7 @@ const PROFILES = {
 
 export function normalizeSubagentKind(value) {
   const kind = String(value || 'explore').toLowerCase();
-  return Object.prototype.hasOwnProperty.call(PROFILES, kind) ? kind : 'explore';
+  return  Object.hasOwn(PROFILES, kind) ? kind : 'explore';
 }
 
 export function getSubagentProfile(value) {

@@ -89,7 +89,7 @@ function walkFiles(root, scope, options = {}) {
   return { files, truncated, maxFiles };
 }
 
-function packageSummary(root, files) {
+function packageSummary(_root, files) {
   const pkg = files.find((file) => file.path === 'package.json');
   if (!pkg) return null;
   const text = readSmall(pkg.full, 512 * 1024);
@@ -145,7 +145,7 @@ function topDirectories(files) {
 
 function looksLikeTest(filePath) {
   return /(^|\/)(?:test|tests|__tests__|spec)(\/|$)/i.test(filePath)
-    || /(?:\.test|\.spec)\.[^.\/]+$/i.test(filePath)
+    || /(?:\.test|\.spec)\.[^./]+$/i.test(filePath)
     || /_test\.(?:go|py)$/i.test(filePath)
     || /^test_.+\.py$/i.test(path.basename(filePath));
 }

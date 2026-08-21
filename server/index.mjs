@@ -2,7 +2,6 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import {
   abortTurn, activeTurnCount, answerQuestion, clearAgentSessionState, rejectQuestion, startDurableRecovery, submitTurn, waitForTurnIdle,
 } from './native/agent.mjs';
@@ -386,7 +385,7 @@ async function route(req, res) {
       const body = await readJson(req, 128 * 1024);
       const modelId = String(body.modelId || '').trim();
       if (!modelId || modelId.length > 200) return sendJson(res, 400, { error: 'Некорректный Model ID' });
-      if (body.pattern && /[*?\[]/.test(modelId)) return sendJson(res, 400, { error: 'Discovery pattern должен быть конечным: используйте {a,b,c}, а не * или ?' });
+      if (body.pattern && /[*?[]/.test(modelId)) return sendJson(res, 400, { error: 'Discovery pattern должен быть конечным: используйте {a,b,c}, а не * или ?' });
       if (body.baseUrl) {
         const probe = await probeModel(ownerId, providerId, { modelId: body.pattern ? modelId.replace(/\{([^{}]+)\}.*/, (_, x) => x.split(',')[0]) : modelId, baseUrl: body.baseUrl });
         if (!body.pattern && !probe.available) return sendJson(res, 400, { error: probe.error || 'Модель недоступна' });

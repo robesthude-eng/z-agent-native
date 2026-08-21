@@ -10,7 +10,6 @@ import type { SessionInfo, SessionStatus } from "../../api/types";
 import { isTmpSession } from "../../lib/ids";
 import { log } from "../../lib/log";
 import { normalizeMessages } from "../helpers";
-import { sessionFsm } from "../sessionFsm";
 import type { SessionsSlice, Slice } from "../types";
 import { byUpdated } from "../types";
 

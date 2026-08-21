@@ -146,7 +146,7 @@ export function checkCsrf(req, res, auth = null) {
   if (/\/api\/auth\/(login|register)$/.test(url.split('?')[0])) return true;
   const cookies = parseCookies(req);
   const header = req.headers['x-csrf-token'];
-  const cookieToken = cookies[CSRF_COOKIE] || cookies['z_agent_csrf'] || cookies['__Host-z_agent_csrf'] || '';
+  const cookieToken = cookies[CSRF_COOKIE] || cookies.z_agent_csrf || cookies['__Host-z_agent_csrf'] || '';
   let ok = typeof header === 'string' && header.length >= 16 && safeEqual(cookieToken, header);
   // Double submit on its own only proves the caller could write a cookie for
   // this site — a sibling subdomain, or XSS on one, can do exactly that, and

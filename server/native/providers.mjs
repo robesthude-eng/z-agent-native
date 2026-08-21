@@ -590,8 +590,8 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
 function expandFinitePattern(pattern, limit = 64) {
   const input = String(pattern || '').trim();
   if (!input) return [];
-  if (/[*?\[]/.test(input)) return [];
-  let values = [input];
+  if (/[*?[]/.test(input)) return [];
+  const values = [input];
   for (;;) {
     const idx = values.findIndex((v) => /\{[^{}]+\}/.test(v));
     if (idx < 0) break;
@@ -721,7 +721,7 @@ export function resolveModel(ownerId, model) {
 
 export function parseToolArguments(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
-    if (Object.prototype.hasOwnProperty.call(raw, '_raw') && Object.keys(raw).length === 1) {
+    if (Object.hasOwn(raw, '_raw') && Object.keys(raw).length === 1) {
       return { ok: false, value: {}, raw: raw._raw };
     }
     return { ok: true, value: raw };
@@ -739,7 +739,7 @@ export function parseToolArguments(raw) {
 export function isIncompleteToolCall(call) {
   if (call?.incomplete) return true;
   const args = call?.arguments;
-  return Boolean(args && typeof args === 'object' && Object.prototype.hasOwnProperty.call(args, '_raw') && Object.keys(args).length === 1);
+  return Boolean(args && typeof args === 'object' && Object.hasOwn(args, '_raw') && Object.keys(args).length === 1);
 }
 
 function toolCallFromParsed(id, name, rawArgs) {
@@ -776,7 +776,7 @@ function openAiMessages(frames) {
         for (const item of media) {
           const parsed = parseDataUrl(item.dataUrl);
           if (parsed?.mediaType.startsWith('image/')) content.push({ type: 'image_url', image_url: { url: parsed.dataUrl } });
-          else content.push({ type: 'text', text: mediaNote(item) + ' The file is available in the workspace; inspect it with tools if needed.' });
+          else content.push({ type: 'text', text: `${mediaNote(item)} The file is available in the workspace; inspect it with tools if needed.` });
         }
         out.push({ role: 'user', content });
       }
@@ -849,7 +849,7 @@ function anthropicMessages(frames) {
           blocks.push({ type: 'image', source: { type: 'base64', media_type: parsed.mediaType, data: parsed.data } });
         } else if (parsed.mediaType === 'application/pdf') {
           blocks.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: parsed.data } });
-        } else blocks.push({ type: 'text', text: mediaNote(item) + ' The file is available in the workspace.' });
+        } else blocks.push({ type: 'text', text: `${mediaNote(item)} The file is available in the workspace.` });
       }
       out.push({ role: 'user', content: blocks.length ? blocks : [{ type: 'text', text: '' }] });
     } else if (f.role === 'assistant') {
@@ -925,7 +925,7 @@ function geminiContents(frames) {
         const parsed = parseDataUrl(item.dataUrl);
         if (parsed && (parsed.mediaType.startsWith('image/') || parsed.mediaType === 'application/pdf')) {
           parts.push({ inlineData: { mimeType: parsed.mediaType, data: parsed.data } });
-        } else parts.push({ text: mediaNote(item) + ' The file is available in the workspace.' });
+        } else parts.push({ text: `${mediaNote(item)} The file is available in the workspace.` });
       }
       out.push({ role: 'user', parts: parts.length ? parts : [{ text: '' }] });
     } else if (f.role === 'assistant') {

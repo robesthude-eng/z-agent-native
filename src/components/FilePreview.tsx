@@ -42,7 +42,7 @@ export default function FilePreview({
 
   useEffect(() => {
     setImageError(false);
-  }, [url, path]);
+  }, []);
 
   if (kind === "markdown") {
     return (

@@ -210,7 +210,7 @@ export function ProviderChannelManager() {
     // Fetch the raw provider catalog here, rather than the filtered global
     // catalog, so hidden models remain visible and can be re-enabled.
     void loadChannelModels(selected, selected.connected && selected.enabled);
-  }, [selected?.id, selected?.baseURL, selected?.connected, selected?.enabled, loadChannelModels]);
+  }, [selected?.id, selected?.baseURL, selected?.connected, selected?.enabled, loadChannelModels, selected]);
 
   const startNew = () => {
     setSelectedId(null);
@@ -230,7 +230,7 @@ export function ProviderChannelManager() {
   };
 
   const save = async () => {
-    if (!draft || !draft.name.trim() || !draft.baseURL.trim()) return;
+    if (!draft?.name.trim() || !draft.baseURL.trim()) return;
     setSaving(true);
     setNotice(null);
     try {
