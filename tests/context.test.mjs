@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
-const { classifyBash, compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } = await import('../server/native/context.mjs');
+const { classifyBash, compactFrames, completionGate, createTurnStrategy, gitStatusLooksClean, observeTool, shouldEnforceCompletionGate, strategyGuidance } = await import('../server/native/context.mjs');
 
 test('compactFrames bounds large tool observations and preserves recent tool coherence', () => {
   const frames = [
@@ -184,4 +184,34 @@ test('opening local HTML in the browser satisfies the completion gate', () => {
   assert.equal(strategy.needsVerification, false);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(completionGate(strategy), null);
+});
+
+test('git commit and a clean git status satisfy the completion gate', () => {
+  assert.equal(gitStatusLooksClean('exit=0\nstdout:\n## main'), true);
+  assert.equal(gitStatusLooksClean('## main\n?? hello.txt'), false);
+  assert.equal(gitStatusLooksClean('On branch main\nnothing to commit, working tree clean'), true);
+
+  const committed = createTurnStrategy('Сохрани в git');
+  observeTool(committed, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
+  observeTool(committed, { name: 'bash', arguments: { command: 'git add hello.txt && git commit -m hello' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n[main 1] hello' });
+  assert.equal(committed.needsVerification, false);
+  assert.equal(committed.lastVerificationOk, true);
+  assert.equal(completionGate(committed), null);
+
+  const viaTool = createTurnStrategy('Закоммить изменения');
+  observeTool(viaTool, { name: 'write', arguments: { path: 'readme.md' } }, { isError: false, mutatedPaths: ['readme.md'] });
+  observeTool(viaTool, { name: 'git', arguments: { action: 'commit', message: 'save' } }, { isError: false, metadata: { git: { action: 'commit', exit: 0 } }, mutatedPaths: ['.'] });
+  assert.equal(viaTool.needsVerification, false);
+  assert.equal(viaTool.lastVerificationOk, true);
+
+  const dirty = createTurnStrategy('Проверь git');
+  observeTool(dirty, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
+  observeTool(dirty, { name: 'bash', arguments: { command: 'git status --porcelain=v1 --branch' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n## main\n?? hello.txt' });
+  assert.equal(dirty.needsVerification, true);
+
+  const clean = createTurnStrategy('Проверь git');
+  observeTool(clean, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
+  observeTool(clean, { name: 'git', arguments: { action: 'status' } }, { isError: false, metadata: { git: { action: 'status', exit: 0 } }, content: '## main' });
+  assert.equal(clean.needsVerification, false);
+  assert.equal(clean.lastVerificationOk, true);
 });

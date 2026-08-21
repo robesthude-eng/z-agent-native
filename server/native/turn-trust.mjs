@@ -223,6 +223,15 @@ function planCounts(strategy) {
   return { completed, remaining };
 }
 
+/**
+ * The model re-ran a successful check until the loop guard fired. The artifact
+ * is already verified — finish as completed instead of scaring the user with
+ * a "stopped to prevent a loop" note.
+ */
+export function loopStopSatisfiesTask(strategy) {
+  return Boolean(strategy) && strategy.needsVerification !== true && strategy.lastVerificationOk === true;
+}
+
 export function classifyTaskOutcome({ strategy, kind = 'completed', reason = '', progress = false } = {}) {
   if (kind === 'cancelled') {
     return { status: 'cancelled', label: OUTCOME_LABELS.cancelled, reason: reason || 'user_cancelled' };

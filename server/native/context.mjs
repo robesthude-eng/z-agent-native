@@ -171,6 +171,35 @@ export function classifyBash(command) {
   return hasVerification ? 'verification' : 'read_only';
 }
 
+function toolExitOk(result) {
+  const exit = Number(result?.metadata?.exit ?? result?.metadata?.git?.exit);
+  return !result?.isError && (!Number.isFinite(exit) || exit === 0);
+}
+
+function commandRecordsGitCommit(command) {
+  return /\bgit(?:\s+-c\s+(?:'[^']+'|"[^"]+"|\S+))*\s+commit\b/i.test(String(command || ''));
+}
+
+function commandIsGitStatus(command) {
+  const useful = bashSegments(command).filter((segment) => !/^\s*cd\b/i.test(segment));
+  return useful.length > 0 && useful.every((segment) => /^\s*git\s+status\b/i.test(segment));
+}
+
+export function gitStatusLooksClean(content) {
+  const text = String(content || '');
+  if (/^Error:/i.test(text.trim()) || /not a git repository/i.test(text)) return false;
+  if (/nothing to commit.*(?:working tree|working directory) clean|working tree clean/i.test(text)) return true;
+  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => {
+    if (!line) return false;
+    if (/^exit=-?\d+$/i.test(line)) return false;
+    if (/^(?:stdout|stderr):$/i.test(line)) return false;
+    if (/^Environment hint:/i.test(line)) return false;
+    return true;
+  });
+  if (!lines.length) return true;
+  return lines.every((line) => line.startsWith('##'));
+}
+
 function isStaticAssetPath(value) {
   const rel = String(value || '').trim().replace(/\\/g, '/');
   if (!rel || rel === '.' || rel.includes('..') || rel.endsWith('/')) return false;
@@ -293,15 +322,39 @@ export function observeTool(strategy, call, result) {
   }
 
   if (name === 'bash') {
-    const effect = classifyBash(call?.arguments?.command);
+    const command = String(call?.arguments?.command || '');
+    const effect = classifyBash(command);
     if (effect === 'verification') {
-      const exit = Number(result?.metadata?.exit);
-      const ok = !result?.isError && (!Number.isFinite(exit) || exit === 0);
-      noteVerification(state, { ok, tool: 'bash', detail: String(call?.arguments?.command || '') });
+      noteVerification(state, { ok: toolExitOk(result), tool: 'bash', detail: command });
       return state;
     }
     if (effect === 'may_mutate' && !result?.isError) {
       noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
+      if (commandRecordsGitCommit(command) && toolExitOk(result)) {
+        noteVerification(state, { ok: true, tool: 'bash', detail: command });
+      }
+      return state;
+    }
+    if (effect === 'read_only' && commandIsGitStatus(command) && toolExitOk(result) && gitStatusLooksClean(result?.content) && state.needsVerification) {
+      noteVerification(state, { ok: true, tool: 'bash', detail: command });
+    }
+    return state;
+  }
+
+  if (name === 'git') {
+    const action = String(call?.arguments?.action || '').trim().toLowerCase();
+    const ok = !result?.isError && Number(result?.metadata?.git?.exit || 0) === 0;
+    if (action === 'commit' && ok) {
+      noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
+      noteVerification(state, { ok: true, tool: 'git', detail: 'commit' });
+      return state;
+    }
+    if (action === 'create_branch' && ok) {
+      noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
+      return state;
+    }
+    if (action === 'status' && ok && gitStatusLooksClean(result?.content) && state.needsVerification) {
+      noteVerification(state, { ok: true, tool: 'git', detail: 'status' });
     }
     return state;
   }
