@@ -110,12 +110,20 @@ export function statusText(raw: unknown): string {
  * Заменяет as any-касты в MessageItem/ToolCard.
  */
 const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
+const MODEL_UNAVAILABLE_RE =
+  /promotion has ended|model.{0,40}unavailable|upstream request failed|\{\s*"model"\s*:/i;
 const PUBLIC_MODEL_UNAVAILABLE =
   "Выбранная модель сейчас недоступна. Нажмите «Повторить» — агент возьмёт другую.";
 
 export function publicErrorText(text: string): string {
-  if (PROVIDER_SALES_RE.test(text)) return PUBLIC_MODEL_UNAVAILABLE;
-  return text;
+  const value = String(text || "").trim();
+  if (
+    PROVIDER_SALES_RE.test(value) ||
+    MODEL_UNAVAILABLE_RE.test(value)
+  ) {
+    return PUBLIC_MODEL_UNAVAILABLE;
+  }
+  return value;
 }
 
 export function errorMessage(err: unknown): string | undefined {

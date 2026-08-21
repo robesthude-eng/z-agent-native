@@ -411,6 +411,20 @@ test('ended free-model promotions are unavailable and not advertised to the user
   assert.doesNotMatch(publicText, /https?:\/\//i);
 });
 
+test('opaque Console unavailable payloads are treated as a dead SKU, not dumped in chat', () => {
+  const consoleErr = Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), { statusCode: 400 });
+  assert.equal(providers.isModelUnavailableError(consoleErr), true);
+  assert.match(providers.publicProviderErrorMessage(consoleErr), /недоступна/i);
+  assert.doesNotMatch(providers.publicProviderErrorMessage(consoleErr), /Console/i);
+
+  const jsonErr = Object.assign(new Error('{"model":"mimo-v2.5-free"}'), { statusCode: 400, body: { model: 'mimo-v2.5-free' } });
+  assert.equal(providers.isModelUnavailableError(jsonErr), true);
+  const publicText = providers.publicProviderErrorMessage(jsonErr);
+  assert.match(publicText, /недоступна/i);
+  assert.doesNotMatch(publicText, /mimo/i);
+  assert.doesNotMatch(publicText, /\{/);
+});
+
 test('catalog refresh keeps whatever the provider API listed', async () => {
   const original = globalThis.fetch;
   globalThis.fetch = async () => new Response(JSON.stringify({ data: [

@@ -259,9 +259,9 @@ export function isNetworkTransportError(err) {
   return NETWORK_TRANSPORT_RE.test(message);
 }
 
-const MODEL_UNAVAILABLE_RE = /promotion has ended|no longer available|model (?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go/i;
+const MODEL_UNAVAILABLE_RE = /promotion has ended|no longer available|model.{0,40}(?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go|upstream request failed|\{\s*"model"\s*:/i;
 const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
-const PUBLIC_MODEL_UNAVAILABLE = 'Выбранная модель сейчас недоступна. Повторите сообщение — агент возьмёт другую.';
+const PUBLIC_MODEL_UNAVAILABLE = 'Выбранная модель сейчас недоступна. Нажмите «Повторить» — агент возьмёт другую.';
 
 function providerErrorText(err) {
   return `${err?.code || ''} ${err?.message || ''} ${JSON.stringify(err?.body || '')}`;
@@ -274,10 +274,26 @@ export function isModelUnavailableError(err) {
   return MODEL_UNAVAILABLE_RE.test(providerErrorText(err));
 }
 
+function looksLikeOpaqueModelPayload(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return false;
+  const json = text.startsWith('{') ? text : (/\{\s*"model"\s*:[\s\S]*\}/.exec(text) || [])[0];
+  if (!json) return false;
+  try {
+    const parsed = JSON.parse(json);
+    return Boolean(parsed && typeof parsed === 'object' && typeof parsed.model === 'string' && !parsed.error && !parsed.message);
+  } catch {
+    return false;
+  }
+}
+
 /** User-visible provider failures must not advertise a third-party product. */
 export function publicProviderErrorMessage(err) {
   const raw = String(err?.message || err || '').trim();
-  if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw)) return PUBLIC_MODEL_UNAVAILABLE;
+  if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw) || looksLikeOpaqueModelPayload(raw)) return PUBLIC_MODEL_UNAVAILABLE;
+  if (/error from provider \(console\)/i.test(raw) || (raw.startsWith('{') && raw.endsWith('}'))) {
+    return 'Провайдер не смог завершить этот ответ.';
+  }
   return raw.replace(/https?:\/\/\S*opencode\S*/gi, '').trim() || 'Провайдер не смог завершить этот ответ.';
 }
 
