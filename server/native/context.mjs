@@ -416,6 +416,14 @@ export function completionGate(strategy) {
   ].join('\n');
 }
 
+function htmlPagesWithoutIndex(strategy) {
+  const paths = Array.isArray(strategy?.changedPaths) ? strategy.changedPaths : [];
+  const html = paths.filter((item) => /\.html?$/i.test(String(item || '')) && !String(item).includes('/'));
+  const hasIndex = html.some((item) => /^index\.html?$/i.test(item));
+  if (!html.length || hasIndex) return [];
+  return html;
+}
+
 export function strategyGuidance(strategy) {
   const lines = ['[Native turn strategy]'];
   if (strategy?.goal) lines.push(`Goal: ${strategy.goal}`);
@@ -424,6 +432,10 @@ export function strategyGuidance(strategy) {
     for (const todo of strategy.plan.slice(0, 20)) lines.push(`- [${todo.status}] ${todo.content}`);
   }
   if (strategy?.changedPaths?.length) lines.push(`Changed paths (latest tracked set): ${strategy.changedPaths.slice(-12).join(', ')}`);
+  const misplaced = htmlPagesWithoutIndex(strategy);
+  if (misplaced.length) {
+    lines.push(`The in-product Preview panel shows index.html at the workspace root. You wrote ${misplaced.slice(-4).join(', ')} — copy or write the main page to index.html before telling the user they can see it. Do not tell them to open a differently named file instead.`);
+  }
   if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion. Prefer a test/check that covers the changed paths above rather than an unrelated green command.');
   else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
   else if (strategy?.changed && strategy?.lastVerificationOk) lines.push(`Workspace state: mutation epoch ${strategy.mutationEpoch ?? 0} has successful verification evidence${strategy.lastVerificationEvidence?.detail ? ` (${strategy.lastVerificationEvidence.tool}: ${strategy.lastVerificationEvidence.detail})` : ''}.`);

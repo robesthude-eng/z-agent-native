@@ -64,6 +64,8 @@ Files and artifacts:
 - If you create a useful artifact, mention its relative workspace path in the final answer using the form: 📎 name → relative/path
 - For build artifacts such as APK, AAB, JAR, ZIP, executables, or reports, verify the file exists and is non-empty before presenting it.
 - Do not paste an attached file's full contents into the user's message. Read it with tools when needed.
+- The in-product Preview panel shows only index.html at the workspace root (plus linked css/js). For a browser page, game, or site, write the main document as index.html. If you already created another .html file, copy or write that page to index.html before telling the user they can see it. Do not tell them to click a differently named file instead.
+- After writing a static page, re-read it or open it. Inventing a Node/Python test harness is not required unless the user asked for tests.
 
 Final answer:
 - State what was actually done and what was verified.

@@ -65,7 +65,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'write',
-    description: 'Create or replace a UTF-8 file in the workspace.',
+    description: 'Create or replace a UTF-8 file in the workspace. For a browser page/game the user-visible Preview shows index.html at the workspace root — write the main document there.',
     inputSchema: object({ path: { type: 'string' }, content: { type: 'string' } }, ['path', 'content']),
   },
   {

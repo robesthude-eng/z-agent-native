@@ -37,6 +37,7 @@ import { initTerminal, terminalEnabled } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
+import { previewDocument } from './native/preview-document.mjs';
 
 const STARTED_AT = Date.now();
 let DRAINING = false;
@@ -278,7 +279,17 @@ async function route(req, res) {
       return sendJson(res, 200, { ok: true, removed });
     }
     if (p === `/api/session/${sid}/turn` && req.method === 'GET') return sendJson(res, 200, { turn: getTurn(sid), orchestrator: true });
-    if (p === `/api/session/${sid}/capabilities` && req.method === 'GET') return sendJson(res, 200, { capabilities: { terminal: terminalEnabled() && shellSandboxAvailable() ? 'ready' : 'unavailable', workspace: 'ready', preview: fs.existsSync(path.join(workspaceFor(sid), 'index.html')) ? 'ready' : 'unavailable' } });
+    if (p === `/api/session/${sid}/capabilities` && req.method === 'GET') {
+      const previewPath = previewDocument(workspaceFor(sid));
+      return sendJson(res, 200, {
+        capabilities: {
+          terminal: terminalEnabled() && shellSandboxAvailable() ? 'ready' : 'unavailable',
+          workspace: 'ready',
+          preview: previewPath ? 'ready' : 'unavailable',
+        },
+        previewPath: previewPath || null,
+      });
+    }
     if (p === `/api/session/${sid}/queue` && req.method === 'GET') return sendJson(res, 200, { queue: listQueue(sid) });
     if (p === `/api/session/${sid}/queue` && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);

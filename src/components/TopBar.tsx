@@ -9,6 +9,7 @@ import {
   capabilityGate,
   isCapabilityStateEnabled,
   parseCapabilities,
+  parsePreviewPath,
 } from "../api/capabilities";
 import { api } from "../api/client";
 import { buildChatMarkdown, downloadTextFile } from "../lib/chatText";
@@ -54,6 +55,7 @@ export default function TopBar() {
   const [caps, setCaps] = useState<
     Record<CapabilityKind, CapabilityState | null>
   >({ terminal: null, preview: null, workspace: null });
+  const [previewPath, setPreviewPath] = useState("index.html");
   const capsFromServer = isCapabilityStateEnabled();
 
   useEffect(() => {
@@ -61,8 +63,10 @@ export default function TopBar() {
     let alive = true;
     const read = async () => {
       try {
-        const next = parseCapabilities(await api.capabilities(currentID));
-        if (alive) setCaps(next);
+        const raw = await api.capabilities(currentID);
+        if (!alive) return;
+        setCaps(parseCapabilities(raw));
+        setPreviewPath(parsePreviewPath(raw) || "index.html");
       } catch {
         // Keep the last known state during a short network interruption.
       }
@@ -272,7 +276,7 @@ export default function TopBar() {
           <PreviewPanel
             url={
               currentID
-                ? `/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/index.html`
+                ? `/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/${encodeURIComponent(previewPath)}`
                 : ""
             }
           />
