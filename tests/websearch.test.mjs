@@ -101,6 +101,24 @@ test('runWebSearch uses Brave when a key is present and DuckDuckGo otherwise', a
   assert.ok(calls.some((url) => url.includes('api.duckduckgo.com')));
 });
 
+test('a year-stuffed query retries without the year', async () => {
+  const calls = [];
+  const request = async (url) => {
+    calls.push(String(url));
+    const parsed = new URL(url);
+    const q = parsed.searchParams.get('q') || parsed.searchParams.get('search') || '';
+    if (/\b2026\b/.test(q)) return { status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) };
+    if (String(url).includes('api.duckduckgo.com')) {
+      return { status: 200, text: JSON.stringify({ Heading: 'World Chess Championship', Abstract: 'Gukesh', AbstractURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship' }) };
+    }
+    return { status: 200, text: JSON.stringify(['q', [], [], []]) };
+  };
+  const result = await runWebSearch({ query: 'current world chess champion 2026', apiKey: '', request });
+  assert.match(result.output, /World_Chess_Championship/);
+  assert.ok(calls.some((url) => url.includes('2026')));
+  assert.ok(calls.some((url) => /q=current\+world\+chess\+champion(?:&|$)/.test(url) || decodeURIComponent(url).includes('current world chess champion') && !url.includes('2026')));
+});
+
 test('Cyrillic queries search Russian Wikipedia when Instant Answer is empty', async () => {
   const calls = [];
   const request = async (url) => {
