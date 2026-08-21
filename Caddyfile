@@ -45,6 +45,17 @@ agentwill.online {
 		}
 	}
 
+	@socket path /socket.io*
+	handle @socket {
+		reverse_proxy z-agent:3000 {
+			flush_interval -1
+			transport http {
+				read_timeout 0
+				write_timeout 0
+			}
+		}
+	}
+
 	handle {
 		reverse_proxy z-agent:3000 {
 			flush_interval -1
