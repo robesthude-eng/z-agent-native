@@ -1,6 +1,6 @@
 import { PROVIDER_STREAM_HARD_MS, PROVIDER_STREAM_IDLE_MS } from './config.mjs';
 import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from './security.mjs';
-import { getProviderKey, listManualModels, listHiddenModels } from './store.mjs';
+import { getProviderKey, listHiddenModels, listManualModels, setHiddenModel } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
 
 
@@ -281,6 +281,33 @@ export function publicProviderErrorMessage(err) {
   return raw.replace(/https?:\/\/\S*opencode\S*/gi, '').trim() || 'Провайдер не смог завершить этот ответ.';
 }
 
+/**
+ * Promo SKUs that a gateway keeps listing after they stop working.
+ * Refreshing the catalog must not put them back in the picker.
+ */
+export function isPromotionalCatalogModel(spec, model) {
+  const id = String(model?.id || model?.modelID || '').toLowerCase();
+  const name = String(model?.name || model?.modelName || '').toLowerCase();
+  if (!id) return false;
+  if (id === 'deepseek-v4-flash-free' || /(?:^|[-_/])v4-flash-free$/.test(id)) return true;
+  const provider = `${spec?.name || ''} ${spec?.baseURL || ''}`.toLowerCase();
+  const fromOpenCodeZen = /opencode\.ai|opencodezen|opencode zen/.test(provider);
+  const freeSku = (value) => /(?:^|[-_/])free(?:$|[-_/])/.test(value);
+  return fromOpenCodeZen && (freeSku(id) || freeSku(name));
+}
+
+export function hideUnavailableModel(ownerId, model, error) {
+  if (!ownerId || !model?.providerID || !model?.modelID) return false;
+  const promotional = isPromotionalCatalogModel(null, { id: model.modelID, name: model.modelName });
+  if (!promotional && !isModelUnavailableError(error)) return false;
+  try {
+    setHiddenModel(ownerId, model.providerID, model.modelID, true);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function isTransientProviderError(err, outerSignal) {
   // User-cancelled turns must stay cancelled. A timer abort (no outer abort)
   // is a dropped socket and is worth another try.
@@ -552,7 +579,9 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   if (!key) return { status: 'unauthorized', models: [] };
   const ck = `${ownerId}:${providerId}:${spec.kind}:${spec.baseURL}:${key.slice(-8)}`;
   const old = cache.get(ck);
-  if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models };
+  if (!force && old && Date.now() - old.at < CACHE_MS) {
+    return { status: 'cache', models: old.models.filter((model) => !isPromotionalCatalogModel(spec, model)) };
+  }
   try {
     const body = await fetchModelList(spec, key);
     let models = [];
@@ -563,10 +592,11 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
       models = rows.map((m) => ({ id: String(m.id || m.name || ''), name: m.display_name || m.name || m.id })).filter((m) => m.id);
     }
     models.sort((a,b) => a.name.localeCompare(b.name));
+    models = models.filter((model) => !isPromotionalCatalogModel(spec, model));
     cache.set(ck, { at: Date.now(), models });
     return { status: 'live', models };
   } catch (err) {
-    if (old) return { status: 'cache', models: old.models, error: err.message };
+    if (old) return { status: 'cache', models: old.models.filter((model) => !isPromotionalCatalogModel(spec, model)), error: err.message };
     return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: err.message };
   }
 }
@@ -617,7 +647,7 @@ export async function buildCatalog(ownerId, { force = false } = {}) {
     providers[providerId] = { status: found.status, count: found.models.length };
     const hidden = new Set(listHiddenModels(ownerId, providerId));
     for (const model of found.models) {
-      if (hidden.has(model.id)) continue;
+      if (hidden.has(model.id) || isPromotionalCatalogModel(spec, model)) continue;
       models.push({ providerID: providerId, sourceProviderID: providerId, providerName: spec.name, modelID: model.id, modelName: model.name, free: false, source: 'catalog', status: found.status });
     }
     for (const manual of listManualModels(ownerId, providerId)) {
