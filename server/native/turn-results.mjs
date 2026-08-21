@@ -239,7 +239,7 @@ function indexEntry(root, relativePath) {
   if (!rows.length) return null;
   if (rows.length !== 1) return { conflict: true };
   const match = /^(\d+)\s+([0-9a-f]+)\s+(\d+)\t([\s\S]+)$/.exec(rows[0]);
-  if (!match || match[3] !== '0') return { conflict: true };
+  if (match?.[3] !== '0') return { conflict: true };
   return { mode: match[1], type: match[1] === '160000' ? 'commit' : 'blob', oid: match[2], path: match[4] };
 }
 
@@ -319,7 +319,7 @@ export function rollbackWorkspaceTrees(root, beforeTree, afterTree, beforeIndexT
   const restored = [];
   for (const item of work) {
     if (!sameEntry(item.current, item.before)) restoreWorktreeEntry(root, item.change.path, item.before);
-    if (Object.prototype.hasOwnProperty.call(item, 'beforeIndex') && !sameEntry(item.currentIndex, item.beforeIndex)) {
+    if (Object.hasOwn(item, 'beforeIndex') && !sameEntry(item.currentIndex, item.beforeIndex)) {
       restoreIndexEntry(root, item.change.path, item.beforeIndex);
     }
     restored.push(item.change.path);

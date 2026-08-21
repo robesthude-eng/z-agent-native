@@ -50,7 +50,7 @@ test('isolated shell cannot read runtime secrets or another session workspace', 
     'printf "mine="; cat mine.txt',
     `printf "\\nother="; cat ${JSON.stringify(path.join(bRoot, 'other-secret.txt'))} 2>/dev/null || printf DENIED`,
     `printf "\\nmaster="; cat ${JSON.stringify(path.join(data, 'master.key'))} 2>/dev/null || printf DENIED`,
-    `printf \"\\ndb=\"; if test -r ${JSON.stringify(path.join(data, 'z-agent.sqlite'))}; then printf READABLE; else printf DENIED; fi`,
+    `printf "\\ndb="; if test -r ${JSON.stringify(path.join(data, 'z-agent.sqlite'))}; then printf READABLE; else printf DENIED; fi`,
   ].join('; ');
   const result = await executeTool('bash', { command }, { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal });
   assert.equal(result.metadata.exit, 0);

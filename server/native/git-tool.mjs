@@ -15,8 +15,8 @@ const GIT_ENV_ALLOWLIST = ['PATH', 'HOME', 'LANG', 'LC_ALL', 'TZ', 'TMPDIR'];
 
 // Built with RegExp(string) on purpose: these classes contain '/' and '-' and
 // are far easier to review without literal-escaping noise.
-const REV_PATTERN = new RegExp('^[A-Za-z0-9._@^~{}/-]{1,200}$');
-const BRANCH_PATTERN = new RegExp('^[A-Za-z0-9._/-]{1,120}$');
+const REV_PATTERN = /^[A-Za-z0-9._@^~{}/-]{1,200}$/;
+const BRANCH_PATTERN = /^[A-Za-z0-9._/-]{1,120}$/;
 
 export const GIT_ACTIONS = ['status', 'log', 'diff', 'blame', 'show', 'branches', 'create_branch', 'commit'];
 const MUTATING_ACTIONS = new Set(['create_branch', 'commit']);

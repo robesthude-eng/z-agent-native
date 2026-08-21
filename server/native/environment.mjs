@@ -79,7 +79,7 @@ export function managedShellEnvironment(root, base = {}) {
   return {
     ...base,
     ...manifest.env,
-    PATH: unique([...manifest.pathPrepend, ...defaults]).join(':') + `:${basePath}`,
+    PATH: `${unique([...manifest.pathPrepend, ...defaults]).join(':')}:${basePath}`,
     HOME: home,
     USER: 'agent',
     GRADLE_USER_HOME: path.join(home, 'gradle'),

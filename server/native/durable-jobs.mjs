@@ -110,8 +110,8 @@ export function updateDurableJob(sessionId, patch = {}) {
   const next = {
     ...current,
     ...patch,
-    ...(Object.prototype.hasOwnProperty.call(patch, 'requestedModel') ? { requestedModel: cleanModel(patch.requestedModel) } : {}),
-    ...(Object.prototype.hasOwnProperty.call(patch, 'modelPlan') ? { modelPlan: cleanPlan(patch.modelPlan) } : {}),
+    ...(Object.hasOwn(patch, 'requestedModel') ? { requestedModel: cleanModel(patch.requestedModel) } : {}),
+    ...(Object.hasOwn(patch, 'modelPlan') ? { modelPlan: cleanPlan(patch.modelPlan) } : {}),
     checkpoint: patch.checkpoint
       ? { ...(current.checkpoint || {}), ...patch.checkpoint, savedAt: Date.now() }
       : current.checkpoint,

@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import path from 'node:path';
 import { safeWorkspacePath } from './security.mjs';
 import { executeInExecutorSync } from './executor-client.mjs';
 
@@ -171,7 +170,7 @@ function untrackedPatch(root, relativePath) {
     `+++ b/${relativePath}`,
     `@@ -0,0 +1,${lines.length} @@`,
   ];
-  const raw = [...header, ...lines.map((line) => `+${line}`)].join('\n') + '\n';
+  const raw = `${[...header, ...lines.map((line) => `+${line}`)].join('\n')}\n`;
 
   if (preview.truncated) {
     const marker = `+[diff preview truncated: ${preview.omittedBytes} bytes omitted]`;

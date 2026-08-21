@@ -27,7 +27,7 @@ export function PreviewPanel({ url }: PreviewPanelProps) {
     setKey((prev) => prev + 1);
   };
 
-  const handleOpenExternal = () => {
+  const _handleOpenExternal = () => {
     // Disabled: opening workspace preview outside sandbox breaks isolation.
   };
 

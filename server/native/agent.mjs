@@ -437,7 +437,7 @@ function checkpointState(sessionId, runtime, strategy, fields = {}) {
 }
 
 async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
-  let strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
+  const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
   let capacityPulse = null;
@@ -917,7 +917,7 @@ export function abortTurn(sessionId) {
   const active = activeTurns.get(sessionId);
   if (!active) return false;
   active.controller.abort();
-  for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
+  for (const [_id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
   return true;
 }
 

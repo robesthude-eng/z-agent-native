@@ -125,7 +125,7 @@ export function ProviderSettingsModal({
     } finally {
       setRefreshing(false);
     }
-  }, [loadModels, provider.id]);
+  }, [loadModels, provider.id, showNotice]);
 
   useEffect(() => {
     if (!open) return;
@@ -308,7 +308,7 @@ export function ProviderSettingsModal({
     ],
     [catalogIds, exactManual, exactManualById, models],
   );
-  const patterns = manual.filter((m) => m.pattern);
+  const _patterns = manual.filter((m) => m.pattern);
   const discoveredCount = models.filter((m) => m.source === "discovered").length;
 
   return (

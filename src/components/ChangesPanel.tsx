@@ -88,7 +88,7 @@ function diffLineClass(line: string) {
 export default function ChangesPanel() {
   const currentID = useStore((s) => s.currentID);
   const requestOpenFile = useStore((s) => s.requestOpenFile);
-  const workspaceRevision = useStore((s) =>
+  const _workspaceRevision = useStore((s) =>
     currentID ? (s.workspaceRevision[currentID] ?? 0) : 0,
   );
   const messages = useStore((s) =>
@@ -163,7 +163,7 @@ export default function ChangesPanel() {
 
   useEffect(() => {
     refresh().catch(() => {});
-  }, [refresh, workspaceRevision]);
+  }, [refresh]);
 
   const counts = useMemo(() => {
     let added = 0;

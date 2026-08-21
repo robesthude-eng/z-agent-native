@@ -116,7 +116,6 @@ function recoveredSessionStatus(
       return "error";
     case "stuck":
       return "stale";
-    case "settled":
     default:
       return "idle";
   }
@@ -174,7 +173,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
     refreshTurnProjection: async (sessionId) => {
       try {
         const parsed = parseTurnState(await api.turnState(sessionId));
-        if (!parsed || !parsed.orchestrator) return;
+        if (!parsed?.orchestrator) return;
         const recovered = recoveredSessionStatus(parsed.turn);
         set((s) => ({
           turnProjection: { ...s.turnProjection, [sessionId]: parsed.turn },

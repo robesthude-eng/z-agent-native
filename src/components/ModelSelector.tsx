@@ -61,7 +61,7 @@ export default function ModelSelector() {
     place();
     window.addEventListener("resize", place);
     return () => window.removeEventListener("resize", place);
-  }, [open, models.length]);
+  }, [open]);
 
   const openModelSettings = () => {
     setOpen(false);

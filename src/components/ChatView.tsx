@@ -217,7 +217,7 @@ export default function ChatView() {
     atBottomRef.current = true;
     setIsScrolledUp(false);
     resetNewAnswers();
-  }, [currentID]);
+  }, [resetNewAnswers]);
 
   const scrollRafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
     null,

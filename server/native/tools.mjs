@@ -258,7 +258,7 @@ function globRegex(glob) {
       }
     } else if (ch === '*') s += '[^/]*';
     else if (ch === '?') s += '[^/]';
-    else s += ch.replace(/[\\^$+?.()|{}\[\]]/g, '\\$&');
+    else s += ch.replace(/[\\^$+?.()|{}[\]]/g, '\\$&');
   }
   return new RegExp(`^${s}$`);
 }

@@ -28,7 +28,7 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
         if (!model?.providerID || !model?.modelID) continue;
         const sourceProviderID = model.sourceProviderID || model.providerID;
         const provider = configured.get(sourceProviderID);
-        if (!provider || !provider.enabled) continue;
+        if (!provider?.enabled) continue;
         if (catalog.providers?.[sourceProviderID]?.status === "disabled") continue;
         if (hiddenByProvider[sourceProviderID]?.includes(model.modelID)) continue;
         entries.push({

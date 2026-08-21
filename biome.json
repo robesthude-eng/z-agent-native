@@ -1,7 +1,21 @@
 {
   "$schema": "https://biomejs.dev/schemas/2.5.3/schema.json",
   "linter": {
-    "enabled": true
+    "enabled": true,
+    "rules": {
+      "a11y": {
+        "noLabelWithoutControl": "warn",
+        "useAriaPropsSupportedByRole": "warn"
+      },
+      "correctness": {
+        "useExhaustiveDependencies": "warn"
+      },
+      "suspicious": {
+        "noArrayIndexKey": "warn",
+        "noAssignInExpressions": "warn",
+        "noControlCharactersInRegex": "warn"
+      }
+    }
   },
   "formatter": {
     "enabled": true,
