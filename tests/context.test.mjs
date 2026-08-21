@@ -129,6 +129,10 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('python checkers_test.js'), 'verification');
   assert.equal(classifyBash('cd app && pytest -q'), 'verification');
   assert.equal(classifyBash('cd app && pytest -q | tail -20'), 'verification');
+  assert.equal(classifyBash('python3 multiplication_table.py'), 'verification');
+  assert.equal(classifyBash('python3 -m py_compile multiplication_table.py && python3 multiplication_table.py'), 'verification');
+  assert.equal(classifyBash('node server.mjs'), 'verification');
+  assert.equal(classifyBash('python3 setup.py install'), 'may_mutate');
   assert.equal(classifyBash(`node -e "\nconst fs = require('fs');\nconst html = fs.readFileSync('index.html', 'utf8');\nif (html.length > 100) console.log('ok');\n"`), 'verification');
 });
 
@@ -161,6 +165,16 @@ test('completion gate stops nagging after a few reminders', () => {
   assert.equal(shouldEnforceCompletionGate(strategy, 0), true);
   assert.equal(shouldEnforceCompletionGate(strategy, 2), true);
   assert.equal(shouldEnforceCompletionGate(strategy, 3), false);
+});
+
+test('running a python script after writing it satisfies the completion gate', () => {
+  const strategy = createTurnStrategy('Напиши таблицу умножения на Python и убедись что запускается');
+  observeTool(strategy, { name: 'write', arguments: { path: 'multiplication_table.py' } }, { isError: false, mutatedPaths: ['multiplication_table.py'] });
+  assert.equal(strategy.needsVerification, true);
+  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 multiplication_table.py' } }, { isError: false, metadata: { exit: 0 } });
+  assert.equal(strategy.needsVerification, false);
+  assert.equal(strategy.lastVerificationOk, true);
+  assert.equal(completionGate(strategy), null);
 });
 
 test('opening local HTML in the browser satisfies the completion gate', () => {

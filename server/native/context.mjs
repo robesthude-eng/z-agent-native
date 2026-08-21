@@ -97,6 +97,9 @@ const VERIFY_PATTERNS = [
   /\bnode\s+--(?:check|test)\b/i,
   /\bpython3?\s+-m\s+(?:compileall|json\.tool|py_compile)\b/i,
   /\b(?:python3?|node)\s+\S*(?:test|spec|check)\S*/i,
+  // Running the program the user asked for is the check. Extra args such as
+  // `setup.py install` stay may_mutate so a real installer cannot clear the gate.
+  /^\s*(?:python3?|node)\s+(?:-[uBI]+\s+)*\.?\/?[\w.-][\w./-]*\.(?:py|js|mjs|cjs)\s*$/i,
 ];
 
 const READ_ONLY_BASH_PATTERNS = [
