@@ -27,6 +27,9 @@ test('guarded shell policy blocks direct egress and credential access', () => {
   assert.doesNotThrow(() => policy.assertShellCommandAllowed('npm test'));
   assert.throws(() => policy.assertShellCommandAllowed('curl https://example.com'), /network egress/i);
   assert.throws(() => policy.assertShellCommandAllowed("cat .env"), /credential-like/i);
+  assert.throws(() => policy.assertShellCommandAllowed('cat /etc/passwd'), /outside the workspace/i);
+  assert.throws(() => policy.assertShellCommandAllowed('head /etc/shadow'), /outside the workspace/i);
+  assert.doesNotThrow(() => policy.assertShellCommandAllowed('cat docs/etc/passwd.md'));
   assert.throws(() => policy.assertShellCommandAllowed("node -e 'fetch(\"https://example.com\")'"), /network egress/i);
 });
 

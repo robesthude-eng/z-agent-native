@@ -101,6 +101,7 @@ const INLINE_NETWORK_CODE = /\b(?:python3?|node|ruby|perl)\b[^\n]*(?:https?:\/\/
 const PACKAGE_NETWORK = /(?:^|[;&|\n]\s*|\b)(?:npm|npx|pnpm|yarn|bun|pip|pip3|poetry|uv|gem|bundle|cargo|go|mvn|gradle|gradlew)\b/i;
 const REMOTE_GIT = /\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b/i;
 const SENSITIVE_COMMAND = /(?:^|[\s'"`/])(?:\.env(?:\.[\w.-]+)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|\.ssh(?:\/|\b)|(?:aws\/)?credentials(?:\.json)?|service[-_]?account[^\s'"`]*)/i;
+const HOST_ESCAPE = /(?:^|[\s'"`;|&<>])\/(?:etc\/(?:passwd|shadow|sudoers|master\.passwd)|proc\/|sys\/|root\/|var\/run\/secrets)\b/i;
 
 /**
  * Defense-in-depth command guard. Production Docker does not rely on these
@@ -118,6 +119,12 @@ export function assertShellCommandAllowed(command) {
     throw Object.assign(new Error('Shell access to credential-like workspace files is blocked by the agent security policy.'), {
       statusCode: 403,
       code: 'SHELL_SENSITIVE_FILE_BLOCKED',
+    });
+  }
+  if (HOST_ESCAPE.test(text)) {
+    throw Object.assign(new Error('Shell access outside the workspace is blocked by the agent security policy.'), {
+      statusCode: 403,
+      code: 'SHELL_HOST_ESCAPE_BLOCKED',
     });
   }
 
