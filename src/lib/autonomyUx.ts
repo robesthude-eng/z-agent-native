@@ -48,9 +48,9 @@ function installStopFeedback(): () => void {
     }
 
     button.dataset.zStopping = "true";
-    button.setAttribute("aria-label", t("stop.pending"));
-    button.title = t("stop.pendingShort");
     button.disabled = true;
+    // aria-label/title не трогаем: подмена на «Останавливаю…» всплывала
+    // тултипом над композером в Android Chrome, пока агент ещё работал.
 
     later(() => {
       // React may have replaced the node or already restored it, so only undo
@@ -58,8 +58,6 @@ function installStopFeedback(): () => void {
       if (!button.isConnected || button.dataset.zStopping !== "true") return;
       delete button.dataset.zStopping;
       button.disabled = false;
-      button.setAttribute("aria-label", t("stop.action"));
-      button.title = t("stop.action");
     }, RESET_DELAY_MS);
   };
 

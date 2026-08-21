@@ -239,6 +239,21 @@ export function mergeMessages(
     const mergedPartIds = new Set(mergedParts.map((p) => p.id));
     for (const lPart of lMsg.parts) {
       if (!mergedPartIds.has(lPart.id)) {
+        // SSE мог создать text-часть с другим id, чем HTTP-снимок той же
+        // фразы. Второй раз в ленту её тащить нельзя.
+        if (lPart.type === "text") {
+          const localText = String((lPart as { text?: string }).text || "").trim();
+          if (
+            localText &&
+            mergedParts.some(
+              (part) =>
+                part.type === "text" &&
+                String((part as { text?: string }).text || "").trim() === localText,
+            )
+          ) {
+            continue;
+          }
+        }
         mergedParts.push(lPart);
         mergedPartIds.add(lPart.id);
       }

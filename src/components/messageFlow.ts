@@ -253,10 +253,67 @@ export function runStepCount(items: RenderItem[]): number {
  * Склейка идёт до группировки: границы сообщений для ленты не значат
  * ничего, значат только смены рода частей.
  */
+function textContent(part: Part): string {
+  return part.type === "text" ? String((part as { text?: string }).text || "") : "";
+}
+
+const REPEAT_PREFIX_MIN = 12;
+
+/** Один абзац, повторённый через пустую строку внутри той же части. */
+function collapseDoubledParagraph(part: Part): Part {
+  const raw = textContent(part);
+  const blocks = raw
+    .split(/\n\s*\n/)
+    .map((block) => block.trim())
+    .filter(Boolean);
+  const first = blocks[0];
+  const second = blocks[1];
+  if (blocks.length === 2 && first && second && first === second && first.length >= REPEAT_PREFIX_MIN) {
+    const cut = raw.indexOf(second, first.length);
+    return {
+      ...part,
+      text: (cut > 0 ? raw.slice(0, cut) : first).trimEnd(),
+    } as Part;
+  }
+  return part;
+}
+
+/**
+ * Повтор абзаца в ленте: мобильный SSE-reconnect без Last-Event-ID
+ * проигрывает те же текстовые кадры ещё раз. Инструменты — снимки, они
+ * не двоятся. Либо две одинаковые text-части подряд, либо одна часть
+ * «абзац\\n\\nабзац», либо усечённый стрим и следом полный тот же абзац.
+ */
+export function collapseRepeatedTextParts(parts: Part[]): Part[] {
+  const out: Part[] = [];
+  for (const part of parts) {
+    if (part.type !== "text") {
+      out.push(part);
+      continue;
+    }
+    const collapsed = collapseDoubledParagraph(part);
+    const trimmed = textContent(collapsed).trim();
+    const prev = out[out.length - 1];
+    if (prev?.type === "text") {
+      const prevTrim = textContent(prev).trim();
+      if (trimmed && prevTrim === trimmed) continue;
+      if (prevTrim.length >= REPEAT_PREFIX_MIN && trimmed.length >= REPEAT_PREFIX_MIN) {
+        if (trimmed.startsWith(prevTrim)) {
+          out[out.length - 1] = collapsed;
+          continue;
+        }
+        if (prevTrim.startsWith(trimmed)) continue;
+      }
+    }
+    out.push(collapsed);
+  }
+  return out;
+}
+
 export function flowParts(messages: Message[]): Part[] {
   const out: Part[] = [];
   for (const m of messages) {
     for (const p of m.parts || []) out.push(p);
   }
-  return out;
+  return collapseRepeatedTextParts(out);
 }

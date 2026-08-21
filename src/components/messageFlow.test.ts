@@ -11,6 +11,7 @@
 import { describe, expect, test } from "vitest";
 import type { Message, Part, ToolPart } from "../api/types";
 import {
+  collapseRepeatedTextParts,
   flowParts,
   groupActivityRuns,
   groupParts,
@@ -126,6 +127,66 @@ describe("flowParts", () => {
       msg("m3", [tool("t2", "b")]),
     ];
     expect(flowParts(messages).map((p) => p.id)).toEqual(["t1", "t2"]);
+  });
+
+  test("подряд одинаковые абзацы в ленте схлопываются в один", () => {
+    const paragraph = "Проверю ещё раз:";
+    const messages = [
+      msg("m1", [text("x1", paragraph), text("x2", paragraph)]),
+    ];
+    const parts = flowParts(messages).filter((p) => p.type === "text");
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { text: string }).text).toBe(paragraph);
+  });
+});
+
+describe("collapseRepeatedTextParts", () => {
+  test("две одинаковые текстовые части подряд — одна остаётся", () => {
+    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const parts = collapseRepeatedTextParts([
+      text("a", paragraph),
+      text("b", paragraph),
+      tool("t1", "bash"),
+    ]);
+    expect(parts.map((p) => p.id)).toEqual(["a", "t1"]);
+  });
+
+  test("абзац повторён внутри одной части через пустую строку", () => {
+    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const parts = collapseRepeatedTextParts([
+      text("a", `${paragraph}\n\n${paragraph}`),
+    ]);
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { text: string }).text).toBe(paragraph);
+  });
+
+  test("усечённый стрим и полный тот же абзац — остаётся полный", () => {
+    const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const parts = collapseRepeatedTextParts([
+      text("a", full.slice(0, 18)),
+      text("b", full),
+    ]);
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { text: string }).text).toBe(full);
+  });
+
+  test("полный абзац и усечённый повтор — усечённый отбрасывается", () => {
+    const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const parts = collapseRepeatedTextParts([
+      text("a", full),
+      text("b", full.slice(0, 18)),
+    ]);
+    expect(parts).toHaveLength(1);
+    expect((parts[0] as { text: string }).text).toBe(full);
+  });
+
+  test("разные абзацы и инструменты не трогаем", () => {
+    const parts = collapseRepeatedTextParts([
+      text("a", "Сначала прочитаю файл."),
+      tool("t1", "read"),
+      text("b", "Теперь поправлю логику."),
+    ]);
+    expect(parts.map((p) => p.id)).toEqual(["a", "t1", "b"]);
   });
 });
 

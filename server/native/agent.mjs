@@ -104,6 +104,11 @@ function emitPart(assistant, part) {
 
 async function emitText(assistant, text, type = 'text') {
   if (!text) return;
+  const trimmed = String(text).trim();
+  const last = assistant.parts[assistant.parts.length - 1];
+  // Повтор той же фразы отдельной частью — частый дубль в ленте, если
+  // стрим уже записал текст, а финальный emitText пришёл с тем же абзацем.
+  if (type === 'text' && last?.type === 'text' && String(last.text || '').trim() === trimmed) return;
   const part = { id: partId(), type, text: '' };
   assistant.parts.push(part);
   emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
