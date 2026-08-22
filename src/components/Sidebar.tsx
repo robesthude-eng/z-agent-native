@@ -12,6 +12,7 @@ import type { SessionInfo } from "../api/types";
 import { messageText } from "../lib/chatText";
 import { useStore } from "../store/useStore";
 import {
+  CheckIcon,
   CloseIcon,
   FolderIcon,
   LogoutIcon,
@@ -19,6 +20,7 @@ import {
   NewChatIcon,
   PencilIcon,
   PinIcon,
+  SearchIcon,
   SettingsIcon,
   SunIcon,
   TrashIcon,
@@ -149,14 +151,19 @@ export default function Sidebar() {
           st.messages[sess.id] ??
           (await api.listMessages(sess.id).catch(() => []));
         for (const m of msgs) {
-          const t = messageText(m);
-          const i = t.toLowerCase().indexOf(q);
+          // Переменная называлась `t` и затеняла функцию перевода:
+          // у чата без названия строка ниже вызывала строку как функцию
+          // и глубокий поиск падал с "t is not a function".
+          const text = messageText(m);
+          const i = text.toLowerCase().indexOf(q);
           if (i >= 0) {
             hits.push({
               id: sess.id,
               title:
-                sessionTitleOverrides[sess.id] || sess.title || t("shortcuts_overlay.novyy_chat"),
-              snippet: t.slice(Math.max(0, i - 40), i + 60).trim(),
+                sessionTitleOverrides[sess.id] ||
+                sess.title ||
+                t("shortcuts_overlay.novyy_chat"),
+              snippet: text.slice(Math.max(0, i - 40), i + 60).trim(),
             });
             break;
           }
@@ -246,38 +253,58 @@ export default function Sidebar() {
 
         {/* Chat list */}
         <div className="px-2 pt-2">
-          <input
-            id="chat-filter-input"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder={t("sidebar.poisk_chatov_ctrl_k")}
-            aria-label={t("shortcuts_overlay.poisk_po_spisku_chatov")}
-            className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
-          />
+          {/* Поле поиска устроено как в панели файлов: значок слева,
+              крестик справа. Раньше сбросить фильтр можно было только
+              стиранием текста вручную, а само поле ничем не намекало на поиск. */}
+          <div className="relative">
+            <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground">
+              <SearchIcon size={13} />
+            </span>
+            <input
+              id="chat-filter-input"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder={t("sidebar.poisk_chatov_ctrl_k")}
+              aria-label={t("shortcuts_overlay.poisk_po_spisku_chatov")}
+              className="w-full rounded-lg border border-border bg-muted/40 py-1.5 pl-8 pr-8 text-xs text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:bg-background"
+            />
+            {filter && (
+              <button
+                type="button"
+                onClick={() => setFilter("")}
+                title={t("sidebar.ochistit_poisk")}
+                aria-label={t("sidebar.ochistit_poisk")}
+                className="absolute right-1.5 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+              >
+                <CloseIcon size={12} />
+              </button>
+            )}
+          </div>
           {normalizedFilter && (
             <button
               type="button"
-              className="mt-1 w-full rounded-lg border border-dashed border-border px-2 py-1 text-left text-[11px] text-muted-foreground hover:bg-accent hover:text-foreground"
+              className="mt-1.5 flex w-full items-center justify-center gap-1.5 rounded-lg border border-dashed border-border px-2 py-1.5 text-[11px] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground disabled:opacity-60"
               onClick={runDeepSearch}
               disabled={deepBusy}
             >
+              <SearchIcon size={12} />
               {deepBusy
                 ? t("sidebar.ischu_v_soobscheniyah")
-                : t("sidebar.ud83d_udd0e_iskat_v_soobscheniyah_chatov")}
+                : t("sidebar.iskat_v_soobscheniyah_chatov")}
             </button>
           )}
           {deepResults && (
-            <div className="mt-1 max-h-48 overflow-y-auto rounded-lg border border-border">
+            <div className="mt-1.5 max-h-48 overflow-y-auto rounded-xl border border-border bg-card">
               {deepResults.length === 0 && (
-                <p className="px-2 py-2 text-[11px] text-muted-foreground">
-                  Совпадений в сообщениях нет
+                <p className="px-2.5 py-2 text-[11px] text-muted-foreground">
+                  {t("sidebar.sovpadeniy_v_soobscheniyah_net")}
                 </p>
               )}
               {deepResults.map((r) => (
                 <button
                   key={r.id}
                   type="button"
-                  className="block w-full px-2 py-1.5 text-left hover:bg-accent"
+                  className="block w-full px-2.5 py-1.5 text-left outline-none transition-colors hover:bg-accent focus-visible:bg-accent"
                   onClick={() => {
                     select(r.id);
                     close();
@@ -383,7 +410,7 @@ export default function Sidebar() {
                               return next;
                             })
                           }
-                          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-0.5 text-left font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition hover:text-foreground"
+                          className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
                           title={tf("sidebar.0_papku_1", [collapsedFolders.has(g.folderId) ? t("sidebar.razvernut") : t("sidebar.svernut"), g.label])}
                         >
                           <span aria-hidden="true">
@@ -409,9 +436,9 @@ export default function Sidebar() {
                         {confirmDeleteFolderId === g.folderId ? (
                           // Тот же инлайн-паттерн, что у удаления чата: нативный
                           // confirm() выбивался из интерфейса и блокировал вкладку.
-                          <span className="mr-1 flex shrink-0 items-center gap-1 rounded-lg border border-red-500/20 bg-red-500/10 py-0.5">
-                            <span className="pl-1.5 pr-0.5 text-[10px] font-semibold text-red-500/90">
-                              Удалить?
+                          <span className="mr-1 flex shrink-0 items-center gap-1 rounded-lg border border-destructive/25 bg-destructive/10 py-0.5">
+                            <span className="pl-1.5 pr-0.5 text-[10px] font-semibold text-destructive">
+                              {t("sidebar.udalit_vopros")}
                             </span>
                             <button
                               type="button"
@@ -421,21 +448,9 @@ export default function Sidebar() {
                               }}
                               title={t("sidebar.podtverdit_udalenie_papki_chaty_ostanutsya")}
                               aria-label={tf("sidebar.podtverdit_udalenie_papki_0", [g.label])}
-                              className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-500 text-white transition hover:bg-red-600"
+                              className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-background transition hover:brightness-110"
                             >
-                              <svg
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <polyline points="20 6 9 17 4 12" />
-                              </svg>
+                              <CheckIcon size={11} />
                             </button>
                             <button
                               type="button"
@@ -444,20 +459,7 @@ export default function Sidebar() {
                               aria-label={t("sidebar.otmenit_udalenie_papki")}
                               className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted text-muted-foreground transition hover:bg-muted-foreground/20"
                             >
-                              <svg
-                                width="10"
-                                height="10"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="2.5"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <line x1="18" y1="6" x2="6" y2="18" />
-                                <line x1="6" y1="6" x2="18" y2="18" />
-                              </svg>
+                              <CloseIcon size={11} />
                             </button>
                           </span>
                         ) : (
@@ -477,7 +479,7 @@ export default function Sidebar() {
                     )}
                   </div>
                 ) : (
-                  <div className="px-3 pb-1 pt-2 font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/60">
+                  <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
                     {g.label}
                   </div>
                 )}
@@ -485,8 +487,8 @@ export default function Sidebar() {
                   g.folderId &&
                   g.items.length === 0 &&
                   !collapsedFolders.has(g.folderId) && (
-                    <p className="px-4 pb-1 text-[10.5px] text-muted-foreground/60">
-                      Пусто — перенесите сюда чат кнопкой «папка»
+                    <p className="px-4 pb-1 text-[11px] text-muted-foreground">
+                      {t("sidebar.pusto_perenesite_syuda_chat")}
                     </p>
                   )}
                 {(g.kind !== "folder" ||
@@ -506,24 +508,23 @@ export default function Sidebar() {
                       <div key={s.id}>
                         <div
                           className={cn(
-                            "group rounded-lg text-[12px] transition",
+                            // Геометрия строки жила в inline-style на восемь
+                            // свойств: её нельзя было переопределить темой и трудно
+                            // читать. Зазор gap-0.5 = те же 2px, что и были.
+                            "group relative flex w-full max-w-full items-stretch gap-0.5 overflow-hidden rounded-lg text-[12px] transition-colors",
                             isActive
                               ? "oc-reveal-open bg-accent text-foreground"
-                              : "text-muted-foreground hover:bg-accent hover:text-foreground",
+                              : "text-muted-foreground hover:bg-muted/70 hover:text-foreground",
                           )}
-                          style={{
-                            width: "100%",
-                            maxWidth: "100%",
-                            boxSizing: "border-box",
-                            display: "flex",
-                            alignItems: "stretch",
-                            // Кнопки действий стоят вплотную: четыре 32px иконки с
-                            // зазорами съедали ~148px из 260px сайдбара и название
-                            // чата обрезалось после пары слов.
-                            gap: 2,
-                            overflow: "hidden",
-                          }}
                         >
+                          {isActive && (
+                            // Тот же маркер активной строки, что и в дереве файлов:
+                            // одного фона на узкой панели было мало.
+                            <span
+                              aria-hidden="true"
+                              className="pointer-events-none absolute left-0 top-1/2 h-4 w-[3px] -translate-y-1/2 rounded-r-full bg-foreground/70"
+                            />
+                          )}
                           {editingId === s.id ? (
                             <input
                               ref={(el) => el?.focus()}
@@ -545,45 +546,20 @@ export default function Sidebar() {
                                 select(s.id);
                                 close();
                               }}
-                              style={{
-                                flex: 1,
-                                minWidth: 0,
-                                display: "flex",
-                                alignItems: "center",
-                                gap: 6,
-                                paddingLeft: 10,
-                                paddingRight: 2,
-                                paddingTop: 8,
-                                paddingBottom: 8,
-                                background: "transparent",
-                                border: "none",
-                                color: "inherit",
-                                font: "inherit",
-                                cursor: "pointer",
-                                textAlign: "left",
-                                borderRadius: 12,
-                              }}
+                              title={displayTitle}
+                              className="flex min-w-0 flex-1 cursor-pointer items-center gap-1.5 rounded-lg border-none bg-transparent py-2 pl-2.5 pr-0.5 text-left font-[inherit] text-current outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
                             >
                               {busy && (
+                                // Точка занятости красилась в --color-success,
+                                // а в тёмной теме этот токен равен цвету текста —
+                                // индикатор был неотличим от букв и не мигал.
                                 <span
-                                  style={{
-                                    width: 6,
-                                    height: 6,
-                                    borderRadius: "50%",
-                                    background: "var(--color-success)",
-                                    flexShrink: 0,
-                                  }}
+                                  aria-hidden="true"
+                                  className="live-dot shrink-0"
+                                  style={{ background: "var(--color-info)" }}
                                 />
                               )}
-                              <span
-                                style={{
-                                  flex: 1,
-                                  minWidth: 0,
-                                  overflow: "hidden",
-                                  textOverflow: "ellipsis",
-                                  whiteSpace: "nowrap",
-                                }}
-                              >
+                              <span className="min-w-0 flex-1 truncate">
                                 {displayTitle}
                               </span>
                             </button>
@@ -648,9 +624,9 @@ export default function Sidebar() {
                             </>
                           )}
                           {confirmDeleteId === s.id ? (
-                            <div className="mr-0.5 flex items-center gap-0.5 self-center rounded-md border border-red-500/20 bg-red-500/10 py-0.5">
-                              <span className="pl-1 pr-0.5 text-[10px] font-semibold text-red-500/90">
-                                Удалить?
+                            <div className="mr-0.5 flex items-center gap-0.5 self-center rounded-md border border-destructive/25 bg-destructive/10 py-0.5">
+                              <span className="pl-1 pr-0.5 text-[10px] font-semibold text-destructive">
+                                {t("sidebar.udalit_vopros")}
                               </span>
                               <button
                                 type="button"
@@ -660,21 +636,9 @@ export default function Sidebar() {
                                   setConfirmDeleteId(null);
                                 }}
                                 title={t("sidebar.podtverdit_udalenie")}
-                                className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600 transition"
+                                className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-background transition hover:brightness-110"
                               >
-                                <svg
-                                  aria-hidden="true"
-                                  width="10"
-                                  height="10"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <polyline points="20 6 9 17 4 12" />
-                                </svg>
+                                <CheckIcon size={11} />
                               </button>
                               <button
                                 type="button"
@@ -683,22 +647,9 @@ export default function Sidebar() {
                                   setConfirmDeleteId(null);
                                 }}
                                 title={t("confirm_dialog.otmena")}
-                                className="mr-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted hover:bg-muted-foreground/20 text-muted-foreground transition"
+                                className="mr-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted text-muted-foreground transition hover:bg-muted-foreground/20"
                               >
-                                <svg
-                                  aria-hidden="true"
-                                  width="10"
-                                  height="10"
-                                  viewBox="0 0 24 24"
-                                  fill="none"
-                                  stroke="currentColor"
-                                  strokeWidth="2.5"
-                                  strokeLinecap="round"
-                                  strokeLinejoin="round"
-                                >
-                                  <line x1="18" y1="6" x2="6" y2="18" />
-                                  <line x1="6" y1="6" x2="18" y2="18" />
-                                </svg>
+                                <CloseIcon size={11} />
                               </button>
                             </div>
                           ) : (
@@ -710,23 +661,9 @@ export default function Sidebar() {
                               }}
                               title={t("sidebar.udalit_chat")}
                               aria-label={tf("sidebar.udalit_chat_0", [displayTitle])}
-                              className="oc-reveal mr-0.5 inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-current opacity-45 transition-all hover:bg-red-500/12 hover:text-red-500 hover:opacity-100 active:scale-90"
+                              className="oc-reveal mr-0.5 inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-current opacity-45 transition-all hover:bg-destructive/15 hover:text-destructive hover:opacity-100 active:scale-90"
                             >
-                              <svg
-                                width="14"
-                                height="14"
-                                viewBox="0 0 24 24"
-                                fill="none"
-                                stroke="currentColor"
-                                strokeWidth="1.75"
-                                strokeLinecap="round"
-                                strokeLinejoin="round"
-                                aria-hidden="true"
-                              >
-                                <path d="M3 6h18" />
-                                <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
-                                <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
-                              </svg>
+                              <TrashIcon size={14} />
                             </button>
                           )}
                         </div>
@@ -735,25 +672,27 @@ export default function Sidebar() {
                             <button
                               type="button"
                               className={cn(
-                                "block w-full truncate rounded-md px-2 py-1 text-left text-[11px] transition hover:bg-accent",
+                                "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-accent",
                                 !chatFolderAssignments[s.id] &&
-                                  "text-primary font-medium",
+                                  "font-medium text-foreground",
                               )}
                               onClick={() => {
                                 assignChatFolder(s.id, null);
                                 setFolderMenuFor(null);
                               }}
                             >
-                              Без папки
+                              <span className="truncate">
+                                {t("sidebar.bez_papki")}
+                              </span>
                             </button>
                             {chatFolders.map((f) => (
                               <button
                                 key={f.id}
                                 type="button"
                                 className={cn(
-                                  "block w-full truncate rounded-md px-2 py-1 text-left text-[11px] transition hover:bg-accent",
+                                  "flex w-full items-center gap-1.5 rounded-md px-2 py-1.5 text-left text-[11px] transition-colors hover:bg-accent",
                                   chatFolderAssignments[s.id] === f.id &&
-                                    "text-primary font-medium",
+                                    "font-medium text-foreground",
                                 )}
                                 onClick={() => {
                                   assignChatFolder(s.id, f.id);
@@ -761,7 +700,7 @@ export default function Sidebar() {
                                 }}
                               >
                                 <FolderIcon size={13} />
-                                {f.name}
+                                <span className="truncate">{f.name}</span>
                               </button>
                             ))}
                             <input
@@ -841,7 +780,7 @@ export default function Sidebar() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-red-400 hover:text-red-300 hover:bg-red-500/10 shrink-0"
+                  className="shrink-0 text-destructive hover:bg-destructive/10 hover:text-destructive"
                   onClick={async () => {
                     const ok = await askConfirm({
                       title: t("sidebar.vyyti_iz_akkaunta"),

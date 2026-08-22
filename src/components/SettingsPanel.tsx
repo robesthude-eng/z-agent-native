@@ -143,18 +143,21 @@ export default function SettingsPanel() {
     return TAB_GROUPS.map((g) => ({
       ...g,
       items: g.items.filter(
-        (t) =>
-          (!q ||
-            t.label.toLowerCase().includes(q) ||
-            t.title.toLowerCase().includes(q) ||
-            t.keywords.includes(q)),
+        // Параметр назывался `t` и затенял функцию перевода внутри
+        // блока; keywords теперь тоже приводим к нижнему регистру —
+        // раньше запрос с заглавной буквой не находил раздел.
+        (tab) =>
+          !q ||
+          tab.label.toLowerCase().includes(q) ||
+          tab.title.toLowerCase().includes(q) ||
+          tab.keywords.toLowerCase().includes(q),
       ),
     })).filter((g) => g.items.length > 0);
   }, [query]);
 
   if (!open) return null;
 
-  const tabTitle = ALL_TABS.find((t) => t.id === activeTab)?.title ?? "";
+  const tabTitle = ALL_TABS.find((tab) => tab.id === activeTab)?.title ?? "";
 
   const searchBox = (
     <div className="relative">
@@ -216,11 +219,17 @@ export default function SettingsPanel() {
             {visibleGroups.length === 0 && emptyResults}
             {visibleGroups.map((g) => (
               <div key={g.label} className="flex flex-col gap-0.5">
+                {/* Заголовок группы существовал только в TAB_GROUPS и нигде
+                    не рисовался: меню выглядело плоским списком из пяти
+                    пунктов без деления «Аккаунт · Чат · Справка». */}
+                <div className="px-2.5 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {g.label}
+                </div>
                 {g.items.map((tab) => (
                   <button
                     key={tab.id}
                     className={cn(
-                      "w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] transition",
+                      "w-full rounded-lg px-2.5 py-1.5 text-left text-[13px] outline-none transition-colors focus-visible:ring-2 focus-visible:ring-primary/60",
                       activeTab === tab.id
                         ? "bg-muted font-medium text-foreground"
                         : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
@@ -262,11 +271,14 @@ export default function SettingsPanel() {
             {visibleGroups.length === 0 && emptyResults}
             {visibleGroups.map((g) => (
               <div key={g.label} className="space-y-1">
+                <div className="px-3 pb-0.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {g.label}
+                </div>
                 {g.items.map((tab) => (
                   <button
                     key={tab.id}
                     type="button"
-                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] hover:bg-muted/60 active:bg-muted transition"
+                    className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-[15px] transition-colors hover:bg-muted/60 active:bg-muted"
                     onClick={() => {
                       setActiveTab(tab.id);
                       setMobileView("content");
@@ -296,7 +308,7 @@ export default function SettingsPanel() {
               onClick={() => setMobileView("menu")}
               type="button"
             >
-              ← Назад
+              ← {t("settings_panel.nazad")}
             </Button>
             <h3 className="font-semibold text-[15px] sm:text-base flex-1 min-w-0 truncate">
               {tabTitle}

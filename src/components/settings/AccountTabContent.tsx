@@ -116,7 +116,9 @@ export function AccountTabContent() {
                   onChange={(e) => setNewPassword(e.target.value)}
                 />
                 <p className="text-xs text-muted-foreground">
-                  Минимум {MIN_PASSWORD_LENGTH} символов.
+                  {tf("account_tab_content.minimum_0_simvolov", [
+                    MIN_PASSWORD_LENGTH,
+                  ])}
                 </p>
               </div>
               <div className="space-y-1.5">
@@ -128,9 +130,17 @@ export function AccountTabContent() {
                   value={repeatPassword}
                   onChange={(e) => setRepeatPassword(e.target.value)}
                 />
+                {/* О несовпадении сообщалось только после отправки формы,
+                    а кнопка до этого молча оставалась неактивной. */}
+                {repeatPassword.length > 0 &&
+                  newPassword !== repeatPassword && (
+                    <p className="text-xs text-destructive">
+                      {t("account_tab_content.paroli_ne_sovpadayut")}
+                    </p>
+                  )}
               </div>
               {error && (
-                <p className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs text-red-400">
+                <p className="rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-xs text-destructive">
                   {error}
                 </p>
               )}
