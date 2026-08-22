@@ -27,6 +27,11 @@ export interface ProviderChannelCatalogResult {
   count?: number;
   error?: string | null;
   models?: { id: string; name: string }[];
+  /**
+   * Добавленные вручную модели, которых больше нет в живом списке
+   * провайдера: они остаются в выборе моделей, пока их не удалят.
+   */
+  missingManual?: string[];
 }
 
 /** Строка ручной модели в том виде, в каком её хранит runtime. */

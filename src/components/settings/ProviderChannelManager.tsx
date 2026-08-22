@@ -174,10 +174,20 @@ export function ProviderChannelManager() {
       }
       if (force) {
         const result = await providerChannelsApi.refresh(channel.id);
+        // Живой ответ замещает список целиком, даже если он стал короче.
         setModels(result.models ?? []);
         setStatus(result.status);
-        if (result.error && (result.models?.length ?? 0) === 0) {
+        // Ошибка показывается всегда, а не только при пустом списке:
+        // иначе «Обновить» молча оставляло прежний набор и выглядело как успех.
+        if (result.error) {
           showNotice(catalogErrorText(result.error, result.status), true);
+        } else if (result.missingManual?.length) {
+          showNotice(
+            tf("provider_channel_manager.provayder_bolshe_ne_otdayot_eti_modeli", [
+              result.missingManual.join(", "),
+            ]),
+            true,
+          );
         }
       } else {
         const catalog = await api.listProviderCatalog();

@@ -104,7 +104,21 @@ export async function handleProviderChannels(req, res, ownerId, url) {
 
   if (action === 'refresh' && req.method === 'POST') {
     const catalog = await fetchModels(ownerId, providerId, { force: true });
-    return reply(res, 200, { status: catalog.status, models: catalog.models, error: catalog.error || null });
+    // Ручные модели живут отдельно от списка провайдера и остаются в
+    // выпадающем списке даже после того, как провайдер их снял. Обновление
+    // сразу называет такое расхождение, а решение остаётся за человеком.
+    const live = new Set(catalog.models.map((model) => model.id));
+    const missingManual = catalog.status === 'live'
+      ? listManualModels(ownerId, providerId)
+        .filter((row) => row.enabled && !row.pattern && !live.has(row.model_id))
+        .map((row) => row.model_id)
+      : [];
+    return reply(res, 200, {
+      status: catalog.status,
+      models: catalog.models,
+      error: catalog.error || null,
+      missingManual,
+    });
   }
 
   if (action === 'manual-models') {

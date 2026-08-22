@@ -214,7 +214,16 @@ export interface ProviderCatalogResponse {
   default?: Record<string, string>;
   providers?: Record<
     string,
-    { status: ProviderCatalogStatus | string; count: number }
+    {
+      status: ProviderCatalogStatus | string;
+      count: number;
+      /** Причина, по которой список моделей не удалось обновить. */
+      error?: string | null;
+      /** Показан прошлый ответ провайдера, а не живой. */
+      stale?: boolean;
+      /** Когда список был получен от провайдера. */
+      fetchedAt?: number;
+    }
   >;
   /** Скрытые модели по провайдерам (снятые галочки). */
   hidden?: Record<string, string[]>;

@@ -455,6 +455,56 @@ test('catalog refresh keeps whatever the provider API listed', async () => {
   } finally { globalThis.fetch = original; }
 });
 
+test('a forced refresh overwrites the old list and never falls back to cache', async () => {
+  providerConfigs.upsertProviderConfig(ownerId, {
+    id: 'stale-cache', name: 'Stale', protocol: 'openai', baseURL: 'https://1.1.1.1/stale/v1', enabled: true,
+  });
+  store.setProviderKey(ownerId, 'stale-cache', 'sk-stale');
+  const original = globalThis.fetch;
+  const listing = (models) => async () => new Response(JSON.stringify({ data: models }), {
+    status: 200, headers: { 'content-type': 'application/json' },
+  });
+  try {
+    globalThis.fetch = listing([{ id: 'deepseek-v3-free', name: 'DeepSeek V3 Free' }]);
+    const first = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
+    assert.deepEqual(first.models.map((model) => model.id), ['deepseek-v3-free']);
+
+    // Провайдер заменил бесплатную модель на другую.
+    globalThis.fetch = listing([{ id: 'minimax-m2.6-free', name: 'MiniMax M2.6 Free' }]);
+    const swapped = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
+    assert.deepEqual(swapped.models.map((model) => model.id), ['minimax-m2.6-free']);
+
+    // Сбой обновления не воскрешает прошлый список…
+    globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'catalog boom' } }), {
+      status: 400, headers: { 'content-type': 'application/json' },
+    });
+    const failed = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
+    assert.equal(failed.models.length, 0);
+    assert.notEqual(failed.status, 'cache');
+    assert.ok(failed.error);
+
+    // …и не оставляет его в кэше для следующего фонового вызова.
+    const background = await providers.fetchModels(ownerId, 'stale-cache', { force: false });
+    assert.equal(background.models.length, 0);
+    assert.notEqual(background.status, 'cache');
+  } finally { globalThis.fetch = original; }
+});
+
+test('a rate limit is reported as frequency, not as a dead model or empty balance', () => {
+  const throttled = Object.assign(new Error('Rate limit exceeded for free tier'), { statusCode: 429, retryAfterMs: 20_000 });
+  const text = providers.publicProviderErrorMessage(throttled);
+  assert.match(text, /частоту запросов/i);
+  assert.match(text, /20 с/);
+  assert.doesNotMatch(text, /недоступна/i);
+
+  const noHint = Object.assign(new Error('Too Many Requests'), { statusCode: 429 });
+  assert.match(providers.publicProviderErrorMessage(noHint), /ограничение частоты/i);
+
+  // Исчерпанный баланс приходит тем же кодом 429, но это другая причина.
+  const quota = Object.assign(new Error('You exceeded your current quota, please check your plan and billing details'), { statusCode: 429 });
+  assert.match(providers.publicProviderErrorMessage(quota), /недоступна/i);
+});
+
 test('truncated tool-call JSON is marked incomplete instead of becoming _raw', () => {
   assert.deepEqual(providers.parseToolArguments('{"path":"a.ts"}'), { ok: true, value: { path: 'a.ts' } });
   const broken = providers.parseToolArguments('{"command":"rm -rf');

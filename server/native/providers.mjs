@@ -290,6 +290,23 @@ function looksLikeOpaqueModelPayload(raw) {
   }
 }
 
+const PUBLIC_RATE_LIMITED = 'Провайдер ограничил частоту запросов к этой модели.';
+
+/**
+ * 429 — это «слишком часто прямо сейчас», а не «модель закончилась».
+ * У бесплатных моделей почти всегда есть потолок запросов в минуту или в
+ * сутки, и сырой текст провайдера («limits exceeded») читался как отключение
+ * модели или как исчерпанный баланс. Называем вещи своими именами и
+ * подсказываем время ожидания, если провайдер его прислал.
+ */
+function rateLimitMessage(err) {
+  const wait = Number(err?.retryAfterMs);
+  if (Number.isFinite(wait) && wait > 0) {
+    return `${PUBLIC_RATE_LIMITED} Повторите через ${Math.max(1, Math.ceil(wait / 1000))} с.`;
+  }
+  return `${PUBLIC_RATE_LIMITED} Это ограничение частоты, а не исчерпанный баланс: повторите чуть позже.`;
+}
+
 /** User-visible provider failures must not advertise a third-party product. */
 export function publicProviderErrorMessage(err) {
   // Готовое объяснение (например «модель выбрана вручную и отказала потому
@@ -297,6 +314,9 @@ export function publicProviderErrorMessage(err) {
   const prepared = String(err?.publicMessage || '').trim();
   if (prepared) return prepared;
   const raw = String(err?.message || err || '').trim();
+  // Проверка на исчерпанный баланс идёт раньше: OpenAI отдаёт
+  // insufficient_quota тоже с кодом 429, а это уже не частота.
+  if (isRateLimitProviderError(err) && !isModelUnavailableError(err)) return rateLimitMessage(err);
   if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw) || looksLikeOpaqueModelPayload(raw)) return PUBLIC_MODEL_UNAVAILABLE;
   if (/error from provider \(console\)/i.test(raw) || (raw.startsWith('{') && raw.endsWith('}'))) {
     return 'Провайдер не смог завершить этот ответ.';
@@ -575,7 +595,7 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   if (!key) return { status: 'unauthorized', models: [] };
   const ck = `${ownerId}:${providerId}:${spec.kind}:${spec.baseURL}:${key.slice(-8)}`;
   const old = cache.get(ck);
-  if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models };
+  if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models, fetchedAt: old.at };
   try {
     const body = await fetchModelList(spec, key);
     let models = [];
@@ -586,13 +606,24 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
       models = rows.map((m) => ({ id: String(m.id || m.name || ''), name: m.display_name || m.name || m.id })).filter((m) => m.id);
     }
     models.sort((a,b) => a.name.localeCompare(b.name));
+    // Живой ответ всегда замещает прежний список целиком: снятая у
+    // провайдера модель исчезает, а не домешивается к новым.
     cache.set(ck, { at: Date.now(), models });
-    return { status: 'live', models };
+    return { status: 'live', models, fetchedAt: Date.now() };
   } catch (err) {
     // Статус (unauthorized/unavailable) остаётся машинным сигналом для UI,
     // а текст маскируется теми же правилами, что и ошибки чата.
     const publicError = publicProviderErrorMessage(err);
-    if (old) return { status: 'cache', models: old.models, error: publicError };
+    // Явное обновление обязано показать правду. Раньше сбойный запрос
+    // возвращал прежний список, и снятая у провайдера модель жила в
+    // настройках бесконечно: человек жал «Обновить», получал старый
+    // набор и не видел причины. Кэш при этом сбрасывается, чтобы следующий
+    // фоновый вызов тоже не воскресил мёртвый список.
+    if (force) {
+      cache.delete(ck);
+      return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: publicError };
+    }
+    if (old) return { status: 'cache', models: old.models, error: publicError, stale: true, fetchedAt: old.at };
     return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: publicError };
   }
 }
@@ -637,11 +668,21 @@ function manualProviderId(providerId, model) {
 export async function buildCatalog(ownerId, { force = false } = {}) {
   const models = [];
   const providers = {};
+  const hiddenByProvider = {};
   const specs = effectiveSpecs(ownerId);
   for (const [providerId, spec] of Object.entries(specs)) {
     const found = await fetchModels(ownerId, providerId, { force });
-    providers[providerId] = { status: found.status, count: found.models.length };
-    const hidden = new Set(listHiddenModels(ownerId, providerId));
+    providers[providerId] = {
+      status: found.status,
+      count: found.models.length,
+      ...(found.error ? { error: found.error } : {}),
+      ...(found.stale ? { stale: true } : {}),
+      ...(found.fetchedAt ? { fetchedAt: found.fetchedAt } : {}),
+    };
+    const hiddenList = listHiddenModels(ownerId, providerId);
+    // Клиент читал catalog.hidden, но сервер это поле никогда не отдавал.
+    if (hiddenList.length) hiddenByProvider[providerId] = hiddenList;
+    const hidden = new Set(hiddenList);
     for (const model of found.models) {
       if (hidden.has(model.id)) continue;
       models.push({ providerID: providerId, sourceProviderID: providerId, providerName: spec.name, modelID: model.id, modelName: model.name, free: false, source: 'catalog', status: found.status });
@@ -699,7 +740,7 @@ export async function buildCatalog(ownerId, { force = false } = {}) {
     const modelID = configured.slice(slash + 1);
     if (providerID && modelID) defaults[providerID] = modelID;
   }
-  return { models: [...unique.values()], providers, default: defaults, generatedAt: Date.now() };
+  return { models: [...unique.values()], providers, hidden: hiddenByProvider, default: defaults, generatedAt: Date.now() };
 }
 
 export function resolveModel(ownerId, model) {
@@ -723,7 +764,7 @@ export function resolveModel(ownerId, model) {
   }
   const spec = specs[providerID];
   const key = getProviderKey(ownerId, providerID);
-  if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
+  if (!spec) throw Object.assign(new Error(`Неизв��стный провайдер: ${providerID}`), { statusCode: 400 });
   if (spec.enabled === false) throw Object.assign(new Error(`Провайдер ${spec.name} выключен`), { statusCode: 400 });
   if (!key) throw Object.assign(new Error(`API key для ${spec.name} не настроен`), { statusCode: 400 });
   return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };

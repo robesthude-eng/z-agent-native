@@ -18,7 +18,9 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
 
     try {
       const [catalog, channelsResponse] = await Promise.all([
-        api.listProviderCatalog(),
+        // Явное обновление обязано дойти до провайдера, иначе снятая им
+        // модель остаётся в списке до протухания серверного кэша.
+        api.listProviderCatalog(Boolean(force)),
         providerChannelsApi.list(),
       ]);
       const hiddenByProvider = catalog.hidden ?? {};

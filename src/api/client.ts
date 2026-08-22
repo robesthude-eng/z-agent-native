@@ -569,8 +569,15 @@ export const api = {
    * provider registry, который использует для inference, поэтому клиент не
    * держит собственного списка провайдеров и не создаёт второй source of truth.
    */
-  listProviderCatalog: () =>
-    req<ProviderCatalogResponse>(`/providers/models`, undefined, 45_000),
+  // force=true доходит до провайдера мимо пятиминутного кэша каталога.
+  // Без этого кнопка «Обновить модели» обновляла только экран провайдера,
+  // а выпадающий список сверху ещё несколько минут показывал старый набор.
+  listProviderCatalog: (force = false) =>
+    req<ProviderCatalogResponse>(
+      `/providers/models${force ? "?refresh=1" : ""}`,
+      undefined,
+      45_000,
+    ),
 
   saveCustomKey: (providerId: string, key: string) =>
     req<{ status: string }>(`/auth/custom`, {

@@ -173,6 +173,36 @@ test('manual model flags reach the model picker catalog', async () => {
   assert.equal(rows[0].free, true);
 });
 
+test('a refresh names manual models the provider no longer lists', async () => {
+  const owner = 'provider-missing@example.com';
+  store.createUser(owner, 'test-hash');
+  // Base URL — литеральный IP: проверка адреса идёт до подмены транспорта,
+  // а DNS в тестовой песочнице недоступен.
+  const id = configs.newCustomProviderId();
+  configs.upsertProviderConfig(owner, {
+    id, name: 'Zen', protocol: 'openai', baseURL: 'https://1.1.1.1/zen/v1', enabled: true,
+  });
+  store.setProviderKey(owner, id, 'secret-key');
+  await call('POST', `/api/provider-channels/${id}/manual-models`,
+    { modelId: 'deepseek-v3-free', probe: false }, owner);
+
+  // Провайдер заменил бесплатную модель на другую.
+  providers.setProviderTransportForTests(async () => new Response(
+    JSON.stringify({ data: [{ id: 'minimax-m2.6-free', name: 'MiniMax M2.6 Free' }] }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  ));
+  try {
+    const refreshed = await call('POST', `/api/provider-channels/${id}/refresh`, {}, owner);
+    assert.equal(refreshed.status, 200);
+    assert.equal(refreshed.body.status, 'live');
+    assert.deepEqual(refreshed.body.models.map((model) => model.id), ['minimax-m2.6-free']);
+    // Старая ручная модель осталась в выборе моделей, и об этом говорят вслух.
+    assert.deepEqual(refreshed.body.missingManual, ['deepseek-v3-free']);
+  } finally {
+    providers.setProviderTransportForTests(null);
+  }
+});
+
 test('manual model probe checks without saving and never leaks provider internals', async () => {
   const id = connectedChannel(ownerA, 'Probe', { key: null });
 
