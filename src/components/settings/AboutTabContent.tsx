@@ -1,4 +1,3 @@
-import { WarningIcon } from "../icons";
 import { SettingsCard, SettingsSection } from "./primitives";
 import { t } from "@/i18n";
 
@@ -16,8 +15,8 @@ export function AboutTabContent() {
     <div className="space-y-8">
       <div>
         <h3 className="font-semibold">Z Agent Native</h3>
-        <p className="mt-0.5 text-xs leading-relaxed text-muted-foreground">
-          {t("about_tab_content.samostoyatelnaya_ai_agent_platforma")}
+        <p className="mt-0.5 text-xs text-muted-foreground">
+          Самостоятельная AI-agent платформа. UI общается непосредственно с собственным runtime; внешнего OpenCode server/runner/proxy нет.
         </p>
       </div>
       <SettingsSection title={t("about_tab_content.svedeniya_o_sisteme")}>
@@ -30,16 +29,9 @@ export function AboutTabContent() {
           ))}
         </SettingsCard>
       </SettingsSection>
-      {/* Предупреждение о правах runtime — не рядовой абзац: теперь это
-          карточка со значком, а не серый текст внизу страницы. */}
-      <div className="flex items-start gap-2.5 rounded-xl border border-warning/30 bg-warning/10 px-3.5 py-3">
-        <span className="mt-0.5 shrink-0 text-warning">
-          <WarningIcon size={15} />
-        </span>
-        <p className="text-xs leading-relaxed text-muted-foreground">
-          {t("about_tab_content.agent_ispolnyaet_instrumenty_v_workspace")}
-        </p>
-      </div>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        Агент исполняет инструменты в workspace текущего чата. Команды shell/SSH обладают реальными правами процесса runtime — в production запускайте сервис в изолированном контейнере с минимальными host-доступами.
+      </p>
     </div>
   );
 }

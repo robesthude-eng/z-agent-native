@@ -11,8 +11,12 @@ interface Props {
    * Локальный экран ошибки вместо полностраничной карточки. Нужен для
    * ленивых панелей: у них падает один чанк, а не всё приложение, и
    * «Reset UI to Git» там был бы несоразмерным предложением.
+   *
+   * Функция получает текст исключения: боковой панели он нужен на месте.
+   * Раньше сообщение было доступно только в полностраничной карточке, и
+   * локальный fallback молча прятал причину падения.
    */
-  fallback?: ReactNode;
+  fallback?: ReactNode | ((message: string) => ReactNode);
 }
 interface State {
   hasError: boolean;
@@ -54,7 +58,11 @@ export default class ErrorBoundary extends Component<Props, State> {
 
   render() {
     if (this.state.hasError) {
-      if (this.props.fallback) return this.props.fallback;
+      if (this.props.fallback) {
+        return typeof this.props.fallback === "function"
+          ? this.props.fallback(this.state.message)
+          : this.props.fallback;
+      }
       return (
         <div className="flex min-h-dvh items-center justify-center bg-background p-6">
           <Card className="w-full max-w-md text-center shadow-lg">

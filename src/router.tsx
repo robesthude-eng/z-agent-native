@@ -15,6 +15,7 @@ import { isInterruptionBarEnabled } from "./api/interruptions";
 import ChatView from "./components/ChatView";
 import Composer from "./components/Composer";
 import { ConfirmProvider } from "./components/ConfirmDialog";
+import ErrorBoundary from "./components/ErrorBoundary";
 import InterruptionBar from "./components/InterruptionBar";
 import { LazyPanel, SettingsPanelSkeleton } from "./components/LazyPanel";
 import LoginPage from "./components/LoginPage";
@@ -273,12 +274,16 @@ function AppShell() {
           )}
         >
           <div className="w-[260px] h-full">
-            <Sidebar />
+            <ErrorBoundary fallback={(m: string) => <PanelCrash message={m} />}>
+              <Sidebar />
+            </ErrorBoundary>
           </div>
         </div>
         {/* Мобильная версия сайдбара без анимации контейнера */}
         <div className="md:hidden">
-          <Sidebar />
+          <ErrorBoundary fallback={(m: string) => <PanelCrash message={m} />}>
+            <Sidebar />
+          </ErrorBoundary>
         </div>
 
         <div className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background">
@@ -326,7 +331,11 @@ function AppShell() {
               )}
             >
               <div className="w-[85vw] max-w-[320px] md:w-80 h-full flex flex-col min-h-0">
-                <Workspace />
+                <ErrorBoundary
+                  fallback={(m: string) => <PanelCrash message={m} />}
+                >
+                  <Workspace />
+                </ErrorBoundary>
               </div>
             </div>
           </div>
@@ -394,6 +403,57 @@ function SseReconnectBanner({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+/**
+ * Сбой внутри боковой панели больше не уносит весь интерфейс. Ошибка рендера
+ * в списке чатов или в дереве файлов всплывала до корневого маршрута, и
+ * TanStack Router заменял собой всё приложение: чат и композер исчезали
+ * вместе с панелью. Теперь падает только сама панель, а текст исключения
+ * виден на месте — без него причину приходилось угадывать.
+ */
+function PanelCrash({ message }: { message: string }) {
+  return (
+    <div className="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
+      <span className="text-sm font-medium text-foreground">
+        {t("router.panel_ne_otrisovalas")}
+      </span>
+      <p className="text-xs text-muted-foreground">
+        {t("router.chat_prodolzhaet_rabotat")}
+      </p>
+      {message ? (
+        <pre className="max-h-32 w-full overflow-auto rounded-lg bg-muted/40 p-2 text-left text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          {message}
+        </pre>
+      ) : null}
+    </div>
+  );
+}
+
+/**
+ * Штатный экран ошибки маршрута у TanStack Router — английское
+ * «Something went wrong!» с кнопкой «Show Error»: текст исключения спрятан
+ * за лишним нажатием, а стиль не имеет ничего общего с остальным UI.
+ */
+function RouteCrash({ error }: { error: Error }) {
+  return (
+    <div className="flex min-h-dvh items-center justify-center bg-background p-6">
+      <div className="w-full max-w-md space-y-3 rounded-xl border border-border bg-card p-6 text-center">
+        <h2 className="text-lg font-semibold text-foreground">
+          {t("router.ekran_ne_otrisovalsya")}
+        </h2>
+        <p className="text-sm text-muted-foreground">
+          {t("router.perezagruzite_stranicu")}
+        </p>
+        <pre className="max-h-48 overflow-auto rounded-lg bg-muted/40 p-3 text-left text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
+          {error?.message ?? ""}
+        </pre>
+        <Button type="button" onClick={() => window.location.reload()}>
+          {t("router.perezagruzit")}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 const rootRoute = createRootRoute({
   component: () => (
     <ConfirmProvider>
@@ -431,6 +491,7 @@ const routeTree = rootRoute.addChildren([indexRoute, chatRoute, loginRoute]);
 export const router = createRouter({
   routeTree,
   defaultPreload: "intent",
+  defaultErrorComponent: RouteCrash,
 });
 
 declare module "@tanstack/react-router" {
