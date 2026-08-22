@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils";
 import { isInterruptedQuestionPart } from "../api/interruptions";
 import type { ToolPart } from "../api/types";
 import { toolIcon } from "../utils/toolUtils";
-import ToolCard from "./ToolCard";
+import ToolCard, { friendlyToolLabel } from "./ToolCard";
 
 function getState(part: ToolPart): string {
   const s = part.state;
@@ -31,16 +31,13 @@ function partKey(part: ToolPart): string {
 }
 
 function groupLabel(tool: string | undefined, count: number): string {
-  const safeTool = typeof tool === "string" && tool ? tool : "tool";
-  const t = safeTool.toLowerCase();
-  if (t === "bash" || t === "shell" || t === "cmd") {
-    return count === 1 ? "Ran command" : `Ran commands ${count}`;
-  }
-  if (t === "edit" || t === "write" || t === "applypatch" || t === "apply_patch") {
-    return count === 1 ? "Edited file" : `Edited files ${count}`;
-  }
-  if (t === "read") return count === 1 ? "Read file" : `Read files ${count}`;
-  return `${safeTool} ×${count}`;
+  // Подпись берётся из той же таблицы, что у одиночной карточки: своя таблица
+  // здесь означала бы, что один и тот же инструмент в ленте называется
+  // по-разному — в группе одним словом, отдельной строкой другим.
+  const label = friendlyToolLabel(
+    typeof tool === "string" && tool ? tool : undefined,
+  );
+  return count === 1 ? label : `${label} · ${count}`;
 }
 
 const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {

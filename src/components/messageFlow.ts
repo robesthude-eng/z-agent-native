@@ -87,35 +87,20 @@ export function groupParts(parts: Part[]): RenderItem[] {
     const name = toolName(part);
     if (part.type === "tool" && name) {
       const group: ToolPart[] = [parts[i] as ToolPart];
-      // Reasoning-части («Думал…») между одинаковыми действиями не разрывают
-      // группу: собираем их отдельно и рендерим после группы.
-      const skippedReasoning: Part[] = [];
+      // Группа — только подряд идущие вызовы одного инструмента.
+      //
+      // Раньше сборка перескакивала через reasoning-части и рисовала их
+      // после группы. Пока рассуждения приходили одним куском в конце шага,
+      // это почти не было видно. Теперь каждая вспышка — своя карточка, и такой
+      // перескок переставлял ленту местами: «думал → сделал → думал → сделал»
+      // превращалось в «сделал дважды → потом думал дважды». Порядок важнее
+      // склейки: по ленте читают, почему агент пошёл именно так.
       let j = i + 1;
       while (j < parts.length) {
         const next = parts[j] as { type?: string; tool?: unknown };
         if (next.type === "tool" && toolName(next) === name) {
           group.push(parts[j] as ToolPart);
           j++;
-        } else if (next.type === "reasoning") {
-          // Заглядываем вперёд через подряд идущие reasoning-части:
-          // если за ними то же действие — группа продолжается.
-          let k = j;
-          while (
-            k < parts.length &&
-            (parts[k] as { type?: string }).type === "reasoning"
-          ) {
-            k++;
-          }
-          const after = parts[k] as
-            | { type?: string; tool?: unknown }
-            | undefined;
-          if (after && after.type === "tool" && toolName(after) === name) {
-            for (let m = j; m < k; m++) {
-              const rp = parts[m];
-              if (rp) skippedReasoning.push(rp);
-            }
-            j = k;
-          } else break;
         } else break;
       }
       if (group.length > 1) {
@@ -123,7 +108,6 @@ export function groupParts(parts: Part[]): RenderItem[] {
       } else {
         result.push(cur);
       }
-      for (const r of skippedReasoning) result.push(r);
       i = j;
     } else {
       result.push(cur);

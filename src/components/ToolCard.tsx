@@ -162,22 +162,39 @@ function getSummary(part: ToolPart): string {
   return "";
 }
 
-function friendlyToolLabel(tool?: string): string {
+/**
+ * Подпись действия в ленте.
+ *
+ * Интерфейс русский целиком — «Размышляет…», «Действия», «Готово», «Остановлено
+ * пользователем», — а строки действий оставались английскими: «used Bash»,
+ * «Wrote file», «Ran subtask». В одной ленте это читается как чужая вставка,
+ * причём именно там, где пользователь разбирается, что агент сделал.
+ *
+ * Таблица одна на весь чат: группу вызовов подписывает она же (`ToolGroup`).
+ * Две таблицы разъезжались бы, и один инструмент назывался бы двумя словами.
+ */
+export function friendlyToolLabel(tool?: string): string {
   const t = (tool || "").toLowerCase();
-  if (t === "bash" || t === "shell" || t === "cmd") return "used Bash";
-  if (t === "read") return "Read file";
-  if (t === "write") return "Wrote file";
-  if (t === "edit" || t === "applypatch" || t === "apply_patch") return "Edited file";
-  if (t === "glob") return "Searched files";
-  if (t === "grep") return "Searched text";
-  if (t === "ls" || t === "list") return "Listed directory";
-  if (t === "webfetch" || t === "fetch") return "Fetched URL";
-  if (t === "websearch" || t === "search") return "Searched web";
-  if (t === "task") return "Ran subtask";
-  if (t === "todowrite" || t === "todo") return "Updated todos";
-  if (t === "question") return "Question";
-  if (!tool) return "Tool";
-  return `used ${tool.charAt(0).toUpperCase()}${tool.slice(1)}`;
+  if (t === "bash" || t === "shell" || t === "cmd") return "Команда";
+  if (t === "read") return "Читает файл";
+  if (t === "write") return "Пишет файл";
+  if (t === "edit" || t === "applypatch" || t === "apply_patch")
+    return "Правит файл";
+  if (t === "patch") return "Применяет патч";
+  if (t === "glob") return "Ищет файлы";
+  if (t === "grep") return "Ищет по тексту";
+  if (t === "ls" || t === "list") return "Смотрит папку";
+  if (t === "webfetch" || t === "fetch") return "Загружает страницу";
+  if (t === "websearch" || t === "search") return "Ищет в интернете";
+  if (t === "task") return "Подзадача";
+  if (t === "todowrite" || t === "todo") return "Обновляет план";
+  if (t === "question") return "Вопрос";
+  if (t === "ensure_environment") return "Готовит окружение";
+  if (t === "environment_status") return "Проверяет окружение";
+  if (t === "repo_map") return "Смотрит структуру проекта";
+  if (!tool) return "Инструмент";
+  // Незнакомый инструмент называем его же именем, а не выдумываем перевод.
+  return `Инструмент ${tool}`;
 }
 
 /* ---------- Question tool card ---------- */

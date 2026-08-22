@@ -243,3 +243,71 @@ describe("невидимые части не разрывают цепочку",
     ).toBe(0);
   });
 });
+
+/**
+ * Порядок карточек в ленте.
+ *
+ * Рассуждения приходят вспышками: подумал — вызвал инструмент — снова подумал —
+ * снова вызвал. Сборка групп перескакивала через reasoning и дорисовывала его
+ * после группы, поэтому лента показывала «сделал дважды, а потом думал
+ * дважды» — то есть агент как будто размышлял уже после работы.
+ */
+describe("карточка рассуждений остаётся на своём месте", () => {
+  const kinds = (items: ReturnType<typeof groupParts>): string[] =>
+    items.map((it) => {
+      const g = it as { kind?: string; type?: string };
+      return g.kind === "group" ? "группа" : (g.type ?? "");
+    });
+
+  test("вспышка между двумя одинаковыми вызовами не уезжает вниз", () => {
+    const items = groupParts([
+      tool("t1", "bash"),
+      reasoning("r1"),
+      tool("t2", "bash"),
+    ]);
+    expect(kinds(items)).toEqual(["tool", "reasoning", "tool"]);
+  });
+
+  test("две вспышки подряд тоже сохраняют порядок", () => {
+    const items = groupParts([
+      reasoning("r1"),
+      tool("t1", "read"),
+      reasoning("r2"),
+      tool("t2", "read"),
+      tool("t3", "read"),
+    ]);
+    // Последние два вызова идут подряд — их склейка законна.
+    expect(kinds(items)).toEqual(["reasoning", "tool", "reasoning", "группа"]);
+  });
+
+  test("подряд идущие вызовы без рассуждений склеиваются как раньше", () => {
+    const items = groupParts([
+      tool("t1", "bash"),
+      tool("t2", "bash"),
+      tool("t3", "bash"),
+    ]);
+    expect(items).toHaveLength(1);
+    expect(runStepCount(items)).toBe(3);
+  });
+
+  test("вспышка разрывает цепочку «Действия», а не прячется в ней", () => {
+    const flow = groupActivityRuns(
+      groupParts([
+        tool("t1", "bash"),
+        tool("t2", "read"),
+        reasoning("r1"),
+        tool("t3", "edit"),
+        tool("t4", "write"),
+      ]),
+    );
+    // Две цепочки и карточка между ними: рассуждения обязаны быть видны в
+    // ленте, а «Действия» свёрнуты по умолчанию — спрятать их внутрь значит
+    // потерять живую карточку целиком.
+    const shape = flow.map((f) => {
+      const g = f as { kind?: string; type?: string };
+      if (g.kind === "activity") return "цепочка";
+      return g.type ?? g.kind ?? "";
+    });
+    expect(shape).toEqual(["цепочка", "reasoning", "цепочка"]);
+  });
+});
