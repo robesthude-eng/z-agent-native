@@ -14,6 +14,15 @@ export function executorAvailable() {
   try { return fs.statSync(SOCKET_PATH).isSocket(); } catch { return false; }
 }
 
+async function waitForExecutorSocket(timeoutMs = 2500) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    if (executorAvailable()) return true;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  return executorAvailable();
+}
+
 function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000 } = {}) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify(payload || {}));
@@ -65,19 +74,36 @@ function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000 } = {})
 
 export async function executeInExecutor({ workspace, uid, gid = uid, file, args = [], env = {}, stdin = '', timeoutMs, signal }) {
   if (!executorAvailable()) {
+    await waitForExecutorSocket(2500);
+  }
+  if (!executorAvailable()) {
     if (REQUIRED) throw Object.assign(new Error(`Secure executor is required but unavailable at ${SOCKET_PATH}`), { code: 'EXECUTOR_UNAVAILABLE' });
     return null;
   }
-  return await requestExecutor('/exec', {
-    workspace,
-    uid,
-    gid,
-    file,
-    args,
-    env,
-    stdin,
-    timeoutMs,
-  }, { signal, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 600_000, 5_000) + 10_000, 1_810_000) });
+  let lastErr = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
+    try {
+      return await requestExecutor('/exec', {
+        workspace,
+        uid,
+        gid,
+        file,
+        args,
+        env,
+        stdin,
+        timeoutMs,
+      }, { signal, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 600_000, 5_000) + 10_000, 1_810_000) });
+    } catch (err) {
+      lastErr = err;
+      if (err?.code === 'ECONNREFUSED' || err?.code === 'ENOENT' || err?.message?.includes('socket') || err?.message?.includes('connect')) {
+        await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
+        continue;
+      }
+      throw err;
+    }
+  }
+  throw lastErr;
 }
 
 export function executeInExecutorSync({ workspace, uid, gid = uid, file, args = [], env = {}, stdin = '', timeoutMs }) {
@@ -110,6 +136,9 @@ export async function killExecutorIdentity(uid) {
 }
 
 export async function probeExecutor() {
+  if (!executorAvailable()) {
+    await waitForExecutorSocket(1500);
+  }
   if (!executorAvailable()) return { ok: false, reason: 'socket_missing' };
   try { return await requestExecutor('/health', {}, { timeoutMs: 2_000 }); }
   catch (error) { return { ok: false, reason: error?.message || String(error) }; }
