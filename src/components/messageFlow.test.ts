@@ -202,16 +202,15 @@ describe("невидимые части не разрывают цепочку",
       msg("m2", [
         stepStart("s2"),
         tool("t2", "read"),
-        reasoning("r1"),
         text("e2", "   "),
       ]),
-      msg("m3", [stepStart("s3"), tool("t3", "edit"), reasoning("r2")]),
+      msg("m3", [stepStart("s3"), tool("t3", "edit")]),
     ];
     const flow = groupActivityRuns(groupParts(flowParts(messages)));
     const runs = flow.filter((f) => "kind" in f && f.kind === "activity");
     expect(runs.length).toBe(1);
     const run = runs[0] as { items: Part[] };
-    expect(runStepCount(run.items)).toBe(5);
+    expect(runStepCount(run.items)).toBe(3);
   });
 
   test("пустая текстовая часть не рисуется и не считается шагом", () => {

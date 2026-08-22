@@ -142,7 +142,6 @@ export function isActivityItem(item: RenderItem): boolean {
   if (!("type" in item)) return true; // ToolGroupData — группа вызовов инструмента
   return (
     item.type === "tool" ||
-    item.type === "reasoning" ||
     item.type === "step-start" ||
     item.type === "step-finish" ||
     item.type === "step-reasoning"
