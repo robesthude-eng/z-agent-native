@@ -1,13 +1,21 @@
+import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import DiffView from "../DiffView";
 import FilePreview from "../FilePreview";
-import { CloseIcon, SaveIcon } from "../icons";
+import {
+  ArchiveFileIcon,
+  CloseIcon,
+  FileIcon,
+  ImageFileIcon,
+  SaveIcon,
+} from "../icons";
 import CodeView from "./CodeView";
 import type { PreviewKind, ViewMode } from "./fileDecisions";
+import { fileVisual } from "./fileVisual";
 import { toRelPath } from "./workspaceTreeHelpers";
-import { t } from "@/i18n";
 
 /**
  * Окно просмотра и правки файла воркспейса.
@@ -21,6 +29,10 @@ import { t } from "@/i18n";
  * (`viewModesFor`), какой режим годен после смены файла (`keepViewMode`),
  * правится ли файл и куда ведёт превью — всё в `fileDecisions.ts`, где
  * проверяется перебором. Компонент остаётся разметкой и вызовами.
+ *
+ * Визуальный проход добавил к этому ровно две вещи, обе — про окно, а не про
+ * файл: закрытие по Escape (у всех прочих окон проекта оно есть, здесь
+ * единственным способом уйти была мышь) и роль `dialog` для чтения с экрана.
  *
  * **Проверен только чтением.** `.tsx` офлайн-харнесс не запускает: нужен
  * JSX-транспайлер и настоящий DOM. Первым делом после `npm ci` —
@@ -69,6 +81,31 @@ export default function FileEditor({
   onSave,
   onClose,
 }: FileEditorProps) {
+  // Escape закрывает окно. Дальше решает `onClose`: у несохранённого файла он
+  // сначала спросит подтверждение — то же, что и у крестика.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+
+  const rel = toRelPath(file.path);
+  const slash = rel.lastIndexOf("/");
+  const dirPart = slash === -1 ? "" : `${rel.slice(0, slash)}/`;
+  const namePart = slash === -1 ? rel : rel.slice(slash + 1);
+  const visual = fileVisual(namePart);
+  const TitleIcon =
+    visual.glyph === "image"
+      ? ImageFileIcon
+      : visual.glyph === "archive"
+        ? ArchiveFileIcon
+        : FileIcon;
+
   return (
     <>
       {/* Фон — кнопка-сосед, как в PanelModal: закрытие кликом мимо
@@ -76,23 +113,38 @@ export default function FileEditor({
           stopPropagation, чтобы клики внутри не закрывали его. */}
       <button
         type="button"
-        className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
+        className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[3px] animate-in fade-in"
         onClick={onClose}
         aria-label={t("file_editor.zakryt_fayl")}
       />
-      <div className="fixed left-1/2 top-1/2 z-[65] flex h-[min(560px,85dvh)] w-[min(720px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-e3">
-        <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
-          <span className="min-w-0 flex-1 truncate font-mono text-sm">
-            {toRelPath(file.path)}
-            {dirty && (
-              <span
-                className="ml-2 text-amber-400"
-                title={t("file_editor.est_nesohranennye_pravki")}
-              >
-                •
-              </span>
-            )}
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={rel}
+        className="fixed left-1/2 top-1/2 z-[65] flex h-[min(660px,88dvh)] w-[min(880px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-e3 animate-in fade-in zoom-in-95"
+      >
+        <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-4 py-3">
+          <span className="shrink-0" style={{ color: visual.color }}>
+            <TitleIcon size={16} />
           </span>
+          {/* Путь и имя разной яркости: в списке из десяти открытых файлов
+              глаз ищет имя, а путь нужен только чтобы не спутать одноимённые. */}
+          <span className="flex min-w-0 flex-1 items-baseline gap-0 truncate font-mono text-[13px]">
+            {dirPart && (
+              <span className="truncate text-muted-foreground">{dirPart}</span>
+            )}
+            <span className="truncate font-medium text-foreground">
+              {namePart}
+            </span>
+          </span>
+          {dirty && (
+            <span
+              className="shrink-0 rounded-full bg-warning/15 px-2 py-0.5 text-[10.5px] font-medium text-warning"
+              title={t("file_editor.est_nesohranennye_pravki")}
+            >
+              {t("file_editor.ne_sohraneno")}
+            </span>
+          )}
           {editable && (
             <Button
               size="sm"
@@ -104,13 +156,15 @@ export default function FileEditor({
               title={t("file_editor.sohranit_ctrl_s")}
             >
               <SaveIcon size={14} />
-              {saving ? t("account_tab_content.sohranenie") : t("file_editor.sohranit")}
+              {saving
+                ? t("account_tab_content.sohranenie")
+                : t("file_editor.sohranit")}
             </Button>
           )}
           <Button
             variant="ghost"
             size="icon"
-            className="h-8 w-8 shrink-0"
+            className="h-8 w-8 shrink-0 rounded-lg"
             onClick={onClose}
             title={t("panel_modal.zakryt")}
             aria-label={t("panel_modal.zakryt")}
@@ -128,22 +182,25 @@ export default function FileEditor({
             `keepViewMode` не звалась ниоткуда: написана, покрыта тестами и
             мертва — тот же случай, что с полем `cancelsTurn`. */}
         {modes.length > 1 && (
-          <div className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1.5">
-            {modes.map((m) => (
-              <button
-                key={m}
-                type="button"
-                className={cn(
-                  "rounded-md px-2.5 py-1 text-[11.5px] transition",
-                  mode === m
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
-                )}
-                onClick={() => onModeChange(m)}
-              >
-                {VIEW_MODE_LABEL[m]}
-              </button>
-            ))}
+          <div className="flex shrink-0 items-center border-b border-border px-3 py-2">
+            <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
+              {modes.map((m) => (
+                <button
+                  key={m}
+                  type="button"
+                  aria-pressed={mode === m}
+                  className={cn(
+                    "rounded-[7px] px-3 py-1 text-[11.5px] transition-all",
+                    mode === m
+                      ? "bg-card text-foreground shadow-e1"
+                      : "text-muted-foreground hover:text-foreground",
+                  )}
+                  onClick={() => onModeChange(m)}
+                >
+                  {VIEW_MODE_LABEL[m]}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
@@ -153,7 +210,9 @@ export default function FileEditor({
               <DiffView
                 oldText={file.content}
                 newText={draft}
-                emptyLabel={t("file_editor.chernovik_sovpadaet_s_sohranennym_faylom")}
+                emptyLabel={t(
+                  "file_editor.chernovik_sovpadaet_s_sohranennym_faylom",
+                )}
               />
             </div>
           </ScrollArea>

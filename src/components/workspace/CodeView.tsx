@@ -20,17 +20,41 @@ import { highlightLanguage } from "./codeLanguage";
  * обязаны совпадать по метрике до пикселя: любое расхождение в шрифте,
  * межстрочном интервале или отступе разъезжается тем сильнее, чем длиннее
  * файл. Отсюда общий класс `CODE_METRICS` вместо двух похожих наборов.
+ *
+ * К двум слоям добавился третий — колонка номеров строк. Она живёт по тому
+ * же правилу: та же метрика, тот же вертикальный отступ, прокрутка следует за
+ * textarea. Номера — `<div>`, а не `<pre>`: второй `<pre>` в дереве сломал бы
+ * тесты, которые берут нижний слой через `querySelector("pre")`.
  */
 
 /**
- * Метрика, общая для обоих слоёв. Меняется только здесь и только целиком:
+ * Метрика, общая для всех слоёв. Меняется только здесь и только целиком:
  * правка одного слоя рассинхронизирует текст с подсветкой.
  */
 const CODE_METRICS =
   "font-mono text-[13px] leading-relaxed whitespace-pre tracking-normal";
 
-/** Отступ, тоже общий для обоих слоёв. */
-const CODE_PADDING = "p-4";
+/** Ширина колонки номеров. Она же — левый отступ обоих слоёв текста. */
+const GUTTER_W = 52;
+
+/** Отступ, тоже общий для обоих слоёв режима правки. */
+const CODE_PADDING = `py-4 pr-4 pl-[${GUTTER_W}px]`;
+
+/** Вертикальный отступ колонки номеров совпадает с `CODE_PADDING`. */
+const GUTTER_CLASS = `${CODE_METRICS} select-none py-4 pr-3 text-right text-muted-foreground/60`;
+
+/**
+ * Потолок подсветки. hljs разбирает весь текст сразу, и на файле в полмегабайта
+ * каждое нажатие клавиши вешало бы вкладку на секунды. За потолком файл
+ * показывается как текст: читать его можно, править тоже.
+ */
+const MAX_HIGHLIGHT_CHARS = 500_000;
+
+/**
+ * Потолок колонки номеров. Номера — одна строка текста, но на сотнях тысяч
+ * строк даже она стоит памяти; такой файл всё равно не читают глазами.
+ */
+const MAX_GUTTER_LINES = 20_000;
 
 export interface CodeViewProps {
   path: string;
@@ -51,6 +75,7 @@ export default function CodeView({
 }: CodeViewProps) {
   const preRef = useRef<HTMLPreElement>(null);
   const taRef = useRef<HTMLTextAreaElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
 
   const language = highlightLanguage(path, value);
 
@@ -59,6 +84,7 @@ export default function CodeView({
   // на каждый ввод символа это один проход по видимому файлу.
   const html = useMemo(() => {
     if (!language) return null;
+    if (value.length > MAX_HIGHLIGHT_CHARS) return null;
     try {
       return hljs.highlight(value, { language, ignoreIllegals: true }).value;
     } catch {
@@ -67,7 +93,17 @@ export default function CodeView({
     }
   }, [value, language]);
 
-  // Прокрутка нижнего слоя следует за верхним. useLayoutEffect, а не
+  // Номера строк. Считаются по тому же тексту, что видит textarea, иначе
+  // последняя строка осталась бы без номера.
+  const gutter = useMemo(() => {
+    const lines = value.split("\n").length;
+    if (lines > MAX_GUTTER_LINES) return null;
+    let out = "";
+    for (let i = 1; i <= lines; i++) out += `${i}\n`;
+    return out;
+  }, [value]);
+
+  // Прокрутка нижних слоёв следует за верхним. useLayoutEffect, а не
   // useEffect: после смены текста позицию нужно вернуть до кадра, иначе
   // подсветка на мгновение съезжает.
   useLayoutEffect(() => {
@@ -76,6 +112,7 @@ export default function CodeView({
     if (!ta || !pre) return;
     pre.scrollTop = ta.scrollTop;
     pre.scrollLeft = ta.scrollLeft;
+    if (gutterRef.current) gutterRef.current.scrollTop = ta.scrollTop;
   }, []);
 
   const syncScroll = () => {
@@ -84,6 +121,7 @@ export default function CodeView({
     if (!ta || !pre) return;
     pre.scrollTop = ta.scrollTop;
     pre.scrollLeft = ta.scrollLeft;
+    if (gutterRef.current) gutterRef.current.scrollTop = ta.scrollTop;
   };
 
   // Разметку создаёт highlight.js из текста, который он же и экранировал:
@@ -112,9 +150,22 @@ export default function CodeView({
           </div>
         )}
         <div className="min-h-0 flex-1 overflow-auto">
-          <pre className={`${CODE_METRICS} ${CODE_PADDING} text-foreground`}>
-            {code}
-          </pre>
+          <div className="flex min-w-max">
+            {gutter && (
+              // sticky, а не просто колонка: при горизонтальной прокрутке
+              // длинной строки номера должны оставаться на месте.
+              <div
+                aria-hidden="true"
+                className={`${GUTTER_CLASS} sticky left-0 z-10 shrink-0 border-r border-border/60 bg-card`}
+                style={{ width: GUTTER_W }}
+              >
+                {gutter}
+              </div>
+            )}
+            <pre className={`${CODE_METRICS} py-4 pr-4 pl-3 text-foreground`}>
+              {code}
+            </pre>
+          </div>
         </div>
       </>
     );
@@ -122,6 +173,16 @@ export default function CodeView({
 
   return (
     <div className="relative min-h-0 flex-1">
+      {gutter && (
+        <div
+          ref={gutterRef}
+          aria-hidden="true"
+          className={`${GUTTER_CLASS} pointer-events-none absolute inset-y-0 left-0 z-10 overflow-hidden border-r border-border/60 bg-card`}
+          style={{ width: GUTTER_W }}
+        >
+          {gutter}
+        </div>
+      )}
       <pre
         ref={preRef}
         aria-hidden="true"

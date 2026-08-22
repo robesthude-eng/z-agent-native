@@ -528,3 +528,41 @@
     animation: none;
   }
 }
+
+/* ==== Скелет загрузки ====
+   Панель файлов показывала крутилку по центру: место под будущие строки
+   не занималось, и дерево прыгало вниз в момент появления. Скелет держит
+   ту же высоту, что и первые строки дерева. */
+.oc-skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: color-mix(
+    in srgb,
+    var(--color-muted-foreground) 16%,
+    transparent
+  );
+}
+.oc-skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--color-foreground) 10%, transparent),
+    transparent
+  );
+  animation: oc-shimmer 1.4s var(--ease-standard) infinite;
+}
+@keyframes oc-shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .oc-skeleton::after {
+    animation: none;
+  }
+}
