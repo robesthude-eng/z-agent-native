@@ -28,7 +28,10 @@ type ToolPresentation = {
 };
 
 function presentTool(tool: string, input: unknown): ToolPresentation {
-  const t = tool.toLowerCase();
+  // `kind`, а не `t`: имя `t` занято функцией перевода, импортированной
+  // выше. Затенённое строкой, оно превращало каждый вызов t("…") ниже в
+  // попытку вызвать строку как функцию — и диалог разрешений ронял корень.
+  const kind = tool.toLowerCase();
   const obj = (input && typeof input === "object" ? input : {}) as Record<
     string,
     unknown
@@ -36,37 +39,37 @@ function presentTool(tool: string, input: unknown): ToolPresentation {
   const str = (k: string) =>
     typeof obj[k] === "string" ? (obj[k] as string) : undefined;
 
-  if (["bash", "shell", "cmd"].includes(t)) {
+  if (["bash", "shell", "cmd"].includes(kind)) {
     return {
       action: t("permission_dialog.vypolnit_komandu_v_terminale_pesochnicy_etoy"),
       detail: str("command") ?? str("cmd"),
     };
   }
-  if (t === "write") {
+  if (kind === "write") {
     return {
       action: t("permission_dialog.sozdat_ili_perezapisat_fayl_v_pesochnice"),
       detail: str("filePath") ?? str("path") ?? str("file"),
     };
   }
-  if (["edit", "multiedit", "patch", "apply_patch"].includes(t)) {
+  if (["edit", "multiedit", "patch", "apply_patch"].includes(kind)) {
     return {
       action: t("permission_dialog.izmenit_fayl_v_pesochnice"),
       detail: str("filePath") ?? str("path") ?? str("file"),
     };
   }
-  if (["read", "grep", "glob", "list", "ls"].includes(t)) {
+  if (["read", "grep", "glob", "list", "ls"].includes(kind)) {
     return {
       action: t("permission_dialog.prochitat_fayly_proekta"),
       detail: str("filePath") ?? str("path") ?? str("pattern"),
     };
   }
-  if (["webfetch", "websearch", "fetch"].includes(t)) {
+  if (["webfetch", "websearch", "fetch"].includes(kind)) {
     return {
       action: t("permission_dialog.vypolnit_zapros_v_internet"),
       detail: str("url") ?? str("query"),
     };
   }
-  if (t === "task") {
+  if (kind === "task") {
     return {
       action: t("permission_dialog.zapustit_fonovuyu_podzadachu"),
       detail: str("description"),

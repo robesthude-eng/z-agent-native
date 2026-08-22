@@ -87,8 +87,11 @@ export function activityDetail(tool: string, part: LoosePart): string {
   const input = inputOf(part);
   const str = (key: string) =>
     typeof input[key] === "string" ? (input[key] as string) : "";
-  const t = tool.toLowerCase();
-  if (t === "webfetch" || t === "fetch") {
+  // `kind`, а не `t`: имя `t` занято функцией перевода, которой пользуется
+  // этот же файл ниже. В ветке apply_patch затенение превращало перевод в
+  // вызов строки как функции.
+  const kind = tool.toLowerCase();
+  if (kind === "webfetch" || kind === "fetch") {
     const url = str("url");
     try {
       return shorten(new URL(url).hostname);
@@ -96,13 +99,16 @@ export function activityDetail(tool: string, part: LoosePart): string {
       return shorten(url);
     }
   }
-  if (t === "websearch" || t === "search" || t === "grep") return shorten(str("query"));
-  if (t === "bash" || t === "shell" || t === "run_tests") return shorten(str("command"));
-  if (t === "glob") return shorten(str("pattern"));
-  if (t === "task") return shorten(str("agent") || str("description"));
-  if (t === "ensure_environment" || t === "environment_status") return shorten(str("kind"));
-  if (t === "apply_patch") return t("agent_activity.patch");
-  if (t === "todowrite") {
+  if (kind === "websearch" || kind === "search" || kind === "grep")
+    return shorten(str("query"));
+  if (kind === "bash" || kind === "shell" || kind === "run_tests")
+    return shorten(str("command"));
+  if (kind === "glob") return shorten(str("pattern"));
+  if (kind === "task") return shorten(str("agent") || str("description"));
+  if (kind === "ensure_environment" || kind === "environment_status")
+    return shorten(str("kind"));
+  if (kind === "apply_patch") return t("agent_activity.patch");
+  if (kind === "todowrite") {
     const todos = input.todos;
     return Array.isArray(todos) ? tf("agent_activity.0_p", [todos.length]) : "";
   }

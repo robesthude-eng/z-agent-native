@@ -24,19 +24,24 @@ export default function ToastHost() {
       role="status"
       aria-live="polite"
     >
-      {toasts.map((t) => (
+      {/* Параметр называется `toast`, а не `t`: буквой `t` в этом файле
+          названа импортированная функция перевода, и внутри map она
+          оказывалась затенена объектом уведомления. Строка ниже пыталась
+          вызвать объект как функцию, а ToastHost подключён в корне роутера —
+          поэтому первое же всплывшее уведомление гасило всё приложение. */}
+      {toasts.map((toast) => (
         <button
-          key={t.id}
+          key={toast.id}
           type="button"
-          onClick={() => dismiss(t.id)}
+          onClick={() => dismiss(toast.id)}
           title={t("toast_host.skryt_uvedomlenie")}
           className={cn(
             "pointer-events-auto rounded-lg border px-3 py-2 text-left text-sm shadow-e2 break-words",
-            KIND_STYLES[t.kind],
+            KIND_STYLES[toast.kind],
           )}
         >
-          <span className="mr-1.5">{KIND_ICONS[t.kind]}</span>
-          {t.text}
+          <span className="mr-1.5">{KIND_ICONS[toast.kind]}</span>
+          {toast.text}
         </button>
       ))}
     </div>

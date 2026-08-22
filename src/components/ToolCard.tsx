@@ -175,24 +175,32 @@ function getSummary(part: ToolPart): string {
  * Две таблицы разъезжались бы, и один инструмент назывался бы двумя словами.
  */
 export function friendlyToolLabel(tool?: string): string {
-  const t = (tool || "").toLowerCase();
-  if (t === "bash" || t === "shell" || t === "cmd") return t("tool_card.komanda");
-  if (t === "read") return t("tool_card.chitaet_fayl");
-  if (t === "write") return t("tool_card.pishet_fayl");
-  if (t === "edit" || t === "applypatch" || t === "apply_patch")
+  // `kind`, а не `t`: имя `t` занято функцией перевода. Затенённое строкой,
+  // оно делало нерабочей каждую ветку ниже — а эту функцию зовёт и карточка
+  // инструмента, и заголовок группы, и индикатор активности агента.
+  const kind = (tool || "").toLowerCase();
+  if (kind === "bash" || kind === "shell" || kind === "cmd")
+    return t("tool_card.komanda");
+  if (kind === "read") return t("tool_card.chitaet_fayl");
+  if (kind === "write") return t("tool_card.pishet_fayl");
+  if (kind === "edit" || kind === "applypatch" || kind === "apply_patch")
     return t("tool_card.pravit_fayl");
-  if (t === "patch") return t("tool_card.primenyaet_patch");
-  if (t === "glob") return t("tool_card.ischet_fayly");
-  if (t === "grep") return t("tool_card.ischet_po_tekstu");
-  if (t === "ls" || t === "list") return t("tool_card.smotrit_papku");
-  if (t === "webfetch" || t === "fetch") return t("tool_card.zagruzhaet_stranicu");
-  if (t === "websearch" || t === "search") return t("tool_card.ischet_v_internete");
-  if (t === "task") return t("tool_card.podzadacha");
-  if (t === "todowrite" || t === "todo") return t("tool_card.obnovlyaet_plan");
-  if (t === "question") return t("tool_card.vopros");
-  if (t === "ensure_environment") return t("tool_card.gotovit_okruzhenie");
-  if (t === "environment_status") return t("tool_card.proveryaet_okruzhenie");
-  if (t === "repo_map") return t("tool_card.smotrit_strukturu_proekta");
+  if (kind === "patch") return t("tool_card.primenyaet_patch");
+  if (kind === "glob") return t("tool_card.ischet_fayly");
+  if (kind === "grep") return t("tool_card.ischet_po_tekstu");
+  if (kind === "ls" || kind === "list") return t("tool_card.smotrit_papku");
+  if (kind === "webfetch" || kind === "fetch")
+    return t("tool_card.zagruzhaet_stranicu");
+  if (kind === "websearch" || kind === "search")
+    return t("tool_card.ischet_v_internete");
+  if (kind === "task") return t("tool_card.podzadacha");
+  if (kind === "todowrite" || kind === "todo")
+    return t("tool_card.obnovlyaet_plan");
+  if (kind === "question") return t("tool_card.vopros");
+  if (kind === "ensure_environment") return t("tool_card.gotovit_okruzhenie");
+  if (kind === "environment_status")
+    return t("tool_card.proveryaet_okruzhenie");
+  if (kind === "repo_map") return t("tool_card.smotrit_strukturu_proekta");
   if (!tool) return t("tool_card.instrument");
   // Незнакомый инструмент называем его же именем, а не выдумываем перевод.
   return tf("tool_card.instrument_0", [tool]);
