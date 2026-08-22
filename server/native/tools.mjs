@@ -228,6 +228,58 @@ function truncate(text, max = MAX_TOOL_OUTPUT) {
   return s.length <= max ? s : `${s.slice(0, max)}\n\n[output truncated: ${s.length - max} chars omitted]`;
 }
 
+// Живой вывод работающей команды.
+//
+// Карточка инструмента умеет рисовать растущий stdout, но до сих пор получала
+// его только по завершении: минутная сборка выглядела как команда и пустота,
+// и по ленте было не понять, жив ли процесс.
+//
+// Два ограничения здесь не косметические. Интервал: без него болтливая команда
+// (тесты, установка пакетов) шлёт событие на каждую строку — это тысячи кадров в
+// SSE и дергающаяся лента. Хвост: в карточке читают последние строки, а не всю
+// портынку с начала, и гнать целиком всё накопленное каждые 250 мс незачем.
+const LIVE_OUTPUT_INTERVAL_MS = 250;
+const LIVE_OUTPUT_TAIL = 4000;
+
+function liveTail(text) {
+  const s = String(text ?? '');
+  if (s.length <= LIVE_OUTPUT_TAIL) return s;
+  return `[…показан только конец вывода]\n${s.slice(-LIVE_OUTPUT_TAIL)}`;
+}
+
+export function createLiveOutput(onOutput) {
+  if (typeof onOutput !== 'function') return { push() {}, stop() {} };
+  let timer = null;
+  let pending = null;
+  let sent = null;
+  const flush = () => {
+    timer = null;
+    const text = pending;
+    pending = null;
+    // Повторный кадр с тем же текстом — лишнее событие и лишний рендер.
+    if (text == null || text === sent) return;
+    sent = text;
+    // Потребитель — только интерфейс. Его ошибка не должна ронять команду.
+    try { onOutput(text); } catch {}
+  };
+  return {
+    push(stdout, stderr) {
+      pending = [
+        stdout && `stdout:\n${liveTail(stdout)}`,
+        stderr && `stderr:\n${liveTail(stderr)}`,
+      ].filter(Boolean).join('\n');
+      if (timer) return;
+      timer = setTimeout(flush, LIVE_OUTPUT_INTERVAL_MS);
+      timer.unref?.();
+    },
+    stop() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
+    },
+  };
+}
+
 function walk(root, start, depth, out, baseDepth = 0) {
   if (baseDepth > depth || out.length >= MAX_WALK_ENTRIES) return;
   let entries;
@@ -376,10 +428,14 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
     });
     let stdout = '';
     let stderr = '';
+    // Создаётся после ветки с вынесенным исполнителем: тот отвечает одним
+    // кадром по завершении, и таймер там был бы повисшим впустую.
+    const live = createLiveOutput(ctx?.onOutput);
     const push = (which, chunk) => {
       const next = Buffer.from(chunk).toString('utf8');
       if (which === 'out') stdout = truncate(stdout + next);
       else stderr = truncate(stderr + next);
+      live.push(stdout, stderr);
     };
     child.stdout.on('data', (c) => push('out', c));
     child.stderr.on('data', (c) => push('err', c));
@@ -404,12 +460,14 @@ async function execBash(root, command, timeoutMs, signal, ctx) {
       clearTimeout(timeout);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       signal?.removeEventListener('abort', abort);
+      live.stop();
       reject(err);
     });
     child.on('close', (code, sig) => {
       clearTimeout(timeout);
       if (forceKillTimer) clearTimeout(forceKillTimer);
       signal?.removeEventListener('abort', abort);
+      live.stop();
       // Reap stragglers that outlived the shell, but never re-signal a group that
       // was already terminated above.
       if (!forceKillTimer) killGroup('SIGTERM');

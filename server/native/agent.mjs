@@ -327,6 +327,24 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
 
   try {
     const workspace = workspaceFor(sessionId);
+    // Растущий вывод работающей команды — в ленту, без записи в базу.
+    //
+    // Это промежуточный кадр, который всё равно будет перезаписан финальным
+    // output; восстановление хода после перезапуска читает только завершённые
+    // вызовы, так что четыре записи в SQLite в секунду на каждую болтливую
+    // команду были бы платой без выгоды.
+    const emitLiveOutput = (text) => {
+      if (controller.signal.aborted) return;
+      // Последние чанки могут доехать после того, как вызов уже закрыт,
+      // и тогда живой кадр затёр бы финальный результат в карточке.
+      const status = String(part.state?.status || '');
+      if (status && status !== 'running' && status !== 'pending') return;
+      part.state = {
+        ...part.state,
+        metadata: { ...(part.state?.metadata || {}), output: text },
+      };
+      emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+    };
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
       const subagent = await runSubagent({ ownerId: runtime.ownerId, modelPlan: runtime.modelPlan, input: call.arguments || {}, workspace, signal: controller.signal, projectContext: runtime.projectContext, sessionId });
@@ -348,7 +366,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       let attempt = 0;
       while (true) {
         try {
-          result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal });
+          result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal, onOutput: emitLiveOutput });
           break;
         } catch (err) {
           if (err?.name === 'AbortError' || controller.signal.aborted) throw err;

@@ -8,7 +8,7 @@ const runtimeRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-tools-runtime
 process.env.Z_AGENT_DATA_DIR = path.join(runtimeRoot, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(runtimeRoot, 'workspaces');
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
-const { executeTool } = await import('../server/native/tools.mjs');
+const { createLiveOutput, executeTool } = await import('../server/native/tools.mjs');
 test.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
 
 test('native file tools read/write/edit/grep/list inside one workspace', async () => {
@@ -91,4 +91,50 @@ test('todowrite returns structured plan metadata without touching workspace', as
   assert.equal(result.metadata.todos[1].status, 'in_progress');
   assert.deepEqual(fs.readdirSync(root), []);
   fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('живой stdout доезжает в карточку до завершения команды', async () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-live-'));
+  const frames = [];
+  const ctx = {
+    workspace: root,
+    signal: new AbortController().signal,
+    onOutput: (text) => frames.push(text),
+  };
+  // Первая строка печатается сразу, вторая — через полсекунды. До правки
+  // карточка всё это время оставалась пустой и оживала только после выхода
+  // процесса — на сборке или тестах это минуты тишины.
+  const result = await executeTool('bash', { command: 'echo first; sleep 0.6; echo second' }, ctx);
+  assert.equal(result.metadata?.exit, 0);
+  assert.ok(frames.length >= 1, 'ни одного живого кадра до завершения');
+  assert.match(frames[0], /^stdout:\nfirst/);
+  // Кадр не может содержать то, что ещё не напечатано.
+  assert.ok(!frames[0].includes('second'));
+  assert.match(result.output, /second/);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('живой вывод держит интервал, не дублирует кадры и гаснет по stop', async () => {
+  const frames = [];
+  const live = createLiveOutput((text) => frames.push(text));
+  const tick = () => new Promise((r) => setTimeout(r, 400));
+
+  live.push('a\n', '');
+  live.push('a\nb\n', '');
+  await tick();
+  // Два чанка внутри одного интервала — один кадр с последним состоянием.
+  assert.deepEqual(frames, ['stdout:\na\nb\n']);
+
+  live.push('a\nb\n', '');
+  await tick();
+  assert.equal(frames.length, 1, 'тот же текст не должен шёл вторым событием');
+
+  live.push('a\nb\n', 'oops\n');
+  await tick();
+  assert.equal(frames[1], 'stdout:\na\nb\n\nstderr:\noops\n');
+
+  live.push('a\nb\nc\n', 'oops\n');
+  live.stop();
+  await tick();
+  assert.equal(frames.length, 2, 'stop обязан отменить придержанный кадр');
 });

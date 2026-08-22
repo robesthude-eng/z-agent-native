@@ -443,65 +443,6 @@ function MessageItem({
     <div className="group oc-msg-in flex flex-col gap-1.5 px-3 py-1 md:px-6">
       <div className="flex min-w-0 flex-col gap-0.5">
         <div className="min-w-0 space-y-1">
-          {msgArray.map((message, msgIdx) => {
-            if (!message.info?.error) return null;
-            const aborted = isAbortedError(message.info.error);
-            if (aborted) {
-              return (
-                <div
-                  key={`err:${message.id || msgIdx}`}
-                  className="mb-2 text-xs text-muted-foreground"
-                >
-                  {hasQuestionPart(message)
-                    ? "Старый ход был прерван при ответе на вопрос"
-                    : "Остановлено пользователем"}
-                </div>
-              );
-            }
-
-            const detail =
-              errorMessage(message.info.error) ??
-              "Провайдер не смог завершить этот ответ.";
-            const detailsOpen = errorDetailsId === message.id;
-            return (
-              <div
-                key={`err:${message.id || msgIdx}`}
-                className="mb-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5 text-xs"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="font-medium text-red-300">
-                    Не удалось завершить ответ
-                  </span>
-                  <div className="flex items-center gap-1">
-                    <button
-                      type="button"
-                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground disabled:opacity-40"
-                      disabled={sessionBusy}
-                      onClick={() => regenerate(message.id).catch(() => {})}
-                    >
-                      Повторить
-                    </button>
-                    <button
-                      type="button"
-                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground"
-                      aria-expanded={detailsOpen}
-                      onClick={() =>
-                        setErrorDetailsId(detailsOpen ? null : message.id)
-                      }
-                    >
-                      Подробнее
-                    </button>
-                  </div>
-                </div>
-                {detailsOpen && (
-                  <div className="mt-2 break-words rounded-lg bg-background/50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
-                    {detail}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-
           <div className="text-[14.5px] leading-relaxed text-foreground/95">
             {(() => {
               const items = groupParts(flowParts(msgArray));
@@ -553,6 +494,11 @@ function MessageItem({
                       const run = fi as ActivityRun;
                       const first = run.items[0];
                       const tools = runToolParts(run.items);
+                      // «Работает» в шапке цепочки — только пока внутри правда
+                      // есть незавершённый вызов. Раньше сюда примешивался хвост
+                      // работающего хода, и последняя цепочка писала «Работает»
+                      // уже после того, как все её вызовы закрылись — например
+                      // пока агент дописывает ответ текстом.
                       const anyRunning = tools.some((t) => {
                         const s = toolStatus(t);
                         return s === "running" || s === "pending";
@@ -566,7 +512,7 @@ function MessageItem({
                         <AgentActivity
                           key={`act:${first ? itemKey(first) : i}`}
                           count={runStepCount(run.items)}
-                          running={anyRunning || isTail}
+                          running={anyRunning}
                           hasError={hasError}
                         >
                           {run.items.map((it, j) =>
@@ -584,6 +530,69 @@ function MessageItem({
               );
             })()}
           </div>
+
+          {/* Причина обрыва — после содержимого хода, а не над ним: сначала
+              то, что агент успел сделать и написать, потом почему остановился.
+              Сверху «Остановлено пользователем» читалось как заголовок ответа и
+              относилось как будто ко всему ходу целиком. */}
+          {msgArray.map((message, msgIdx) => {
+            if (!message.info?.error) return null;
+            const aborted = isAbortedError(message.info.error);
+            if (aborted) {
+              return (
+                <div
+                  key={`err:${message.id || msgIdx}`}
+                  className="mt-2 text-xs text-muted-foreground"
+                >
+                  {hasQuestionPart(message)
+                    ? "Старый ход был прерван при ответе на вопрос"
+                    : "Остановлено пользователем"}
+                </div>
+              );
+            }
+
+            const detail =
+              errorMessage(message.info.error) ??
+              "Провайдер не смог завершить этот ответ.";
+            const detailsOpen = errorDetailsId === message.id;
+            return (
+              <div
+                key={`err:${message.id || msgIdx}`}
+                className="mt-2 rounded-xl border border-red-500/20 bg-red-500/8 px-3 py-2.5 text-xs"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="font-medium text-red-300">
+                    Не удалось завершить ответ
+                  </span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground disabled:opacity-40"
+                      disabled={sessionBusy}
+                      onClick={() => regenerate(message.id).catch(() => {})}
+                    >
+                      Повторить
+                    </button>
+                    <button
+                      type="button"
+                      className="min-h-9 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-foreground"
+                      aria-expanded={detailsOpen}
+                      onClick={() =>
+                        setErrorDetailsId(detailsOpen ? null : message.id)
+                      }
+                    >
+                      Подробнее
+                    </button>
+                  </div>
+                </div>
+                {detailsOpen && (
+                  <div className="mt-2 break-words rounded-lg bg-background/50 px-2.5 py-2 font-mono text-[11px] leading-relaxed text-muted-foreground">
+                    {detail}
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
           {msgArray.map((message, msgIdx) => (
             <GeneratedFiles
