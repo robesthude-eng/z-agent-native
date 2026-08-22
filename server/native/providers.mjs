@@ -2,6 +2,7 @@ import { PROVIDER_STREAM_HARD_MS, PROVIDER_STREAM_IDLE_MS } from './config.mjs';
 import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from './security.mjs';
 import { getProviderKey, listHiddenModels, listManualModels } from './store.mjs';
 import { listProviderConfigs } from './provider-configs.mjs';
+import { createReasoningSplitter } from './reasoning-stream.mjs';
 
 
 
@@ -58,7 +59,9 @@ function fixtureResponse(request) {
     };
   }
 
-  if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text);
+  // Фикстура отдаёт готовый ответ: помечаем его текстом явно, чтобы живой
+  // разбор не принял английский текст фикстуры за монолог модели.
+  if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text, 'text');
   return { ...response, usage: { prompt_tokens: 16, completion_tokens: 12 }, streamed: typeof request?.onTextDelta === 'function' };
 }
 
@@ -809,14 +812,19 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     const msg = choice?.message || {};
     const toolCalls = (msg.tool_calls || []).map((c) => toolCallFromParsed(c.id || `call_${Math.random().toString(36).slice(2)}`, c.function?.name || '', c.function?.arguments)).filter((c) => c.name);
     let contentText = typeof msg.content === 'string' ? msg.content : '';
-    if (!contentText && typeof msg.reasoning_content === 'string') contentText = msg.reasoning_content;
+    // Шлюзы называют поле мыслей по-разному: reasoning_content (DeepSeek),
+    // reasoning (OpenRouter и совместимые), thinking.
+    if (!contentText) {
+      for (const key of ['reasoning_content', 'reasoning', 'thinking']) {
+        if (typeof msg[key] === 'string' && msg[key]) { contentText = msg[key]; break; }
+      }
+    }
     return { text: contentText, toolCalls, usage: body?.usage || null, finish: choice?.finish_reason || null, streamed: false };
   }
 
-  let text = '';
-  let reasoning = '';
-  let inThink = false;
-  let buffer = '';
+  // Один разделитель на весь поток: он же снимает теги <think>/<thinking>/
+  // <thought>/<reasoning> и следит, чтобы мысли не попадали в ответ.
+  const splitter = createReasoningSplitter(({ kind, text: chunk }) => onTextDelta(chunk, kind));
   let usage = null;
   let finish = null;
   const calls = new Map();
@@ -826,68 +834,12 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     if (!choice) return;
     if (choice.finish_reason) finish = choice.finish_reason;
     const delta = choice.delta || {};
-    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
-      reasoning += delta.reasoning_content;
-      onTextDelta(delta.reasoning_content, 'reasoning');
+    // Поля мыслей у совместимых API называются по-разному, а часть моделей
+    // вообще присылает мысли тегами прямо в content.
+    for (const key of ['reasoning_content', 'reasoning', 'thinking']) {
+      if (typeof delta[key] === 'string' && delta[key]) splitter.push(delta[key], 'reasoning');
     }
-    if (typeof delta.content === 'string' && delta.content) {
-      buffer += delta.content;
-      while (buffer.length > 0) {
-        if (!inThink) {
-          const thinkStart = buffer.indexOf('<think>');
-          if (thinkStart >= 0) {
-            const before = buffer.slice(0, thinkStart);
-            if (before) {
-              text += before;
-              onTextDelta(before, 'text');
-            }
-            inThink = true;
-            buffer = buffer.slice(thinkStart + 7);
-          } else {
-            const partial = ['<t', '<th', '<thi', '<thin', '<think'].find((p) => buffer.endsWith(p));
-            if (partial) {
-              const safe = buffer.slice(0, -partial.length);
-              if (safe) {
-                text += safe;
-                onTextDelta(safe, 'text');
-              }
-              buffer = partial;
-              break;
-            } else {
-              text += buffer;
-              onTextDelta(buffer, 'text');
-              buffer = '';
-            }
-          }
-        } else {
-          const thinkEnd = buffer.indexOf('</think>');
-          if (thinkEnd >= 0) {
-            const thought = buffer.slice(0, thinkEnd);
-            if (thought) {
-              reasoning += thought;
-              onTextDelta(thought, 'reasoning');
-            }
-            inThink = false;
-            buffer = buffer.slice(thinkEnd + 8);
-          } else {
-            const partial = ['</', '</t', '</th', '</thi', '</thin', '</think'].find((p) => buffer.endsWith(p));
-            if (partial) {
-              const safe = buffer.slice(0, -partial.length);
-              if (safe) {
-                reasoning += safe;
-                onTextDelta(safe, 'reasoning');
-              }
-              buffer = partial;
-              break;
-            } else {
-              reasoning += buffer;
-              onTextDelta(buffer, 'reasoning');
-              buffer = '';
-            }
-          }
-        }
-      }
-    }
+    if (typeof delta.content === 'string' && delta.content) splitter.push(delta.content, 'text');
     for (const piece of delta.tool_calls || []) {
       const index = Number.isInteger(piece.index) ? piece.index : calls.size;
       const current = calls.get(index) || { id: '', name: '', arguments: '' };
@@ -897,21 +849,16 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
       calls.set(index, current);
     }
   }, { failFastRateLimit });
-  if (buffer) {
-    if (inThink) {
-      reasoning += buffer;
-      onTextDelta(buffer, 'reasoning');
-    } else {
-      text += buffer;
-      onTextDelta(buffer, 'text');
-    }
-  }
+  splitter.flush();
+  const { text: streamedText, reasoning } = splitter.snapshot();
   const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
-  if (!text && reasoning && toolCalls.length === 0) {
-    text = reasoning;
-    onTextDelta(reasoning, 'text');
+  // Модель отдала только мысли. Раньше их тут же дублировали в ленту текстом
+  // (onTextDelta(reasoning, 'text')) — именно так рассуждения попадали в чат.
+  // Теперь помечаем ответ флагом, а решение принимает ход в agent.mjs.
+  if (!streamedText && reasoning && toolCalls.length === 0) {
+    return { text: reasoning, toolCalls, usage, finish, streamed: true, textFromReasoning: true };
   }
-  return { text, toolCalls, usage, finish, streamed: true };
+  return { text: streamedText, toolCalls, usage, finish, streamed: true };
 }
 
 function anthropicMessages(frames) {
@@ -964,7 +911,7 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
     };
   }
 
-  let text = '';
+  const splitter = createReasoningSplitter(({ kind, text: chunk }) => onTextDelta(chunk, kind));
   let usage = null;
   let finish = null;
   const calls = new Map();
@@ -978,10 +925,10 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
       calls.set(event.index, { id: event.content_block.id, name: event.content_block.name, baseInput: event.content_block.input || {}, partial: '' });
     }
     if (event?.type === 'content_block_delta') {
-      if (event.delta?.type === 'text_delta' && event.delta.text) {
-        text += event.delta.text;
-        onTextDelta(event.delta.text);
-      }
+      if (event.delta?.type === 'text_delta' && event.delta.text) splitter.push(event.delta.text, 'text');
+      // Extended thinking приходит отдельным родом дельты. Без этой ветки
+      // мысли уходили в ленту как обычный текст.
+      if (event.delta?.type === 'thinking_delta' && event.delta.thinking) splitter.push(event.delta.thinking, 'reasoning');
       if (event.delta?.type === 'input_json_delta') {
         const current = calls.get(event.index) || { id: `call_${Date.now()}_${event.index}`, name: '', baseInput: {}, partial: '' };
         current.partial += event.delta.partial_json || '';
@@ -989,8 +936,9 @@ async function callAnthropic(resolved, { system, frames, tools, signal, onTextDe
       }
     }
   }, { failFastRateLimit });
+  splitter.flush();
   const toolCalls = [...calls.values()].map((c) => toolCallFromParsed(c.id, c.name, c.partial || c.baseInput || {})).filter((c) => c.name);
-  return { text, toolCalls, usage, finish, streamed: true };
+  return { text: splitter.snapshot().text, toolCalls, usage, finish, streamed: true };
 }
 
 function geminiContents(frames) {
@@ -1041,6 +989,9 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
     accept: typeof onTextDelta === 'function' ? 'text/event-stream' : 'application/json',
     'x-goog-api-key': resolved.key,
   };
+  const splitter = typeof onTextDelta === 'function'
+    ? createReasoningSplitter(({ kind, text: chunk }) => onTextDelta(chunk, kind))
+    : null;
   const consume = (body, state) => {
     const candidate = body?.candidates?.[0];
     if (!candidate) return;
@@ -1048,8 +999,10 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
     if (body?.usageMetadata) state.usage = body.usageMetadata;
     for (const part of candidate.content?.parts || []) {
       if (typeof part.text === 'string' && part.text) {
-        state.text += part.text;
-        onTextDelta?.(part.text);
+        // Gemini помечает мысли флагом thought — в ответ модели они не входят.
+        const kind = part.thought === true ? 'reasoning' : 'text';
+        if (kind === 'text') state.text += part.text;
+        if (splitter) splitter.push(part.text, kind);
       }
       if (part.functionCall?.name) state.calls.push({ id: `gcall_${Date.now()}_${state.calls.length}`, name: part.functionCall.name, arguments: part.functionCall.args || {} });
     }
@@ -1061,7 +1014,8 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
     return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: false };
   }
   await fetchSse(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, (event) => consume(event, state), { failFastRateLimit });
-  return { text: state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: true };
+  splitter?.flush();
+  return { text: splitter ? splitter.snapshot().text : state.text, toolCalls: state.calls, usage: state.usage, finish: state.finish, streamed: true };
 }
 
 export async function callModel(ownerId, model, request) {

@@ -182,7 +182,10 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
     const wrappedRequest = {
       ...request,
       ...(typeof originalDelta === 'function'
-        ? { onTextDelta(delta) { emitted = true; originalDelta(delta); } }
+        // Второй аргумент — род куска ('reasoning' | 'text'). Раньше обёртка
+        // его теряла, и всё, что присылал провайдер, доезжало до ленты
+        // без рода — карточка рассуждений появлялась только в конце хода.
+        ? { onTextDelta(delta, type) { emitted = true; originalDelta(delta, type); } }
         : {}),
     };
     try {

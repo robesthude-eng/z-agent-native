@@ -38,6 +38,7 @@ import {
   setTurn, workspaceFor, reserveTurnCapacity, renewTurnCapacity, releaseTurnCapacity,
 } from './store.mjs';
 import { emit } from './events.mjs';
+import { createReasoningSplitter } from './reasoning-stream.mjs';
 import { assertActionId, messageId, partId, questionId, turnId } from './ids.mjs';
 import {
   buildModelPlan,
@@ -155,107 +156,49 @@ async function emitText(assistant, text, type = 'text') {
 }
 
 function liveTextSink(assistant) {
-  let textPart = null;
-  let reasoningPart = null;
-  let rawAccum = '';
-  let mode = 'detect'; // 'detect' | 'reasoning' | 'text'
+  // Одна вспышка = одна часть ленты. Пока поток однородный, дельты
+  // дописываются в текущую часть; как только род сменился
+  // (мысли → ответ → снова мысли), открываем новую. Клиент разворачивает
+  // только последнюю часть работающего хода, поэтому предыдущая
+  // карточка сворачивается сама, а новая раскрывается — без правок в UI.
+  let current = null;
+  let streamedText = false;
+  let streamedReasoning = false;
+
+  const openPart = (type) => {
+    const part = { id: partId(), type, text: '' };
+    assistant.parts.push(part);
+    emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+    return part;
+  };
+
+  const applySegment = ({ kind, text: chunk, replace = false }) => {
+    if (!chunk) return;
+    if (!current || current.type !== kind) current = openPart(kind);
+    if (kind === 'reasoning') streamedReasoning = streamedReasoning || Boolean(chunk.trim());
+    else streamedText = streamedText || Boolean(chunk.trim());
+    if (replace) {
+      // Живое угадывание отдало в карточку лишнее: правим её целиком.
+      current.text = chunk;
+      emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: current });
+      return;
+    }
+    current.text += chunk;
+    emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: current.id, field: 'text', delta: chunk });
+  };
+
+  const splitter = createReasoningSplitter(applySegment);
 
   return {
     push(delta, explicitType = null) {
-      if (!delta) return;
-      const str = String(delta);
-      
-      if (explicitType === 'reasoning') {
-        if (!reasoningPart) {
-          reasoningPart = { id: partId(), type: 'reasoning', text: '' };
-          assistant.parts.push(reasoningPart);
-          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
-        }
-        reasoningPart.text += str;
-        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: str });
-        return;
-      }
-
-      if (explicitType === 'text') {
-        if (!textPart) {
-          textPart = { id: partId(), type: 'text', text: '' };
-          assistant.parts.push(textPart);
-          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
-        }
-        textPart.text += str;
-        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: str });
-        return;
-      }
-
-      // Live detection for models (like DeepSeek) that stream English inner monologue before Russian reply
-      rawAccum += str;
-
-      if (mode === 'detect') {
-        // If stream starts with English reasoning text
-        if (/^[a-zA-Z\s"'`#*•-]/.test(rawAccum)) {
-          mode = 'reasoning';
-          if (!reasoningPart) {
-            reasoningPart = { id: partId(), type: 'reasoning', text: '' };
-            assistant.parts.push(reasoningPart);
-            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
-          }
-          reasoningPart.text = rawAccum;
-          emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: rawAccum });
-          return;
-        } else {
-          mode = 'text';
-        }
-      }
-
-      if (mode === 'reasoning') {
-        const m = new RegExp('([.?!]\\s*|\\n\\s*)([А-ЯЁ][а-яё]+(?:!|\\?|\\.|\\s*👋|\\s*[,\\s]))').exec(rawAccum);
-        if (m) {
-          const boundary = m.index + m[1].length;
-          const thoughtText = rawAccum.slice(0, boundary).trim();
-          const answerText = rawAccum.slice(boundary);
-
-          if (reasoningPart) {
-            reasoningPart.text = thoughtText;
-            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
-          }
-
-          mode = 'text';
-          if (!textPart) {
-            textPart = { id: partId(), type: 'text', text: '' };
-            assistant.parts.push(textPart);
-            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
-          }
-          if (answerText) {
-            textPart.text += answerText;
-            emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: answerText });
-          }
-          return;
-        }
-
-        if (!reasoningPart) {
-          reasoningPart = { id: partId(), type: 'reasoning', text: '' };
-          assistant.parts.push(reasoningPart);
-          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
-        }
-        reasoningPart.text += str;
-        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: str });
-        return;
-      }
-
-      // mode === 'text'
-      if (!textPart) {
-        textPart = { id: partId(), type: 'text', text: '' };
-        assistant.parts.push(textPart);
-        emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
-      }
-      textPart.text += str;
-      emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: str });
+      splitter.push(delta, explicitType);
     },
     finish() {
-      // Sanitize parts before saving
+      splitter.flush();
+      // Страховка на случай модели, которая ничего не пометила и не закрыла тег.
       sanitizeAssistantParts(assistant);
-      if (textPart || reasoningPart) putMessage(assistant);
-      return Boolean(textPart?.text || reasoningPart?.text);
+      if (current) putMessage(assistant);
+      return { text: streamedText, reasoning: streamedReasoning };
     },
   };
 }
@@ -497,7 +440,11 @@ function sanitizeAssistantParts(assistant) {
   if (!Array.isArray(assistant?.parts)) return;
   const newParts = [];
   for (const part of assistant.parts) {
-    if (part?.type === 'text' && typeof part.text === 'string' && part.text.length > 20) {
+    // Живой разбор уже развёл мысли и ответ по частям: если текст идёт
+    // сразу за карточкой рассуждений, второй раз его резать нельзя — иначе
+    // начало ответа уедет в ещё одну карточку.
+    const afterReasoning = newParts[newParts.length - 1]?.type === 'reasoning';
+    if (!afterReasoning && part?.type === 'text' && typeof part.text === 'string' && part.text.length > 20) {
       const separated = splitReasoningFromContent(part.text);
       if (separated.reasoning && separated.text) {
         newParts.push({ id: partId(), type: 'reasoning', text: separated.reasoning });
@@ -710,7 +657,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           frames: providerFrames,
           tools: availableToolDefinitions(),
           signal: controller.signal,
-          onTextDelta: (delta, type = 'text') => live.push(delta, type),
+          onTextDelta: (delta, type = null) => live.push(delta, type),
         });
       } catch (err) {
         if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
@@ -727,7 +674,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         throw err;
       }
       recordModelCall(runtime.telemetry, { response, latencyMs: Date.now() - modelStartedAt, contextChars: JSON.stringify(providerFrames).length });
-      const streamedText = live.finish();
+      const streamed = live.finish();
       runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
       assistant.info.model = modelKey(response.model);
       const failedAttempts = (response.attempts || []).filter((attempt) => !attempt.ok).length;
@@ -753,7 +700,11 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
           continue;
         }
-        let finalText = String(response.text || '').trim();
+        // Провайдер отдал только рассуждения: они уже в карточке, и повторять
+        // их в чате нельзя. Просим нормальный итог, и только если его нет —
+        // показываем мысли ответом: другого содержимого просто нет.
+        const reasoningOnly = Boolean(response.textFromReasoning) && streamed.reasoning;
+        let finalText = reasoningOnly ? '' : String(response.text || '').trim();
         if (!finalText && step > 0) {
           try {
             frames.push({ role: 'assistant', content: '', toolCalls: [] });
@@ -772,13 +723,15 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
             // fallback
           }
         }
+        if (!finalText && reasoningOnly) finalText = String(response.text || '').trim();
         if (!finalText) {
           const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
           finalText = synthesizeTurnSummary({ strategy, outcome });
         }
-        if (!streamedText) {
+        if (!streamed.text) {
           const separated = splitReasoningFromContent(finalText);
-          if (separated.reasoning) {
+          // Если карточка уже была в стриме, вторую не открываем.
+          if (separated.reasoning && !streamed.reasoning) {
             await emitText(assistant, separated.reasoning, 'reasoning');
           }
           await emitText(assistant, separated.text || finalText, 'text');
@@ -798,9 +751,9 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         });
       }
 
-      if (response.text && !streamedText) {
+      if (response.text && !streamed.text) {
         const sep = splitReasoningFromContent(response.text);
-        if (sep.reasoning) {
+        if (sep.reasoning && !streamed.reasoning) {
           await emitText(assistant, sep.reasoning, 'reasoning');
         }
         if (sep.text) {
