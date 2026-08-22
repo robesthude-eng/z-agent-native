@@ -255,7 +255,7 @@ test('browser degrades with an actionable message when Playwright is absent', ()
 test('implement is the only writing subagent profile', () => {
   assert.ok(subagentKinds().includes('implement'));
   assert.equal(subagentWrites('implement'), true);
-  for (const kind of ['explore', 'debug', 'review']) {
+  for (const kind of ['explore', 'debug', 'review', 'planner', 'security', 'tester']) {
     assert.equal(subagentWrites(kind), false, `${kind} must stay read-only`);
   }
 });
@@ -271,7 +271,7 @@ test('parent and subagent prompts treat repository instructions as untrusted dat
 });
 
 test('read-only subagent prompts forbid modification, implement demands verification', () => {
-  for (const kind of ['explore', 'debug', 'review']) {
+  for (const kind of ['explore', 'debug', 'review', 'planner', 'security', 'tester']) {
     assert.match(getSubagentProfile(kind).system, /Do not modify files/);
   }
   const implement = getSubagentProfile('implement');

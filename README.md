@@ -54,9 +54,12 @@ The table below is generated from the same registry the runtime uses. `npm run d
 <!-- BEGIN GENERATED SUBAGENT CAPABILITIES -->
 | Profile | Writes workspace | Max steps | Tools |
 | --- | --- | ---: | --- |
+| `planner` | no | 12 | `repo_map`, `read`, `list`, `glob`, `grep` |
 | `explore` | no | 12 | `repo_map`, `read`, `list`, `glob`, `grep` |
 | `debug` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
 | `review` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
+| `security` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
+| `tester` | no | 14 | `repo_map`, `read`, `list`, `glob`, `grep` |
 | `implement` | yes | 24 | `repo_map`, `read`, `list`, `glob`, `grep`, `write`, `edit`, `apply_patch`, `bash`, `git`, `run_tests`, `diagnostics` |
 <!-- END GENERATED SUBAGENT CAPABILITIES -->
 
