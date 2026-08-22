@@ -10,6 +10,7 @@ import { formatDiagnosticsReport, parseDiagnostics, planDiagnostics } from '../s
 import { BROWSER_ACTIONS, browserUnavailableMessage, executeBrowserTool } from '../server/native/browser.mjs';
 import { getSubagentProfile, subagentKinds, subagentToolNames, subagentWrites } from '../server/native/subagents.mjs';
 import { TOOL_DEFINITIONS, availableToolDefinitions, mutatesWorkspace, requiresPermission } from '../server/native/tools.mjs';
+import { buildSshArgs } from '../server/native/ssh-tool.mjs';
 
 function tempRoot() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'devtools-'));
@@ -288,7 +289,7 @@ test('an unknown subagent kind falls back to the read-only explorer', () => {
 /* ---------------------------- tool registration -------------------------- */
 
 test('the new tools are registered with schemas', () => {
-  for (const name of ['git', 'run_tests', 'diagnostics', 'browser']) {
+  for (const name of ['git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool']) {
     const tool = TOOL_DEFINITIONS.find((item) => item.name === name);
     assert.ok(tool, `${name} must be registered`);
     assert.ok(tool.description.length > 40, `${name} needs a usable description`);
@@ -313,18 +314,50 @@ test('the task description explains every role the schema accepts', () => {
 });
 
 test('process-spawning tools are gated and classified', () => {
-  for (const name of ['git', 'run_tests', 'diagnostics', 'browser']) {
+  for (const name of ['git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool']) {
     assert.equal(requiresPermission(name), true, `${name} must be permission-gated`);
   }
   assert.equal(mutatesWorkspace('run_tests'), true);
   assert.equal(mutatesWorkspace('git'), true);
   assert.equal(mutatesWorkspace('diagnostics'), false);
   assert.equal(mutatesWorkspace('browser'), false);
+  // Remote edits never touch the local snapshot, so ssh_tool must not dirty it.
+  assert.equal(mutatesWorkspace('ssh_tool'), false);
+});
+
+/* -------------------------------- ssh_tool -------------------------------- */
+
+test('ssh_tool builds structured argv instead of a shell string', () => {
+  const plan = buildSshArgs('/tmp', 'exec', { host: '158.160.149.54', user: 'casano', command: 'uptime' });
+  assert.deepEqual(plan.args, [
+    'exec', '--host', '158.160.149.54', '--user', 'casano', '--port', '22', '--timeout', '60', '--cmd', 'uptime',
+  ]);
+});
+
+test('ssh_tool rejects option-like hosts and unknown service actions', () => {
+  // A host beginning with '-' is how an innocent-looking argument turns into
+  // arbitrary ssh options such as -oProxyCommand.
+  assert.throws(() => buildSshArgs('/tmp', 'exec', { host: '-oProxyCommand=id', command: 'id' }), /host/);
+  assert.throws(() => buildSshArgs('/tmp', 'service', { host: 'h', name: 'nginx', serviceAction: 'nuke' }), /serviceAction/);
+});
+
+test('remote file content travels over stdin, never on the command line', () => {
+  const plan = buildSshArgs('/tmp', 'write', { host: 'h', path: '/etc/motd', content: 'x'.repeat(5000) });
+  assert.equal(plan.stdin.length, 5000);
+  assert.ok(!plan.args.some((arg) => arg.length === 5000), 'content must not appear in argv');
+});
+
+test('bash turns the unnamed-uid ssh failure into an actionable instruction', () => {
+  // Without this mapping the model reads a permanent sandbox property as a
+  // credentials problem and retries until the loop guard stops the run.
+  const tools = source('server/native/tools.mjs');
+  assert.match(tools, /No user exists for uid/);
+  assert.match(tools, /Use the ssh_tool tool instead/);
 });
 
 test('without a shell sandbox no process-spawning tool is advertised', () => {
   const names = availableToolDefinitions().map((tool) => tool.name);
-  const spawning = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser'];
+  const spawning = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool'];
   const exposed = spawning.filter((name) => names.includes(name));
   // Either the sandbox is available and all of them are exposed, or none are.
   assert.ok(exposed.length === spawning.length || exposed.length === 0, `partial exposure: ${exposed.join(', ')}`);

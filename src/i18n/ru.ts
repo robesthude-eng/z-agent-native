@@ -467,6 +467,7 @@ export const messages = {
 	"tool_card.primenyaet_patch": "Применяет патч",
 	"tool_card.proveryaet_okruzhenie": "Проверяет окружение",
 	"tool_card.question_api_esche_ne_zaregistriroval_vopros": "Question API ещё не зарегистрировал вопрос. Текущий ход не прерван",
+	"tool_card.rabotaet_s_udalennym_serverom": "Работает с удалённым сервером",
 	"tool_card.smotrit_papku": "Смотрит папку",
 	"tool_card.smotrit_strukturu_proekta": "Смотрит структуру проекта",
 	"tool_card.soderzhimoe": "СОДЕРЖИМОЕ",

@@ -103,6 +103,12 @@ export function activityDetail(tool: string, part: LoosePart): string {
     return shorten(str("query"));
   if (kind === "bash" || kind === "shell" || kind === "run_tests")
     return shorten(str("command"));
+  if (kind === "ssh_tool") {
+    // Хост — то, что отличает один вызов от другого; команда/путь уточняют.
+    const host = str("host");
+    const detail = str("command") || str("path") || str("name");
+    return shorten(detail && host ? `${host}: ${detail}` : host || detail);
+  }
   if (kind === "glob") return shorten(str("pattern"));
   if (kind === "task") return shorten(str("agent") || str("description"));
   if (kind === "ensure_environment" || kind === "environment_status")

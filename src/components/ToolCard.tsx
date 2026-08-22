@@ -193,6 +193,8 @@ export function friendlyToolLabel(tool?: string): string {
     return t("tool_card.zagruzhaet_stranicu");
   if (kind === "websearch" || kind === "search")
     return t("tool_card.ischet_v_internete");
+  if (kind === "ssh_tool" || kind === "ssh")
+    return t("tool_card.rabotaet_s_udalennym_serverom");
   if (kind === "task") return t("tool_card.podzadacha");
   if (kind === "todowrite" || kind === "todo")
     return t("tool_card.obnovlyaet_plan");

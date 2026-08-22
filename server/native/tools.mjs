@@ -10,6 +10,7 @@ import {
 import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement, suggestToolchainForCommand } from './toolchains.mjs';
 import { buildRepoMap, formatRepoMap } from './repo-intelligence.mjs';
 import { GIT_ACTIONS, executeGitTool } from './git-tool.mjs';
+import { SSH_ACTIONS, SSH_SERVICE_ACTIONS, executeSshTool } from './ssh-tool.mjs';
 import { buildTestCommand, formatTestReport } from './test-runner.mjs';
 import { DIAGNOSTIC_KINDS, formatDiagnosticsReport, planDiagnostics } from './diagnostics.mjs';
 import { BROWSER_ACTIONS, executeBrowserTool } from './browser-client.mjs';
@@ -133,6 +134,29 @@ export const TOOL_DEFINITIONS = [
     inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 } }, ['command']),
   },
   {
+    name: 'ssh_tool',
+    description: 'Operate a remote server over SSH: test connectivity, run commands, read/write/patch remote files (with automatic .bak backups), and manage systemd services. Use this for ALL remote SSH work instead of bash. The system ssh/scp binaries cannot run here: agent sessions execute under an isolated numeric UID with no /etc/passwd entry, so OpenSSH aborts with "No user exists for uid <N>". This tool speaks SSH over paramiko and is unaffected. Arguments are passed as structured argv, never as a shell string.',
+    inputSchema: object({
+      action: { type: 'string', enum: SSH_ACTIONS, description: 'test, exec, read, write, patch, or service.' },
+      host: { type: 'string', description: 'Remote host IP or hostname.' },
+      user: { type: 'string', description: 'SSH username, default root.' },
+      port: { type: 'integer', minimum: 1, maximum: 65535, description: 'SSH port, default 22.' },
+      key: { type: 'string', description: 'Workspace-relative path to the private key file.' },
+      password: { type: 'string', description: 'SSH password. Passed to the CLI through the environment, never on the command line.' },
+      sudo: { type: 'boolean', description: 'Run the remote command through sudo when the user is not root.' },
+      command: { type: 'string', description: 'Remote command for action=exec.' },
+      path: { type: 'string', description: 'Remote file path for action=read/write/patch.' },
+      offset: { type: 'integer', minimum: 1, description: 'For action=read, 1-based starting line.' },
+      limit: { type: 'integer', minimum: 1, maximum: 4000, description: 'For action=read, maximum lines to return.' },
+      content: { type: 'string', description: 'For action=write, the full new file content. Sent over stdin, so large files are fine.' },
+      oldText: { type: 'string', description: 'For action=patch, the exact text to replace.' },
+      newText: { type: 'string', description: 'For action=patch, the replacement text.' },
+      name: { type: 'string', description: 'For action=service, the systemd unit name.' },
+      serviceAction: { type: 'string', enum: SSH_SERVICE_ACTIONS, description: 'For action=service: status, restart, start, stop, or logs.' },
+      timeoutMs: { type: 'integer', minimum: 1000, maximum: 900_000 },
+    }, ['action', 'host']),
+  },
+  {
     name: 'webfetch',
     description: 'Fetch a public HTTP(S) URL. Private, loopback and link-local destinations are blocked.',
     inputSchema: object({ url: { type: 'string' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000 } }, ['url']),
@@ -207,13 +231,13 @@ export const TOOL_DEFINITIONS = [
   },
 ];
 
-const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser']);
+const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool']);
 export function requiresPermission(name) { return risky.has(String(name).toLowerCase()); }
 export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(String(name).toLowerCase()); }
 
 // Everything that spawns a process or drives a browser must be gated exactly
 // like bash: without a session sandbox there is no isolation to run it in.
-const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser'];
+const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool'];
 export function availableToolDefinitions() {
   let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
   // The hardened executor has no network by construction. Dependency installers
@@ -239,7 +263,7 @@ function truncate(text, max = MAX_TOOL_OUTPUT) {
 //
 // Два ограничения здесь не косметические. Интервал: без него болтливая команда
 // (тесты, установка пакетов) шлёт событие на каждую строку — это тысячи кадров в
-// SSE и дергающаяся лента. Хвост: в карточке читают последние строки, а не всю
+// SSE и дерга��щаяся лента. Хвост: в карточке читают последние строки, а не всю
 // портынку с начала, и гнать целиком всё накопленное каждые 250 мс незачем.
 const LIVE_OUTPUT_INTERVAL_MS = 250;
 const LIVE_OUTPUT_TAIL = 4000;
@@ -576,6 +600,19 @@ function missingCommandHint(result) {
   return null;
 }
 
+// OpenSSH resolves the calling uid through getpwuid() before it reads a key or
+// opens a socket. Session sandboxes run under an unnamed numeric uid, so
+// ssh/scp/sftp abort here every time: a different remote user, a different key
+// or a plain retry cannot change the outcome. Without this hint the model reads
+// the message as a credentials problem and burns its loop-guard budget on a
+// command that can never succeed.
+const UID_LOOKUP_FAILURE = /No user exists for uid (\d+)/i;
+
+function sandboxUidHint(result) {
+  const match = `${result?.stderr || ''}\n${result?.stdout || ''}`.match(UID_LOOKUP_FAILURE);
+  return match ? { uid: match[1], useTool: 'ssh_tool' } : null;
+}
+
 export async function executeTool(name, input, ctx) {
   const tool = String(name || '').toLowerCase();
   const root = ctx.workspace;
@@ -719,17 +756,24 @@ export async function executeTool(name, input, ctx) {
     assertShellCommandAllowed(command);
     const result = await execBash(root, command, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
     const hint = missingCommandHint(result);
+    const uidHint = sandboxUidHint(result);
     const body = [
       `exit=${result.code}`,
       result.stdout && `stdout:\n${result.stdout}`,
       result.stderr && `stderr:\n${result.stderr}`,
       hint && `Environment hint: command "${hint.command}" is missing. Use ensure_environment with kind="${hint.kind}" and then continue the original task; lack of sudo/root is not a reason to stop.`,
+      uidHint && `Environment hint: OpenSSH failed because this session runs under isolated uid ${uidHint.uid}, which has no /etc/passwd entry. This is expected and permanent - the host, the key and the remote username are not the problem, and retrying ssh/scp/sftp from bash will fail identically. Use the ssh_tool tool instead (action=test, exec, read, write, patch, service); it connects over paramiko and never reads the passwd database.`,
     ].filter(Boolean).join('\n');
     return {
       output: body,
       title: command,
       mutatedPaths: classifyBash(command) === 'read_only' ? [] : ['.'],
-      metadata: { exit: result.code, shellNetworkPolicy: shellNetworkPolicy(), ...(hint ? { environmentHint: hint } : {}) },
+      metadata: {
+        exit: result.code,
+        shellNetworkPolicy: shellNetworkPolicy(),
+        ...(hint ? { environmentHint: hint } : {}),
+        ...(uidHint ? { sandboxUidHint: uidHint } : {}),
+      },
     };
   }
 
@@ -770,6 +814,19 @@ export async function executeTool(name, input, ctx) {
     // mutations would make every git status dirty the workspace snapshot.
     const writes = ['commit', 'create_branch'].includes(String(input?.action || '').toLowerCase());
     return writes ? { ...result, mutatedPaths: ['.'] } : result;
+  }
+
+  if (tool === 'ssh_tool') {
+    // Runs under the session identity in this container, not in the executor:
+    // the executor is network_mode=none, so every connection there would fail
+    // with an unroutable-network error unrelated to the real remote host.
+    return await executeSshTool({
+      root,
+      identity: externalSpawnIdentity(ctx, root),
+      input: input || {},
+      signal: ctx.signal,
+      sessionId: ctx.sessionId,
+    });
   }
 
   if (tool === 'run_tests') {

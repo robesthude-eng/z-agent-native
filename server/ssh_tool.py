@@ -21,7 +21,22 @@ except ImportError:
     sys.exit(1)
 
 
+def resolve_password(explicit: str | None) -> str | None:
+    """Prefer the environment over argv.
+
+    A password passed as --password is readable by any process that can stat
+    /proc/<pid>/cmdline for the lifetime of the connection, and it also ends up
+    echoed back in agent tool transcripts. The runtime therefore passes it in
+    Z_AGENT_SSH_PASSWORD; --password stays supported for manual CLI use.
+    """
+    if explicit:
+        return explicit
+    from_env = os.environ.get("Z_AGENT_SSH_PASSWORD", "")
+    return from_env or None
+
+
 def get_client(host: str, user: str, password: str | None = None, key_file: str | None = None, port: int = 22, timeout: int = 15) -> paramiko.SSHClient:
+    password = resolve_password(password)
     client = paramiko.SSHClient()
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
