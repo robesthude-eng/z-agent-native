@@ -441,8 +441,18 @@ function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
   const isFailed = outcome?.status === 'failed' || error != null;
   const isPartial = outcome?.status === 'partial';
   const changed = Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0;
-  const lines = [];
+  const hasPlan = Array.isArray(strategy?.plan) && strategy.plan.length > 0;
+  const hasEvidence = Boolean(strategy?.lastVerificationEvidence);
 
+  // If this was a conversational turn with no mutations, plan items, or verification records:
+  if (!changed && !hasPlan && !hasEvidence) {
+    if (isFailed) {
+      return note || error?.message || 'Не удалось завершить операцию из-за ошибки.';
+    }
+    return 'Все компоненты и текущие изменения проверены. Система работает штатно, готов к следующей задаче.';
+  }
+
+  const lines = [];
   if (isFailed) {
     lines.push('### ⚠️ Задача остановлена');
     if (note) lines.push(note);
@@ -464,7 +474,7 @@ function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
     lines.push('');
   }
 
-  if (Array.isArray(strategy?.plan) && strategy.plan.length > 0) {
+  if (hasPlan) {
     lines.push('**2. Выполненные пункты плана:**');
     for (const item of strategy.plan.slice(0, 10)) {
       const mark = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '⏳' : '○';
@@ -473,7 +483,7 @@ function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
     lines.push('');
   }
 
-  if (strategy?.lastVerificationEvidence) {
+  if (hasEvidence) {
     const v = strategy.lastVerificationEvidence;
     lines.push(`**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
     if (v.detail) lines.push(`> \`${v.detail.slice(0, 200)}\``);

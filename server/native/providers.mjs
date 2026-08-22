@@ -797,8 +797,10 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
-    tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } })),
-    tool_choice: 'auto',
+    ...(tools && tools.length > 0 ? {
+      tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } })),
+      tool_choice: 'auto',
+    } : {}),
   };
   const headers = { 'content-type': 'application/json', accept: 'application/json', authorization: `Bearer ${resolved.key}` };
   if (typeof onTextDelta !== 'function') {
@@ -806,10 +808,13 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     const choice = body?.choices?.[0];
     const msg = choice?.message || {};
     const toolCalls = (msg.tool_calls || []).map((c) => toolCallFromParsed(c.id || `call_${Math.random().toString(36).slice(2)}`, c.function?.name || '', c.function?.arguments)).filter((c) => c.name);
-    return { text: typeof msg.content === 'string' ? msg.content : '', toolCalls, usage: body?.usage || null, finish: choice?.finish_reason || null, streamed: false };
+    let contentText = typeof msg.content === 'string' ? msg.content : '';
+    if (!contentText && typeof msg.reasoning_content === 'string') contentText = msg.reasoning_content;
+    return { text: contentText, toolCalls, usage: body?.usage || null, finish: choice?.finish_reason || null, streamed: false };
   }
 
   let text = '';
+  let reasoning = '';
   let usage = null;
   let finish = null;
   const calls = new Map();
@@ -819,6 +824,9 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     if (!choice) return;
     if (choice.finish_reason) finish = choice.finish_reason;
     const delta = choice.delta || {};
+    if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
+      reasoning += delta.reasoning_content;
+    }
     if (typeof delta.content === 'string' && delta.content) {
       text += delta.content;
       onTextDelta(delta.content);
@@ -833,6 +841,10 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     }
   }, { failFastRateLimit });
   const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
+  if (!text && reasoning && toolCalls.length === 0) {
+    text = reasoning;
+    onTextDelta(reasoning);
+  }
   return { text, toolCalls, usage, finish, streamed: true };
 }
 
