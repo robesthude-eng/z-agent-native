@@ -21,6 +21,7 @@ import { sessionFsm } from "../sessionFsm";
 import { turnSettle } from "../turnSettle";
 import type { MessagesSlice, Slice, State } from "../types";
 import { byUpdated } from "../types";
+import { t } from "@/i18n";
 
 /**
  * Обработчики SSE-событий — по одному на тип.
@@ -295,8 +296,8 @@ const streamCorrupted: EventHandler = ({ set }) => {
   // doFinalFetch.
   set({
     error:
-      "Стрим прерван: получен повреждённый фрагмент данных. " +
-      "Ответ мог отобразиться не полностью.",
+      t("event_handlers.strim_prervan_poluchen_povrezhdennyy_fragmen") +
+      t("event_handlers.otvet_mog_otobrazitsya_ne_polnostyu"),
   });
 };
 

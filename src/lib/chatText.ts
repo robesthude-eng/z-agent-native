@@ -1,5 +1,6 @@
 import type { Message, ToolOutput, ToolPart } from "../api/types";
 import { stripAttachmentMarkup } from "./attachments";
+import { t } from "@/i18n";
 
 /**
  * Извлекает читаемый текст сообщения: текстовые части, рассуждения и
@@ -52,12 +53,12 @@ export function buildChatMarkdown(messages: Message[], title: string): string {
   const lines: string[] = [`# ${title}`, ""];
   for (const m of messages) {
     if (m.role === "system") continue;
-    const who = m.role === "user" ? "🧑 Пользователь" : "🤖 Ассистент";
+    const who = m.role === "user" ? t("chat_text.polzovatel") : t("chat_text.assistent");
     const when = m.time?.created
       ? new Date(m.time.created).toLocaleString("ru-RU")
       : "";
     lines.push(`## ${who}${when ? ` — ${when}` : ""}`, "");
-    lines.push(visibleMessageText(m).trim() || "_(без текста)_", "");
+    lines.push(visibleMessageText(m).trim() || t("chat_text.bez_teksta"), "");
   }
   return lines.join("\n");
 }

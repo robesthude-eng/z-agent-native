@@ -25,6 +25,7 @@ import type { FileNode } from "../api/types";
 import { sessionActionPrep } from "../lib/ids";
 import { useStore } from "../store/useStore";
 import { CloseIcon, PaperclipIcon, SendIcon, StopIcon } from "./icons";
+import { t, tf } from "@/i18n";
 
 // Черновики по сессиям: текст композера не теряется при переключении чатов.
 // Живёт в памяти вкладки — намеренно не персистится.
@@ -58,34 +59,34 @@ const QUEUE_SETTLE_MS = 1200;
 // Slash-команды: быстрые шаблоны запросов, дропдаун открывается по «/».
 const SLASH_COMMANDS: Array<{ cmd: string; hint: string; insert: string }> = [
   {
-    cmd: "/резюме",
-    hint: "Краткое резюме диалога",
+    cmd: t("composer.rezyume"),
+    hint: t("composer.kratkoe_rezyume_dialoga"),
     insert:
-      "Сделай краткое резюме нашего диалога: ключевые решения, изменённые файлы, открытые вопросы и следующие шаги.",
+      t("composer.sdelay_kratkoe_rezyume_nashego_dialoga_klyuc"),
   },
   {
-    cmd: "/тесты",
-    hint: "Запустить тесты",
+    cmd: t("composer.testy"),
+    hint: t("composer.zapustit_testy"),
     insert:
-      "Запусти тесты и покажи результат. Если есть падения — объясни причину и предложи фикс.",
+      t("composer.zapusti_testy_i_pokazhi_rezultat_esli"),
   },
   {
-    cmd: "/фикс",
-    hint: "Починить последнюю ошибку",
+    cmd: t("composer.fiks"),
+    hint: t("composer.pochinit_poslednyuyu_oshibku"),
     insert:
-      "Найди причину последней ошибки и предложи минимальный фикс с диффом.",
+      t("composer.naydi_prichinu_posledney_oshibki_i_predlozhi"),
   },
   {
-    cmd: "/ревью",
-    hint: "Код-ревью изменений",
+    cmd: t("composer.revyu"),
+    hint: t("composer.kod_revyu_izmeneniy"),
     insert:
-      "Сделай код-ревью последних изменений: ошибки, риски, стиль, что можно улучшить.",
+      t("composer.sdelay_kod_revyu_poslednih_izmeneniy_oshibki"),
   },
   {
-    cmd: "/коммит",
-    hint: "Сообщение коммита",
+    cmd: t("composer.kommit"),
+    hint: t("composer.soobschenie_kommita"),
     insert:
-      "Сформулируй сообщение коммита для текущих изменений в стиле Conventional Commits.",
+      t("composer.sformuliruy_soobschenie_kommita_dlya_tekusch"),
   },
 ];
 
@@ -362,7 +363,7 @@ export default function Composer() {
     if (tooBig.length > 0) {
       const names = tooBig.map((f) => `${f.name} (${formatSize(f.size)})`);
       setUploadError(
-        `Слишком большой файл — максимум ${formatSize(MAX_UPLOAD_BYTES)}: ${names.join(", ")}`,
+        tf("composer.slishkom_bolshoy_fayl_maksimum_0_1", [formatSize(MAX_UPLOAD_BYTES), names.join(", ")]),
       );
       setTimeout(() => setUploadError(null), 8000);
     }
@@ -387,7 +388,7 @@ export default function Composer() {
     if (!sid || sessionActionPrep(sid) !== "ready") {
       // Сюда попадаем, только если создание сессии не удалось:
       // materializeSession() уже откатила оптимистичный чат и записала error.
-      setUploadError("Не удалось создать чат для загрузки файла");
+      setUploadError(t("composer.ne_udalos_sozdat_chat_dlya_zagruzki"));
       setTimeout(() => setUploadError(null), 6000);
       return;
     }
@@ -598,7 +599,7 @@ export default function Composer() {
           (drag&drop), и у интерактивного контейнера должна быть роль. Клавиатурный
           путь для тех же файлов — кнопка «Прикрепить файл» и вставка из буфера. */}
       <section
-        aria-label="Поле ввода сообщения"
+        aria-label={t("composer.pole_vvoda_soobscheniya")}
         className={cn(
           "pointer-events-auto relative w-full transition-all duration-[200ms]",
           // Крупный радиус и мягкая тень вместо жёсткой рамки — так поле
@@ -672,12 +673,12 @@ export default function Composer() {
                       q.attachments
                         ?.map((attachment) => attachment.name)
                         .join(", ") ||
-                      "Вложение"}
+                      t("composer.vlozhenie")}
                   </span>
                   <button
                     type="button"
                     className="hover:text-destructive"
-                    aria-label="Убрать сообщение из очереди"
+                    aria-label={t("composer.ubrat_soobschenie_iz_ocheredi")}
                     onClick={() => {
                       const plan = removalPlan(q, currentID);
                       setQueued((prev) =>
@@ -729,13 +730,13 @@ export default function Composer() {
                     <div className="text-[11px] text-muted-foreground">
                       {formatSize(att.size)}
                       {typeof att.entryCount === "number" &&
-                        ` · ${att.entryCount} файлов`}
+                        tf("composer.0_faylov", [att.entryCount])}
                     </div>
                   </div>
                   <button
                     type="button"
                     className="shrink-0 rounded p-1 text-muted-foreground/60 transition hover:bg-background/60 hover:text-destructive"
-                    aria-label={`Убрать файл ${att.name}`}
+                    aria-label={tf("composer.ubrat_fayl_0", [att.name])}
                     onClick={() => removeAttachment(att.name)}
                   >
                     <CloseIcon size={12} />
@@ -782,8 +783,8 @@ export default function Composer() {
               size="icon"
               className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
               onClick={() => fileInputRef.current?.click()}
-              title="Прикрепить файл"
-              aria-label="Прикрепить файл"
+              title={t("composer.prikrepit_fayl")}
+              aria-label={t("composer.prikrepit_fayl")}
             >
               <PaperclipIcon size={16} />
             </Button>
@@ -797,8 +798,8 @@ export default function Composer() {
             <textarea
               ref={textareaRef}
               rows={1}
-              placeholder="Что хотите сделать?"
-              aria-label="Сообщение ассистенту"
+              placeholder={t("composer.chto_hotite_sdelat")}
+              aria-label={t("composer.soobschenie_assistentu")}
               className="flex-1 min-h-[40px] max-h-[200px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-2 text-[15px] leading-relaxed"
               value={text}
               onChange={(e) => {
@@ -887,8 +888,8 @@ export default function Composer() {
                     setQueued([]);
                     abort();
                   }}
-                  title="Остановить генерацию"
-                  aria-label="Остановить генерацию"
+                  title={t("stop.action")}
+                  aria-label={t("stop.action")}
                 >
                   <StopIcon size={14} />
                 </Button>
@@ -904,8 +905,8 @@ export default function Composer() {
                   )}
                   onClick={submit}
                   disabled={!canSend}
-                  title={blockedReason ?? "Отправить"}
-                  aria-label="Отправить сообщение"
+                  title={blockedReason ?? t("composer.otpravit")}
+                  aria-label={t("composer.otpravit_soobschenie")}
                 >
                   <SendIcon size={14} />
                 </Button>

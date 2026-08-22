@@ -5,12 +5,14 @@ import {
   type ProviderChannel,
   type ProviderProtocol,
 } from "@/api/providerChannels";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import { useStore } from "@/store/useStore";
 import { CheckIcon, CloseIcon, KeyIcon, SearchIcon } from "../icons";
 import { SettingsSection } from "./primitives";
+import { t, tf } from "@/i18n";
 
 type DraftChannel = {
   id?: string;
@@ -49,12 +51,12 @@ const PROTOCOL_PLACEHOLDERS: Record<ProviderProtocol, string> = {
 };
 
 const PROVIDER_STATUS_LABELS: Record<string, string> = {
-  live: "каталог доступен",
-  cache: "каталог из кэша",
-  unavailable: "каталог недоступен",
-  unauthorized: "нет доступа к каталогу",
-  disabled: "выключен",
-  nokey: "ключ не добавлен",
+  live: t("provider_channel_manager.katalog_dostupen"),
+  cache: t("provider_channel_manager.katalog_iz_kesha"),
+  unavailable: t("provider_channel_manager.katalog_nedostupen"),
+  unauthorized: t("provider_channel_manager.net_dostupa_k_katalogu"),
+  disabled: t("provider_channel_manager.vyklyuchen"),
+  nokey: t("provider_channel_manager.klyuch_ne_dobavlen"),
 };
 
 function providerColor(id: string) {
@@ -65,7 +67,7 @@ function providerColor(id: string) {
 }
 
 function errorText(error: unknown) {
-  const value = error instanceof Error ? error.message : String(error || "Ошибка");
+  const value = error instanceof Error ? error.message : String(error || t("changes_panel.oshibka"));
   return value.replace(/^\d+\s+\w+\s+/, "");
 }
 
@@ -78,21 +80,21 @@ function catalogErrorText(error: unknown, status?: string) {
   const lower = raw.toLowerCase();
 
   if (status === "unauthorized" || /\b401\b|unauthori[sz]ed|invalid api.?key|authentication failed/.test(lower)) {
-    return "API-ключ не принят провайдером. Проверьте ключ и доступ к API.";
+    return t("provider_channel_manager.api_klyuch_ne_prinyat_provayderom_proverte");
   }
   if (/локальные и служебные адреса|локальную\/служебную сеть|ssrf|private address/.test(lower)) {
-    return "Этот Base URL заблокирован настройками безопасности. Используйте публичный API endpoint провайдера.";
+    return t("provider_channel_manager.etot_base_url_zablokirovan_nastroykami_bezop");
   }
   if (/terminated|fetch failed|econnreset|socket|network|aborted|timeout|timed out/.test(lower)) {
-    return "Не удалось загрузить список моделей: соединение с провайдером было прервано. Повторите попытку.";
+    return t("provider_channel_manager.ne_udalos_zagruzit_spisok_modeley_soedinenie");
   }
   if (/\b404\b|not found/.test(lower)) {
-    return "Провайдер не отдал каталог моделей по этому Base URL. Проверьте Base URL или добавьте Model ID вручную.";
+    return t("provider_channel_manager.provayder_ne_otdal_katalog_modeley_po");
   }
   if (/non-json|unexpected token|invalid json/.test(lower)) {
-    return "Провайдер вернул неожиданный ответ вместо каталога моделей.";
+    return t("provider_channel_manager.provayder_vernul_neozhidannyy_otvet_vmesto_k");
   }
-  return "Не удалось загрузить список моделей. Проверьте Base URL, API-ключ и доступность каталога моделей.";
+  return t("provider_channel_manager.ne_udalos_zagruzit_spisok_modeley_proverte");
 }
 
 function draftFromChannel(channel: ProviderChannel): DraftChannel {
@@ -107,6 +109,7 @@ function draftFromChannel(channel: ProviderChannel): DraftChannel {
 }
 
 export function ProviderChannelManager() {
+  const askConfirm = useConfirm();
   const loadModels = useStore((s) => s.loadModels);
   const loadAuth = useStore((s) => s.loadAuth);
 
@@ -264,11 +267,11 @@ export function ProviderChannelManager() {
       const keyMissing = result.catalog.status === "unauthorized" && !result.catalog.error;
       showNotice(
         catalogReady
-          ? `Провайдер сохранён. Найдено моделей: ${result.catalog.count ?? 0}.`
+          ? tf("provider_channel_manager.provayder_sohranen_naydeno_modeley_0", [result.catalog.count ?? 0])
           : providerDisabled
-            ? "Провайдер сохранён и выключен."
+            ? t("provider_channel_manager.provayder_sohranen_i_vyklyuchen")
             : keyMissing
-              ? "Провайдер сохранён. Добавьте API key, чтобы загрузить модели."
+              ? t("provider_channel_manager.provayder_sohranen_dobavte_api_key_chtoby")
               : catalogErrorText(result.catalog.error, result.catalog.status),
         !catalogReady && !providerDisabled && !keyMissing,
       );
@@ -293,7 +296,7 @@ export function ProviderChannelManager() {
       await Promise.all([loadAuth(), loadModels(true)]);
       const updated = await syncChannels(draft.id);
       const channel = updated.find((item) => item.id === draft.id) ?? null;
-      showNotice("API-ключ отключён.");
+      showNotice(t("provider_channel_manager.api_klyuch_otklyuchen"));
       await loadChannelModels(channel, false);
     } catch (error) {
       showNotice(errorText(error), true);
@@ -302,7 +305,13 @@ export function ProviderChannelManager() {
 
   const removeProvider = async () => {
     if (!draft?.id || !draft.custom) return;
-    if (!window.confirm(`Удалить провайдера ${draft.name}? Ключ и его ручные модели тоже будут удалены.`)) return;
+    const ok = await askConfirm({
+      title: tf("provider_channel_manager.udalit_provaydera_0", [draft.name]),
+      description: t("provider_channel_manager.klyuch_i_ego_ruchnye_modeli_tozhe"),
+      confirmLabel: t("workspace.udalit"),
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await providerChannelsApi.remove(draft.id);
       await Promise.all([loadAuth(), loadModels(true)]);
@@ -348,7 +357,7 @@ export function ProviderChannelManager() {
       setProbe(
         result.available
           ? { kind: "ok", latencyMs: result.latencyMs }
-          : { kind: "fail", message: result.error || "Провайдер не подтвердил эту модель." },
+          : { kind: "fail", message: result.error || t("provider_channel_manager.provayder_ne_podtverdil_etu_model") },
       );
     } catch (error) {
       setProbe({ kind: "fail", message: errorText(error) });
@@ -368,7 +377,7 @@ export function ProviderChannelManager() {
       setManualName("");
       setManualFree(false);
       setProbe({ kind: "idle" });
-      showNotice("Модель проверена и добавлена.");
+      showNotice(t("provider_channel_manager.model_proverena_i_dobavlena"));
       await Promise.all([loadModels(true), loadChannelModels(selected, selected.connected && selected.enabled)]);
     } catch (error) {
       showNotice(errorText(error), true);
@@ -419,17 +428,17 @@ export function ProviderChannelManager() {
 
   return (
     <SettingsSection
-      title="Провайдеры моделей"
-      description="Сначала подключите провайдера один раз — Z Agent сам загрузит его модели. Если endpoint не умеет отдавать список моделей, нужный Model ID можно добавить вручную."
+      title={t("provider_channel_manager.provaydery_modeley")}
+      description={t("provider_channel_manager.snachala_podklyuchite_provaydera_odin_raz_z")}
     >
       <div className="grid min-h-[520px] overflow-hidden rounded-2xl border border-border bg-card md:grid-cols-[230px_minmax(0,1fr)]">
         <aside className="flex min-h-0 flex-col border-b border-border bg-muted/20 md:border-b-0 md:border-r">
           <div className="border-b border-border p-3">
-            <Button className="w-full" size="sm" onClick={startNew}>+ Добавить провайдера</Button>
+            <Button className="w-full" size="sm" onClick={startNew}>{t("provider_channel_manager.dobavit_provaydera")}</Button>
           </div>
           <div className="max-h-56 overflow-y-auto p-2 md:max-h-none md:flex-1">
             {loading ? (
-              <div className="px-2 py-4 text-xs text-muted-foreground">Загрузка…</div>
+              <div className="px-2 py-4 text-xs text-muted-foreground">{t("provider_channel_manager.zagruzka")}</div>
             ) : channels.map((channel) => (
               <button
                 key={channel.id}
@@ -460,18 +469,18 @@ export function ProviderChannelManager() {
 
         <div className="min-w-0 p-4 md:p-5">
           {!draft ? (
-            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">Выберите или добавьте провайдера.</div>
+            <div className="flex h-full items-center justify-center text-sm text-muted-foreground">{t("provider_channel_manager.vyberite_ili_dobavte_provaydera")}</div>
           ) : (
             <div className="space-y-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="flex items-center gap-2">
-                    <h3 className="text-base font-semibold">{draft.id ? draft.name : "Новый провайдер"}</h3>
-                    {isConnected && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700">подключён</span>}
+                    <h3 className="text-base font-semibold">{draft.id ? draft.name : t("provider_channel_manager.novyy_provayder")}</h3>
+                    {isConnected && <span className="rounded-full bg-emerald-500/10 px-2 py-0.5 text-[10px] font-medium text-emerald-700">{t("provider_channel_manager.podklyuchen")}</span>}
                     {status && <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">{providerStatusLabel(status)}</span>}
                   </div>
                   <p className="mt-1 text-[11px] text-muted-foreground">
-                    {draft.custom ? "Пользовательский канал" : "Встроенный провайдер"}
+                    {draft.custom ? t("provider_channel_manager.polzovatelskiy_kanal") : t("provider_channel_manager.vstroennyy_provayder")}
                   </p>
                 </div>
                 <label className="flex items-center gap-2 text-xs">
@@ -492,13 +501,13 @@ export function ProviderChannelManager() {
 
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="space-y-1.5">
-                  <span className="text-xs font-medium">Название</span>
+                  <span className="text-xs font-medium">{t("provider_channel_manager.nazvanie")}</span>
                   <Input
                     className="h-9"
                     value={draft.name}
                     disabled={!draft.custom && Boolean(draft.id)}
                     onChange={(event) => setDraft({ ...draft, name: event.target.value })}
-                    placeholder="Например Moonshot"
+                    placeholder={t("provider_channel_manager.naprimer_moonshot")}
                   />
                 </label>
                 <label className="space-y-1.5">
@@ -542,19 +551,19 @@ export function ProviderChannelManager() {
                       className="h-9 pl-8"
                       value={apiKey}
                       onChange={(event) => setApiKey(event.target.value)}
-                      placeholder={isConnected ? "Оставьте пустым, чтобы сохранить текущий ключ" : "Вставьте API key"}
+                      placeholder={isConnected ? t("provider_channel_manager.ostavte_pustym_chtoby_sohranit_tekusch") : t("provider_channel_manager.vstavte_api_key")}
                     />
                   </div>
-                  {isConnected && <Button size="sm" variant="outline" onClick={() => void disconnect()}>Отключить ключ</Button>}
+                  {isConnected && <Button size="sm" variant="outline" onClick={() => void disconnect()}>{t("provider_channel_manager.otklyuchit_klyuch")}</Button>}
                 </div>
               </label>
 
               <div className="flex flex-wrap items-center gap-2 border-b border-border pb-5">
                 <Button size="sm" disabled={saving || !draft.name.trim() || !draft.baseURL.trim()} onClick={() => void save()}>
-                  {saving ? "Сохраняем…" : draft.id ? "Сохранить" : "Добавить и загрузить модели"}
+                  {saving ? t("provider_channel_manager.sohranyaem") : draft.id ? t("file_editor.sohranit") : t("provider_channel_manager.dobavit_i_zagruzit_modeli")}
                 </Button>
                 {draft.id && draft.custom && (
-                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => void removeProvider()}>Удалить провайдера</Button>
+                  <Button size="sm" variant="ghost" className="text-destructive" onClick={() => void removeProvider()}>{t("provider_channel_manager.udalit_provaydera")}</Button>
                 )}
               </div>
 
@@ -562,20 +571,20 @@ export function ProviderChannelManager() {
                 <section className="space-y-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                      <div className="text-sm font-medium">Модели</div>
+                      <div className="text-sm font-medium">{t("settings_panel.modeli")}</div>
                       <div className="text-[11px] text-muted-foreground">
                         {models.length} из API · {manual.length} добавлено вручную
                       </div>
                     </div>
                     <Button size="sm" variant="outline" disabled={!selected.connected || !selected.enabled || refreshing} onClick={() => void refreshModels()}>
-                      {refreshing ? "Загружаем…" : "Обновить модели"}
+                      {refreshing ? t("provider_channel_manager.zagruzhaem") : t("provider_channel_manager.obnovit_modeli")}
                     </Button>
                   </div>
 
                   {models.length > 0 && (
                     <div className="relative">
                       <span className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted-foreground"><SearchIcon size={13} /></span>
-                      <Input className="h-8 pl-8 text-xs" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder="Поиск модели" />
+                      <Input className="h-8 pl-8 text-xs" value={modelQuery} onChange={(event) => setModelQuery(event.target.value)} placeholder={t("provider_channel_manager.poisk_modeli")} />
                     </div>
                   )}
 
@@ -583,14 +592,14 @@ export function ProviderChannelManager() {
                     {visibleModels.length === 0 ? (
                       <div className="px-3 py-5 text-xs text-muted-foreground">
                         {!selected.enabled
-                          ? "Канал выключен. Включите его, чтобы загрузить модели."
+                          ? t("provider_channel_manager.kanal_vyklyuchen_vklyuchite_ego_chtoby_zagru")
                           : !selected.connected
-                            ? "Сохраните API key, чтобы автоматически получить модели."
+                            ? t("provider_channel_manager.sohranite_api_key_chtoby_avtomaticheski_polu")
                             : status === "unavailable"
-                              ? "Каталог моделей сейчас недоступен. Повторите загрузку или добавьте Model ID вручную."
+                              ? t("provider_channel_manager.katalog_modeley_seychas_nedostupen_povtorite")
                               : status === "unauthorized"
-                                ? "API-ключ не даёт доступ к каталогу моделей. Проверьте ключ."
-                                : "Endpoint не вернул список моделей. Добавьте Model ID вручную ниже."}
+                                ? t("provider_channel_manager.api_klyuch_ne_daet_dostup_k")
+                                : t("provider_channel_manager.endpoint_ne_vernul_spisok_modeley_dobavte")}
                       </div>
                     ) : visibleModels.map((model) => (
                       <label key={model.id} className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/30">
@@ -604,7 +613,7 @@ export function ProviderChannelManager() {
                   </div>
 
                   <div className="rounded-xl border border-dashed border-border p-3">
-                    <div className="mb-2 text-xs font-medium">Добавить Model ID вручную</div>
+                    <div className="mb-2 text-xs font-medium">{t("provider_channel_manager.dobavit_model_id_vruchnuyu")}</div>
                     <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
                       <Input
                         className="h-8 font-mono text-xs"
@@ -612,7 +621,7 @@ export function ProviderChannelManager() {
                         onChange={(event) => { setManualId(event.target.value); setProbe({ kind: "idle" }); }}
                         placeholder="model-id"
                       />
-                      <Input className="h-8 text-xs" value={manualName} onChange={(event) => setManualName(event.target.value)} placeholder="Название (необязательно)" />
+                      <Input className="h-8 text-xs" value={manualName} onChange={(event) => setManualName(event.target.value)} placeholder={t("provider_channel_manager.nazvanie_neobyazatelno")} />
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2">
                       <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
@@ -626,7 +635,7 @@ export function ProviderChannelManager() {
                         disabled={!manualId.trim() || probe.kind === "checking" || !selected.connected || !selected.enabled}
                         onClick={() => void probeManual()}
                       >
-                        {probe.kind === "checking" ? "Проверяем…" : "Проверить"}
+                        {probe.kind === "checking" ? t("provider_channel_manager.proveryaem") : t("provider_channel_manager.proverit")}
                       </Button>
                       <Button
                         size="sm"
@@ -640,7 +649,7 @@ export function ProviderChannelManager() {
                     {(probe.kind === "ok" || probe.kind === "fail") && (
                       <div className={cn("mt-2 text-[11px]", probe.kind === "ok" ? "text-emerald-700" : "text-destructive")}>
                         {probe.kind === "ok"
-                          ? `Модель ответила за ${probe.latencyMs} мс — можно добавлять.`
+                          ? tf("provider_channel_manager.model_otvetila_za_0_ms_mozhno", [probe.latencyMs])
                           : probe.message}
                       </div>
                     )}
@@ -653,7 +662,7 @@ export function ProviderChannelManager() {
                               checked={model.enabled}
                               disabled={manualBusy === model.model_id}
                               onChange={() => void toggleManualEnabled(model)}
-                              aria-label={`Показывать ${model.model_id} в списке моделей`}
+                              aria-label={tf("provider_channel_manager.pokazyvat_0_v_spiske_modeley", [model.model_id])}
                             />
                             <span className="min-w-0 flex-1">
                               <span className={cn("block truncate font-mono text-[11px]", !model.enabled && "text-muted-foreground line-through")}>
@@ -670,11 +679,11 @@ export function ProviderChannelManager() {
                                 "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
                                 model.is_free ? "bg-emerald-500/10 text-emerald-700" : "bg-muted text-muted-foreground hover:text-foreground",
                               )}
-                              title={model.is_free ? "Отметка «бесплатная» включена" : "Отметить как бесплатную"}
+                              title={model.is_free ? t("provider_channel_manager.otmetka_besplatnaya_vklyuchena") : t("provider_channel_manager.otmetit_kak_besplatnuyu")}
                             >
                               FREE
                             </button>
-                            <button type="button" className="rounded p-1 text-muted-foreground hover:text-destructive" onClick={() => void removeManual(model.model_id)} aria-label={`Удалить ${model.model_id}`}>
+                            <button type="button" className="rounded p-1 text-muted-foreground hover:text-destructive" onClick={() => void removeManual(model.model_id)} aria-label={tf("provider_channel_manager.udalit_0", [model.model_id])}>
                               <CloseIcon size={12} />
                             </button>
                           </div>

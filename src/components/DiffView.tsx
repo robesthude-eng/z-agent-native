@@ -1,6 +1,7 @@
 import { useMemo } from "react";
 import { cn } from "@/lib/utils";
 import { type DiffOptions, diffLines, diffStatLabel } from "../lib/diff";
+import { t } from "@/i18n";
 
 /**
  * Добавленное больше не зелёное. Различие строк держится на знаке `+`/`−` в
@@ -27,7 +28,7 @@ const OP_SIGNS = { add: "+", del: "−", ctx: " " } as const;
 export default function DiffView({
   oldText,
   newText,
-  emptyLabel = "Изменений нет",
+  emptyLabel = t("diff_view.izmeneniy_net"),
   className,
   options,
 }: {
@@ -67,7 +68,7 @@ export default function DiffView({
         {result.truncated && (
           <span
             className="text-[11px] text-amber-400"
-            title="Изменённый фрагмент слишком большой — показан целыми блоками"
+            title={t("diff_view.izmenennyy_fragment_slishkom_bolshoy_pokazan")}
           >
             блоками
           </span>

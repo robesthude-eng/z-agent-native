@@ -1,6 +1,7 @@
 import { api, jsonOrNull } from "../../api/client";
 import { log } from "../../lib/log";
 import type { AuthSlice, Slice, State } from "../types";
+import { t } from "@/i18n";
 
 /**
  * Тело ответа auth-эндпоинтов. Разбираем через jsonOrNull, чтобы HTML-ответ
@@ -47,7 +48,7 @@ async function performAuthAction(
       error: data.error || `${defaultError} (HTTP ${res.status})`,
     };
   } catch {
-    return { ok: false, error: "Ошибка соединения с сервером" };
+    return { ok: false, error: t("auth_slice.oshibka_soedineniya_s_serverom") };
   }
 }
 
@@ -76,7 +77,7 @@ export const createAuthSlice: Slice<AuthSlice> = (set, get) => ({
       "/api/auth/login",
       email,
       password,
-      "Ошибка входа",
+      t("auth_slice.oshibka_vhoda"),
       get,
       set,
     ),
@@ -86,7 +87,7 @@ export const createAuthSlice: Slice<AuthSlice> = (set, get) => ({
       "/api/auth/register",
       email,
       password,
-      "Ошибка регистрации",
+      t("auth_slice.oshibka_registracii"),
       get,
       set,
     ),

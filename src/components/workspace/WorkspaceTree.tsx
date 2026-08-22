@@ -29,6 +29,7 @@ import {
 import { editability } from "./fileDecisions";
 import { fileVisual } from "./fileVisual";
 import { STATUS_COLORS, type TreeNode } from "./workspaceTreeHelpers";
+import { t } from "@/i18n";
 
 export interface WorkspaceTreeProps {
   nodes: TreeNode[];
@@ -177,8 +178,8 @@ export default function WorkspaceTree({
                       setRenamingPath(node.path);
                     }}
                     className="opacity-0 group-hover:opacity-100 hover:text-foreground transition flex-shrink-0"
-                    title="Переименовать"
-                    aria-label="Переименовать"
+                    title={t("workspace_tree.pereimenovat")}
+                    aria-label={t("workspace_tree.pereimenovat")}
                   >
                     <RenameIcon size={14} />
                   </button>
@@ -189,8 +190,8 @@ export default function WorkspaceTree({
                       deleteItem(node).catch(() => {});
                     }}
                     className="opacity-0 group-hover:opacity-100 hover:text-red-400 transition flex-shrink-0"
-                    title="Удалить"
-                    aria-label="Удалить"
+                    title={t("workspace.udalit")}
+                    aria-label={t("workspace.udalit")}
                   >
                     <TrashIcon size={14} />
                   </button>
@@ -203,8 +204,8 @@ export default function WorkspaceTree({
                   downloadWorkspaceItem(node.path);
                 }}
                 className="opacity-0 group-hover:opacity-100 hover:text-foreground transition flex-shrink-0"
-                title="Скачать файл"
-                aria-label="Скачать файл"
+                title={t("workspace_tree.skachat_fayl")}
+                aria-label={t("workspace_tree.skachat_fayl")}
               >
                 <DownloadIcon size={14} />
               </button>

@@ -8,6 +8,7 @@
  */
 
 import type { SessionInfo } from "../../api/types";
+import { t } from "@/i18n";
 
 export interface ChatFolder {
   id: string;
@@ -26,7 +27,7 @@ export interface SidebarGroup {
   items: SessionInfo[];
 }
 
-const PINNED_LABEL = "📌 Закреплённые";
+const PINNED_LABEL = t("chat_grouping.zakreplennye");
 
 /** Метка группы по времени последнего изменения чата. */
 export function dateGroupLabel(
@@ -34,19 +35,19 @@ export function dateGroupLabel(
   now: number = Date.now(),
 ): string {
   const ts = session.time?.updated ?? session.time?.created;
-  if (!ts) return "Раньше";
+  if (!ts) return t("chat_grouping.ranshe");
   const startOfDay = (value: number) => {
     const d = new Date(value);
     return new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
   };
   const diff = Math.round((startOfDay(now) - startOfDay(ts)) / 86_400_000);
-  if (diff <= 0) return "Сегодня";
-  if (diff === 1) return "Вчера";
-  if (diff < 7) return "На этой неделе";
-  return "Раньше";
+  if (diff <= 0) return t("chat_grouping.segodnya");
+  if (diff === 1) return t("chat_grouping.vchera");
+  if (diff < 7) return t("chat_grouping.na_etoy_nedele");
+  return t("chat_grouping.ranshe");
 }
 
-const DATE_ORDER = ["Сегодня", "Вчера", "На этой неделе", "Раньше"];
+const DATE_ORDER = [t("chat_grouping.segodnya"), t("chat_grouping.vchera"), t("chat_grouping.na_etoy_nedele"), t("chat_grouping.ranshe")];
 
 export interface BuildGroupsInput {
   sessions: SessionInfo[];

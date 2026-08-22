@@ -2,6 +2,7 @@
 // зависимостей. Заменяют небезопасные `as unknown as` касты: каждое
 // обращение к динамическому полю проходит через рантайм-проверку.
 import type { AppEvent } from "./types";
+import { t } from "@/i18n";
 
 /** Значение — объект (record)? */
 export function isRecord(v: unknown): v is Record<string, unknown> {
@@ -114,7 +115,7 @@ const MODEL_UNAVAILABLE_RE =
   /promotion has ended|model.{0,40}unavailable|upstream request failed|\{\s*"model"\s*:/i;
 // Агент больше не берёт другую модель вместо выбранной, поэтому и обещать
 // этого нельзя: текст зеркалит формулировку сервера.
-const PUBLIC_MODEL_UNAVAILABLE = "Эта модель сейчас недоступна у провайдера.";
+const PUBLIC_MODEL_UNAVAILABLE = t("event_guards.eta_model_seychas_nedostupna_u_provaydera");
 
 export function publicErrorText(text: string): string {
   const value = String(text || "").trim();

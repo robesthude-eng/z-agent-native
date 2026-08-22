@@ -7,6 +7,7 @@ import { CloseIcon, SaveIcon } from "../icons";
 import CodeView from "./CodeView";
 import type { PreviewKind, ViewMode } from "./fileDecisions";
 import { toRelPath } from "./workspaceTreeHelpers";
+import { t } from "@/i18n";
 
 /**
  * Окно просмотра и правки файла воркспейса.
@@ -26,9 +27,9 @@ import { toRelPath } from "./workspaceTreeHelpers";
  * `npm run typecheck`.
  */
 const VIEW_MODE_LABEL: Record<ViewMode, string> = {
-  code: "Код",
-  preview: "Превью",
-  diff: "Изменения",
+  code: t("file_editor.kod"),
+  preview: t("file_editor.prevyu"),
+  diff: t("file_editor.izmeneniya"),
 };
 
 export interface FileEditorProps {
@@ -77,7 +78,7 @@ export default function FileEditor({
         type="button"
         className="fixed inset-0 z-[60] bg-black/50 backdrop-blur-sm"
         onClick={onClose}
-        aria-label="Закрыть файл"
+        aria-label={t("file_editor.zakryt_fayl")}
       />
       <div className="fixed left-1/2 top-1/2 z-[65] flex h-[min(560px,85dvh)] w-[min(720px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-xl border border-border bg-card shadow-e3">
         <div className="flex shrink-0 items-center gap-2 border-b border-border px-4 py-3">
@@ -86,7 +87,7 @@ export default function FileEditor({
             {dirty && (
               <span
                 className="ml-2 text-amber-400"
-                title="Есть несохранённые правки"
+                title={t("file_editor.est_nesohranennye_pravki")}
               >
                 •
               </span>
@@ -100,10 +101,10 @@ export default function FileEditor({
               onClick={() => {
                 onSave();
               }}
-              title="Сохранить (Ctrl+S)"
+              title={t("file_editor.sohranit_ctrl_s")}
             >
               <SaveIcon size={14} />
-              {saving ? "Сохранение…" : "Сохранить"}
+              {saving ? t("account_tab_content.sohranenie") : t("file_editor.sohranit")}
             </Button>
           )}
           <Button
@@ -111,8 +112,8 @@ export default function FileEditor({
             size="icon"
             className="h-8 w-8 shrink-0"
             onClick={onClose}
-            title="Закрыть"
-            aria-label="Закрыть"
+            title={t("panel_modal.zakryt")}
+            aria-label={t("panel_modal.zakryt")}
           >
             <CloseIcon size={16} />
           </Button>
@@ -152,7 +153,7 @@ export default function FileEditor({
               <DiffView
                 oldText={file.content}
                 newText={draft}
-                emptyLabel="Черновик совпадает с сохранённым файлом"
+                emptyLabel={t("file_editor.chernovik_sovpadaet_s_sohranennym_faylom")}
               />
             </div>
           </ScrollArea>

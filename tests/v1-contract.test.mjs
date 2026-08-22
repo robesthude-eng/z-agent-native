@@ -6,6 +6,20 @@ function source(path) {
   return fs.readFileSync(new URL(`../${path}`, import.meta.url), 'utf8');
 }
 
+// Видимый текст интерфейса живёт в каталоге src/i18n/ru.ts, а в компонентах
+// остаются только ключи. Подставляем значения ключей, чтобы контрактные
+// проверки шли по тому, что реально увидит пользователь.
+const uiMessages = source('src/i18n/ru.ts');
+
+function renderUi(code) {
+  return code.replace(/\bt\("([a-z0-9_.]+)"\)/g, (match, key) => {
+    const entry = uiMessages.match(
+      new RegExp('"' + key.replace(/\./g, '\\.') + '":\\s*"([^"]*)"'),
+    );
+    return entry ? entry[1] : match;
+  });
+}
+
 test('native runtime has no browser permission-response protocol', () => {
   const agent = source('server/native/agent.mjs');
   const index = source('server/index.mjs');
@@ -21,7 +35,7 @@ test('autonomy presentation no longer installs a global MutationObserver', () =>
 
 test('assistant replies expose exact turn result action', () => {
   const item = source('src/components/MessageItem.tsx');
-  const modal = source('src/components/TurnResultModal.tsx');
+  const modal = renderUi(source('src/components/TurnResultModal.tsx'));
   assert.match(item, /TurnResultButton/);
   assert.match(modal, /Откатить весь ход/);
   assert.match(modal, /более поздняя задача изменила/);

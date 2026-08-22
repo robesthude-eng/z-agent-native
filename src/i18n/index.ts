@@ -12,6 +12,20 @@ export function t(key: MessageKey): string {
 }
 
 /**
+ * Строка с подстановками: в каталоге лежит текст с плейсхолдерами вида
+ * «Удалить {0}?», а вызывающий код передаёт значения позиционно.
+ *
+ * Без этого шаблонные литералы оставались бы единственным классом текстов,
+ * разбросанных по компонентам.
+ */
+export function tf(key: MessageKey, values: Array<string | number>): string {
+	return messages[key].replace(/\{(\d+)\}/g, (match, index) => {
+		const value = values[Number(index)];
+		return value === undefined ? match : String(value);
+	});
+}
+
+/**
  * "изменён 1 файл" / "изменено 2 файла" / "изменено 5 файлов".
  *
  * Replaces the English `count === 1 ? "file" : "files"` branch, which produced

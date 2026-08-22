@@ -4,6 +4,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
 import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { t, tf } from "@/i18n";
 
 export type FilePreviewKind = "image" | "html" | "svg" | "markdown";
 
@@ -66,7 +67,7 @@ export default function FilePreview({
       <div className="flex flex-1 min-h-0 items-center justify-center overflow-auto bg-[repeating-conic-gradient(#0000_0%_25%,#8883_0%_50%)] bg-[length:16px_16px] p-4">
         {imageError ? (
           <div className="rounded-lg bg-card/95 p-4 text-center text-sm text-muted-foreground shadow">
-            <p>Не удалось загрузить изображение.</p>
+            <p>{t("file_preview.ne_udalos_zagruzit_izobrazhenie")}</p>
             <button
               type="button"
               className="mt-2 rounded-md border border-border px-3 py-1.5 hover:bg-accent hover:text-foreground"
@@ -106,7 +107,7 @@ export default function FilePreview({
             Обновить
           </button>
           <span
-            title="Открытие HTML workspace в новой вкладке отключено: это расширяет доверенную границу origin. Используйте встроенное sandbox-превью."
+            title={t("file_preview.otkrytie_html_workspace_v_novoy_vkladke")}
             className="rounded px-1.5 py-0.5 text-muted-foreground"
           >
             В новой вкладке отключено
@@ -116,7 +117,7 @@ export default function FilePreview({
       <iframe
         key={`${sessionId}:${path}:${reloadKey}`}
         src={url}
-        title={`Превью ${path}`}
+        title={tf("file_preview.prevyu_0", [path])}
         className="flex-1 min-h-0 w-full border-none bg-white"
         sandbox="allow-scripts allow-forms"
       />

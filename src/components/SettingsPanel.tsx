@@ -9,6 +9,7 @@ import { AccountTabContent } from "./settings/AccountTabContent";
 import { AppearanceTabContent } from "./settings/AppearanceTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
 import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
+import { t } from "@/i18n";
 
 type SettingsTab =
   | "account"
@@ -44,51 +45,51 @@ type TabGroup = { label: string; items: TabDef[] };
  */
 const TAB_GROUPS: TabGroup[] = [
   {
-    label: "Аккаунт",
+    label: t("settings_panel.akkaunt"),
     items: [
       {
         id: "account",
-        label: "Аккаунт и пароль",
-        title: "Аккаунт и пароль",
+        label: t("settings_panel.akkaunt_i_parol"),
+        title: t("settings_panel.akkaunt_i_parol"),
         keywords:
-          "аккаунт профиль email пароль сменить смена безопасность выход сессии account password security change",
+          t("settings_panel.akkaunt_profil_email_parol_smenit_smena"),
       },
       {
         id: "appearance",
-        label: "Внешний вид",
-        title: "Внешний вид",
+        label: t("settings_panel.vneshniy_vid"),
+        title: t("settings_panel.vneshniy_vid"),
         keywords:
-          "тема цвет тёмная светлая средняя оформление theme dark light",
+          t("settings_panel.tema_cvet_temnaya_svetlaya_srednyaya_oformle"),
       },
     ],
   },
   {
-    label: "Чат",
+    label: t("settings_panel.chat"),
     items: [
       {
         id: "models",
-        label: "Модели",
-        title: "Модели и API-ключи",
+        label: t("settings_panel.modeli"),
+        title: t("settings_panel.modeli_i_api_klyuchi"),
         keywords:
-          "модели ключ провайдеры api byok models providers openai anthropic openrouter",
+          t("settings_panel.modeli_klyuch_provaydery_api_byok_models"),
       },
     ],
   },
   {
-    label: "Справка",
+    label: t("settings_panel.spravka"),
     items: [
       {
         id: "shortcuts",
-        label: "Горячие клавиши",
-        title: "Горячие клавиши",
+        label: t("settings_panel.goryachie_klavishi"),
+        title: t("settings_panel.goryachie_klavishi"),
         keywords:
-          "горячие клавиши шорткаты сочетания hotkeys shortcuts keyboard ctrl cmd",
+          t("settings_panel.goryachie_klavishi_shortkaty_sochetaniya_hot"),
       },
       {
         id: "about",
-        label: "О системе",
-        title: "О системе и архитектуре",
-        keywords: "версия стек архитектура справка about version",
+        label: t("settings_panel.o_sisteme"),
+        title: t("settings_panel.o_sisteme_i_arhitekture"),
+        keywords: t("settings_panel.versiya_stek_arhitektura_spravka_about_versi"),
       },
     ],
   },
@@ -163,15 +164,15 @@ export default function SettingsPanel() {
       <Input
         value={query}
         onChange={(e) => setQuery(e.target.value)}
-        placeholder="Поиск настроек"
-        aria-label="Поиск по настройкам"
+        placeholder={t("settings_panel.poisk_nastroek")}
+        aria-label={t("settings_panel.poisk_po_nastroykam")}
         className="h-8 pl-8 text-sm"
       />
     </div>
   );
 
   const emptyResults = (
-    <p className="px-3 py-2 text-xs text-muted-foreground">Ничего не найдено</p>
+    <p className="px-3 py-2 text-xs text-muted-foreground">{t("settings_panel.nichego_ne_naydeno")}</p>
   );
 
   return (
@@ -191,21 +192,21 @@ export default function SettingsPanel() {
         ref={panelRef}
         role="dialog"
         aria-modal="true"
-        aria-label="Настройки"
+        aria-label={t("settings_panel.nastroyki")}
         tabIndex={-1}
         className="bg-background border-0 sm:border border-border rounded-none sm:rounded-2xl shadow-e3 w-full sm:max-w-5xl h-[100dvh] sm:h-[min(700px,88vh)] flex overflow-hidden outline-none"
       >
         {/* Desktop sidebar */}
         <aside className="hidden md:flex w-64 border-r border-border bg-muted/20 p-3 flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between px-2 pt-1">
-            <h2 className="text-base font-semibold">Настройки</h2>
+            <h2 className="text-base font-semibold">{t("settings_panel.nastroyki")}</h2>
             <Button
               variant="ghost"
               size="icon"
               className="h-8 w-8"
               onClick={() => setOpen(false)}
               type="button"
-              title="Закрыть"
+              title={t("panel_modal.zakryt")}
             >
               <CloseIcon />
             </Button>
@@ -244,14 +245,14 @@ export default function SettingsPanel() {
           )}
         >
           <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 safe-top">
-            <h2 className="text-lg font-semibold">Настройки</h2>
+            <h2 className="text-lg font-semibold">{t("settings_panel.nastroyki")}</h2>
             <Button
               variant="ghost"
               size="icon"
               className="h-9 w-9"
               onClick={() => setOpen(false)}
               type="button"
-              title="Закрыть"
+              title={t("panel_modal.zakryt")}
             >
               <CloseIcon />
             </Button>
@@ -305,7 +306,7 @@ export default function SettingsPanel() {
               size="icon"
               className="h-9 w-9 shrink-0"
               onClick={() => setOpen(false)}
-              title="Закрыть"
+              title={t("panel_modal.zakryt")}
               type="button"
             >
               <CloseIcon />

@@ -1,6 +1,7 @@
 import { ChevronRight, Wrench } from "lucide-react";
 import { memo, type ReactNode, useState } from "react";
 import { cn } from "@/lib/utils";
+import { t, tf } from "@/i18n";
 
 /**
  * Compact activity disclosure for autonomous turns.
@@ -20,10 +21,10 @@ import { cn } from "@/lib/utils";
 function formatSteps(n: number): string {
   const mod100 = n % 100;
   const mod10 = n % 10;
-  if (mod100 >= 11 && mod100 <= 19) return `${n} шагов`;
-  if (mod10 === 1) return `${n} шаг`;
-  if (mod10 >= 2 && mod10 <= 4) return `${n} шага`;
-  return `${n} шагов`;
+  if (mod100 >= 11 && mod100 <= 19) return tf("agent_activity.0_shagov", [n]);
+  if (mod10 === 1) return tf("agent_activity.0_shag", [n]);
+  if (mod10 >= 2 && mod10 <= 4) return tf("agent_activity.0_shaga", [n]);
+  return tf("agent_activity.0_shagov", [n]);
 }
 
 const AgentActivity = ({
@@ -42,17 +43,17 @@ const AgentActivity = ({
   const expanded = choice ?? running;
 
   const status = running
-    ? "Работает"
+    ? t("agent_activity.rabotaet")
     : hasError
-      ? "Завершено с ошибкой"
-      : "Готово";
+      ? t("agent_activity.zaversheno_s_oshibkoy")
+      : t("agent_activity.gotovo");
 
   return (
     <div className="not-prose my-1">
       <button
         type="button"
         aria-expanded={expanded}
-        aria-label={`${status}, ${formatSteps(count)}. Показать подробности`}
+        aria-label={tf("agent_activity.0_1_pokazat_podrobnosti", [status, formatSteps(count)])}
         className={cn(
           "group/activity flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-accent/30",
           hasError && !running && "text-red-400",

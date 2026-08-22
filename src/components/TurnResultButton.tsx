@@ -1,6 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
 import TurnResultModal from "./TurnResultModal";
+import { t } from "@/i18n";
 
 export default function TurnResultButton({
   sessionId,
@@ -19,7 +20,7 @@ export default function TurnResultButton({
         className="inline-flex min-h-8 items-center gap-1 rounded-full px-2 text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground disabled:opacity-40"
         disabled={disabled}
         onClick={() => setOpen(true)}
-        title="Показать изменения именно этого ответа"
+        title={t("turn_result_button.pokazat_izmeneniya_imenno_etogo_otveta")}
       >
         <GitBranch className="h-3 w-3" />
         Результат

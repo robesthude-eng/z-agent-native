@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import CopyButton from "./CopyButton";
+import { t, tf } from "@/i18n";
 
 /**
  * Классический рендер текста пользовательского сообщения.
@@ -63,7 +64,7 @@ export default function UserMessageText({ text }: { text: string }) {
     <div className="w-full max-w-full self-end overflow-hidden rounded-xl border border-border bg-card text-left shadow-sm">
       <div className="flex items-center gap-2 border-b border-border bg-muted/50 px-3 py-1.5">
         <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          {codeLike ? "Фрагмент кода" : "Вставленный текст"}
+          {codeLike ? t("user_message_text.fragment_koda") : t("user_message_text.vstavlennyy_tekst")}
         </span>
         <span className="text-[11px] tabular-nums text-muted-foreground/70">
           {lineCount} строк
@@ -71,7 +72,7 @@ export default function UserMessageText({ text }: { text: string }) {
         <div className="ml-auto flex items-center">
           <CopyButton
             text={text}
-            title="Копировать вставленный текст"
+            title={t("user_message_text.kopirovat_vstavlennyy_tekst")}
             className="h-6 w-6"
           />
         </div>
@@ -95,7 +96,7 @@ export default function UserMessageText({ text }: { text: string }) {
         className="block w-full border-t border-border px-3 py-1.5 text-center text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
         onClick={() => setExpanded((v) => !v)}
       >
-        {expanded ? "Свернуть" : `Развернуть — ${lineCount} строк`}
+        {expanded ? t("sidebar.svernut") : tf("user_message_text.razvernut_0_strok", [lineCount])}
       </button>
     </div>
   );

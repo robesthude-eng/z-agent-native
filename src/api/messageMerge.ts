@@ -16,6 +16,7 @@ import { log } from "../lib/log";
  */
 import { isLocalMessage } from "../lib/ids";
 import type { Message as MergeMessage } from "./types";
+import { t } from "@/i18n";
 
 // export interface MergeMessage {
 //   id: string;
@@ -100,18 +101,18 @@ function assertMergeInvariants(messages: MergeMessage[]): void {
   const seenIds = new Set<string>();
   for (const m of messages) {
     if (!m || typeof m.id !== "string" || !m.id) {
-      log.error("[merge-invariant] сообщение без id:", m);
+      log.error(t("message_merge.merge_invariant_soobschenie_bez_id"), m);
       continue;
     }
     if (seenIds.has(m.id)) {
-      log.error("[merge-invariant] дубликат id сообщения:", m.id);
+      log.error(t("message_merge.merge_invariant_dublikat_id_soobscheniya"), m.id);
     }
     seenIds.add(m.id);
     if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") {
-      log.error("[merge-invariant] невалидная роль:", m.id, m.role);
+      log.error(t("message_merge.merge_invariant_nevalidnaya_rol"), m.id, m.role);
     }
     if (!Array.isArray(m.parts)) {
-      log.error("[merge-invariant] сообщение без parts:", m.id);
+      log.error(t("message_merge.merge_invariant_soobschenie_bez_parts"), m.id);
       continue;
     }
     const partIds = new Set<string>();
@@ -119,7 +120,7 @@ function assertMergeInvariants(messages: MergeMessage[]): void {
       const pid = (p as { id?: string }).id;
       if (pid) {
         if (partIds.has(pid)) {
-          log.error("[merge-invariant] дубликат id части:", m.id, pid);
+          log.error(t("message_merge.merge_invariant_dublikat_id_chasti"), m.id, pid);
         }
         partIds.add(pid);
       }
@@ -127,7 +128,7 @@ function assertMergeInvariants(messages: MergeMessage[]): void {
         const att = p as { path?: string; dataUrl?: string; name?: string };
         if (!att.path && !att.dataUrl) {
           log.error(
-            "[merge-invariant] вложение без path/dataUrl:",
+            t("message_merge.merge_invariant_vlozhenie_bez_path_dataurl"),
             m.id,
             att.name,
           );

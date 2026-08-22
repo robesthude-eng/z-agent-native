@@ -29,6 +29,7 @@ import {
 import { LazyPanel, PanelBodySkeleton } from "./LazyPanel";
 import ModelSelector from "./ModelSelector";
 import PanelModal from "./PanelModal";
+import { t } from "@/i18n";
 
 /** Heavy/secondary panels are loaded only when the user asks for them. */
 const Terminal = lazy(() =>
@@ -119,18 +120,18 @@ export default function TopBar() {
     if (!sid) return;
     const msgs = st.messages[sid] ?? [];
     if (msgs.length === 0) {
-      toast("info", "В этом чате пока нет сообщений");
+      toast("info", t("top_bar.v_etom_chate_poka_net_soobscheniy"));
       return;
     }
     const title =
       st.sessionTitleOverrides[sid] ||
       st.sessions.find((x) => x.id === sid)?.title ||
-      "Чат Z Agent";
+      t("top_bar.chat_z_agent");
     downloadTextFile(
       `z-agent-chat-${sid.slice(0, 8)}.md`,
       buildChatMarkdown(msgs, title),
     );
-    toast("success", "Чат сохранён в Markdown-файл");
+    toast("success", t("top_bar.chat_sohranen_v_markdown_fayl"));
   };
 
   return (
@@ -142,8 +143,8 @@ export default function TopBar() {
           className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
           onClick={() => setSidebarOpen(true)}
           data-testid="mobile-menu-btn"
-          title="Меню"
-          aria-label="Открыть меню"
+          title={t("top_bar.menyu")}
+          aria-label={t("top_bar.otkryt_menyu")}
         >
           <MenuIcon />
         </Button>
@@ -155,13 +156,13 @@ export default function TopBar() {
           onClick={toggleSidebar}
           title={
             sidebarCollapsed
-              ? "Показать боковую панель"
-              : "Скрыть боковую панель"
+              ? t("top_bar.pokazat_bokovuyu_panel")
+              : t("top_bar.skryt_bokovuyu_panel")
           }
           aria-label={
             sidebarCollapsed
-              ? "Показать боковую панель"
-              : "Скрыть боковую панель"
+              ? t("top_bar.pokazat_bokovuyu_panel")
+              : t("top_bar.skryt_bokovuyu_panel")
           }
         >
           {sidebarCollapsed ? (
@@ -183,8 +184,8 @@ export default function TopBar() {
           className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
           onClick={handleExportChat}
           disabled={!sessionReady}
-          title="Скачать чат в Markdown"
-          aria-label="Скачать чат в Markdown"
+          title={t("top_bar.skachat_chat_v_markdown")}
+          aria-label={t("top_bar.skachat_chat_v_markdown")}
         >
           <DownloadIcon size={16} />
         </Button>
@@ -197,8 +198,8 @@ export default function TopBar() {
             window.dispatchEvent(new Event("z-agent:chat-search"));
           }}
           disabled={!sessionReady}
-          title="Поиск по чату (Ctrl+F)"
-          aria-label="Поиск по сообщениям чата"
+          title={t("top_bar.poisk_po_chatu_ctrl_f")}
+          aria-label={t("chat_view.poisk_po_soobscheniyam_chata")}
         >
           <SearchIcon size={16} />
         </Button>
@@ -208,8 +209,8 @@ export default function TopBar() {
           size="icon"
           className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowTerminal(true)}
-          {...gate("terminal", "Терминал")}
-          aria-label="Открыть терминал"
+          {...gate("terminal", t("top_bar.terminal"))}
+          aria-label={t("top_bar.otkryt_terminal")}
         >
           <BashIcon size={16} />
         </Button>
@@ -219,8 +220,8 @@ export default function TopBar() {
           size="icon"
           className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowPreview(true)}
-          {...gate("preview", "Предпросмотр")}
-          aria-label="Открыть предпросмотр"
+          {...gate("preview", t("preview_panel.predprosmotr"))}
+          aria-label={t("top_bar.otkryt_predprosmotr")}
         >
           <PreviewIcon size={16} />
         </Button>
@@ -231,8 +232,8 @@ export default function TopBar() {
           className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowChanges(true)}
           disabled={!sessionReady}
-          title="Результат и изменения проекта"
-          aria-label="Показать результат и изменения проекта"
+          title={t("top_bar.rezultat_i_izmeneniya_proekta")}
+          aria-label={t("top_bar.pokazat_rezultat_i_izmeneniya_proekta")}
         >
           <GitBranch className="h-4 w-4" />
         </Button>
@@ -242,8 +243,8 @@ export default function TopBar() {
           size="icon"
           className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
           onClick={() => setWorkspaceOpen(!workspaceOpen)}
-          title="Файлы проекта"
-          aria-label="Показать или скрыть файлы проекта"
+          title={t("top_bar.fayly_proekta")}
+          aria-label={t("top_bar.pokazat_ili_skryt_fayly_proekta")}
           aria-pressed={workspaceOpen}
           data-testid="workspace-toggle"
         >
@@ -256,23 +257,23 @@ export default function TopBar() {
       </header>
 
       <PanelModal
-        title="Терминал"
+        title={t("top_bar.terminal")}
         open={showTerminal}
         onClose={() => setShowTerminal(false)}
       >
         <div className="h-full w-full p-2">
-          <LazyPanel label="терминал" skeleton={<PanelBodySkeleton />}>
+          <LazyPanel label={t("top_bar.terminal_2")} skeleton={<PanelBodySkeleton />}>
             <Terminal workdir={currentID || ""} />
           </LazyPanel>
         </div>
       </PanelModal>
 
       <PanelModal
-        title="Предпросмотр"
+        title={t("preview_panel.predprosmotr")}
         open={showPreview}
         onClose={() => setShowPreview(false)}
       >
-        <LazyPanel label="предпросмотр" skeleton={<PanelBodySkeleton />}>
+        <LazyPanel label={t("top_bar.predprosmotr")} skeleton={<PanelBodySkeleton />}>
           <PreviewPanel
             url={
               currentID
@@ -284,11 +285,11 @@ export default function TopBar() {
       </PanelModal>
 
       <PanelModal
-        title="Результат"
+        title={t("top_bar.rezultat")}
         open={showChanges}
         onClose={() => setShowChanges(false)}
       >
-        <LazyPanel label="результат" skeleton={<PanelBodySkeleton />}>
+        <LazyPanel label={t("top_bar.rezultat_2")} skeleton={<PanelBodySkeleton />}>
           <ChangesPanel />
         </LazyPanel>
       </PanelModal>

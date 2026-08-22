@@ -23,29 +23,30 @@ import {
   FilePlusIcon,
 } from "./icons";
 import MessageItem from "./MessageItem";
+import { t, tf } from "@/i18n";
 
 const SUGGESTIONS = [
   {
-    title: "Собрать проект",
+    title: t("chat_view.sobrat_proekt"),
     prompt:
-      "Создай в workspace статическую страницу-лендинг: index.html, style.css и небольшой script.js. Покажи структуру файлов, когда закончишь.",
+      t("chat_view.sozday_v_workspace_staticheskuyu_stranicu_le"),
     icon: FilePlusIcon,
   },
   {
-    title: "Разобрать код",
-    prompt: "Объясни, что делает этот код, и предложи, как его упростить:\n\n",
+    title: t("chat_view.razobrat_kod"),
+    prompt: t("chat_view.obyasni_chto_delaet_etot_kod_i"),
     icon: BookIcon,
   },
   {
-    title: "Найти баг",
+    title: t("chat_view.nayti_bag"),
     prompt:
-      "В коде ниже есть ошибка. Найди её, объясни причину и исправь файл в workspace:\n\n",
+      t("chat_view.v_kode_nizhe_est_oshibka_naydi"),
     icon: BugIcon,
   },
   {
-    title: "Проверить окружение",
+    title: t("chat_view.proverit_okruzhenie"),
     prompt:
-      "Покажи в терминале версии node, npm и python, которые доступны в этом workspace.",
+      t("chat_view.pokazhi_v_terminale_versii_node_npm"),
     icon: BashIcon,
   },
 ];
@@ -453,8 +454,8 @@ export default function ChatView() {
               if (e.key === "Enter") goToMatch(searchIdx + 1);
               if (e.key === "Escape") setSearchOpen(false);
             }}
-            placeholder="Поиск по чату…"
-            aria-label="Поиск по сообщениям чата"
+            placeholder={t("chat_view.poisk_po_chatu")}
+            aria-label={t("chat_view.poisk_po_soobscheniyam_chata")}
             className="w-40 bg-transparent text-xs text-foreground outline-none placeholder:text-muted-foreground"
           />
           <span className="text-[11px] tabular-nums text-muted-foreground">
@@ -466,8 +467,8 @@ export default function ChatView() {
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            title="Предыдущее совпадение"
-            aria-label="Предыдущее совпадение"
+            title={t("chat_view.predyduschee_sovpadenie")}
+            aria-label={t("chat_view.predyduschee_sovpadenie")}
             onClick={() => goToMatch(searchIdx - 1)}
           >
             ↑
@@ -476,8 +477,8 @@ export default function ChatView() {
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            title="Следующее совпадение"
-            aria-label="Следующее совпадение"
+            title={t("chat_view.sleduyuschee_sovpadenie")}
+            aria-label={t("chat_view.sleduyuschee_sovpadenie")}
             onClick={() => goToMatch(searchIdx + 1)}
           >
             ↓
@@ -486,8 +487,8 @@ export default function ChatView() {
             variant="ghost"
             size="icon"
             className="h-6 w-6"
-            title="Закрыть поиск"
-            aria-label="Закрыть поиск"
+            title={t("chat_view.zakryt_poisk")}
+            aria-label={t("chat_view.zakryt_poisk")}
             onClick={() => setSearchOpen(false)}
           >
             ✕
@@ -499,19 +500,19 @@ export default function ChatView() {
           type="button"
           className="absolute bottom-3 left-1/2 flex min-h-10 -translate-x-1/2 items-center gap-1.5 rounded-full border border-border bg-card px-3 py-2 text-xs text-muted-foreground shadow-e2 transition hover:bg-muted hover:text-foreground"
           onClick={scrollToBottom}
-          title="К последнему сообщению"
+          title={t("chat_view.k_poslednemu_soobscheniyu")}
           aria-label={
             newAnswerCount > 0
               ? newAnswerCount === 1
-                ? "К новому ответу"
-                : `К новым ответам: ${newAnswerCount}`
-              : "К последнему сообщению"
+                ? t("chat_view.k_novomu_otvetu")
+                : tf("chat_view.k_novym_otvetam_0", [newAnswerCount])
+              : t("chat_view.k_poslednemu_soobscheniyu")
           }
         >
           <ChevronDownIcon size={17} />
           {newAnswerCount > 0 && (
             <span>
-              {newAnswerCount === 1 ? "Новый ответ" : `${newAnswerCount} новых`}
+              {newAnswerCount === 1 ? t("chat_view.novyy_otvet") : tf("chat_view.0_novyh", [newAnswerCount])}
             </span>
           )}
         </button>

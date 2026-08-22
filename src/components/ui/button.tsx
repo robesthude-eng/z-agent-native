@@ -27,8 +27,10 @@ const buttonVariants = cva(
         // потому ничего не рисовал, но переопределить размер кнопки через
         // className становилось невозможно — на широком экране медиа-вариант
         // побеждал, и `h-8 w-8` молча оставалась 36-пиксельной.
-        icon: "h-9 w-9", // min 44px на касании — правило .min-touch в index.css
-        // 'icon' buttons get min touch target via CSS — see index.css .min-touch
+        // На касании эти 36 пикселей растут до 44 медиазапросом
+        // `(hover: none) and (pointer: coarse)` в index.css. Класса .min-touch,
+        // на который ссылался прежний комментарий, в проекте нет.
+        icon: "h-9 w-9",
       },
     },
     defaultVariants: {

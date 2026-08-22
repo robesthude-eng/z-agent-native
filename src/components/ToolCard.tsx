@@ -36,6 +36,7 @@ import { useSmoothStreamingText } from "../lib/useSmoothText";
 import { useStore } from "../store/useStore";
 import { toolIcon } from "../utils/toolUtils";
 import DiffView from "./DiffView";
+import { t, tf } from "@/i18n";
 
 function fmt(value: unknown): string {
   if (value == null) return "";
@@ -175,26 +176,26 @@ function getSummary(part: ToolPart): string {
  */
 export function friendlyToolLabel(tool?: string): string {
   const t = (tool || "").toLowerCase();
-  if (t === "bash" || t === "shell" || t === "cmd") return "Команда";
-  if (t === "read") return "Читает файл";
-  if (t === "write") return "Пишет файл";
+  if (t === "bash" || t === "shell" || t === "cmd") return t("tool_card.komanda");
+  if (t === "read") return t("tool_card.chitaet_fayl");
+  if (t === "write") return t("tool_card.pishet_fayl");
   if (t === "edit" || t === "applypatch" || t === "apply_patch")
-    return "Правит файл";
-  if (t === "patch") return "Применяет патч";
-  if (t === "glob") return "Ищет файлы";
-  if (t === "grep") return "Ищет по тексту";
-  if (t === "ls" || t === "list") return "Смотрит папку";
-  if (t === "webfetch" || t === "fetch") return "Загружает страницу";
-  if (t === "websearch" || t === "search") return "Ищет в интернете";
-  if (t === "task") return "Подзадача";
-  if (t === "todowrite" || t === "todo") return "Обновляет план";
-  if (t === "question") return "Вопрос";
-  if (t === "ensure_environment") return "Готовит окружение";
-  if (t === "environment_status") return "Проверяет окружение";
-  if (t === "repo_map") return "Смотрит структуру проекта";
-  if (!tool) return "Инструмент";
+    return t("tool_card.pravit_fayl");
+  if (t === "patch") return t("tool_card.primenyaet_patch");
+  if (t === "glob") return t("tool_card.ischet_fayly");
+  if (t === "grep") return t("tool_card.ischet_po_tekstu");
+  if (t === "ls" || t === "list") return t("tool_card.smotrit_papku");
+  if (t === "webfetch" || t === "fetch") return t("tool_card.zagruzhaet_stranicu");
+  if (t === "websearch" || t === "search") return t("tool_card.ischet_v_internete");
+  if (t === "task") return t("tool_card.podzadacha");
+  if (t === "todowrite" || t === "todo") return t("tool_card.obnovlyaet_plan");
+  if (t === "question") return t("tool_card.vopros");
+  if (t === "ensure_environment") return t("tool_card.gotovit_okruzhenie");
+  if (t === "environment_status") return t("tool_card.proveryaet_okruzhenie");
+  if (t === "repo_map") return t("tool_card.smotrit_strukturu_proekta");
+  if (!tool) return t("tool_card.instrument");
   // Незнакомый инструмент называем его же именем, а не выдумываем перевод.
-  return `Инструмент ${tool}`;
+  return tf("tool_card.instrument_0", [tool]);
 }
 
 /* ---------- Question tool card ---------- */
@@ -431,11 +432,11 @@ function QuestionCard({ part }: { part: ToolPart }) {
   const submitAnswers = useCallback(
     async (answers: string[][]) => {
       const sid = currentID;
-      if (!sid) throw new Error("Нет активной сессии");
+      if (!sid) throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
       const pending = await api.waitForPendingQuestion(sid);
       if (!pending) {
         throw new Error(
-          "Question API ещё не зарегистрировал вопрос. Текущий ход не прерван",
+          t("tool_card.question_api_esche_ne_zaregistriroval_vopros"),
         );
       }
       await api.replyQuestion(sid, pending.id, answers);
@@ -466,7 +467,7 @@ function QuestionCard({ part }: { part: ToolPart }) {
             "error",
             err instanceof Error
               ? err.message
-              : "Не удалось отправить ответ на вопрос",
+              : t("tool_card.ne_udalos_otpravit_otvet_na_vopros"),
           );
           // Ничего не abort'им и не создаём новую реплику. Возвращаем карточку
           // в редактируемое состояние, чтобы пользователь мог повторить.
@@ -594,7 +595,7 @@ function QuestionCard({ part }: { part: ToolPart }) {
                 <Input
                   type="text"
                   className="h-8 text-[13px]"
-                  placeholder="Или свой ответ…"
+                  placeholder={t("tool_card.ili_svoy_otvet")}
                   value={customText[qIdx] || ""}
                   onChange={(e) =>
                     setCustomText((prev) => ({
@@ -620,10 +621,10 @@ function QuestionCard({ part }: { part: ToolPart }) {
               <div className="flex items-center gap-1 text-[11px] font-semibold text-foreground">
                 <Check className="h-3 w-3" />
                 {submitted
-                  ? "Ответ отправлен"
+                  ? t("tool_card.otvet_otpravlen")
                   : submitting
-                    ? "Отправляем ответы…"
-                    : "Ответ выбран"}
+                    ? t("tool_card.otpravlyaem_otvety")
+                    : t("tool_card.otvet_vybran")}
               </div>
             )}
           </div>
@@ -662,7 +663,7 @@ function CodeBlock({
     e.stopPropagation();
     copyText(text).then((ok) => {
       if (!ok) {
-        toast("error", "Не удалось скопировать — нет доступа к буферу");
+        toast("error", t("copy_button.ne_udalos_skopirovat_net_dostupa_k"));
         return;
       }
       setCopied(true);
@@ -689,8 +690,8 @@ function CodeBlock({
           type="button"
           onClick={copy}
           className="p-1 rounded hover:bg-accent/60 text-muted-foreground/60 hover:text-foreground transition"
-          title="Копировать"
-          aria-label="Копировать"
+          title={t("copy_button.kopirovat")}
+          aria-label={t("copy_button.kopirovat")}
         >
           {copied ? (
             <Check className="h-3 w-3 text-foreground" />
@@ -817,7 +818,7 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
               type="button"
               className="flex items-center gap-1.5 rounded-md border border-border px-2 py-1 font-mono text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
               onClick={() => requestOpenFile(filePath)}
-              title="Открыть файл в панели файлов"
+              title={t("tool_card.otkryt_fayl_v_paneli_faylov")}
             >
               <ArrowRight className="h-3 w-3" />
               {filePath}
@@ -833,7 +834,7 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
             // глазах — это тот же поток, что у вывода команды, просто
             // раньше он показывался JSON'ом.
             <CodeBlock
-              label={filePath ? "СОДЕРЖИМОЕ" : "ФАЙЛ"}
+              label={filePath ? t("tool_card.soderzhimoe") : t("tool_card.fayl")}
               text={written}
               streaming={running}
             />
@@ -846,7 +847,7 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
                 key={`${filePath ?? "edit"}:${edit.oldText.slice(0, 64)}→${edit.newText.slice(0, 64)}`}
                 oldText={edit.oldText}
                 newText={edit.newText}
-                emptyLabel="Инструмент не изменил содержимое"
+                emptyLabel={t("tool_card.instrument_ne_izmenil_soderzhimoe")}
               />
             ))
           ) : (

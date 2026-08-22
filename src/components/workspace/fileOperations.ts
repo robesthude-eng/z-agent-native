@@ -25,6 +25,7 @@
 
 import { isTmpSession } from "../../lib/ids";
 import { parentDir } from "./fileDecisions";
+import { t } from "@/i18n";
 
 /** Почему операция над файлами недоступна. `null` — доступна. */
 export type OperationBlock = "no_chat" | "draft_chat" | null;
@@ -60,14 +61,14 @@ export function operationGate(sessionId?: string | null): OperationGate {
     return {
       allowed: false,
       reason: "no_chat",
-      explanation: "Выберите или создайте чат",
+      explanation: t("file_operations.vyberite_ili_sozdayte_chat"),
     };
   }
   if (isTmpSession(sessionId)) {
     return {
       allowed: false,
       reason: "draft_chat",
-      explanation: "Воркспейс появится после первого сообщения",
+      explanation: t("file_operations.vorkspeys_poyavitsya_posle_pervogo_soobschen"),
     };
   }
   return { allowed: true, reason: null, explanation: "" };

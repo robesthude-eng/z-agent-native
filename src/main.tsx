@@ -59,6 +59,7 @@ import { initAutonomyUx } from "./lib/autonomyUx";
 import { initSentryBrowser } from "./lib/sentry";
 import "./index.css";
 import "./autonomy-ui.css";
+import { t } from "@/i18n";
 
 initSentryBrowser();
 initAutonomyUx();
@@ -67,7 +68,7 @@ const rootElement = document.getElementById("root");
 if (!rootElement) {
   // Монтировать некуда: без броска здесь пользователь получил бы молча
   // пустую страницу, а в Sentry — ни одной записи о причине.
-  throw new Error("Не найден элемент #root в index.html");
+  throw new Error(t("main.ne_nayden_element_root_v_index"));
 }
 
 ReactDOM.createRoot(rootElement).render(

@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 /**
  * Вердикт хода — единственное, что интерфейсу разрешено знать о завершении.
  *
@@ -155,10 +156,10 @@ export function isSettled(turn: TurnProjection | null): boolean {
  * одно понятное действие. Скрытая неопределённость ничем не отличается от
  * зависшего интерфейса — именно так это и выглядело до сих пор.
  */
-export const STUCK_NOTICE = "Не удалось подтвердить состояние ответа";
+export const STUCK_NOTICE = t("turn_verdict.ne_udalos_podtverdit_sostoyanie_otveta");
 
 /** Подпись действия для состояния `stuck`. */
-export const STUCK_ACTION = "Проверить снова";
+export const STUCK_ACTION = t("turn_verdict.proverit_snova");
 
 /**
  * Все виды диспозиции — данными, а не только типом.
@@ -288,7 +289,7 @@ export function sendBlockReason(
   disposition: TurnDisposition | null,
 ): string | null {
   if (disposition !== "waiting") return null;
-  return "Сначала ответьте агенту — он ждёт и не продолжит без ответа";
+  return t("turn_verdict.snachala_otvette_agentu_on_zhdet_i");
 }
 
 /**

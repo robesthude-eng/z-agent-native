@@ -19,6 +19,7 @@ import {
 import { log } from "../lib/log";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
+import { t, tf } from "@/i18n";
 
 /**
  * Плавающая полоса прерываний — этап 2.1.
@@ -59,7 +60,7 @@ function presentTool(tool: string, input: unknown): ToolPresentation {
     str("url") ??
     str("pattern");
   return {
-    action: `Разрешить вызов «${tool}»`,
+    action: tf("interruption_bar.razreshit_vyzov_0", [tool]),
     ...(detail !== undefined ? { detail } : {}),
   };
 }
@@ -242,14 +243,14 @@ export default function InterruptionBar() {
             await respondPermission(chosen.id, chosen.response);
             break;
           case "question":
-            if (!currentID) throw new Error("Нет активной сессии");
+            if (!currentID) throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
             await api.replyQuestion(currentID, chosen.id, chosen.answers);
             break;
           case "none":
-            log.warn("[InterruptionBar] ответ пока не отправлен:", chosen.reason);
+            log.warn(t("interruption_bar.interruptionbar_otvet_poka_ne_otpravlen"), chosen.reason);
             toast(
               "error",
-              "Не удалось связать ответ с вопросом. Ход не прерван — попробуйте ещё раз",
+              t("interruption_bar.ne_udalos_svyazat_otvet_s_voprosom"),
             );
             return;
         }
@@ -260,8 +261,8 @@ export default function InterruptionBar() {
         // Молчаливая неудача здесь худшая из возможных: полоса остаётся на
         // месте, кнопки снова активны, и со стороны это неотличимо от «клик не
         // сработал». Ход при этом продолжает ждать.
-        log.error("[InterruptionBar] ответ не отправлен:", e);
-        toast("error", "Ответ не отправлен. Попробуйте ещё раз");
+        log.error(t("interruption_bar.interruptionbar_otvet_ne_otpravlen"), e);
+        toast("error", t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"));
       } finally {
         setBusy(false);
       }
@@ -346,8 +347,8 @@ export default function InterruptionBar() {
               onClick={() => setExpanded((v) => !v)}
             >
               {expanded
-                ? "свернуть"
-                : `показать целиком (свёрнуто до ${BAR_COLLAPSE_LINES} строк)`}
+                ? t("interruption_bar.svernut")
+                : tf("interruption_bar.pokazat_celikom_svernuto_do_0_strok", [BAR_COLLAPSE_LINES])}
             </button>
           )}
 
@@ -407,7 +408,7 @@ export default function InterruptionBar() {
               <Input
                 type="text"
                 className="h-9 rounded-xl text-[13.5px]"
-                placeholder="Ответить своими словами…"
+                placeholder={t("interruption_bar.otvetit_svoimi_slovami")}
                 value={custom}
                 disabled={busy}
                 onChange={(e) => setCustom(e.target.value)}

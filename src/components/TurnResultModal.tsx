@@ -14,6 +14,7 @@ import {
 import { toast } from "../lib/toast";
 import { useStore } from "../store/useStore";
 import PanelModal from "./PanelModal";
+import { t, tf } from "@/i18n";
 
 type ChangeKind = "added" | "deleted" | "modified";
 
@@ -25,9 +26,9 @@ function kind(status?: string): ChangeKind {
 
 function statusLabel(status?: string) {
   const value = kind(status);
-  if (value === "added") return "Добавлен";
-  if (value === "deleted") return "Удалён";
-  return "Изменён";
+  if (value === "added") return t("changes_panel.dobavlen");
+  if (value === "deleted") return t("changes_panel.udalen");
+  return t("changes_panel.izmenen");
 }
 
 function statusMark(status?: string) {
@@ -56,9 +57,9 @@ function lineClass(line: string) {
 function pluralFiles(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
-  if (mod10 === 1 && mod100 !== 11) return "файл";
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return "файла";
-  return "файлов";
+  if (mod10 === 1 && mod100 !== 11) return t("message_item.fayl");
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t("message_item.fayla");
+  return t("message_item.faylov");
 }
 
 export default function TurnResultModal({
@@ -88,11 +89,11 @@ export default function TurnResultModal({
       const next = await changesApi.turnResult(sessionId, messageId);
       setResult(next);
     } catch (e: unknown) {
-      const message = (e as Error)?.message || "Не удалось получить результат этого ответа";
+      const message = (e as Error)?.message || t("turn_result_modal.ne_udalos_poluchit_rezultat_etogo_otveta");
       setResult(null);
       setError(
         /нет сохранённого результата workspace|404/i.test(message)
-          ? "Этот ответ создан до появления снимков хода, поэтому точный rollback для него недоступен."
+          ? t("turn_result_modal.etot_otvet_sozdan_do_poyavleniya_snimkov")
           : message,
       );
     } finally {
@@ -130,7 +131,7 @@ export default function TurnResultModal({
       try {
         setDiff(await changesApi.turnResultDiff(sessionId, messageId, file.path));
       } catch (e: unknown) {
-        setError((e as Error)?.message || "Не удалось загрузить diff");
+        setError((e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"));
       } finally {
         setDiffLoading(null);
       }
@@ -149,11 +150,11 @@ export default function TurnResultModal({
       toast(
         "success",
         response.alreadyRolledBack
-          ? "Этот ход уже был откатан."
-          : `Откат выполнен: восстановлено ${response.restored.length} ${pluralFiles(response.restored.length)}.`,
+          ? t("turn_result_modal.etot_hod_uzhe_byl_otkatan")
+          : tf("turn_result_modal.otkat_vypolnen_vosstanovleno_0_1", [response.restored.length, pluralFiles(response.restored.length)]),
       );
     } catch (e: unknown) {
-      const message = (e as Error)?.message || "Не удалось откатить этот ход";
+      const message = (e as Error)?.message || t("turn_result_modal.ne_udalos_otkatit_etot_hod");
       setError(message);
       toast("error", message);
     } finally {
@@ -164,7 +165,7 @@ export default function TurnResultModal({
   const rolledBack = Boolean(result?.rolledBackAt);
 
   return (
-    <PanelModal title="Результат этого ответа" open={open} onClose={onClose}>
+    <PanelModal title={t("turn_result_modal.rezultat_etogo_otveta")} open={open} onClose={onClose}>
       <div className="flex h-full min-h-0 flex-col bg-background">
         <div className="shrink-0 border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -172,15 +173,15 @@ export default function TurnResultModal({
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium text-foreground">
                 {loading
-                  ? "Загружаю результат…"
+                  ? t("turn_result_modal.zagruzhayu_rezultat")
                   : result
                     ? `${result.changeCount} ${pluralFiles(result.changeCount)}`
-                    : "Результат хода"}
+                    : t("turn_result_modal.rezultat_hoda")}
               </div>
               {result && (
                 <div className="mt-0.5 text-[11px] text-muted-foreground">
                   +{counts.added} · ~{counts.modified} · −{counts.deleted}
-                  {rolledBack ? " · откат выполнен" : " · снимок до/после сохранён"}
+                  {rolledBack ? t("turn_result_modal.otkat_vypolnen_2") : t("turn_result_modal.snimok_do_posle_sohranen")}
                 </div>
               )}
             </div>
@@ -197,7 +198,7 @@ export default function TurnResultModal({
               >
                 <span className="inline-flex items-center gap-1.5">
                   <RotateCcw className="h-3 w-3" />
-                  {rolledBack ? "Откат выполнен" : rollingBack ? "Откатываю…" : "Откатить весь ход"}
+                  {rolledBack ? t("turn_result_modal.otkat_vypolnen") : rollingBack ? t("changes_panel.otkatyvayu") : t("turn_result_modal.otkatit_ves_hod")}
                 </span>
               </button>
             )}
@@ -205,7 +206,7 @@ export default function TurnResultModal({
 
           {confirmRollback && result && !rolledBack && (
             <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-              <div className="font-medium text-foreground/90">Вернуть проект к состоянию до этого ответа?</div>
+              <div className="font-medium text-foreground/90">{t("turn_result_modal.vernut_proekt_k_sostoyaniyu_do_etogo")}</div>
               <div className="mt-1">
                 Сервер сначала проверит все {result.changeCount} {pluralFiles(result.changeCount)}. Если более поздняя задача изменила хотя бы один из них, откат не начнётся и новая работа останется нетронутой.
               </div>
@@ -224,7 +225,7 @@ export default function TurnResultModal({
                   onClick={() => void rollback()}
                   disabled={rollingBack}
                 >
-                  {rollingBack ? "Откатываю…" : "Подтвердить откат"}
+                  {rollingBack ? t("changes_panel.otkatyvayu") : t("turn_result_modal.podtverdit_otkat")}
                 </button>
               </div>
             </div>
@@ -240,7 +241,7 @@ export default function TurnResultModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {!loading && result && result.changes.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center">
-              <div className="text-sm font-medium text-foreground">Файлы не менялись</div>
+              <div className="text-sm font-medium text-foreground">{t("turn_result_modal.fayly_ne_menyalis")}</div>
               <div className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
                 Ответ мог выполнять чтение, поиск или проверку — снимки до и после совпадают.
               </div>
@@ -279,7 +280,7 @@ export default function TurnResultModal({
                             <span className="text-red-300/90">−{diff.deletions}</span>
                           </>
                         )}
-                        {diff.truncated && <span>diff сокращён</span>}
+                        {diff.truncated && <span>{t("changes_panel.diff_sokraschen")}</span>}
                         {!rolledBack && kind(file.status) !== "deleted" && (
                           <button
                             type="button"
@@ -296,7 +297,7 @@ export default function TurnResultModal({
                       </div>
 
                       {diff.binary ? (
-                        <div className="px-3 pb-3 text-xs text-muted-foreground">Двоичный файл изменён. Текстовый diff недоступен.</div>
+                        <div className="px-3 pb-3 text-xs text-muted-foreground">{t("turn_result_modal.dvoichnyy_fayl_izmenen_tekstovyy_diff_nedost")}</div>
                       ) : (
                         <pre className="max-h-[52dvh] overflow-auto border-t border-border/60 bg-black/15 py-2 font-mono text-[11px] leading-[1.55]">
                           {diff.patch.split("\n").map((line, index) => (

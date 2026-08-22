@@ -1,6 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "./ui/button";
+import { t } from "@/i18n";
 
 interface PreviewPanelProps {
   url: string;
@@ -45,8 +46,8 @@ export function PreviewPanel({ url }: PreviewPanelProps) {
             size="icon"
             className="h-7 w-7"
             onClick={handleRefresh}
-            title="Обновить"
-            aria-label="Обновить"
+            title={t("preview_panel.obnovit")}
+            aria-label={t("preview_panel.obnovit")}
           >
             <RefreshCw
               size={14}
@@ -75,7 +76,7 @@ export function PreviewPanel({ url }: PreviewPanelProps) {
             key={key}
             src={url}
             className="h-full w-full border-none"
-            title="Предпросмотр"
+            title={t("preview_panel.predprosmotr")}
             sandbox="allow-scripts allow-forms allow-popups"
             onLoad={() => {
               setLoading(false);

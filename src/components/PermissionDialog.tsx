@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
+import { t, tf } from "@/i18n";
 
 // Native permission protocol uses "once" | "always" | "reject".
 // (older versions used "allow" | "deny"). We send the new enum; the server
@@ -37,41 +38,41 @@ function presentTool(tool: string, input: unknown): ToolPresentation {
 
   if (["bash", "shell", "cmd"].includes(t)) {
     return {
-      action: "Выполнить команду в терминале песочницы этой сессии:",
+      action: t("permission_dialog.vypolnit_komandu_v_terminale_pesochnicy_etoy"),
       detail: str("command") ?? str("cmd"),
     };
   }
   if (t === "write") {
     return {
-      action: "Создать или перезаписать файл в песочнице:",
+      action: t("permission_dialog.sozdat_ili_perezapisat_fayl_v_pesochnice"),
       detail: str("filePath") ?? str("path") ?? str("file"),
     };
   }
   if (["edit", "multiedit", "patch", "apply_patch"].includes(t)) {
     return {
-      action: "Изменить файл в песочнице:",
+      action: t("permission_dialog.izmenit_fayl_v_pesochnice"),
       detail: str("filePath") ?? str("path") ?? str("file"),
     };
   }
   if (["read", "grep", "glob", "list", "ls"].includes(t)) {
     return {
-      action: "Прочитать файлы проекта:",
+      action: t("permission_dialog.prochitat_fayly_proekta"),
       detail: str("filePath") ?? str("path") ?? str("pattern"),
     };
   }
   if (["webfetch", "websearch", "fetch"].includes(t)) {
     return {
-      action: "Выполнить запрос в интернет:",
+      action: t("permission_dialog.vypolnit_zapros_v_internet"),
       detail: str("url") ?? str("query"),
     };
   }
   if (t === "task") {
     return {
-      action: "Запустить фоновую подзадачу:",
+      action: t("permission_dialog.zapustit_fonovuyu_podzadachu"),
       detail: str("description"),
     };
   }
-  return { action: `Запустить инструмент «${tool}»` };
+  return { action: tf("permission_dialog.zapustit_instrument_0", [tool]) };
 }
 
 /**
@@ -114,14 +115,14 @@ export default function PermissionDialog() {
     <section
       className="pointer-events-none fixed inset-x-0 bottom-[116px] z-40 px-3 md:px-6"
       aria-live="polite"
-      aria-label={`Запрос разрешения: ${action}`}
+      aria-label={tf("permission_dialog.zapros_razresheniya_0", [action])}
     >
       <div className="pointer-events-auto mx-auto w-full max-w-3xl rounded-xl border border-warning/50 bg-card shadow-e3 animate-in fade-in slide-in-from-bottom-2">
         <div className="flex items-center gap-2 border-b border-border px-4 py-2.5">
           <span aria-hidden="true" className="text-warning">
             <KeyIcon size={15} />
           </span>
-          <span className="text-sm font-semibold">Запрос разрешения</span>
+          <span className="text-sm font-semibold">{t("interruptions.zapros_razresheniya")}</span>
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
             {tool}
           </span>
@@ -156,7 +157,7 @@ export default function PermissionDialog() {
             <Button
               variant="ghost"
               onClick={() => answer("reject")}
-              aria-label="Отклонить этот запрос"
+              aria-label={t("permission_dialog.otklonit_etot_zapros")}
             >
               Отклонить
             </Button>
@@ -164,14 +165,14 @@ export default function PermissionDialog() {
             <Button
               ref={allowRef}
               onClick={() => answer("once")}
-              aria-label="Разрешить только этот вызов"
+              aria-label={t("permission_dialog.razreshit_tolko_etot_vyzov")}
             >
               Разрешить
             </Button>
             <Button
               variant="ghost"
               onClick={() => answer("always")}
-              aria-label="Разрешать такие вызовы до конца текущей сессии"
+              aria-label={t("permission_dialog.razreshat_takie_vyzovy_do_konca_tekuschey")}
             >
               Всегда — до конца сессии
             </Button>

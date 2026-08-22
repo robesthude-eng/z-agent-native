@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
 import { useStore } from "../store/useStore";
+import { t } from "@/i18n";
 
 export default function LoginPage() {
   const login = useStore((s) => s.login);
@@ -23,19 +24,19 @@ export default function LoginPage() {
 
     const cleanEmail = email.trim();
     if (!cleanEmail?.includes("@")) {
-      setError("Введите корректный email адрес.");
+      setError(t("login_page.vvedite_korrektnyy_email_adres"));
       return;
     }
     if (!password) {
-      setError("Введите пароль.");
+      setError(t("login_page.vvedite_parol"));
       return;
     }
     if (isRegistering && password.length < 12) {
-      setError("Пароль должен содержать минимум 12 символов.");
+      setError(t("login_page.parol_dolzhen_soderzhat_minimum_12_simvolov"));
       return;
     }
     if (isRegistering && password !== confirmPass) {
-      setError("Пароли не совпадают.");
+      setError(t("login_page.paroli_ne_sovpadayut"));
       return;
     }
 
@@ -46,7 +47,7 @@ export default function LoginPage() {
     setLoading(false);
 
     if (!res.ok) {
-      setError(res.error || "Ошибка авторизации.");
+      setError(res.error || t("login_page.oshibka_avtorizacii"));
     }
   };
 
@@ -58,7 +59,7 @@ export default function LoginPage() {
             &gt;_
           </div>
           <h2 className="text-xl font-semibold tracking-tight">
-            {isRegistering ? "Регистрация" : "Вход"}
+            {isRegistering ? t("login_page.registraciya") : t("login_page.vhod")}
           </h2>
         </CardHeader>
 
@@ -118,7 +119,7 @@ export default function LoginPage() {
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="password">Пароль</Label>
+              <Label htmlFor="password">{t("login_page.parol")}</Label>
               <Input
                 id="password"
                 type="password"
@@ -134,7 +135,7 @@ export default function LoginPage() {
 
             {isRegistering && (
               <div className="space-y-2">
-                <Label htmlFor="confirm">Подтвердите пароль</Label>
+                <Label htmlFor="confirm">{t("login_page.podtverdite_parol")}</Label>
                 <Input
                   id="confirm"
                   type="password"
@@ -149,10 +150,10 @@ export default function LoginPage() {
 
             <Button type="submit" className="w-full h-10" disabled={loading}>
               {loading
-                ? "Подождите…"
+                ? t("login_page.podozhdite")
                 : isRegistering
-                  ? "Зарегистрироваться"
-                  : "Войти"}
+                  ? t("login_page.zaregistrirovatsya")
+                  : t("login_page.voyti")}
             </Button>
           </form>
         </CardContent>

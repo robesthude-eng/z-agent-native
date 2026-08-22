@@ -34,6 +34,7 @@ import PartView from "./PartView";
 import ToolGroup from "./ToolGroup";
 import TurnResultButton from "./TurnResultButton";
 import UserMessageText from "./UserMessageText";
+import { t, tf } from "@/i18n";
 
 type TaskOutcomeStatus =
   | "completed"
@@ -93,13 +94,13 @@ function pluralRu(n: number, one: string, few: string, many: string): string {
 
 function formatDuration(ms: number): string {
   const seconds = Math.max(1, Math.round(ms / 1000));
-  if (seconds < 60) return `${seconds} с`;
+  if (seconds < 60) return tf("message_item.0_s", [seconds]);
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  if (minutes < 60) return rest ? `${minutes} мин ${rest} с` : `${minutes} мин`;
+  if (minutes < 60) return rest ? tf("message_item.0_min_1_s", [minutes, rest]) : tf("message_item.0_min", [minutes]);
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
-  return restMinutes ? `${hours} ч ${restMinutes} мин` : `${hours} ч`;
+  return restMinutes ? tf("message_item.0_ch_1_min", [hours, restMinutes]) : tf("message_item.0_ch", [hours]);
 }
 
 function toolInput(part: ToolPart): Record<string, unknown> | null {
@@ -219,22 +220,22 @@ function answeringModelNote(messages: Message[]): string | null {
       : [];
     const requested = String(candidates[0] || "");
     if (!used || !requested || used === requested) continue;
-    return `ответила ${used.split("/").pop()}`;
+    return tf("message_item.otvetila_0", [used.split("/").pop()]);
   }
   return null;
 }
 
 function turnSummaryLabel(turnMeta: ReturnType<typeof assistantTurnSummary>): string {
   if (turnMeta.stopped || turnMeta.outcomeStatus === "cancelled") {
-    return "Остановлено пользователем";
+    return t("message_item.ostanovleno_polzovatelem");
   }
   if (turnMeta.needsInput || turnMeta.outcomeStatus === "needs_input") {
-    return "Нужны данные";
+    return t("changes_panel.nuzhny_dannye");
   }
-  if (turnMeta.outcomeStatus === "partial") return "Частично выполнено";
-  if (turnMeta.outcomeStatus === "failed") return "Ошибка";
-  if (turnMeta.outcomeStatus === "completed") return "Готово";
-  return turnMeta.failed ? "Ошибка" : "Готово";
+  if (turnMeta.outcomeStatus === "partial") return t("changes_panel.chastichno_vypolneno");
+  if (turnMeta.outcomeStatus === "failed") return t("changes_panel.oshibka");
+  if (turnMeta.outcomeStatus === "completed") return t("agent_activity.gotovo");
+  return turnMeta.failed ? t("changes_panel.oshibka") : t("agent_activity.gotovo");
 }
 
 /**
@@ -280,7 +281,7 @@ function GeneratedFiles({ message }: { message: Message }) {
           key={path}
           name={name}
           path={path}
-          meta="Создано ассистентом · в workspace"
+          meta={t("message_item.sozdano_assistentom_v_workspace")}
         />
       ))}
     </div>
@@ -331,12 +332,12 @@ function MessageItem({
     if (turnMeta.durationMs != null) summaryBits.push(formatDuration(turnMeta.durationMs));
     if (turnMeta.actionCount > 0) {
       summaryBits.push(
-        `${turnMeta.actionCount} ${pluralRu(turnMeta.actionCount, "действие", "действия", "действий")}`,
+        `${turnMeta.actionCount} ${pluralRu(turnMeta.actionCount, t("message_item.deystvie"), t("message_item.deystviya"), t("message_item.deystviy"))}`,
       );
     }
     if (turnMeta.changedFileCount > 0) {
       summaryBits.push(
-        `${turnMeta.changedFileCount} ${pluralRu(turnMeta.changedFileCount, "файл", "файла", "файлов")}`,
+        `${turnMeta.changedFileCount} ${pluralRu(turnMeta.changedFileCount, t("message_item.fayl"), t("message_item.fayla"), t("message_item.faylov"))}`,
       );
     }
   }
@@ -436,8 +437,8 @@ function MessageItem({
                 <button
                   type="button"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                  title="Изменить сообщение и перезапросить ответ"
-                  aria-label="Изменить сообщение"
+                  title={t("message_item.izmenit_soobschenie_i_perezaprosit_otvet")}
+                  aria-label={t("message_item.izmenit_soobschenie")}
                   disabled={sessionBusy}
                   onClick={() => {
                     setEditText(
@@ -451,7 +452,7 @@ function MessageItem({
               )}
               <CopyButton
                 text={combinedText}
-                title="Копировать"
+                title={t("copy_button.kopirovat")}
                 className="h-7 w-7"
               />
             </div>
@@ -571,15 +572,15 @@ function MessageItem({
                   className="mt-2 text-xs text-muted-foreground"
                 >
                   {hasQuestionPart(message)
-                    ? "Старый ход был прерван при ответе на вопрос"
-                    : "Остановлено пользователем"}
+                    ? t("message_item.staryy_hod_byl_prervan_pri_otvete")
+                    : t("message_item.ostanovleno_polzovatelem")}
                 </div>
               );
             }
 
             const detail =
               errorMessage(message.info.error) ??
-              "Провайдер не смог завершить этот ответ.";
+              t("message_item.provayder_ne_smog_zavershit_etot_otvet");
             const detailsOpen = errorDetailsId === message.id;
             return (
               <div
@@ -648,15 +649,15 @@ function MessageItem({
             <div className="oc-reveal ml-auto flex items-center gap-1 opacity-60 transition-opacity hover:opacity-100 focus-within:opacity-100">
               <CopyButton
                 text={combinedText}
-                title="Копировать сообщение"
+                title={t("message_item.kopirovat_soobschenie")}
                 className="h-7 w-7"
               />
               {firstMsg && !isWorking && (
                 <button
                   type="button"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                  title="Перегенерировать ответ"
-                  aria-label="Перегенерировать ответ"
+                  title={t("message_item.peregenerirovat_otvet")}
+                  aria-label={t("message_item.peregenerirovat_otvet")}
                   disabled={sessionBusy}
                   onClick={() => {
                     regenerate(firstMsg.id).catch(() => {});

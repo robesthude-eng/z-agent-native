@@ -27,6 +27,7 @@ import { AttachmentChip, AttachmentPartChip } from "./AttachmentChip";
 import CopyButton from "./CopyButton";
 import { ThinkIcon } from "./icons";
 import ToolCard from "./ToolCard";
+import { t, tf } from "@/i18n";
 
 /** Рекурсивно собирает текст из React-узлов (подсвеченный код и т.п.). */
 function nodeToText(node: unknown): string {
@@ -92,7 +93,7 @@ const SAFE_MD_COMPONENTS = {
             </span>
             <CopyButton
               text={codeText || nodeToText(children)}
-              title="Копировать код"
+              title={t("part_view.kopirovat_kod")}
               className="h-6 w-6"
             />
           </div>
@@ -149,7 +150,7 @@ function InlineCode({ children, ...props }: ComponentPropsWithoutRef<"code">) {
   return (
     <button
       type="button"
-      title={`Открыть ${relPath} в панели файлов`}
+      title={tf("attachment_chip.otkryt_0_v_paneli_faylov", [relPath])}
       onClick={() => requestOpenFile(relPath)}
       className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition hover:bg-accent hover:text-primary"
     >
@@ -234,13 +235,13 @@ const LimitedMarkdown = ({
 };
 
 function formatRussianSeconds(secs: number): string {
-  if (secs === 1) return "1 секунду";
+  if (secs === 1) return t("part_view.n_1_sekundu");
   const mod100 = secs % 100;
   const mod10 = secs % 10;
-  if (mod100 >= 11 && mod100 <= 19) return `${secs} секунд`;
-  if (mod10 === 1) return `${secs} секунду`;
-  if (mod10 >= 2 && mod10 <= 4) return `${secs} секунды`;
-  return `${secs} секунд`;
+  if (mod100 >= 11 && mod100 <= 19) return tf("part_view.0_sekund", [secs]);
+  if (mod10 === 1) return tf("part_view.0_sekundu", [secs]);
+  if (mod10 >= 2 && mod10 <= 4) return tf("part_view.0_sekundy", [secs]);
+  return tf("part_view.0_sekund", [secs]);
 }
 
 function useThinkingDuration(streaming?: boolean): string {
@@ -305,7 +306,7 @@ function ReasoningCard({
           <ThinkIcon size={15} />
         </span>
         <span className="text-[13px] font-medium text-foreground/85">
-          {streaming ? "Размышляет…" : "Рассуждения"}
+          {streaming ? t("part_view.razmyshlyaet") : t("part_view.rassuzhdeniya")}
         </span>
         {streaming && (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />

@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 /**
  * Решения о файле воркспейса: правится ли, чем показывается, куда ведёт превью.
  *
@@ -35,7 +36,7 @@ export function editability(
     return {
       editable: false,
       reason: "binary",
-      explanation: "Двоичный файл: сохранение испортило бы содержимое",
+      explanation: t("file_decisions.dvoichnyy_fayl_sohranenie_isportilo_by_soder"),
     };
   }
   return { editable: true, reason: null, explanation: "" };

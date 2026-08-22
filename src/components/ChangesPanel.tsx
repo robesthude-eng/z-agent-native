@@ -17,6 +17,7 @@ import {
 } from "../api/changes";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
+import { t, tf } from "@/i18n";
 
 type ChangeKind = "added" | "deleted" | "renamed" | "modified";
 
@@ -46,10 +47,10 @@ function changeKind(status?: string): ChangeKind {
 
 function statusLabel(status?: string) {
   const kind = changeKind(status);
-  if (kind === "added") return "Добавлен";
-  if (kind === "deleted") return "Удалён";
-  if (kind === "renamed") return "Переименован";
-  return "Изменён";
+  if (kind === "added") return t("changes_panel.dobavlen");
+  if (kind === "deleted") return t("changes_panel.udalen");
+  if (kind === "renamed") return t("changes_panel.pereimenovan");
+  return t("changes_panel.izmenen");
 }
 
 function statusMark(status?: string) {
@@ -61,11 +62,11 @@ function statusMark(status?: string) {
 }
 
 function resultLabel(status?: string) {
-  if (status === "completed") return "Готово";
-  if (status === "partial") return "Частично выполнено";
-  if (status === "needs_input") return "Нужны данные";
-  if (status === "failed") return "Ошибка";
-  if (status === "cancelled") return "Остановлено";
+  if (status === "completed") return t("agent_activity.gotovo");
+  if (status === "partial") return t("changes_panel.chastichno_vypolneno");
+  if (status === "needs_input") return t("changes_panel.nuzhny_dannye");
+  if (status === "failed") return t("changes_panel.oshibka");
+  if (status === "cancelled") return t("changes_panel.ostanovleno");
   return null;
 }
 
@@ -120,21 +121,21 @@ export default function ChangesPanel() {
     const attempts = Number(strategy.verificationAttempts) || 0;
     if (strategy.lastVerificationOk === true) {
       return {
-        label: "Проверка пройдена",
-        detail: attempts > 0 ? `${attempts} запусков` : "успешно",
+        label: t("changes_panel.proverka_proydena"),
+        detail: attempts > 0 ? tf("changes_panel.0_zapuskov", [attempts]) : t("changes_panel.uspeshno"),
         tone: "text-emerald-300",
       };
     }
     if (strategy.lastVerificationOk === false) {
       return {
-        label: "Проверка не прошла",
-        detail: attempts > 0 ? `${attempts} запусков` : "есть ошибка",
+        label: t("changes_panel.proverka_ne_proshla"),
+        detail: attempts > 0 ? tf("changes_panel.0_zapuskov", [attempts]) : t("changes_panel.est_oshibka"),
         tone: "text-amber-300",
       };
     }
     return {
-      label: attempts > 0 ? "Проверка не подтверждена" : "Проверка не запускалась",
-      detail: attempts > 0 ? `${attempts} попыток` : "результат требует проверки",
+      label: attempts > 0 ? t("changes_panel.proverka_ne_podtverzhdena") : t("changes_panel.proverka_ne_zapuskalas"),
+      detail: attempts > 0 ? tf("changes_panel.0_popytok", [attempts]) : t("changes_panel.rezultat_trebuet_proverki"),
       tone: "text-muted-foreground",
     };
   }, [latestResult]);
@@ -155,7 +156,7 @@ export default function ChangesPanel() {
         current && next.some((file) => file.path === current.path) ? current : null,
       );
     } catch (e: unknown) {
-      setError((e as Error)?.message || "Не удалось получить изменения");
+      setError((e as Error)?.message || t("changes_panel.ne_udalos_poluchit_izmeneniya"));
     } finally {
       setLoading(false);
     }
@@ -192,7 +193,7 @@ export default function ChangesPanel() {
       try {
         setDiff(await changesApi.diff(currentID, file.path));
       } catch (e: unknown) {
-        setError((e as Error)?.message || "Не удалось загрузить diff");
+        setError((e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"));
       } finally {
         setDiffLoadingPath(null);
       }
@@ -207,12 +208,12 @@ export default function ChangesPanel() {
       setError(null);
       try {
         await changesApi.revert(currentID, file.path);
-        toast("success", `Изменение отменено: ${file.path}`);
+        toast("success", tf("changes_panel.izmenenie_otmeneno_0", [file.path]));
         setConfirmRevertPath(null);
         setDiff(null);
         await refresh();
       } catch (e: unknown) {
-        const message = (e as Error)?.message || "Не удалось откатить изменение";
+        const message = (e as Error)?.message || t("changes_panel.ne_udalos_otkatit_izmenenie");
         setError(message);
         toast("error", message);
       } finally {
@@ -238,11 +239,11 @@ export default function ChangesPanel() {
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-foreground">Результат работы</div>
+            <div className="text-sm font-medium text-foreground">{t("changes_panel.rezultat_raboty")}</div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               {files.length === 0
-                ? "Рабочая область без изменений"
-                : `${files.length} файлов · +${counts.added} · ~${counts.modified} · −${counts.deleted}`}
+                ? t("changes_panel.rabochaya_oblast_bez_izmeneniy")
+                : tf("changes_panel.0_faylov_1_2_3", [files.length, counts.added, counts.modified, counts.deleted])}
             </div>
           </div>
           <Button
@@ -251,8 +252,8 @@ export default function ChangesPanel() {
             className="h-8 w-8 rounded-lg text-muted-foreground"
             onClick={() => refresh().catch(() => {})}
             disabled={loading}
-            title="Обновить изменения"
-            aria-label="Обновить изменения"
+            title={t("changes_panel.obnovit_izmeneniya")}
+            aria-label={t("changes_panel.obnovit_izmeneniya")}
           >
             <RefreshCw className={`h-4 w-4 ${loading ? "animate-spin" : ""}`} />
           </Button>
@@ -287,7 +288,7 @@ export default function ChangesPanel() {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
               ✓
             </div>
-            <div className="text-sm font-medium text-foreground">Всё чисто</div>
+            <div className="text-sm font-medium text-foreground">{t("changes_panel.vse_chisto")}</div>
             <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
               Когда агент изменит файлы, здесь появятся diff и результат проверки.
             </p>
@@ -309,7 +310,7 @@ export default function ChangesPanel() {
                     className="flex min-h-12 w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent/60"
                     onClick={() => openDiff(file).catch(() => {})}
                     aria-expanded={expanded}
-                    title={`Показать изменения ${file.path}`}
+                    title={tf("changes_panel.pokazat_izmeneniya_0", [file.path])}
                   >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card font-mono text-[11px] font-semibold text-muted-foreground">
                       {statusMark(file.status)}
@@ -320,7 +321,7 @@ export default function ChangesPanel() {
                       </span>
                       <span className="mt-0.5 block text-[10.5px] text-muted-foreground">
                         {statusLabel(file.status)}
-                        {file.originalPath ? ` · из ${file.originalPath}` : ""}
+                        {file.originalPath ? tf("changes_panel.iz_0", [file.originalPath]) : ""}
                       </span>
                     </span>
                     <ChevronDown
@@ -337,7 +338,7 @@ export default function ChangesPanel() {
                             <span className="text-red-300/90">−{diff.deletions}</span>
                           </>
                         )}
-                        {diff.truncated && <span>diff сокращён</span>}
+                        {diff.truncated && <span>{t("changes_panel.diff_sokraschen")}</span>}
                         <span className="ml-auto flex gap-1">
                           {changeKind(file.status) !== "deleted" && (
                             <button
@@ -365,11 +366,11 @@ export default function ChangesPanel() {
 
                       {confirming && (
                         <div className="mx-3 mb-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                          <div className="text-foreground/90">Отменить изменение этого файла?</div>
+                          <div className="text-foreground/90">{t("changes_panel.otmenit_izmenenie_etogo_fayla")}</div>
                           <div className="mt-1">
                             {changeKind(file.status) === "added"
-                              ? "Новый файл будет удалён из workspace."
-                              : "Файл будет восстановлен до состояния Git HEAD."}
+                              ? t("changes_panel.novyy_fayl_budet_udalen_iz_workspace")
+                              : t("changes_panel.fayl_budet_vosstanovlen_do_sostoyaniya_git")}
                           </div>
                           <div className="mt-2 flex justify-end gap-1">
                             <button
@@ -386,7 +387,7 @@ export default function ChangesPanel() {
                               onClick={() => revert(file).catch(() => {})}
                               disabled={reverting}
                             >
-                              {reverting ? "Откатываю…" : "Откатить файл"}
+                              {reverting ? t("changes_panel.otkatyvayu") : t("changes_panel.otkatit_fayl")}
                             </button>
                           </div>
                         </div>

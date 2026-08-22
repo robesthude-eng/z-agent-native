@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 export default function CopyButton({
   text,
@@ -31,7 +32,7 @@ export default function CopyButton({
     // вешал вкладку на несколько секунд — удалён.
     copyText(text).then((ok) => {
       if (!ok) {
-        toast("error", "Не удалось скопировать — нет доступа к буферу");
+        toast("error", t("copy_button.ne_udalos_skopirovat_net_dostupa_k"));
         return;
       }
       setCopied(true);
@@ -40,7 +41,7 @@ export default function CopyButton({
     });
   };
 
-  const label = copied ? "Скопировано" : (title ?? "Копировать");
+  const label = copied ? t("copy_button.skopirovano") : (title ?? t("copy_button.kopirovat"));
 
   return (
     <Button
@@ -53,7 +54,7 @@ export default function CopyButton({
         className,
       )}
       onClick={handleCopy}
-      title={copied ? "Скопировано!" : (title ?? "Копировать")}
+      title={copied ? t("copy_button.skopirovano_2") : (title ?? t("copy_button.kopirovat"))}
       aria-label={label}
     >
       {copied ? (

@@ -1,5 +1,6 @@
 import type { Message } from "@/api/types";
 import { friendlyToolLabel } from "@/components/ToolCard";
+import { t, tf } from "@/i18n";
 
 /**
  * Реальное текущее действие агента для нижнего индикатора.
@@ -100,10 +101,10 @@ export function activityDetail(tool: string, part: LoosePart): string {
   if (t === "glob") return shorten(str("pattern"));
   if (t === "task") return shorten(str("agent") || str("description"));
   if (t === "ensure_environment" || t === "environment_status") return shorten(str("kind"));
-  if (t === "apply_patch") return "патч";
+  if (t === "apply_patch") return t("agent_activity.patch");
   if (t === "todowrite") {
     const todos = input.todos;
-    return Array.isArray(todos) ? `${todos.length} п.` : "";
+    return Array.isArray(todos) ? tf("agent_activity.0_p", [todos.length]) : "";
   }
   const filePath = str("path");
   if (filePath) return shorten(filePath.split("/").slice(-2).join("/"));
@@ -137,7 +138,7 @@ export function describeAgentActivity(
     });
   });
 
-  let label = "Начинает";
+  let label = t("agent_activity.nachinaet");
   let detail = "";
   // Текущее действие ищем с конца: важно то, что идёт прямо сейчас.
   for (let i = parts.length - 1; i >= 0; i--) {
@@ -149,16 +150,16 @@ export function describeAgentActivity(
         label = friendlyToolLabel(tool);
         detail = activityDetail(tool, part);
       } else {
-        label = "Готовит следующий шаг";
+        label = t("agent_activity.gotovit_sleduyuschiy_shag");
       }
       break;
     }
     if (part.type === "reasoning") {
-      label = "Размышляет";
+      label = t("agent_activity.razmyshlyaet");
       break;
     }
     if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
-      label = "Пишет ответ";
+      label = t("agent_activity.pishet_otvet");
       break;
     }
   }

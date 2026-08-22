@@ -4,11 +4,12 @@ import { AUTO_MODEL, isAutoModel } from "../lib/autopilotModel";
 import { clampPopoverShift } from "../lib/popoverBounds";
 import { type ModelEntry, useStore } from "../store/useStore";
 import { CheckIcon, ChevronDownIcon } from "./icons";
+import { t } from "@/i18n";
 
 function availabilityLabel(model: ModelEntry) {
   return model.status === "cache"
-    ? "Последняя успешная версия каталога"
-    : "Доступна";
+    ? t("model_selector.poslednyaya_uspeshnaya_versiya_kataloga")
+    : t("model_selector.dostupna");
 }
 
 function StatusDot({ model }: { model: ModelEntry }) {
@@ -30,12 +31,12 @@ function StatusDot({ model }: { model: ModelEntry }) {
  * шапка показывает именно её и предупреждает, а не переключается на «Авто».
  */
 const MISSING_MODEL_TITLE =
-  "Этой модели нет в каталоге провайдера. Запрос всё равно уйдёт в неё, а причину отказа агент напишет в чат.";
+  t("model_selector.etoy_modeli_net_v_kataloge_provaydera");
 
 function sourceLabel(model: ModelEntry) {
-  if (model.source === "custom") return "свой API";
-  if (model.source === "discovered") return "найдена автоматически";
-  if (model.source === "manual") return "добавлена вручную";
+  if (model.source === "custom") return t("model_selector.svoy_api");
+  if (model.source === "discovered") return t("model_selector.naydena_avtomaticheski");
+  if (model.source === "manual") return t("model_selector.dobavlena_vruchnuyu");
   return null;
 }
 
@@ -90,15 +91,15 @@ export default function ModelSelector() {
         onClick={modelsError ? () => void loadModels(true) : openModelSettings}
         title={
           modelsError
-            ? "Каталог моделей не загрузился — повторить запрос"
+            ? t("model_selector.katalog_modeley_ne_zagruzilsya_povtorit_zapr")
             : undefined
         }
       >
         {modelsError
-          ? "Модели не загрузились · Обновить"
+          ? t("model_selector.modeli_ne_zagruzilis_obnovit")
           : !modelsLoaded
-            ? "Загрузка моделей…"
-            : "Подключить модель"}
+            ? t("model_selector.zagruzka_modeley")
+            : t("model_selector.podklyuchit_model")}
       </button>
     );
   }
@@ -177,7 +178,7 @@ export default function ModelSelector() {
             </span>
             <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/80">
               {model.providerName}
-              {model.status === "cache" ? " · сохранённый каталог" : ""}
+              {model.status === "cache" ? t("model_selector.sohranennyy_katalog") : ""}
             </span>
           </span>
         </span>
@@ -197,14 +198,14 @@ export default function ModelSelector() {
           {automatic ? (
             <span
               className="h-2 w-2 shrink-0 rounded-full bg-primary"
-              title="Autopilot выбирает модель на сервере"
-              aria-label="Autopilot включён"
+              title={t("model_selector.autopilot_vybiraet_model_na_servere")}
+              aria-label={t("model_selector.autopilot_vklyuchen")}
             />
           ) : missing ? (
             <span
               className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
               title={MISSING_MODEL_TITLE}
-              aria-label="Модели нет в каталоге провайдера"
+              aria-label={t("model_selector.modeli_net_v_kataloge_provaydera")}
             />
           ) : (
             current && <StatusDot model={current} />
@@ -214,8 +215,8 @@ export default function ModelSelector() {
             title={missing ? MISSING_MODEL_TITLE : undefined}
           >
             {automatic
-              ? "Авто"
-              : (current?.modelName ?? selectedModel?.modelID ?? "Выбрать модель")}
+              ? t("model_selector.avto")
+              : (current?.modelName ?? selectedModel?.modelID ?? t("model_selector.vybrat_model"))}
           </span>
           {automatic && (
             <span className="hidden shrink-0 text-[9px] text-muted-foreground sm:inline">
@@ -266,7 +267,7 @@ export default function ModelSelector() {
               }}
             >
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">Авто · Autopilot</span>
+                <span className="block text-sm font-medium text-foreground">{t("model_selector.avto_autopilot")}</span>
                 <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
                   Сервер выбирает модель по доступности и истории успехов и может переключиться до начала ответа при временном сбое.
                 </span>
@@ -302,7 +303,7 @@ export default function ModelSelector() {
               className="w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
               onClick={openModelSettings}
             >
-              Управление моделями…
+              Упр��вление моделями…
             </button>
           </div>
         </div>

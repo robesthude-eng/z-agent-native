@@ -2,10 +2,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 // I-34: открытый Workspace обновляется по файловым событиям/завершённым
 // mutating tools, а polling остаётся только резервным механизмом.
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { changedFilesLabel, t } from "@/i18n";
+import { changedFilesLabel, t, tf } from "@/i18n";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { api, workspaceDownloadUrl } from "../api/client";
@@ -72,6 +73,7 @@ function looksBinary(content: string): boolean {
 }
 
 export default function Workspace() {
+  const askConfirm = useConfirm();
   const workspaceOpen = useStore((s) => s.workspaceOpen);
   const setWorkspaceOpen = useStore((s) => s.setWorkspaceOpen);
   const currentID = useStore((s) => s.currentID);
@@ -241,7 +243,7 @@ export default function Workspace() {
     } catch (e: unknown) {
       if (!acceptsResult(gen, loadGen.current)) return;
       if (errorDisposition("manual") === "show") {
-        setError((e as Error)?.message || "Не удалось загрузить файлы");
+        setError((e as Error)?.message || t("workspace.ne_udalos_zagruzit_fayly"));
         setTree(withWorkspaceRoot([]));
       }
     } finally {
@@ -309,7 +311,7 @@ export default function Workspace() {
       if (!fileList || fileList.length === 0) return;
       const uploadSessionId = currentID;
       if (!workspaceOperable(uploadSessionId)) {
-        setUploadMsg("Ошибка: нет активного workspace");
+        setUploadMsg(t("workspace.oshibka_net_aktivnogo_workspace"));
         el.value = "";
         return;
       }
@@ -325,7 +327,7 @@ export default function Workspace() {
       setUploading(true);
       setUploadTotal(files.length);
       setUploadProgress(0);
-      setUploadMsg(`Загрузка ${files.length} файлов…`);
+      setUploadMsg(tf("workspace.zagruzka_0_faylov", [files.length]));
       try {
         let done = 0;
         for (const batch of uploadBatches(files, 20)) {
@@ -336,17 +338,17 @@ export default function Workspace() {
             const detail = result.errors?.slice(0, 3).join("; ");
             throw new Error(
               detail ||
-                `Сервер записал ${result.written} из ${batch.length} файлов`,
+                tf("workspace.server_zapisal_0_iz_1_faylov", [result.written, batch.length]),
             );
           }
         }
-        setUploadMsg(`Загружено файлов: ${files.length}`);
+        setUploadMsg(tf("workspace.zagruzheno_faylov_0", [files.length]));
         if (useStore.getState().currentID === uploadSessionId) {
           refresh().catch(() => {});
         }
         setTimeout(() => setUploadMsg(null), 3000);
       } catch (err: unknown) {
-        setUploadMsg(`Ошибка: ${(err as Error).message}`);
+        setUploadMsg(tf("workspace.oshibka_0", [(err as Error).message]));
         setTimeout(() => setUploadMsg(null), 5000);
       } finally {
         setUploading(false);
@@ -468,7 +470,7 @@ export default function Workspace() {
         // содержимое картинки как текст — просто мусор на экране.
         setViewMode(previewKind(path) === "image" ? "preview" : "code");
       } catch (e: unknown) {
-        toast("error", (e as Error)?.message || "Не удалось открыть файл");
+        toast("error", (e as Error)?.message || t("workspace.ne_udalos_otkryt_fayl"));
       }
     },
     [currentID],
@@ -503,8 +505,8 @@ export default function Workspace() {
   const readonlyNote =
     activeFile &&
     editability(activeFile.path, activeFile.content).reason === "binary"
-      ? "Двоичный файл — доступен только просмотр."
-      : "Этот тип файла доступен только для просмотра.";
+      ? t("workspace.dvoichnyy_fayl_dostupen_tolko_prosmotr")
+      : t("workspace.etot_tip_fayla_dostupen_tolko_dlya");
   const uploadPercent = uploadPercentOf(uploadProgress, uploadTotal);
   // Один шлюз на все операции с файлами. Прежде это условие было выписано
   // заново в каждом обработчике и в `disabled` каждой кнопки — и всюду молча.
@@ -520,13 +522,19 @@ export default function Workspace() {
       ...(busyTitle === undefined ? {} : { busyTitle }),
     });
 
-  const closeActiveFile = useCallback(() => {
-    if (dirty && !confirm("Закрыть файл и потерять несохранённые правки?")) {
-      return;
+  const closeActiveFile = useCallback(async () => {
+    if (dirty) {
+      const ok = await askConfirm({
+        title: t("workspace.zakryt_fayl"),
+        description: t("workspace.nesohranennye_pravki_budut_poteryany"),
+        confirmLabel: t("workspace.zakryt_bez_sohraneniya"),
+        destructive: true,
+      });
+      if (!ok) return;
     }
     setActiveFile(null);
     setDraft("");
-  }, [dirty]);
+  }, [dirty, askConfirm]);
 
   const saveActiveFile = useCallback(async () => {
     if (!activeFile || !workspaceOperable(currentID)) return;
@@ -537,11 +545,11 @@ export default function Workspace() {
       // Сохранённый черновик становится новым эталоном, иначе файл остался бы
       // помеченным как изменённый сразу после успешной записи.
       setActiveFile({ path: activeFile.path, content: draft });
-      toast("success", `Сохранено: ${toRelPath(activeFile.path)}`);
+      toast("success", tf("workspace.sohraneno_0", [toRelPath(activeFile.path)]));
       loadGit().catch(() => {});
       autoRefresh().catch(() => {});
     } catch (e: unknown) {
-      toast("error", (e as Error)?.message || "Не удалось сохранить файл");
+      toast("error", (e as Error)?.message || t("workspace.ne_udalos_sohranit_fayl"));
     } finally {
       setSaving(false);
     }
@@ -571,13 +579,13 @@ export default function Workspace() {
       toast(
         "success",
         kind === "directory"
-          ? `Папка создана: ${path}`
-          : `Файл создан: ${path}`,
+          ? tf("workspace.papka_sozdana_0", [path])
+          : tf("workspace.fayl_sozdan_0", [path]),
       );
       await refresh();
       if (kind === "file") await openFile(path);
     } catch (e: unknown) {
-      toast("error", (e as Error)?.message || "Не удалось создать");
+      toast("error", (e as Error)?.message || t("workspace.ne_udalos_sozdat"));
     }
   };
 
@@ -598,18 +606,24 @@ export default function Workspace() {
         const next = editorAfterRename(prev?.path, fromPath, to);
         return prev && next ? { ...prev, path: next } : prev;
       });
-      toast("success", `Переименовано в ${name}`);
+      toast("success", tf("workspace.pereimenovano_v_0", [name]));
       await refresh();
       loadGit().catch(() => {});
     } catch (e: unknown) {
-      toast("error", (e as Error)?.message || "Не удалось переименовать");
+      toast("error", (e as Error)?.message || t("workspace.ne_udalos_pereimenovat"));
     }
   };
 
   const deleteItem = async (node: TreeNode) => {
     if (!workspaceOperable(currentID)) return;
-    const what = node.isDir ? "папку" : "файл";
-    if (!confirm(`Удалить ${what} ${toRelPath(node.path)}?`)) return;
+    const what = node.isDir ? t("workspace.papku") : t("message_item.fayl");
+    const ok = await askConfirm({
+      title: tf("workspace.udalit_0", [what]),
+      description: tf("workspace.put_0_budet_udalen_bez_vozmozhnosti", [toRelPath(node.path)]),
+      confirmLabel: t("workspace.udalit"),
+      destructive: true,
+    });
+    if (!ok) return;
     try {
       await api.deleteFile(node.path, currentID);
       // Удалённая папка уносит и открытый внутри неё файл: сохранять его
@@ -618,11 +632,11 @@ export default function Workspace() {
         setActiveFile(null);
         setDraft("");
       }
-      toast("success", `Удалено: ${toRelPath(node.path)}`);
+      toast("success", tf("workspace.udaleno_0", [toRelPath(node.path)]));
       await refresh();
       loadGit().catch(() => {});
     } catch (e: unknown) {
-      toast("error", (e as Error)?.message || "Не удалось удалить");
+      toast("error", (e as Error)?.message || t("workspace.ne_udalos_udalit"));
     }
   };
 
@@ -694,8 +708,8 @@ export default function Workspace() {
                 setCreateKind("file");
                 setCreatePath("");
               }}
-              {...opGate("Новый файл")}
-              aria-label="Новый файл"
+              {...opGate(t("workspace.novyy_fayl"))}
+              aria-label={t("workspace.novyy_fayl")}
             >
               <FilePlusIcon size={15} />
             </Button>
@@ -707,8 +721,8 @@ export default function Workspace() {
                 setCreateKind("directory");
                 setCreatePath("");
               }}
-              {...opGate("Новая папка")}
-              aria-label="Новая папка"
+              {...opGate(t("sidebar.novaya_papka"))}
+              aria-label={t("sidebar.novaya_papka")}
             >
               <FolderPlusIcon size={15} />
             </Button>
@@ -717,8 +731,8 @@ export default function Workspace() {
               size="icon"
               className="h-7 w-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => folderInputRef.current?.click()}
-              {...opGate("Загрузить папку", uploading, "Идёт загрузка…")}
-              aria-label="Загрузить папку"
+              {...opGate(t("workspace.zagruzit_papku"), uploading, t("workspace.idet_zagruzka"))}
+              aria-label={t("workspace.zagruzit_papku")}
             >
               <FolderUploadIcon size={15} />
             </Button>
@@ -729,8 +743,8 @@ export default function Workspace() {
               onClick={() => {
                 refresh().catch(() => {});
               }}
-              title="Обновить"
-              aria-label="Обновить"
+              title={t("preview_panel.obnovit")}
+              aria-label={t("preview_panel.obnovit")}
               disabled={loading}
             >
               <RefreshIcon size={15} />
@@ -740,8 +754,8 @@ export default function Workspace() {
               size="icon"
               className="h-7 w-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
               onClick={() => setWorkspaceOpen(false)}
-              title="Закрыть файлы проекта"
-              aria-label="Закрыть файлы проекта"
+              title={t("workspace.zakryt_fayly_proekta")}
+              aria-label={t("workspace.zakryt_fayly_proekta")}
             >
               <CloseIcon size={15} />
             </Button>
@@ -755,7 +769,7 @@ export default function Workspace() {
             </span>
             <Input
               className="h-8 rounded-lg border-border bg-card pl-8 text-[11px] text-foreground placeholder:text-muted-foreground"
-              placeholder="Фильтр файлов…"
+              placeholder={t("workspace.filtr_faylov")}
               value={filter}
               onChange={(e) => setFilter(e.target.value)}
             />
@@ -882,7 +896,7 @@ export default function Workspace() {
                 )}
                 {!loading && tree.length === 0 && !error && (
                   <div className="px-2 py-4 text-xs text-muted-foreground space-y-2">
-                    <p>Файлов пока нет в workspace этого чата.</p>
+                    <p>{t("workspace.faylov_poka_net_v_workspace_etogo")}</p>
                     <p className="text-[11px] opacity-80">
                       Создайте файл кнопкой выше, загрузите папку или попросите
                       агента.

@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useStore } from "../store/useStore";
 import { CloseIcon } from "./icons";
+import { t } from "@/i18n";
 
 interface TourStep {
   emoji: string;
@@ -14,43 +15,43 @@ interface TourStep {
 const STEPS: TourStep[] = [
   {
     emoji: "👋",
-    title: "Это Z Agent",
+    title: t("welcome_tour.eto_z_agent"),
     body:
-      "Поставьте задачу обычным языком — агент сам изучит проект, внесёт изменения и проверит результат. Технические действия не требуют постоянного участия.",
+      t("welcome_tour.postavte_zadachu_obychnym_yazykom_agent_sam"),
     hint:
-      "Если для решения действительно нужны ваши данные или выбор, агент отдельно задаст вопрос.",
+      t("welcome_tour.esli_dlya_resheniya_deystvitelno_nuzhny_vash"),
   },
   {
     emoji: "⚡",
-    title: "Автономная работа",
+    title: t("welcome_tour.avtonomnaya_rabota"),
     body:
-      "Во время задачи в чате виден компактный статус и этап работы. Подробные команды и операции скрыты, но их всегда можно раскрыть для проверки.",
+      t("welcome_tour.vo_vremya_zadachi_v_chate_viden"),
     hint:
-      "Квадратная кнопка в поле ввода — Stop. Она немедленно останавливает текущую задачу и очередь сообщений.",
+      t("welcome_tour.kvadratnaya_knopka_v_pole_vvoda_stop"),
   },
   {
     emoji: "📁",
-    title: "Проект и изменения",
+    title: t("welcome_tour.proekt_i_izmeneniya"),
     body:
-      "Кнопка папки в верхней строке открывает workspace текущего чата. Там видны файлы проекта и изменённые файлы, их можно открыть и отредактировать.",
+      t("welcome_tour.knopka_papki_v_verhney_stroke_otkryvaet"),
     hint:
-      "Каждый чат получает свой изолированный workspace. Сохранение открытого файла — Ctrl+S.",
+      t("welcome_tour.kazhdyy_chat_poluchaet_svoy_izolirovannyy_wo"),
   },
   {
     emoji: "🖥️",
-    title: "Терминал и предпросмотр",
+    title: t("welcome_tour.terminal_i_predprosmotr"),
     body:
-      "Иконка терминала открывает консоль проекта, а иконка глаза — предпросмотр приложения. Обычно агент использует окружение сам, эти панели нужны для контроля и диагностики.",
+      t("welcome_tour.ikonka_terminala_otkryvaet_konsol_proekta_a"),
     hint:
-      "На компьютере наведите на иконку, чтобы увидеть подсказку. На телефоне назначение показано в этом туре.",
+      t("welcome_tour.na_kompyutere_navedite_na_ikonku_chtoby"),
   },
   {
     emoji: "🔑",
-    title: "Свои модели и ключи",
+    title: t("welcome_tour.svoi_modeli_i_klyuchi"),
     body:
-      "Подключайте нужных провайдеров и модели своими API-ключами. В переключателе модели видно имя провайдера и источник модели.",
+      t("welcome_tour.podklyuchayte_nuzhnyh_provayderov_i_modeli_s"),
     hint:
-      "Настройки → Модели и API-ключи. Пароль меняется в разделе «Аккаунт и пароль».",
+      t("welcome_tour.nastroyki_modeli_i_api_klyuchi_parol"),
   },
 ];
 
@@ -102,7 +103,7 @@ export default function WelcomeTour() {
     <div
       className="pointer-events-none fixed inset-0 z-[80] flex items-end justify-center p-4 sm:items-center sm:justify-end sm:pr-6"
       role="dialog"
-      aria-label="Знакомство с Z Agent"
+      aria-label={t("welcome_tour.znakomstvo_s_z_agent")}
     >
       <div className="pointer-events-auto flex w-full max-w-md flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-e3">
         <div className="flex items-start justify-between gap-2 px-5 pt-5">
@@ -114,8 +115,8 @@ export default function WelcomeTour() {
             size="icon"
             className="h-8 w-8 shrink-0 text-muted-foreground"
             onClick={finish}
-            title="Пропустить знакомство"
-            aria-label="Пропустить знакомство"
+            title={t("welcome_tour.propustit_znakomstvo")}
+            aria-label={t("welcome_tour.propustit_znakomstvo")}
           >
             <CloseIcon size={16} />
           </Button>

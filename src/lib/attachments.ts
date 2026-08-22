@@ -1,4 +1,5 @@
 import { formatSize } from "../api/files";
+import { t } from "@/i18n";
 
 /**
  * Разбор ссылок на вложения в тексте. Новый native protocol передаёт
@@ -43,8 +44,8 @@ export function buildAttachmentManifest(refs: AttachmentRef[]): string {
   });
   return [
     BLOCK_OPEN,
-    "Файлы приложены пользователем и уже лежат в workspace этого чата.",
-    "Обращайся к ним по указанным относительным путям.",
+    t("attachments.fayly_prilozheny_polzovatelem_i_uzhe_lezhat"),
+    t("attachments.obraschaysya_k_nim_po_ukazannym_otnositelnym"),
     ...lines,
     BLOCK_CLOSE,
   ].join("\n");

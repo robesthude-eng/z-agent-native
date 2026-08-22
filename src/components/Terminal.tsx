@@ -5,6 +5,7 @@ import { useEffect, useRef } from "react";
 import io, { type Socket } from "socket.io-client";
 import { log } from "../lib/log";
 import "@xterm/xterm/css/xterm.css";
+import { t } from "@/i18n";
 
 interface TerminalProps {
   workdir: string;
@@ -69,7 +70,7 @@ export function Terminal({ workdir }: TerminalProps) {
     socketRef.current = socket;
 
     socket.on("connect", () => {
-      term.writeln("\x1b[32m*** Подключено к терминалу ***\x1b[0m");
+      term.writeln(t("terminal.x1b_32m_podklyucheno_k_terminalu_x1b"));
       // Первичный размер для pty на сервере (создаётся 80x24, тут же подгоняем).
       socket.emit("resize", { cols: term.cols, rows: term.rows });
     });
@@ -79,7 +80,7 @@ export function Terminal({ workdir }: TerminalProps) {
     });
 
     socket.on("disconnect", () => {
-      term.writeln("\r\n\x1b[31m*** Отключено от терминала ***\x1b[0m");
+      term.writeln(t("terminal.r_n_x1b_31m_otklyucheno_ot"));
     });
 
     term.onData((data) => {

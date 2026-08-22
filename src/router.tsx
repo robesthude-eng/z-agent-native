@@ -14,6 +14,7 @@ import { EventStream } from "./api/events";
 import { isInterruptionBarEnabled } from "./api/interruptions";
 import ChatView from "./components/ChatView";
 import Composer from "./components/Composer";
+import { ConfirmProvider } from "./components/ConfirmDialog";
 import InterruptionBar from "./components/InterruptionBar";
 import { LazyPanel, SettingsPanelSkeleton } from "./components/LazyPanel";
 import LoginPage from "./components/LoginPage";
@@ -22,11 +23,13 @@ import ShortcutsOverlay from "./components/ShortcutsOverlay";
 import Sidebar from "./components/Sidebar";
 import ToastHost from "./components/ToastHost";
 import TopBar from "./components/TopBar";
+import { TouchHints } from "./components/TouchHints";
 import WelcomeTour from "./components/WelcomeTour";
 import Workspace from "./components/Workspace";
 import { applyTheme } from "./config/theme";
 import { isTmpSession } from "./lib/ids";
 import { useStore } from "./store/useStore";
+import { t } from "@/i18n";
 
 /**
  * Настройки — весь ./components/settings/* (аккаунт, провайдеры и модели)
@@ -51,7 +54,7 @@ function SettingsPanelHost() {
 
   if (!everOpened) return null;
   return (
-    <LazyPanel label="настройки" skeleton={<SettingsPanelSkeleton />}>
+    <LazyPanel label={t("router.nastroyki")} skeleton={<SettingsPanelSkeleton />}>
       <SettingsPanel />
     </LazyPanel>
   );
@@ -261,7 +264,7 @@ function AppShell() {
       <TopBar />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Левый сайдбар: плавная анимация ширины на десктопе.
-            260px должно совпадать с шириной в Sidebar.tsx — иначе панель либо
+            260px должно совпадать с шириной �� Sidebar.tsx — иначе панель либо
             обрежется, либо оставит пустую полосу. */}
         <div
           className={cn(
@@ -302,7 +305,7 @@ function AppShell() {
             {workspaceOpen && (
               <button
                 type="button"
-                aria-label="Закрыть панель файлов"
+                aria-label={t("router.zakryt_panel_faylov")}
                 className="absolute inset-0 z-40 bg-black/50 md:hidden"
                 onClick={() => setWorkspaceOpen(false)}
               />
@@ -393,9 +396,13 @@ function SseReconnectBanner({ onRetry }: { onRetry: () => void }) {
 
 const rootRoute = createRootRoute({
   component: () => (
-    <AuthGate>
-      <AppShell />
-    </AuthGate>
+    <ConfirmProvider>
+      <AuthGate>
+        <AppShell />
+      </AuthGate>
+      {/* Подсказки по долгому нажатию — замена title= на сенсорном экране. */}
+      <TouchHints />
+    </ConfirmProvider>
   ),
 });
 

@@ -12,6 +12,7 @@ import { formatSize } from "../api/files";
 import type { AttachmentRef } from "../lib/attachments";
 import { toWorkspaceRelPath } from "../lib/workspacePath";
 import { useStore } from "../store/useStore";
+import { t, tf } from "@/i18n";
 
 /**
  * Разбор формата вложений живёт в src/lib/attachments.ts — здесь только
@@ -45,7 +46,7 @@ function ChipShell({
     <a
       href={href}
       download={name}
-      title={`Скачать ${name}`}
+      title={tf("attachment_chip.skachat_0", [name])}
       className={cn(
         cls,
         "cursor-pointer no-underline transition hover:border-primary/40 hover:bg-accent/30",
@@ -68,7 +69,7 @@ function ChipShell({
 export function WorkspaceFileChip({
   name,
   path,
-  meta = "Файл в workspace",
+  meta = t("attachment_chip.fayl_v_workspace"),
 }: {
   name: string;
   path: string;
@@ -117,7 +118,7 @@ export function WorkspaceFileChip({
         onClick={() => {
           if (relPath) requestOpenFile(relPath);
         }}
-        title={`Открыть ${relPath} в панели файлов`}
+        title={tf("attachment_chip.otkryt_0_v_paneli_faylov", [relPath])}
       >
         {body}
       </button>
@@ -125,7 +126,7 @@ export function WorkspaceFileChip({
         <a
           href={href}
           download={name}
-          title={`Скачать ${name}`}
+          title={tf("attachment_chip.skachat_0", [name])}
           className="shrink-0 rounded p-1 text-muted-foreground/50 no-underline transition hover:text-primary"
         >
           <Download className="h-3.5 w-3.5" />

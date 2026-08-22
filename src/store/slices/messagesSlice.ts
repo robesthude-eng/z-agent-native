@@ -22,6 +22,7 @@ import { awaitTurnCompletion } from "../turnCompletion";
 import { turnSettle } from "../turnSettle";
 import type { MessagesSlice, Slice } from "../types";
 import { EVENT_HANDLERS } from "./eventHandlers";
+import { t, tf } from "@/i18n";
 
 const SEND_HARD_TIMEOUT_MS = 15 * 60 * 1000;
 
@@ -55,8 +56,8 @@ export function buildPromptParts(
     if (att.kind === "zip") {
       notes.push(
         typeof att.entryCount === "number"
-          ? `zip-архив, ${att.entryCount} файлов, ещё не распакован`
-          : "zip-архив, ещё не распакован",
+          ? tf("messages_slice.zip_arhiv_0_faylov_esche_ne", [att.entryCount])
+          : t("messages_slice.zip_arhiv_esche_ne_raspakovan"),
       );
     }
     parts.push({
@@ -216,7 +217,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
       } else {
         toast(
           "info",
-          "Откат истории недоступен: прежняя версия запроса осталась в контексте модели.",
+          t("messages_slice.otkat_istorii_nedostupen_prezhnyaya_versiya"),
         );
       }
       await get().send(trimmed);
@@ -328,7 +329,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
               });
               if (verdict === "assume-delivered") {
                 log.warn(
-                  "[send] prompt-соединение оборвалось после доставки — повтор не отправляем; финал подтвердят SSE/поллер",
+                  t("messages_slice.send_prompt_soedinenie_oborvalos_posle_dosta"),
                 );
                 return null;
               }
@@ -406,7 +407,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
                   set({ attachments: currentAttachments });
                 toast(
                   "info",
-                  "Сессия оборвалась во время ответа. Запрос возвращён в поле ввода — отправьте повторно, если нужно.",
+                  t("messages_slice.sessiya_oborvalas_vo_vremya_otveta_zapros"),
                 );
                 return;
               }

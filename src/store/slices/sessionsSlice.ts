@@ -12,6 +12,7 @@ import { log } from "../../lib/log";
 import { normalizeMessages } from "../helpers";
 import type { SessionsSlice, Slice } from "../types";
 import { byUpdated } from "../types";
+import { t } from "@/i18n";
 
 // Prevent concurrent optimistic session creation from rapid "New chat" clicks.
 let creatingSession = false;
@@ -62,7 +63,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     // UX-fix: если sid уже в blacklist (сервер подтвердил отсутствие сессии) —
     // не идём в сеть повторно. Просто чистим URL и переключаемся на первую живую.
     if (id && isSessionDead(id)) {
-      log.warn("[select] sid уже помечен dead, пропускаем сетевой вызов:", id);
+      log.warn(t("sessions_slice.select_sid_uzhe_pomechen_dead_propuskaem"), id);
       set((state) => {
         const messages = { ...state.messages };
         delete messages[id];

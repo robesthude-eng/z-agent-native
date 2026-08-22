@@ -1,3 +1,4 @@
+import { t, tf } from "@/i18n";
 /**
  * Единая форма прерывания хода — этап 2.1.
  *
@@ -116,13 +117,13 @@ const PERMISSION_LABELS: Record<
   PermissionResponse,
   { label: string; description: string; denial: boolean }
 > = {
-  once: { label: "Разрешить", description: "Только этот вызов", denial: false },
+  once: { label: t("interruptions.razreshit"), description: t("interruptions.tolko_etot_vyzov"), denial: false },
   always: {
-    label: "Всегда",
-    description: "До конца текущей сессии",
+    label: t("interruptions.vsegda"),
+    description: t("interruptions.do_konca_tekuschey_sessii"),
     denial: false,
   },
-  reject: { label: "Отклонить", description: "", denial: true },
+  reject: { label: t("interruptions.otklonit"), description: "", denial: true },
 };
 
 const PERMISSION_OPTIONS: InterruptionOption[] = PERMISSION_VALUES.map((v) => ({
@@ -161,7 +162,7 @@ export function normalizePermission(
   return {
     kind: "permission",
     id: typeof req.id === "string" && req.id ? req.id : null,
-    title: "Запрос разрешения",
+    title: t("interruptions.zapros_razresheniya"),
     prompt: action,
     detail: detail ?? "",
     options: PERMISSION_OPTIONS,
@@ -203,7 +204,7 @@ export function normalizeQuestion(q: unknown, id: string | null): Interruption {
   return {
     kind: "question",
     id,
-    title: "Вопрос агента",
+    title: t("interruptions.vopros_agenta"),
     prompt: pick(rec, "question", "text"),
     detail: "",
     options,
@@ -293,13 +294,13 @@ export function batchReplyPlan(
   ctx: ReplyContext = {},
 ): ReplyPlan {
   const head = interruptions[0];
-  if (!head) return { transport: "none", reason: "нечего отправлять" };
+  if (!head) return { transport: "none", reason: t("interruptions.nechego_otpravlyat") };
 
   const values = interruptions.map((_, idx) =>
     (answers[idx] ?? []).map((a) => a.trim()).filter(Boolean),
   );
   if (values.every((v) => v.length === 0)) {
-    return { transport: "none", reason: "пустой ответ" };
+    return { transport: "none", reason: t("interruptions.pustoy_otvet") };
   }
 
   switch (replyTransport(head, ctx)) {
@@ -310,7 +311,7 @@ export function batchReplyPlan(
       if (interruptions.length > 1) {
         return {
           transport: "none",
-          reason: "разрешения отправляются по одному",
+          reason: t("interruptions.razresheniya_otpravlyayutsya_po_odnomu"),
         };
       }
       const v = values[0]?.[0];
@@ -318,7 +319,7 @@ export function batchReplyPlan(
         // Сервер отвечает 400 на любое другое слово. Отправить и посмотреть —
         // значит оставить ход стоять, а пользователю показать сетевую ошибку
         // вместо причины.
-        return { transport: "none", reason: `недопустимый ответ: ${v}` };
+        return { transport: "none", reason: tf("interruptions.nedopustimyy_otvet_0", [v]) };
       }
       // Идентификатор проверен внутри `replyTransport`: без него транспорт
       // «permission» не выбирается вовсе.
@@ -343,11 +344,11 @@ export function batchReplyPlan(
         transport: "none",
         reason:
           head.kind === "question"
-            ? "вопрос ещё не подтверждён сервером"
-            : "нет идентификатора разрешения",
+            ? t("interruptions.vopros_esche_ne_podtverzhden_serverom")
+            : t("interruptions.net_identifikatora_razresheniya"),
       };
     default:
-      return { transport: "none", reason: "неизвестный транспорт ответа" };
+      return { transport: "none", reason: t("interruptions.neizvestnyy_transport_otveta") };
   }
 }
 
@@ -795,7 +796,7 @@ export function questionFeedLine(
   const trace = feedTrace(interruption, answer);
   if (trace) return { text: trace, note: "" };
   const asked = interruption.prompt.trim();
-  return { text: asked || "Вопрос агента", note: "" };
+  return { text: asked || t("interruptions.vopros_agenta"), note: "" };
 }
 
 /**

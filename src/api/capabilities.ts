@@ -1,3 +1,4 @@
+import { t, tf } from "@/i18n";
 /**
  * Что состояние runtime-возможности означает для интерфейса (I-31).
  *
@@ -75,23 +76,23 @@ export function reasonFor(
 ): string | null {
   if (canOpen(state)) return null;
   const what =
-    kind === "terminal" ? "Терминал" : kind === "preview" ? "Превью" : "Файлы";
+    kind === "terminal" ? t("top_bar.terminal") : kind === "preview" ? t("file_editor.prevyu") : t("workspace.files");
   switch (state) {
     case "provisioning":
-      return `${what}: окружение поднимается, подождите пару секунд`;
+      return tf("capabilities.0_okruzhenie_podnimaetsya_podozhdite_paru_se", [what]);
     case "failed":
-      return `${what}: окружение не поднялось. Отправьте сообщение — среда поднимется заново`;
+      return tf("capabilities.0_okruzhenie_ne_podnyalos_otpravte_soobschen", [what]);
     case "detaching":
-      return `${what}: окружение отключается`;
+      return tf("capabilities.0_okruzhenie_otklyuchaetsya", [what]);
     case "unavailable":
       return kind === "preview"
-        ? "Превью: в workspace ещё нет HTML-страницы — показывать нечего"
-        : `${what}: окружение ещё не создано. Отправьте сообщение в чат`;
+        ? t("capabilities.prevyu_v_workspace_esche_net_html")
+        : tf("capabilities.0_okruzhenie_esche_ne_sozdano_otpravte", [what]);
     default:
       // Состояние неизвестно — сервер не ответил или ответил незнакомым словом.
       // Молчать нельзя: кнопка будет неактивна, и без причины это выглядит
       // поломкой интерфейса.
-      return `${what}: состояние окружения неизвестно`;
+      return tf("capabilities.0_sostoyanie_okruzheniya_neizvestno", [what]);
   }
 }
 

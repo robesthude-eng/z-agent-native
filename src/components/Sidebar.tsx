@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react";
+import { useConfirm } from "@/components/ConfirmDialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -24,14 +25,15 @@ import {
   UserIcon,
 } from "./icons";
 import { buildSidebarGroups } from "./sidebar/chatGrouping";
+import { t, tf } from "@/i18n";
 
 type DeepHit = { id: string; title: string; snippet: string };
 
 function SidebarUserEmail({ email }: { email: string }) {
   const handleClick = () => {
     copyText(email).then((ok) => {
-      if (ok) toast("success", `Email скопирован: ${email}`);
-      else toast("error", "Не удалось скопировать email");
+      if (ok) toast("success", tf("sidebar.email_skopirovan_0", [email]));
+      else toast("error", t("sidebar.ne_udalos_skopirovat_email"));
     });
   };
 
@@ -40,7 +42,7 @@ function SidebarUserEmail({ email }: { email: string }) {
       <button
         className="flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted transition text-left"
         onClick={handleClick}
-        title={`Скопировать email: ${email}`}
+        title={tf("sidebar.skopirovat_email_0", [email])}
         type="button"
       >
         <UserIcon size={14} />
@@ -51,6 +53,7 @@ function SidebarUserEmail({ email }: { email: string }) {
 }
 
 export default function Sidebar() {
+  const askConfirm = useConfirm();
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [filter, setFilter] = useState("");
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -89,7 +92,7 @@ export default function Sidebar() {
   const normalizedFilter = filter.trim().toLowerCase();
 
   const titleOf = useCallback(
-    (s: SessionInfo) => sessionTitleOverrides[s.id] || s.title || "Новый чат",
+    (s: SessionInfo) => sessionTitleOverrides[s.id] || s.title || t("shortcuts_overlay.novyy_chat"),
     [sessionTitleOverrides],
   );
 
@@ -152,7 +155,7 @@ export default function Sidebar() {
             hits.push({
               id: sess.id,
               title:
-                sessionTitleOverrides[sess.id] || sess.title || "Новый чат",
+                sessionTitleOverrides[sess.id] || sess.title || t("shortcuts_overlay.novyy_chat"),
               snippet: t.slice(Math.max(0, i - 40), i + 60).trim(),
             });
             break;
@@ -194,7 +197,7 @@ export default function Sidebar() {
         <button
           type="button"
           data-testid="sidebar-backdrop"
-          aria-label="Закрыть боковое меню"
+          aria-label={t("sidebar.zakryt_bokovoe_menyu")}
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden"
           onClick={close}
         />
@@ -226,14 +229,14 @@ export default function Sidebar() {
               }}
             >
               <NewChatIcon />
-              <span>Новый чат</span>
+              <span>{t("shortcuts_overlay.novyy_chat")}</span>
             </Button>
             <Button
               variant="ghost"
               size="icon"
               onClick={close}
-              title="Закрыть"
-              aria-label="Закрыть меню"
+              title={t("panel_modal.zakryt")}
+              aria-label={t("sidebar.zakryt_menyu")}
               className="md:hidden"
             >
               <CloseIcon />
@@ -247,8 +250,8 @@ export default function Sidebar() {
             id="chat-filter-input"
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="Поиск чатов… (Ctrl+K)"
-            aria-label="Поиск по списку чатов"
+            placeholder={t("sidebar.poisk_chatov_ctrl_k")}
+            aria-label={t("shortcuts_overlay.poisk_po_spisku_chatov")}
             className="w-full rounded-lg border border-border bg-background px-2.5 py-1.5 text-xs text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
           />
           {normalizedFilter && (
@@ -259,8 +262,8 @@ export default function Sidebar() {
               disabled={deepBusy}
             >
               {deepBusy
-                ? "Ищу в сообщениях…"
-                : "\ud83d\udd0e Искать в сообщениях чатов"}
+                ? t("sidebar.ischu_v_soobscheniyah")
+                : t("sidebar.ud83d_udd0e_iskat_v_soobscheniyah_chatov")}
             </button>
           )}
           {deepResults && (
@@ -299,7 +302,7 @@ export default function Sidebar() {
           >
             {totalVisible === 0 && chatFolders.length === 0 && (
               <p className="px-3 py-8 text-sm text-muted-foreground text-center">
-                {normalizedFilter ? "Ничего не найдено" : "Пока нет диалогов"}
+                {normalizedFilter ? t("settings_panel.nichego_ne_naydeno") : t("sidebar.poka_net_dialogov")}
               </p>
             )}
 
@@ -323,8 +326,8 @@ export default function Sidebar() {
                         setNewFolderOpen(false);
                       }
                     }}
-                    placeholder="Название папки"
-                    aria-label="Название новой папки"
+                    placeholder={t("sidebar.nazvanie_papki")}
+                    aria-label={t("sidebar.nazvanie_novoy_papki")}
                     className="w-full rounded-lg border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-ring"
                   />
                 ) : (
@@ -334,7 +337,7 @@ export default function Sidebar() {
                     className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
                   >
                     <FolderIcon size={13} />
-                    <span>Новая папка</span>
+                    <span>{t("sidebar.novaya_papka")}</span>
                   </button>
                 )}
               </div>
@@ -362,7 +365,7 @@ export default function Sidebar() {
                           }
                           if (e.key === "Escape") setEditingFolderId(null);
                         }}
-                        aria-label="Новое название папки"
+                        aria-label={t("sidebar.novoe_nazvanie_papki")}
                         className="min-w-0 flex-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] text-foreground outline-none"
                       />
                     ) : (
@@ -381,7 +384,7 @@ export default function Sidebar() {
                             })
                           }
                           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-0.5 text-left font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70 transition hover:text-foreground"
-                          title={`${collapsedFolders.has(g.folderId) ? "Развернуть" : "Свернуть"} папку ${g.label}`}
+                          title={tf("sidebar.0_papku_1", [collapsedFolders.has(g.folderId) ? t("sidebar.razvernut") : t("sidebar.svernut"), g.label])}
                         >
                           <span aria-hidden="true">
                             {collapsedFolders.has(g.folderId) ? "▸" : "▾"}
@@ -397,8 +400,8 @@ export default function Sidebar() {
                             setFolderNameDraft(g.label);
                             setEditingFolderId(g.folderId ?? null);
                           }}
-                          title="Переименовать папку"
-                          aria-label={`Переименовать папку ${g.label}`}
+                          title={t("sidebar.pereimenovat_papku")}
+                          aria-label={tf("sidebar.pereimenovat_papku_0", [g.label])}
                           className="shrink-0 rounded p-0.5 text-[11px] opacity-0 transition group-hover/folder:opacity-60 hover:opacity-100"
                         >
                           <PencilIcon size={13} />
@@ -416,8 +419,8 @@ export default function Sidebar() {
                                 if (g.folderId) deleteChatFolder(g.folderId);
                                 setConfirmDeleteFolderId(null);
                               }}
-                              title="Подтвердить удаление папки — чаты останутся"
-                              aria-label={`Подтвердить удаление папки ${g.label}`}
+                              title={t("sidebar.podtverdit_udalenie_papki_chaty_ostanutsya")}
+                              aria-label={tf("sidebar.podtverdit_udalenie_papki_0", [g.label])}
                               className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-500 text-white transition hover:bg-red-600"
                             >
                               <svg
@@ -437,8 +440,8 @@ export default function Sidebar() {
                             <button
                               type="button"
                               onClick={() => setConfirmDeleteFolderId(null)}
-                              title="Отмена"
-                              aria-label="Отменить удаление папки"
+                              title={t("confirm_dialog.otmena")}
+                              aria-label={t("sidebar.otmenit_udalenie_papki")}
                               className="mr-1 inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted text-muted-foreground transition hover:bg-muted-foreground/20"
                             >
                               <svg
@@ -463,8 +466,8 @@ export default function Sidebar() {
                             onClick={() =>
                               setConfirmDeleteFolderId(g.folderId ?? null)
                             }
-                            title="Удалить папку"
-                            aria-label={`Удалить папку ${g.label}`}
+                            title={t("sidebar.udalit_papku")}
+                            aria-label={tf("sidebar.udalit_papku_0", [g.label])}
                             className="mr-1 shrink-0 rounded p-0.5 text-[11px] opacity-0 transition group-hover/folder:opacity-60 hover:opacity-100"
                           >
                             <TrashIcon size={13} />
@@ -492,7 +495,7 @@ export default function Sidebar() {
                   g.items.map((s) => {
                     const isActive = s.id === currentID;
                     const displayTitle =
-                      sessionTitleOverrides[s.id] || s.title || "Новый чат";
+                      sessionTitleOverrides[s.id] || s.title || t("shortcuts_overlay.novyy_chat");
                     const isPinned = pinnedSessions.includes(s.id);
                     const sStatus =
                       typeof status[s.id] === "string"
@@ -531,7 +534,7 @@ export default function Sidebar() {
                                 if (e.key === "Enter") commitRename(s.id);
                                 if (e.key === "Escape") setEditingId(null);
                               }}
-                              aria-label="Новое название чата"
+                              aria-label={t("sidebar.novoe_nazvanie_chata")}
                               style={{ flex: 1, minWidth: 0 }}
                               className="mx-2 my-1.5 self-center rounded-md border border-border bg-background px-2 py-1 text-xs text-foreground outline-none"
                             />
@@ -594,9 +597,9 @@ export default function Sidebar() {
                                   togglePinnedSession(s.id);
                                 }}
                                 title={
-                                  isPinned ? "Открепить чат" : "Закрепить чат"
+                                  isPinned ? t("sidebar.otkrepit_chat") : t("sidebar.zakrepit_chat")
                                 }
-                                aria-label={`${isPinned ? "Открепить" : "Закрепить"} чат ${displayTitle}`}
+                                aria-label={tf("sidebar.0_chat_1", [isPinned ? t("sidebar.otkrepit") : t("sidebar.zakrepit"), displayTitle])}
                                 className={cn(
                                   "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
                                   isPinned
@@ -614,8 +617,8 @@ export default function Sidebar() {
                                     cur === s.id ? null : s.id,
                                   );
                                 }}
-                                title="Папка чата"
-                                aria-label={`Выбрать папку для чата ${displayTitle}`}
+                                title={t("sidebar.papka_chata")}
+                                aria-label={tf("sidebar.vybrat_papku_dlya_chata_0", [displayTitle])}
                                 className={cn(
                                   "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
                                   chatFolderAssignments[s.id]
@@ -636,8 +639,8 @@ export default function Sidebar() {
                                       "",
                                   );
                                 }}
-                                title="Переименовать чат"
-                                aria-label={`Переименовать чат ${displayTitle}`}
+                                title={t("sidebar.pereimenovat_chat")}
+                                aria-label={tf("sidebar.pereimenovat_chat_0", [displayTitle])}
                                 className="oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current opacity-45 transition-all hover:bg-accent hover:opacity-100 active:scale-90"
                               >
                                 <PencilIcon size={13} />
@@ -656,7 +659,7 @@ export default function Sidebar() {
                                   removeSession(s.id);
                                   setConfirmDeleteId(null);
                                 }}
-                                title="Подтвердить удаление"
+                                title={t("sidebar.podtverdit_udalenie")}
                                 className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-red-500 text-white hover:bg-red-600 transition"
                               >
                                 <svg
@@ -679,7 +682,7 @@ export default function Sidebar() {
                                   e.stopPropagation();
                                   setConfirmDeleteId(null);
                                 }}
-                                title="Отмена"
+                                title={t("confirm_dialog.otmena")}
                                 className="mr-0.5 inline-flex h-5 w-5 items-center justify-center rounded-md bg-muted hover:bg-muted-foreground/20 text-muted-foreground transition"
                               >
                                 <svg
@@ -705,8 +708,8 @@ export default function Sidebar() {
                                 e.stopPropagation();
                                 setConfirmDeleteId(s.id);
                               }}
-                              title="Удалить чат"
-                              aria-label={`Удалить чат ${displayTitle}`}
+                              title={t("sidebar.udalit_chat")}
+                              aria-label={tf("sidebar.udalit_chat_0", [displayTitle])}
                               className="oc-reveal mr-0.5 inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-current opacity-45 transition-all hover:bg-red-500/12 hover:text-red-500 hover:opacity-100 active:scale-90"
                             >
                               <svg
@@ -771,8 +774,8 @@ export default function Sidebar() {
                                   setFolderMenuFor(null);
                                 }
                               }}
-                              placeholder="+ новая папка"
-                              aria-label="Создать папку и перенести чат в неё"
+                              placeholder={t("sidebar.novaya_papka_2")}
+                              aria-label={t("sidebar.sozdat_papku_i_perenesti_chat_v")}
                               className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-ring"
                             />
                           </div>
@@ -794,7 +797,7 @@ export default function Sidebar() {
               onClick={() => setSettingsOpen(true)}
             >
               <SettingsIcon />
-              <span>Настройки</span>
+              <span>{t("settings_panel.nastroyki")}</span>
               {authedCount > 0 && (
                 <Badge
                   variant="secondary"
@@ -808,15 +811,15 @@ export default function Sidebar() {
               variant="ghost"
               size="icon"
               data-testid="theme-toggle"
-              aria-label="Переключить тему"
+              aria-label={t("sidebar.pereklyuchit_temu")}
               onClick={toggleTheme}
-              title={`Тема: ${
+              title={tf("sidebar.tema_0_nazhmite_chtoby_pereklyuchit", [
                 theme === "dark"
-                  ? "тёмная"
+                  ? t("sidebar.temnaya")
                   : theme === "mid"
-                    ? "средняя"
-                    : "светлая"
-              } — нажмите, чтобы переключить`}
+                    ? t("sidebar.srednyaya")
+                    : t("sidebar.svetlaya"),
+              ])}
             >
               {theme === "light" ? (
                 <MoonIcon />
@@ -839,10 +842,16 @@ export default function Sidebar() {
                   variant="ghost"
                   size="icon"
                   className="text-red-400 hover:text-red-300 hover:bg-red-500/10 shrink-0"
-                  onClick={() => {
-                    if (confirm("Выйти из аккаунта?")) logout();
+                  onClick={async () => {
+                    const ok = await askConfirm({
+                      title: t("sidebar.vyyti_iz_akkaunta"),
+                      description: tf("sidebar.seans_0_zakroetsya_na_etom_ustroystve", [currentUser.email]),
+                      confirmLabel: t("sidebar.vyyti"),
+                      destructive: true,
+                    });
+                    if (ok) logout();
                   }}
-                  title={`Выйти (${currentUser.email})`}
+                  title={tf("sidebar.vyyti_0", [currentUser.email])}
                 >
                   <LogoutIcon />
                 </Button>

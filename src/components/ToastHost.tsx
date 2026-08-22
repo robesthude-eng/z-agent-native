@@ -1,5 +1,6 @@
 import { useToasts } from "@/lib/toast";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 const KIND_STYLES = {
   success: "border-foreground/40 bg-popover text-foreground",
@@ -28,7 +29,7 @@ export default function ToastHost() {
           key={t.id}
           type="button"
           onClick={() => dismiss(t.id)}
-          title="Скрыть уведомление"
+          title={t("toast_host.skryt_uvedomlenie")}
           className={cn(
             "pointer-events-auto rounded-lg border px-3 py-2 text-left text-sm shadow-e2 break-words",
             KIND_STYLES[t.kind],

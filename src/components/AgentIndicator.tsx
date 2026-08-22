@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import type { AgentActivity } from "@/lib/agentActivity";
 import { cn } from "@/lib/utils";
+import { t } from "@/i18n";
 
 /**
  * Индикатор работы агента внизу ленты.
@@ -54,7 +55,7 @@ export function AgentIndicator({ activity }: { activity: AgentActivity }) {
         </div>
         <div
           className="mt-1 flex min-w-0 items-center gap-1.5"
-          aria-label="Последние действия"
+          aria-label={t("agent_indicator.poslednie_deystviya")}
         >
           {activity.steps.length === 0 ? (
             <span className="text-[10.5px] text-muted-foreground/45">

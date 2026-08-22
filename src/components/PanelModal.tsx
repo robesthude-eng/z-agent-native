@@ -2,6 +2,7 @@ import React, { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { CloseIcon, ExitFullscreenIcon, FullscreenIcon } from "./icons";
+import { t } from "@/i18n";
 
 /**
  * Ghost-модалка поверх чата для Terminal / Preview.
@@ -196,7 +197,7 @@ export default function PanelModal({
         type="button"
         className="absolute inset-0 bg-black/50 backdrop-blur-[2px]"
         onClick={onClose}
-        aria-label="Закрыть окно"
+        aria-label={t("panel_modal.zakryt_okno")}
       />
       <div
         className={cn(
@@ -229,8 +230,8 @@ export default function PanelModal({
               size="icon"
               className="h-7 w-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setFull((f) => !f)}
-              title={full ? "Свернуть из полного экрана" : "На весь экран"}
-              aria-label={full ? "Свернуть из полного экрана" : "На весь экран"}
+              title={full ? t("panel_modal.svernut_iz_polnogo_ekrana") : t("panel_modal.na_ves_ekran")}
+              aria-label={full ? t("panel_modal.svernut_iz_polnogo_ekrana") : t("panel_modal.na_ves_ekran")}
             >
               {full ? (
                 <ExitFullscreenIcon size={14} />
@@ -244,8 +245,8 @@ export default function PanelModal({
             size="icon"
             className="h-7 w-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
             onClick={onClose}
-            title="Закрыть"
-            aria-label="Закрыть"
+            title={t("panel_modal.zakryt")}
+            aria-label={t("panel_modal.zakryt")}
           >
             <CloseIcon size={14} />
           </Button>
