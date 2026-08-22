@@ -436,6 +436,61 @@ function checkpointState(sessionId, runtime, strategy, fields = {}) {
   }
 }
 
+
+function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
+  const isFailed = outcome?.status === 'failed' || error != null;
+  const isPartial = outcome?.status === 'partial';
+  const changed = Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0;
+  const lines = [];
+
+  if (isFailed) {
+    lines.push('### ⚠️ Задача остановлена');
+    if (note) lines.push(note);
+    if (error?.message) lines.push(`**Причина:** ${error.message}`);
+    lines.push('');
+  } else if (isPartial) {
+    lines.push('### ⏳ Задача выполнена частично');
+    if (note) lines.push(note);
+    lines.push('');
+  } else {
+    lines.push('### 📋 Отчет о выполнении задачи
+');
+  }
+
+  if (changed) {
+    lines.push('**1. Измененные файлы и компоненты:**');
+    for (const p of strategy.changedPaths.slice(-15)) {
+      lines.push(`- \`${p}\``);
+    }
+    lines.push('');
+  }
+
+  if (Array.isArray(strategy?.plan) && strategy.plan.length > 0) {
+    lines.push('**2. Выполненные пункты плана:**');
+    for (const item of strategy.plan.slice(0, 10)) {
+      const mark = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '⏳' : '○';
+      lines.push(`- ${mark} ${item.content}`);
+    }
+    lines.push('');
+  }
+
+  if (strategy?.lastVerificationEvidence) {
+    const v = strategy.lastVerificationEvidence;
+    lines.push(`**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
+    if (v.detail) lines.push(`> \`${v.detail.slice(0, 200)}\``);
+    lines.push('');
+  }
+
+  if (isFailed || isPartial) {
+    lines.push('**4. Рекомендация:**');
+    lines.push('- Проверьте детали ошибки и повторите выполнение после устранения сбоя.');
+  }
+
+  const text = lines.join('
+').trim();
+  return text || (isFailed ? 'Задача не была завершена из-за ошибки.' : 'Операция успешно завершена. Все действия выполнены и сохранены.');
+}
+
 async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
   const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
@@ -552,7 +607,30 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
           continue;
         }
-        if (!streamedText) await emitText(assistant, response.text || 'Готово.', 'text');
+        let finalText = String(response.text || '').trim();
+        if (!finalText && step > 0) {
+          try {
+            frames.push({ role: 'assistant', content: '', toolCalls: [] });
+            frames.push({
+              role: 'user',
+              content: '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
+            });
+            const summaryRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
+              system: [systemPrompt(), runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+              frames: compactFrames(frames),
+              tools: [],
+              signal: controller.signal,
+            });
+            finalText = String(summaryRes.text || '').trim();
+          } catch {
+            // fallback
+          }
+        }
+        if (!finalText) {
+          const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
+          finalText = synthesizeTurnSummary({ strategy, outcome });
+        }
+        if (!streamedText) await emitText(assistant, finalText, 'text');
         const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
         return await finalizeAssistant({
           sessionId,
@@ -589,7 +667,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     if (guardedStop && loopStopSatisfiesTask(strategy)) {
       const outcome = classifyTaskOutcome({ strategy, kind: 'completed', reason: 'verified_repeat_stop' });
       const hasText = (assistant.parts || []).some((part) => part.type === 'text' && String(part.text || '').trim());
-      if (!hasText) await emitText(assistant, 'Готово.', 'text');
+      if (!hasText) await emitText(assistant, synthesizeTurnSummary({ strategy, outcome }), 'text');
       return await finalizeAssistant({
         sessionId,
         assistant,
