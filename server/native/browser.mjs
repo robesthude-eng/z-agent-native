@@ -247,7 +247,10 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
       // non-http schemes. Navigation is still a live fetch, so this check is a
       // policy gate rather than a pinned connection.
       assertAgentNetworkUrl(target, { tool: 'browser' });
-      await assertSafeExternalUrl(target);
+      const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
+      if (!proxyServer) {
+        await assertSafeExternalUrl(target);
+      }
       const response = await page.goto(target, { timeout, waitUntil: 'domcontentloaded' });
       extra.push(`http status: ${response ? response.status() : 'unknown'}`);
     }
