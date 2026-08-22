@@ -70,8 +70,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
   return (
     <ConfirmContext.Provider value={confirm}>
       {children}
-      <Dialog open={options !== null} onOpenChange={handleOpenChange}>
-        {options ? (
+      {options !== null && (
+        <Dialog open={true} onOpenChange={handleOpenChange}>
           <DialogContent className="max-w-[min(26rem,calc(100vw-2rem))]">
             <DialogHeader>
               <DialogTitle>{options.title}</DialogTitle>
@@ -96,8 +96,8 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               </Button>
             </div>
           </DialogContent>
-        ) : null}
-      </Dialog>
+        </Dialog>
+      )}
     </ConfirmContext.Provider>
   );
 }

@@ -21,9 +21,12 @@ export function TouchHints() {
 
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return;
-    // Только сенсорные экраны: на десктопе работает родной tooltip браузера,
-    // и вторая подсказка поверх неё только мешала бы.
-    if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) {
+    try {
+      // Только сенсорные экраны: на десктопе работает родной tooltip браузера
+      if (!window.matchMedia("(hover: none) and (pointer: coarse)").matches) {
+        return;
+      }
+    } catch {
       return;
     }
 
@@ -37,24 +40,32 @@ export function TouchHints() {
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.pointerType !== "touch") return;
-      const start = event.target as Element | null;
-      const target = start?.closest?.("[title],[aria-label]") as HTMLElement | null;
-      if (!target) return;
-      const text = (
-        target.getAttribute("title") ||
-        target.getAttribute("aria-label") ||
-        ""
-      ).trim();
-      if (!text) return;
-      clearTimer();
-      timer = window.setTimeout(() => {
-        const rect = target.getBoundingClientRect();
-        // Нажатие было долгим — это запрос подсказки, а не нажатие кнопки.
-        // Без этого флага отпускание пальца выполнило бы действие.
-        suppressClickRef.current = true;
-        setHint({ text, x: rect.left + rect.width / 2, y: rect.top });
-      }, LONG_PRESS_MS);
+      try {
+        if (event.pointerType !== "touch") return;
+        const start = event.target as Element | null;
+        if (!start || typeof start.closest !== "function") return;
+        const target = start.closest("[title],[aria-label]") as HTMLElement | null;
+        if (!target) return;
+        const text = (
+          target.getAttribute("title") ||
+          target.getAttribute("aria-label") ||
+          ""
+        ).trim();
+        if (!text) return;
+        clearTimer();
+        timer = window.setTimeout(() => {
+          try {
+            if (!document.body.contains(target)) return;
+            const rect = target.getBoundingClientRect();
+            suppressClickRef.current = true;
+            setHint({ text, x: rect.left + rect.width / 2, y: rect.top });
+          } catch {
+            // defensive
+          }
+        }, LONG_PRESS_MS);
+      } catch {
+        // defensive
+      }
     };
 
     const dismiss = () => {
