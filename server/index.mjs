@@ -15,9 +15,8 @@ import { clearSessionEvents, emit, openSse } from './native/events.mjs';
 import { assertActionId, sessionId } from './native/ids.mjs';
 import { readJson, sendJson } from './native/json.mjs';
 import { handleProviderChannels } from './native/provider-channels.mjs';
-import { normalizeProviderBaseUrl } from './native/provider-configs.mjs';
 import {
-  buildCatalog, probeModel, providerList, providerSpecs,
+  buildCatalog, providerList, providerSpecs,
 } from './native/providers.mjs';
 import { safeWorkspacePath } from './native/security.mjs';
 import { readinessCheck } from './native/readiness.mjs';
@@ -26,11 +25,11 @@ import { killExecutorIdentity } from './native/executor-client.mjs';
 import { closeBrowserSessionRemote } from './native/browser-client.mjs';
 import { assertRuntimeSecretsPrivate, killSandboxProcesses, shellSandboxAvailable } from './native/sandbox.mjs';
 import {
-  authRateLimitExceeded, createChat, deleteChat, deleteManualModel, deleteMessagesFrom, deleteProviderKey,
+  authRateLimitExceeded, createChat, deleteChat, deleteMessagesFrom, deleteProviderKey,
   dequeueAction, enqueueAction, getChat, getPrefs, getTurn,
-  listChats, listHiddenModels, listManualModels, listMessages, listPendingQuestions,
-  listProviderKeyIds, listQueue, ownsChat, recordAuthFailures, recoverInterruptedRuntimeState, renameChat, setHiddenModel, setPrefs,
-  setProviderKey, upsertManualModel, workspaceFor, getSandboxUid,
+  listChats, listMessages, listPendingQuestions,
+  listProviderKeyIds, listQueue, ownsChat, recordAuthFailures, recoverInterruptedRuntimeState, renameChat, setPrefs,
+  setProviderKey, workspaceFor, getSandboxUid,
 } from './native/store.mjs';
 import { initTerminal, terminalEnabled } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
@@ -367,63 +366,6 @@ async function route(req, res) {
     if (req.method === 'DELETE') { deleteProviderKey(ownerId, providerId); return sendJson(res, 204, null); }
   }
   if (p === '/api/providers/models' && req.method === 'GET') return sendJson(res, 200, await buildCatalog(ownerId, { force: url.searchParams.get('refresh') === '1' }));
-  if (p === '/api/providers/manual-models' && req.method === 'GET') {
-    const grouped = {};
-    for (const item of providerList(ownerId)) grouped[item.id] = listManualModels(ownerId, item.id);
-    return sendJson(res, 200, { providers: grouped });
-  }
-  const manual = /^\/api\/providers\/([^/]+)\/manual-models(?:\/(probe))?$/.exec(p);
-  if (manual) {
-    const providerId = decodePathPart(manual[1]);
-    if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
-    if (manual[2] === 'probe' && req.method === 'POST') {
-      const body = await readJson(req, 128 * 1024);
-      return sendJson(res, 200, await probeModel(ownerId, providerId, { modelId: body.modelId, baseUrl: body.baseUrl || null }));
-    }
-    if (req.method === 'GET') return sendJson(res, 200, { models: listManualModels(ownerId, providerId) });
-    if (req.method === 'POST') {
-      const body = await readJson(req, 128 * 1024);
-      const modelId = String(body.modelId || '').trim();
-      if (!modelId || modelId.length > 200) return sendJson(res, 400, { error: 'Некорректный Model ID' });
-      if (body.pattern && /[*?[]/.test(modelId)) return sendJson(res, 400, { error: 'Discovery pattern должен быть конечным: используйте {a,b,c}, а не * или ?' });
-      if (body.baseUrl) {
-        const probe = await probeModel(ownerId, providerId, { modelId: body.pattern ? modelId.replace(/\{([^{}]+)\}.*/, (_, x) => x.split(',')[0]) : modelId, baseUrl: body.baseUrl });
-        if (!body.pattern && !probe.available) return sendJson(res, 400, { error: probe.error || 'Модель недоступна' });
-      } else if (!body.pattern) {
-        const probe = await probeModel(ownerId, providerId, { modelId });
-        if (!probe.available) return sendJson(res, 400, { error: probe.error || 'Модель недоступна' });
-      }
-      upsertManualModel(ownerId, providerId, {
-        modelId,
-        name: body.name || null,
-        baseUrl: body.baseUrl ? normalizeProviderBaseUrl(body.baseUrl) : null,
-        isFree: Boolean(body.isFree),
-        pattern: Boolean(body.pattern),
-        enabled: body.enabled !== false,
-      });
-      return sendJson(res, 200, { status: 'success', available: body.pattern ? null : true });
-    }
-    if (req.method === 'DELETE') {
-      const body = await readJson(req, 64 * 1024);
-      deleteManualModel(ownerId, providerId, body.modelId);
-      return sendJson(res, 200, { status: 'success' });
-    }
-  }
-  const hidden = /^\/api\/providers\/([^/]+)\/hidden-models$/.exec(p);
-  if (hidden) {
-    const providerId = decodePathPart(hidden[1]);
-    // Тот же контракт, что у соседнего manual-models: без этой проверки в
-    // hidden_models попадали строки для несуществующих провайдеров.
-    if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
-    if (req.method === 'GET') return sendJson(res, 200, { hidden: listHiddenModels(ownerId, providerId) });
-    if (req.method === 'POST') {
-      const body = await readJson(req, 64 * 1024);
-      const modelId = String(body.modelId || '').trim();
-      if (!modelId || modelId.length > 200) return sendJson(res, 400, { error: 'Некорректный Model ID' });
-      setHiddenModel(ownerId, providerId, modelId, Boolean(body.hidden));
-      return sendJson(res, 200, { status: 'success' });
-    }
-  }
 
   // Workspace routes require a concrete owned session.
   if (p.startsWith('/api/workspace/') || p === '/api/file' || p.startsWith('/api/file/')) {

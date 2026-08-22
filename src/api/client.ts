@@ -3,10 +3,8 @@ import { isTmpSession } from "../lib/ids";
 import { MAX_UPLOAD_BYTES, type ProcessedFile } from "./files";
 import type {
   FileNode,
-  ManualModel,
   Message,
   ProviderCatalogResponse,
-  ProvidersResponse,
   SessionInfo,
   TrackedFile,
 } from "./types";
@@ -566,7 +564,6 @@ export const api = {
       xhr.send(form);
     }),
 
-  listProviders: () => req<ProvidersResponse>(`/config/providers`),
   /**
    * Каталог моделей загружается одним запросом. Runtime собирает его из того же
    * provider registry, который использует для inference, поэтому клиент не
@@ -574,71 +571,6 @@ export const api = {
    */
   listProviderCatalog: () =>
     req<ProviderCatalogResponse>(`/providers/models`, undefined, 45_000),
-  /** Все owner-scoped ручные модели одним локальным запросом для Settings. */
-  listAllManualModels: () =>
-    req<{ providers: Record<string, ManualModel[]> }>(
-      `/providers/manual-models`,
-    ),
-  /** Ручные модели провайдера (скрытые/бесплатные, правятся через UI). */
-  listManualModels: (providerId: string) =>
-    req<{ models: ManualModel[] }>(
-      `/providers/${encodeURIComponent(providerId)}/manual-models`,
-    ),
-  addManualModel: (
-    providerId: string,
-    model: {
-      modelId: string;
-      name?: string | null;
-      baseUrl?: string | null;
-      isFree?: boolean;
-      pattern?: boolean;
-      enabled?: boolean;
-    },
-  ) =>
-    req<{ status: string; available?: boolean | null }>(
-      `/providers/${encodeURIComponent(providerId)}/manual-models`,
-      { method: "POST", body: JSON.stringify(model) },
-      45_000,
-    ),
-  /** Проверить ручную модель/custom endpoint, ничего не сохраняя. */
-  probeManualModel: (
-    providerId: string,
-    model: { modelId: string; baseUrl?: string | null },
-  ) =>
-    req<{ available: boolean; latencyMs: number; checkedAt: number }>(
-      `/providers/${encodeURIComponent(providerId)}/manual-models/probe`,
-      { method: "POST", body: JSON.stringify(model) },
-      45_000,
-    ),
-  deleteManualModel: (providerId: string, modelId: string) =>
-    req<{ status: string }>(
-      `/providers/${encodeURIComponent(providerId)}/manual-models`,
-      { method: "DELETE", body: JSON.stringify({ modelId }) },
-    ),
-  /** Скрытые базовые модели (убраны из выпадающего списка). */
-  listHiddenModels: (providerId: string) =>
-    req<{ hidden: string[] }>(
-      `/providers/${encodeURIComponent(providerId)}/hidden-models`,
-    ),
-  setModelHidden: (providerId: string, modelId: string, hidden: boolean) =>
-    req<{ status: string }>(
-      `/providers/${encodeURIComponent(providerId)}/hidden-models`,
-      { method: "POST", body: JSON.stringify({ modelId, hidden }) },
-    ),
-  listConnected: () =>
-    req<{
-      connected?: string[];
-      all?: unknown[];
-      default?: Record<string, string>;
-    }>(`/provider`),
-
-  setAuth: (providerId: string, key: string) =>
-    req<boolean>(`/auth/${providerId}`, {
-      method: "PUT",
-      body: JSON.stringify({ type: "api", key }),
-    }),
-  removeAuth: (providerId: string) =>
-    req<void>(`/auth/${providerId}`, { method: "DELETE" }),
 
   saveCustomKey: (providerId: string, key: string) =>
     req<{ status: string }>(`/auth/custom`, {

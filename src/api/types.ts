@@ -177,26 +177,6 @@ export interface TrackedFile {
 
 // --- Providers / models ---
 
-export interface ProviderModel {
-  id?: string;
-  name?: string;
-  attachment?: boolean;
-  reasoning?: boolean;
-  cost?: { input?: number; output?: number };
-  limit?: { context?: number; output?: number };
-}
-
-export interface Provider {
-  id: string;
-  name?: string;
-  models?: Record<string, ProviderModel>;
-}
-
-export interface ProvidersResponse {
-  providers: Provider[];
-  default?: Record<string, string>;
-}
-
 /** Одна строка каталога: провайдер + модель, как их видит движок. */
 export type ProviderCatalogStatus =
   | "live"
@@ -240,14 +220,4 @@ export interface ProviderCatalogResponse {
   hidden?: Record<string, string[]>;
   /** Когда сервер закончил формировать эту проекцию каталога. */
   generatedAt?: number;
-}
-
-/** Ручная owner-scoped модель провайдера, добавленная через UI. */
-export interface ManualModel {
-  model_id: string;
-  name: string | null;
-  base_url: string | null;
-  is_free: boolean;
-  pattern: boolean;
-  enabled: boolean;
 }
