@@ -815,6 +815,8 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
 
   let text = '';
   let reasoning = '';
+  let inThink = false;
+  let buffer = '';
   let usage = null;
   let finish = null;
   const calls = new Map();
@@ -829,8 +831,62 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
       onTextDelta(delta.reasoning_content, 'reasoning');
     }
     if (typeof delta.content === 'string' && delta.content) {
-      text += delta.content;
-      onTextDelta(delta.content, 'text');
+      buffer += delta.content;
+      while (buffer.length > 0) {
+        if (!inThink) {
+          const thinkStart = buffer.indexOf('<think>');
+          if (thinkStart >= 0) {
+            const before = buffer.slice(0, thinkStart);
+            if (before) {
+              text += before;
+              onTextDelta(before, 'text');
+            }
+            inThink = true;
+            buffer = buffer.slice(thinkStart + 7);
+          } else {
+            const partial = ['<t', '<th', '<thi', '<thin', '<think'].find((p) => buffer.endsWith(p));
+            if (partial) {
+              const safe = buffer.slice(0, -partial.length);
+              if (safe) {
+                text += safe;
+                onTextDelta(safe, 'text');
+              }
+              buffer = partial;
+              break;
+            } else {
+              text += buffer;
+              onTextDelta(buffer, 'text');
+              buffer = '';
+            }
+          }
+        } else {
+          const thinkEnd = buffer.indexOf('</think>');
+          if (thinkEnd >= 0) {
+            const thought = buffer.slice(0, thinkEnd);
+            if (thought) {
+              reasoning += thought;
+              onTextDelta(thought, 'reasoning');
+            }
+            inThink = false;
+            buffer = buffer.slice(thinkEnd + 8);
+          } else {
+            const partial = ['</', '</t', '</th', '</thi', '</thin', '</think'].find((p) => buffer.endsWith(p));
+            if (partial) {
+              const safe = buffer.slice(0, -partial.length);
+              if (safe) {
+                reasoning += safe;
+                onTextDelta(safe, 'reasoning');
+              }
+              buffer = partial;
+              break;
+            } else {
+              reasoning += buffer;
+              onTextDelta(buffer, 'reasoning');
+              buffer = '';
+            }
+          }
+        }
+      }
     }
     for (const piece of delta.tool_calls || []) {
       const index = Number.isInteger(piece.index) ? piece.index : calls.size;
@@ -841,10 +897,19 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
       calls.set(index, current);
     }
   }, { failFastRateLimit });
+  if (buffer) {
+    if (inThink) {
+      reasoning += buffer;
+      onTextDelta(buffer, 'reasoning');
+    } else {
+      text += buffer;
+      onTextDelta(buffer, 'text');
+    }
+  }
   const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
   if (!text && reasoning && toolCalls.length === 0) {
     text = reasoning;
-    onTextDelta(reasoning);
+    onTextDelta(reasoning, 'text');
   }
   return { text, toolCalls, usage, finish, streamed: true };
 }
