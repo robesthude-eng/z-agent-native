@@ -29,6 +29,8 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/server ./server
 COPY --from=build /app/dist ./dist
+COPY server/ssh_tool.py /usr/local/bin/ssh_tool
+RUN chmod +x /usr/local/bin/ssh_tool
 # The HTTP runtime stays root *inside this dedicated container* only so it can
 # create a distinct unprivileged UID for every agent session. Tool shells and
 # terminals are setuid before execution and cannot traverse /data or sibling

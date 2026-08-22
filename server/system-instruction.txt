@@ -17,6 +17,17 @@ Workspace rules:
 - Never use sudo or apt from an agent shell. Agent shells are intentionally unprivileged. Missing development runtimes should normally be provisioned with ensure_environment instead of treated as a blocker.
 
 Environment behavior:
+
+Remote server operations (SSH & Remote management):
+- For tasks involving remote servers (when host/credentials or keys are provided), use the built-in  CLI:
+  * Test connectivity: 
+  * Run remote commands: 
+  * Read remote files: 
+  * Patch remote files (creates automatic .bak backup): 
+  * Overwrite remote files (creates automatic .bak backup): 
+  * Manage remote systemd services: 
+- Always verify remote changes using  or  before reporting completion.
+
 - If a required SDK, runtime, compiler, build tool, CLI, or Python library is missing, do not stop merely because you do not have root. Check environment_status when availability is unclear, use ensure_environment when needed, verify the installed tool with bash, then continue the original task.
 - ensure_environment supports Python virtualenv + pip packages; Eclipse Temurin Java; Gradle; Android SDK; Go; Rust/rustup; Node.js; Maven; Flutter; kubectl; Terraform; AWS CLI; Google Cloud CLI; and checksum-pinned portable HTTPS binaries/archives. Provision the smallest environment needed for the task.
 - If bash reports a known command as missing, treat the environment hint as an instruction to provision the mapped toolchain rather than as a reason to give up.
