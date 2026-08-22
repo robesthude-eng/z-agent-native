@@ -290,7 +290,7 @@ describe("карточка рассуждений остаётся на своё
     expect(runStepCount(items)).toBe(3);
   });
 
-  test("вспышка разрывает цепочку «Действия», а не прячется в ней", () => {
+  test("вспышка уходит внутрь цепочки, а не рвёт её надвое", () => {
     const flow = groupActivityRuns(
       groupParts([
         tool("t1", "bash"),
@@ -300,14 +300,28 @@ describe("карточка рассуждений остаётся на своё
         tool("t4", "write"),
       ]),
     );
-    // Две цепочки и карточка между ними: рассуждения обязаны быть видны в
-    // ленте, а «Действия» свёрнуты по умолчанию — спрятать их внутрь значит
-    // потерять живую карточку целиком.
+    // Один ход — одна цепочка. Рассуждения видны внутри: пока агент
+    // работает, цепочка развёрнута, а после ответа сворачивается сама —
+    // так живая карточка не теряется и лента не рассыпается на куски.
     const shape = flow.map((f) => {
       const g = f as { kind?: string; type?: string };
       if (g.kind === "activity") return "цепочка";
       return g.type ?? g.kind ?? "";
     });
-    expect(shape).toEqual(["цепочка", "reasoning", "цепочка"]);
+    expect(shape).toEqual(["цепочка"]);
+    const run = flow[0] as { items: Part[] };
+    expect(
+      run.items.map((it) => (it as { type?: string }).type ?? "группа"),
+    ).toEqual(["tool", "tool", "reasoning", "tool", "tool"]);
+    expect(runStepCount(run.items)).toBe(5);
+  });
+
+  test("цепочка не собирается из одних рассуждений", () => {
+    // Две вспышки подряд — не «2 шага» работы, прятать их под шапку с
+    // гаечным ключом нельзя.
+    const flow = groupActivityRuns(groupParts([reasoning("r1"), reasoning("r2")]));
+    expect(
+      flow.filter((f) => "kind" in f && f.kind === "activity").length,
+    ).toBe(0);
   });
 });

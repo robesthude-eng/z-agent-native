@@ -2,6 +2,10 @@ import { safeExternalRequest } from './security.mjs';
 import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 
 const SEARCH_UA = 'Z-Agent-Native/1.0';
+// HTML-выдача DuckDuckGo отвечает заглушкой на служебный User-Agent,
+// поэтому для неё нужен обычный браузерный заголовок.
+const HTML_UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36';
+const TIME_FILLER = /\b(?:сегодня|сейчас|завтра|вчера|актуальны?е?й?ы?е?|температура\s+на|today|right\s+now|now|latest|current)\b/gi;
 const MAX_COUNT = 10;
 
 function boundedCount(value) {
@@ -149,10 +153,45 @@ export function formatSearchRows(rows) {
   }).join('\n\n');
 }
 
+/** Policy refusals are configuration outcomes, not source failures. */
+export function isNetworkPolicyBlock(error) {
+  const code = String(error?.code || '');
+  return code === 'AGENT_NETWORK_BLOCKED' || code === 'AGENT_NETWORK_HOST_BLOCKED' || code === 'AGENT_NETWORK_URL_INVALID';
+}
+
 /**
- * Brave when an API key is configured; otherwise DuckDuckGo Instant Answer
- * plus Wikipedia OpenSearch. Callers must already have passed the agent
- * network policy gate for the host that will actually be contacted.
+ * Real DuckDuckGo web results.
+ *
+ * The Instant Answer API only serves curated answers, so it is empty for most
+ * live questions ("погода <город> сегодня"), and Wikipedia OpenSearch only
+ * matches article titles. The HTML endpoint is the only keyless source that
+ * answers such queries; its parser already existed here but was never wired
+ * into a request, which is why websearch reported a hard error instead of
+ * results.
+ */
+async function searchDuckDuckGoHtml(q, n, fetchUrl, signal) {
+  const url = new URL('https://html.duckduckgo.com/html/');
+  url.searchParams.set('q', q);
+  url.searchParams.set('kl', /[\u0400-\u04FF]/.test(q) ? 'ru-ru' : 'wt-wt');
+  assertAgentNetworkUrl(url.toString(), { tool: 'websearch' });
+  const res = await fetchUrl(url.toString(), {
+    headers: {
+      accept: 'text/html,application/xhtml+xml',
+      'accept-language': 'ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7',
+      'user-agent': HTML_UA,
+    },
+    signal,
+    maxBytes: 4 * 1024 * 1024,
+  });
+  if (res.status < 200 || res.status >= 300) return [];
+  return parseDuckDuckGoHtml(String(res.text || ''), n);
+}
+
+/**
+ * Brave when an API key is configured; otherwise the DuckDuckGo HTML results,
+ * then Instant Answer plus Wikipedia OpenSearch. Callers must already have
+ * passed the agent network policy gate for the host that will actually be
+ * contacted.
  */
 function queryVariants(query) {
   const q = String(query || '').trim();
@@ -163,6 +202,15 @@ function queryVariants(query) {
   };
   push(q);
   push(q.replace(/\b20\d{2}\b/g, ' '));
+  // Живые вопросы содержат уточнения времени и региона, из-за которых
+  // справочные источники не находят ничего. Перед тем как признать поиск
+  // пустым, сокращаем запрос до смыслового ядра.
+  const core = q.replace(TIME_FILLER, ' ');
+  push(core);
+  const words = core.replace(/\s+/g, ' ').trim().split(' ').filter(Boolean);
+  const proper = words.filter((word) => /^[A-ZА-ЯЁ]/.test(word));
+  if (proper.length && proper.length < words.length) push(proper.join(' '));
+  if (words.length > 2) push(words.slice(0, 2).join(' '));
   return out;
 }
 
@@ -213,6 +261,25 @@ async function collectPublicResults(q, n, fetchUrl, signal) {
   return rows;
 }
 
+/**
+ * Zero results is a normal outcome, not a tool failure. Throwing here painted
+ * the whole turn red in chat and pushed the model into error recovery instead
+ * of simply narrowing the query.
+ */
+function emptyResult(q, variants, notes) {
+  const lines = [
+    `No web results for "${q}".`,
+    variants.length > 1 ? `Tried query variants: ${variants.map((item) => `"${item}"`).join(', ')}.` : '',
+    notes.length ? `Source notes: ${notes.join('; ')}.` : '',
+    'This is an empty result, not a failure. Narrow or rephrase the query, or use webfetch on a specific URL you already know.',
+  ].filter(Boolean);
+  return {
+    output: lines.join('\n'),
+    title: q,
+    metadata: { websearch: { provider: 'duckduckgo', count: 0, empty: true, variants, notes } },
+  };
+}
+
 export async function runWebSearch({ query, count, signal, apiKey = '', request = safeExternalRequest } = {}) {
   const q = String(query || '').trim();
   if (!q) throw new Error('query must not be empty');
@@ -234,15 +301,43 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
     let body;
     try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
     const rows = parseBraveResults(body, n);
-    if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
-    return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
+    // Пустой ответ платного источника — повод доиграть запрос на бесплатных,
+    // а не отказывать всему инструменту.
+    if (rows.length) return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
   }
 
+  const variants = queryVariants(q);
+  const notes = [];
+  const blocks = [];
   let rows = [];
-  for (const variant of queryVariants(q)) {
-    rows = await collectPublicResults(variant, n, fetchUrl, signal);
+  let source = '';
+  for (const variant of variants) {
+    const steps = [
+      { name: 'duckduckgo-html', run: () => searchDuckDuckGoHtml(variant, n, fetchUrl, signal) },
+      { name: 'duckduckgo-instant+wikipedia', run: () => collectPublicResults(variant, n, fetchUrl, signal) },
+    ];
+    for (const step of steps) {
+      try {
+        const found = await step.run();
+        if (found.length) {
+          rows = found;
+          source = step.name;
+          break;
+        }
+      } catch (error) {
+        // Один недоступный или не разрешённый источник не должен ронять весь поиск.
+        if (isNetworkPolicyBlock(error)) blocks.push(error);
+        else notes.push(`${step.name}: ${String(error?.message || error).slice(0, 200)}`);
+      }
+    }
     if (rows.length) break;
   }
-  if (!rows.length) throw new Error('Web search returned no results. Try a more specific query.');
-  return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'duckduckgo', count: rows.length } } };
+  // Если политика закрыла все источники, это отказ конфигурации: остаёмся fail-closed.
+  if (!rows.length && blocks.length && !notes.length) throw blocks[0];
+  if (!rows.length) return emptyResult(q, variants, notes);
+  return {
+    output: formatSearchRows(rows),
+    title: q,
+    metadata: { websearch: { provider: 'duckduckgo', source, count: rows.length } },
+  };
 }

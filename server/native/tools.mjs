@@ -139,7 +139,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'websearch',
-    description: 'Search the public web. Uses Brave Search when BRAVE_SEARCH_API_KEY is set, otherwise DuckDuckGo. Returns titles, URLs and snippets.',
+    description: 'Search the public web. Uses Brave Search when BRAVE_SEARCH_API_KEY is set, otherwise DuckDuckGo web results plus Instant Answer and Wikipedia. Returns titles, URLs and snippets. A search that legitimately finds nothing returns an empty-result note instead of an error, so treat that as a signal to rephrase or to use webfetch.',
     inputSchema: object({ query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']),
   },
   {

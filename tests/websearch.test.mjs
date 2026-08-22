@@ -138,6 +138,60 @@ test('Cyrillic queries search Russian Wikipedia when Instant Answer is empty', a
   assert.equal(wikiOrder[0], 'ru');
 });
 
+test('a live question falls back to real DuckDuckGo web results', async () => {
+  const calls = [];
+  const request = async (url) => {
+    calls.push(String(url));
+    if (String(url).includes('html.duckduckgo.com')) {
+      return {
+        status: 200,
+        text: '<a class="result__a" href="https://www.gismeteo.ru/weather-priozersk-11014/">Погода в Приозерске</a><div class="result__snippet">+18°C, облачно</div>',
+      };
+    }
+    return { status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) };
+  };
+  const result = await runWebSearch({ query: 'погода Приозерск Ленинградская область сегодня', apiKey: '', request });
+  assert.match(result.output, /gismeteo/);
+  assert.equal(result.metadata.websearch.count, 1);
+  assert.ok(calls[0].includes('html.duckduckgo.com'));
+});
+
+test('a search that finds nothing returns an empty result, not an error', async () => {
+  const request = async () => ({ status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) });
+  const result = await runWebSearch({ query: 'zzqq несуществующий запрос сегодня', apiKey: '', request });
+  assert.equal(result.metadata.websearch.empty, true);
+  assert.equal(result.metadata.websearch.count, 0);
+  assert.match(result.output, /No web results/i);
+  assert.match(result.output, /not a failure/i);
+});
+
+test('an empty Brave answer falls through to the keyless providers', async () => {
+  const request = async (url) => {
+    if (String(url).includes('api.search.brave.com')) return { status: 200, text: JSON.stringify({ web: { results: [] } }) };
+    if (String(url).includes('html.duckduckgo.com')) return { status: 200, text: '<a class="result__a" href="https://example.org/hit">Hit</a>' };
+    return { status: 200, text: JSON.stringify({}) };
+  };
+  const result = await runWebSearch({ query: 'a rare live question', apiKey: 'test-key', request });
+  assert.match(result.output, /example\.org\/hit/);
+});
+
+test('time words are dropped in a later query variant', async () => {
+  const queries = [];
+  const request = async (url) => {
+    const parsed = new URL(url);
+    const q = parsed.searchParams.get('q') || parsed.searchParams.get('search') || '';
+    queries.push(q);
+    if (String(url).includes('html.duckduckgo.com') && !/сегодня/.test(q)) {
+      return { status: 200, text: '<a class="result__a" href="https://example.net/now">Now</a>' };
+    }
+    return { status: 200, text: JSON.stringify({}) };
+  };
+  const result = await runWebSearch({ query: 'курс валют в Москве сегодня', apiKey: '', request });
+  assert.match(result.output, /example\.net\/now/);
+  assert.ok(queries.some((item) => /сегодня/.test(item)));
+  assert.ok(queries.some((item) => item && !/сегодня/.test(item)));
+});
+
 test('runWebSearch refuses an empty query', async () => {
   await assert.rejects(() => runWebSearch({ query: '  ', request: async () => ({ status: 200, text: '' }) }), /query must not be empty/);
 });

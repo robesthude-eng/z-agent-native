@@ -121,15 +121,27 @@ export function groupParts(parts: Part[]): RenderItem[] {
  * Части-«действия»: то, что сворачивается в цепочку AgentActivity.
  * Текст (комментарии между действиями и финальный отчёт) и вложения —
  * видимый контент, в цепочки не попадают.
+ *
+ * Рассуждения тоже часть хода. Пока они рвали цепочку, один ход на
+ * экране рассыпался на «Действия → Рассуждения → Действия → Рассуждения» и дальше:
+ * читать такое невозможно. Теперь они идут внутрь цепочки, а сама цепочка
+ * раскрыта, пока агент работает (см. AgentActivity), и сворачивается после
+ * завершения — живая карточка при этом не теряется.
  */
 export function isActivityItem(item: RenderItem): boolean {
   if (!("type" in item)) return true; // ToolGroupData — группа вызовов инструмента
   return (
     item.type === "tool" ||
+    item.type === "reasoning" ||
     item.type === "step-start" ||
     item.type === "step-finish" ||
     item.type === "step-reasoning"
   );
+}
+
+/** Есть ли в наборе хотя бы одно настоящее действие (вызов или группа). */
+function hasToolCall(items: RenderItem[]): boolean {
+  return items.some((item) => !("type" in item) || item.type === "tool");
 }
 
 export interface ActivityRun {
@@ -142,12 +154,16 @@ export type FlowItem = RenderItem | ActivityRun;
  * Схлопывает подряд идущие «действия» (от двух и больше) в один
  * сворачиваемый блок. Одиночное действие остаётся как есть — оно и так
  * компактная ghost-строка, лишняя обёртка только добавила бы шума.
+ *
+ * Набор без единого вызова инструмента в цепочку не собирается: две
+ * вспышки рассуждений подряд — это не «2 шага» работы, и прятать их за
+ * шапкой с гаечным ключом было бы враньём.
  */
 export function groupActivityRuns(items: RenderItem[]): FlowItem[] {
   const out: FlowItem[] = [];
   let run: RenderItem[] = [];
   const flush = () => {
-    if (run.length >= 2) out.push({ kind: "activity", items: run });
+    if (run.length >= 2 && hasToolCall(run)) out.push({ kind: "activity", items: run });
     else out.push(...run);
     run = [];
   };

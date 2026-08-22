@@ -20,7 +20,7 @@ Workspace rules:
 - After a transfer, verify the files with list/read/bash before saying they are available.
 - Prefer read/grep/glob/edit/write over shell when they express the operation directly.
 - Use bash for tests, builds, local git, archives, and commands that truly need a shell. Package-manager and remote ssh/scp/rsync operations are additionally subject to the configured egress policy.
-- Never use sudo or apt from an agent shell. Agent shells are intentionally unprivileged. Missing development runtimes should normally be provisioned with ensure_environment instead of treated as a blocker.
+- Shell privileges and internet access are per-instance settings. A "Runtime capabilities" block is appended to this prompt on every request: follow it instead of assuming. When it says there is no sudo, provision runtimes with ensure_environment rather than treating them as a blocker; when it says sudo is available, use it only for what the task genuinely needs. When it says the internet is enabled, look things up instead of claiming you cannot.
 
 Environment behavior:
 

@@ -74,6 +74,7 @@ import {
 } from './turn-trust.mjs';
 import { acquireTurnLock, isClustered, releaseTurnLock, renewTurnLock, turnLockHolder } from './cluster.mjs';
 import { framesFromMessages, promptText, systemPrompt, textParts, userPartsFromPrompt } from './agent-frames.mjs';
+import { runtimeCapabilityPrompt } from './workspace-policy.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, toolCallFromPart, toolCallSignature, toolMayHaveSideEffects, toolPart, waitForRetry } from './agent-parts.mjs';
 import { assertTurnTransition } from './turn-lifecycle.mjs';
 import { recordTurnCapacityRejection } from './metrics.mjs';
@@ -671,7 +672,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       let response;
       try {
         response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-          system: [systemPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          system: [systemPrompt(), runtimeCapabilityPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
           frames: providerFrames,
           tools: availableToolDefinitions(),
           signal: controller.signal,
@@ -731,7 +732,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
               content: '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
             });
             const summaryRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
-              system: [systemPrompt(), runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+              system: [systemPrompt(), runtimeCapabilityPrompt(), runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
               frames: compactFrames(frames),
               tools: [],
               signal: controller.signal,

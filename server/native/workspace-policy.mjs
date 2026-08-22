@@ -90,6 +90,18 @@ export function assertAgentNetworkHost(hostname, { tool = 'network tool' } = {})
   return assertAgentNetworkUrl(`https://${String(hostname || '')}/`, { tool });
 }
 
+/**
+ * Elevated shell access.
+ *
+ * Default stays unprivileged: on a shared deployment a sudo-capable agent can
+ * read every other tenant's secrets. `Z_AGENT_ALLOW_SUDO=1` is the explicit
+ * opt-in for a trusted single-user box, where refusing sudo only blocks the
+ * user from their own machine.
+ */
+export function shellPrivilegePolicy() {
+  return String(process.env.Z_AGENT_ALLOW_SUDO || '').trim() === '1' ? 'sudo' : 'unprivileged';
+}
+
 export function shellNetworkPolicy() {
   const value = String(process.env.Z_AGENT_SHELL_NETWORK_POLICY || 'guarded').trim().toLowerCase();
   return ['open', 'guarded', 'tool-only'].includes(value) ? value : 'guarded';
@@ -101,6 +113,7 @@ const INLINE_NETWORK_CODE = /\b(?:python3?|node|ruby|perl)\b[^\n]*(?:https?:\/\/
 const PACKAGE_NETWORK = /(?:^|[;&|\n]\s*|\b)(?:npm|npx|pnpm|yarn|bun|pip|pip3|poetry|uv|gem|bundle|cargo|go|mvn|gradle|gradlew)\b/i;
 const REMOTE_GIT = /\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b/i;
 const SENSITIVE_COMMAND = /(?:^|[\s'"`/])(?:\.env(?:\.[\w.-]+)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|\.ssh(?:\/|\b)|(?:aws\/)?credentials(?:\.json)?|service[-_]?account[^\s'"`]*)/i;
+const ESCALATION = /(?:^|[\s'"`;|&<>(])(?:sudo|doas|pkexec|su)\b/i;
 const HOST_ESCAPE = /(?:^|[\s'"`;|&<>])\/(?:etc\/(?:passwd|shadow|sudoers|master\.passwd)|proc\/|sys\/|root\/|var\/run\/secrets)\b/i;
 
 /**
@@ -127,6 +140,15 @@ export function assertShellCommandAllowed(command) {
       code: 'SHELL_HOST_ESCAPE_BLOCKED',
     });
   }
+  // Escalation used to fail deep inside the shell with a raw "sudo: not found"
+  // or a password prompt that nobody could answer. Refuse it here with an
+  // explanation of the switch that enables it, so the agent stops guessing.
+  if (ESCALATION.test(text) && shellPrivilegePolicy() !== 'sudo') {
+    throw Object.assign(new Error('Elevated shell access (sudo/su/doas) is not enabled. Set Z_AGENT_ALLOW_SUDO=1 for a trusted single-user deployment, or provision runtimes with ensure_environment.'), {
+      statusCode: 403,
+      code: 'SHELL_ESCALATION_BLOCKED',
+    });
+  }
 
   if (DIRECT_NETWORK.test(text) || REMOTE_RSYNC.test(text) || INLINE_NETWORK_CODE.test(text)) {
     throw Object.assign(new Error('Direct shell network egress is blocked. Use webfetch/websearch for public reads or explicitly configure Z_AGENT_SHELL_NETWORK_POLICY=open for a trusted single-user deployment.'), {
@@ -141,4 +163,40 @@ export function assertShellCommandAllowed(command) {
       code: 'SHELL_EGRESS_BLOCKED',
     });
   }
+}
+
+/**
+ * Capability block injected into every request's system prompt.
+ *
+ * The static instructions cannot know how this instance is configured, so the
+ * model used to claim it had no internet even with web tools enabled, and kept
+ * trying sudo where it is refused. Generating the block per request keeps the
+ * prompt honest: the agent is told exactly what it may do right now.
+ */
+export function runtimeCapabilityPrompt() {
+  const web = agentNetworkPolicy();
+  const shell = shellNetworkPolicy();
+  const sudo = shellPrivilegePolicy() === 'sudo';
+  const lines = ['Runtime capabilities (generated per request; trust this over any general assumption):'];
+  if (web === 'public') {
+    lines.push('- Internet: enabled. websearch, webfetch and browser reach any public host. Never claim you have no internet access; look things up instead.');
+  } else if (web === 'allowlist') {
+    const hosts = agentNetworkAllowlist();
+    lines.push(`- Internet: limited to these hosts: ${hosts.length ? hosts.join(', ') : '(none configured yet)'}. Other hosts are refused by policy, not by you.`);
+  } else {
+    lines.push('- Internet: disabled for this instance. Do not promise to look anything up online.');
+  }
+  if (shell === 'open') {
+    lines.push('- Shell network: direct egress is allowed from bash (curl, wget, git clone, package managers).');
+  } else if (shell === 'tool-only') {
+    lines.push('- Shell network: blocked, including package managers and remote git. Use websearch/webfetch and ensure_environment instead.');
+  } else {
+    lines.push('- Shell network: direct network clients are blocked, package managers and remote git are allowed. Use websearch/webfetch for public reads.');
+  }
+  if (sudo) {
+    lines.push('- Elevated shell: sudo is available. Install system packages when the task genuinely needs them, prefer non-destructive commands, and stay out of credentials and files unrelated to the task.');
+  } else {
+    lines.push('- Elevated shell: no sudo. Provision missing runtimes with ensure_environment instead of treating them as a blocker.');
+  }
+  return lines.join('\n');
 }

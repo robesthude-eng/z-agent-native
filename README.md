@@ -124,7 +124,7 @@ one after validation.
 
 ## Web search
 
-`webfetch` works without an external search service for a URL the model already knows. The `websearch` tool uses Brave Search when `BRAVE_SEARCH_API_KEY` is configured, and otherwise DuckDuckGo Instant Answer plus Wikipedia OpenSearch. Both require `Z_AGENT_NETWORK_POLICY` other than `off` (`public` also needs `Z_AGENT_ALLOW_PUBLIC_WEB=1` in production).
+`webfetch` works without an external search service for a URL the model already knows. The `websearch` tool uses Brave Search when `BRAVE_SEARCH_API_KEY` is configured, and otherwise DuckDuckGo web results, falling back to Instant Answer plus Wikipedia OpenSearch. A search that legitimately finds nothing returns an empty-result note instead of failing the tool. Both require `Z_AGENT_NETWORK_POLICY` other than `off` (`public` also needs `Z_AGENT_ALLOW_PUBLIC_WEB=1` in production).
 
 ## Workspace and remote servers
 
@@ -239,6 +239,7 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `guarded`, `tool-only`, or `open` application-layer shell egress policy. `tool-only` is the stricter multi-user option; neither mode replaces a network firewall. |
 | `Z_AGENT_SENSITIVE_FILE_POLICY` | `block` | Blocks agent content access to common workspace credential files. `allow` is an explicit compatibility escape hatch. |
 | `Z_AGENT_NETWORK_POLICY` | `off` | Model-selected external network policy: fail-closed `off`, hostname `allowlist`, or trusted compatibility `public`. Provider API traffic is separate. |
+| `Z_AGENT_ALLOW_SUDO` | `0` | `1` allows `sudo`/`su`/`doas` from agent shells and tells the model so in its capability block. Keep `0` on shared hosts: an escalating agent can read other tenants' secrets. |
 | `Z_AGENT_NETWORK_ALLOWLIST` | empty | Comma-separated host patterns for `allowlist`: exact hostnames are exact; use `*.example.com` to explicitly authorize subdomains. |
 | `Z_AGENT_EXECUTOR_REQUIRED` | `1` in Compose | Fail closed instead of executing autonomous shell code in the trusted runtime when the networkless executor is missing. |
 | `Z_AGENT_BROWSER_REQUIRED` | `1` in Compose | Fail closed when the isolated Chromium service is missing. |

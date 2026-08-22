@@ -10,6 +10,7 @@ import {
   VERDICT_POLL_MS,
 } from "../api/turnVerdict";
 import type { Message } from "../api/types";
+import { describeAgentActivity } from "../lib/agentActivity";
 import { messageText } from "../lib/chatText";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
@@ -22,70 +23,6 @@ import {
   FilePlusIcon,
 } from "./icons";
 import MessageItem from "./MessageItem";
-
-function toolActivityLabel(tool: unknown): string {
-  const t = (typeof tool === "string" ? tool : "").toLowerCase();
-  if (["bash", "shell", "cmd"].includes(t)) return "выполняет команду…";
-  if (["write"].includes(t)) return "создаёт файл…";
-  if (["edit", "multiedit", "patch", "apply_patch"].includes(t))
-    return "редактирует файл…";
-  if (["read", "grep", "glob", "list", "ls"].includes(t))
-    return "читает файлы…";
-  if (t.includes("todo")) return "обновляет план…";
-  if (["webfetch", "websearch", "fetch"].includes(t))
-    return "ищет в интернете…";
-  if (t === "question") return "задаёт вопрос…";
-  if (t === "task") return "запускает подзадачу…";
-  return "выполняет действие…";
-}
-
-function currentActivityLabel(messages: Message[] | undefined): string {
-  const list = messages ?? [];
-  for (let i = list.length - 1; i >= 0; i--) {
-    const m = list[i];
-    if (m?.role !== "assistant") continue;
-    const parts = m.parts ?? [];
-    for (let j = parts.length - 1; j >= 0; j--) {
-      const p = parts[j] as {
-        type?: string;
-        tool?: unknown;
-        state?: unknown;
-        output?: unknown;
-        text?: unknown;
-      };
-      if (!p) continue;
-      if (p.type === "tool") {
-        const st = p.state;
-        const raw =
-          typeof st === "string"
-            ? st
-            : st && typeof st === "object"
-              ? ((st as { status?: string }).status ?? "running")
-              : p.output != null
-                ? "completed"
-                : "running";
-        const norm = raw === "pending" ? "running" : raw;
-        if (norm === "running") return toolActivityLabel(p.tool);
-        return "думает…";
-      }
-      if (p.type === "reasoning") return "думает…";
-      if (p.type === "text" && p.text) return "пишет ответ…";
-    }
-    return "думает…";
-  }
-  return "думает…";
-}
-
-function currentStepMeta(messages: Message[] | undefined): string | undefined {
-  const list = messages ?? [];
-  const last = list[list.length - 1];
-  if (last?.role !== "assistant") return undefined;
-  const tools = (last.parts ?? []).filter(
-    (p) => (p as { type?: string }).type === "tool",
-  );
-  if (tools.length === 0) return undefined;
-  return `шаг ${tools.length}`;
-}
 
 const SUGGESTIONS = [
   {
@@ -478,10 +415,7 @@ export default function ChatView() {
             })}
             {showWorking && (
               <div className="flex gap-3 py-3 px-3 md:px-6">
-                <AgentIndicator
-                  label={currentActivityLabel(messages)}
-                  meta={currentStepMeta(messages)}
-                />
+                <AgentIndicator activity={describeAgentActivity(messages)} />
               </div>
             )}
             {unresolved && (
