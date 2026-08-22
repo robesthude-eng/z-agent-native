@@ -135,15 +135,34 @@ describe("native model catalog", () => {
     expect(store.modelsError).toBe(false);
   });
 
-  it("сбрасывает выбор на Автопилот, когда провайдер жив, а модель удалили", async () => {
+  it("не подменяет выбор, когда провайдер жив, а модель удалили из каталога", async () => {
     vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
       models: [
         { providerID: "zai", providerName: "Z.AI", modelID: "glm-5.4", modelName: "GLM-5.4", free: false },
       ],
     });
     mockChannels(["zai"]);
-    const store = makeStore({ selectedModel: { providerID: "zai", modelID: "glm-5.3" } });
+    const chosen = { providerID: "zai", modelID: "glm-5.3" };
+    const store = makeStore({ selectedModel: chosen });
+    await store.loadModels();
+    // Молчаливый сброс на Автопилот и был одной из причин расхождения:
+    // сверху стояла одна модель, а отвечала другая. Выбор сохраняем,
+    // а о его отсутствии в каталоге честно сообщаем флагом: причину
+    // отказа скажет сервер текстом в чате.
+    expect(store.selectedModel).toEqual(chosen);
+    expect(store.selectedModelMissing).toBe(true);
+  });
+
+  it("ставит Автопилот только когда выбора ещё не было", async () => {
+    vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
+      models: [
+        { providerID: "zai", providerName: "Z.AI", modelID: "glm-5.4", modelName: "GLM-5.4", free: false },
+      ],
+    });
+    mockChannels(["zai"]);
+    const store = makeStore({ selectedModel: null });
     await store.loadModels();
     expect(store.selectedModel).toEqual(AUTO_MODEL);
+    expect(store.selectedModelMissing).toBe(false);
   });
 });

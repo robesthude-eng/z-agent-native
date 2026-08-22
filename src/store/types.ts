@@ -49,6 +49,11 @@ export interface ModelsSlice {
   modelsLoaded: boolean;
   /** Каталог не загрузился (сеть/рантайм) — это не то же, что пустой каталог. */
   modelsError: boolean;
+  /**
+   * Выбранной модели нет в живом каталоге её провайдера. Сам выбор при этом
+   * сохраняется: молча подменять модель нельзя, причину отказа скажет сервер.
+   */
+  selectedModelMissing: boolean;
   selectedModel: PromptModel | null;
   loadModels: (force?: boolean) => Promise<void>;
   setSelectedModel: (m: PromptModel | null) => void;

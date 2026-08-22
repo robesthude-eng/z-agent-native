@@ -9,6 +9,7 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
   models: [],
   modelsLoaded: false,
   modelsError: false,
+  selectedModelMissing: false,
   selectedModel: null,
 
   loadModels: async (force?: boolean) => {
@@ -76,18 +77,21 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
         ? true
         : entries.some((entry) => entry.providerID === selected?.providerID);
 
-    if (!stillAvailable && providerAlive) {
-      // New users and stale/removed explicit selections fall back to the
-      // server-owned Autopilot. The runtime then applies configured defaults,
-      // model health and provider fallback instead of the browser guessing.
-      selected = entries.length > 0 ? { ...AUTO_MODEL } : null;
-    }
+    // Выбор пользователя не подменяется молча никогда. Если модели больше нет
+    // в каталоге, запрос всё равно уйдёт именно в неё, а сервер ответит
+    // в чат причиной отказа (нет такой модели / нет баланса / нет доступа).
+    // «Авто» подставляется только когда выбора ещё не было вообще.
+    if (!selected && entries.length > 0) selected = { ...AUTO_MODEL };
+    const selectedModelMissing = Boolean(
+      selected && !isAutoModel(selected) && !stillAvailable && providerAlive,
+    );
 
     set({
       models: entries,
       modelsLoaded: true,
       modelsError: false,
       selectedModel: selected,
+      selectedModelMissing,
     });
   },
 
@@ -95,6 +99,7 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
     const updatedAt = Date.now();
     set((state) => ({
       selectedModel,
+      selectedModelMissing: false,
       prefsUpdatedAt: { ...state.prefsUpdatedAt, selectedModel: updatedAt },
     }));
     pushPref("selectedModel", selectedModel, updatedAt);

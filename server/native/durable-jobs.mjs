@@ -48,6 +48,9 @@ function cleanPlan(plan) {
   return {
     candidates,
     explicit: Boolean(plan.explicit),
+    // locked обязан выживать перезапуск: восстановленный ход тоже не имеет
+    // права ответить другой моделью, чем выбрал пользователь.
+    locked: Boolean(plan.locked),
     expandOnFailure: Boolean(plan.expandOnFailure),
     goal: String(plan.goal || '').slice(0, 8_000),
     generatedAt: Number(plan.generatedAt) || Date.now(),

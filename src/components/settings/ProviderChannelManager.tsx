@@ -23,6 +23,12 @@ type DraftChannel = {
 
 type ListedModel = { id: string; name: string };
 
+type ProbeState =
+  | { kind: "idle" }
+  | { kind: "checking" }
+  | { kind: "ok"; latencyMs: number }
+  | { kind: "fail"; message: string };
+
 type ManualRow = {
   model_id: string;
   name: string | null;
@@ -48,6 +54,7 @@ const PROVIDER_STATUS_LABELS: Record<string, string> = {
   unavailable: "каталог недоступен",
   unauthorized: "нет доступа к каталогу",
   disabled: "выключен",
+  nokey: "ключ не добавлен",
 };
 
 function providerColor(id: string) {
@@ -113,6 +120,9 @@ export function ProviderChannelManager() {
   const [modelQuery, setModelQuery] = useState("");
   const [manualId, setManualId] = useState("");
   const [manualName, setManualName] = useState("");
+  const [manualFree, setManualFree] = useState(false);
+  const [probe, setProbe] = useState<ProbeState>({ kind: "idle" });
+  const [manualBusy, setManualBusy] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [noticeError, setNoticeError] = useState(false);
@@ -148,13 +158,15 @@ export function ProviderChannelManager() {
     try {
       const [manualResponse, hiddenResponse] = await Promise.all([
         providerChannelsApi.listManualModels(channel.id),
-        api.listHiddenModels(channel.id),
+        providerChannelsApi.listHiddenModels(channel.id),
       ]);
       setManual(manualResponse.models ?? []);
       setHidden(new Set(hiddenResponse.hidden ?? []));
       if (!channel.connected || !channel.enabled) {
         setModels([]);
-        setStatus(channel.enabled ? "unauthorized" : "disabled");
+        // «Ключ не добавлен» и «провайдер не пустил с этим ключом» — разные
+        // состояния, хотя раньше оба показывались как «нет доступа к каталогу».
+        setStatus(!channel.enabled ? "disabled" : "nokey");
         return;
       }
       if (force) {
@@ -207,6 +219,8 @@ export function ProviderChannelManager() {
     setModelQuery("");
     setManualId("");
     setManualName("");
+    setManualFree(false);
+    setProbe({ kind: "idle" });
     // Fetch the raw provider catalog here, rather than the filtered global
     // catalog, so hidden models remain visible and can be re-enabled.
     void loadChannelModels(selected, selected.connected && selected.enabled);
@@ -301,22 +315,6 @@ export function ProviderChannelManager() {
     }
   };
 
-  const resetBuiltin = async () => {
-    if (!draft?.id || draft.custom) return;
-    try {
-      await providerChannelsApi.resetBuiltin(draft.id);
-      const updated = await syncChannels(draft.id);
-      const channel = updated.find((item) => item.id === draft.id) ?? null;
-      if (channel) {
-        setDraft(draftFromChannel(channel));
-        await loadChannelModels(channel, true);
-      }
-      showNotice("Endpoint и параметры встроенного провайдера сброшены.");
-    } catch (error) {
-      showNotice(errorText(error), true);
-    }
-  };
-
   const refreshModels = async () => {
     if (!selected) return;
     setNotice(null);
@@ -333,7 +331,7 @@ export function ProviderChannelManager() {
       return next;
     });
     try {
-      await api.setModelHidden(selected.id, modelId, !isHidden);
+      await providerChannelsApi.setModelHidden(selected.id, modelId, !isHidden);
       await loadModels(true);
     } catch (error) {
       showNotice(errorText(error), true);
@@ -341,13 +339,35 @@ export function ProviderChannelManager() {
     }
   };
 
+  /** Проверка без сохранения: видно, жива ли модель, до добавления в список. */
+  const probeManual = async () => {
+    if (!selected || !manualId.trim()) return;
+    setProbe({ kind: "checking" });
+    try {
+      const result = await providerChannelsApi.probeManualModel(selected.id, manualId.trim());
+      setProbe(
+        result.available
+          ? { kind: "ok", latencyMs: result.latencyMs }
+          : { kind: "fail", message: result.error || "Провайдер не подтвердил эту модель." },
+      );
+    } catch (error) {
+      setProbe({ kind: "fail", message: errorText(error) });
+    }
+  };
+
   const addManual = async () => {
     if (!selected || !manualId.trim()) return;
     setSaving(true);
     try {
-      await providerChannelsApi.addManualModel(selected.id, manualId.trim(), manualName.trim() || undefined);
+      await providerChannelsApi.addManualModel(selected.id, {
+        modelId: manualId.trim(),
+        name: manualName.trim() || null,
+        isFree: manualFree,
+      });
       setManualId("");
       setManualName("");
+      setManualFree(false);
+      setProbe({ kind: "idle" });
       showNotice("Модель проверена и добавлена.");
       await Promise.all([loadModels(true), loadChannelModels(selected, selected.connected && selected.enabled)]);
     } catch (error) {
@@ -356,6 +376,28 @@ export function ProviderChannelManager() {
       setSaving(false);
     }
   };
+
+  /** Флаги уже проверенной модели меняются без повторного вызова провайдера. */
+  const updateManual = async (model: ManualRow, patch: { enabled?: boolean; isFree?: boolean }) => {
+    if (!selected) return;
+    setManualBusy(model.model_id);
+    try {
+      await providerChannelsApi.addManualModel(selected.id, {
+        modelId: model.model_id,
+        probe: false,
+        ...patch,
+      });
+      await Promise.all([loadModels(true), loadChannelModels(selected, false)]);
+    } catch (error) {
+      showNotice(errorText(error), true);
+    } finally {
+      setManualBusy(null);
+    }
+  };
+
+  const toggleManualEnabled = (model: ManualRow) => updateManual(model, { enabled: !model.enabled });
+
+  const toggleManualFree = (model: ManualRow) => updateManual(model, { isFree: !model.is_free });
 
   const removeManual = async (modelId: string) => {
     if (!selected) return;
@@ -511,9 +553,6 @@ export function ProviderChannelManager() {
                 <Button size="sm" disabled={saving || !draft.name.trim() || !draft.baseURL.trim()} onClick={() => void save()}>
                   {saving ? "Сохраняем…" : draft.id ? "Сохранить" : "Добавить и загрузить модели"}
                 </Button>
-                {draft.id && !draft.custom && editedChannel?.overridden && (
-                  <Button size="sm" variant="ghost" onClick={() => void resetBuiltin()}>Сбросить endpoint</Button>
-                )}
                 {draft.id && draft.custom && (
                   <Button size="sm" variant="ghost" className="text-destructive" onClick={() => void removeProvider()}>Удалить провайдера</Button>
                 )}
@@ -528,7 +567,7 @@ export function ProviderChannelManager() {
                         {models.length} из API · {manual.length} добавлено вручную
                       </div>
                     </div>
-                    <Button size="sm" variant="outline" disabled={!selected.connected || refreshing} onClick={() => void refreshModels()}>
+                    <Button size="sm" variant="outline" disabled={!selected.connected || !selected.enabled || refreshing} onClick={() => void refreshModels()}>
                       {refreshing ? "Загружаем…" : "Обновить модели"}
                     </Button>
                   </div>
@@ -543,13 +582,15 @@ export function ProviderChannelManager() {
                   <div className="max-h-64 overflow-y-auto rounded-xl border border-border">
                     {visibleModels.length === 0 ? (
                       <div className="px-3 py-5 text-xs text-muted-foreground">
-                        {!selected.connected
-                          ? "Сохраните API key, чтобы автоматически получить модели."
-                          : status === "unavailable"
-                            ? "Каталог моделей сейчас недоступен. Повторите загрузку или добавьте Model ID вручную."
-                            : status === "unauthorized"
-                              ? "API-ключ не даёт доступ к каталогу моделей. Проверьте ключ."
-                              : "Endpoint не вернул список моделей. Добавьте Model ID вручную ниже."}
+                        {!selected.enabled
+                          ? "Канал выключен. Включите его, чтобы загрузить модели."
+                          : !selected.connected
+                            ? "Сохраните API key, чтобы автоматически получить модели."
+                            : status === "unavailable"
+                              ? "Каталог моделей сейчас недоступен. Повторите загрузку или добавьте Model ID вручную."
+                              : status === "unauthorized"
+                                ? "API-ключ не даёт доступ к каталогу моделей. Проверьте ключ."
+                                : "Endpoint не вернул список моделей. Добавьте Model ID вручную ниже."}
                       </div>
                     ) : visibleModels.map((model) => (
                       <label key={model.id} className="flex cursor-pointer items-center gap-2 border-b border-border px-3 py-2 last:border-b-0 hover:bg-muted/30">
@@ -564,16 +605,75 @@ export function ProviderChannelManager() {
 
                   <div className="rounded-xl border border-dashed border-border p-3">
                     <div className="mb-2 text-xs font-medium">Добавить Model ID вручную</div>
-                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]">
-                      <Input className="h-8 font-mono text-xs" value={manualId} onChange={(event) => setManualId(event.target.value)} placeholder="model-id" />
+                    <div className="grid gap-2 sm:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+                      <Input
+                        className="h-8 font-mono text-xs"
+                        value={manualId}
+                        onChange={(event) => { setManualId(event.target.value); setProbe({ kind: "idle" }); }}
+                        placeholder="model-id"
+                      />
                       <Input className="h-8 text-xs" value={manualName} onChange={(event) => setManualName(event.target.value)} placeholder="Название (необязательно)" />
-                      <Button size="sm" variant="outline" disabled={!manualId.trim() || saving || !selected.connected} onClick={() => void addManual()}>Добавить</Button>
                     </div>
+                    <div className="mt-2 flex flex-wrap items-center gap-2">
+                      <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                        <input type="checkbox" checked={manualFree} onChange={(event) => setManualFree(event.target.checked)} />
+                        Бесплатная
+                      </label>
+                      <span className="flex-1" />
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        disabled={!manualId.trim() || probe.kind === "checking" || !selected.connected || !selected.enabled}
+                        onClick={() => void probeManual()}
+                      >
+                        {probe.kind === "checking" ? "Проверяем…" : "Проверить"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={!manualId.trim() || saving || !selected.connected || !selected.enabled}
+                        onClick={() => void addManual()}
+                      >
+                        Добавить
+                      </Button>
+                    </div>
+                    {(probe.kind === "ok" || probe.kind === "fail") && (
+                      <div className={cn("mt-2 text-[11px]", probe.kind === "ok" ? "text-emerald-700" : "text-destructive")}>
+                        {probe.kind === "ok"
+                          ? `Модель ответила за ${probe.latencyMs} мс — можно добавлять.`
+                          : probe.message}
+                      </div>
+                    )}
                     {manual.length > 0 && (
                       <div className="mt-3 space-y-1">
                         {manual.map((model) => (
                           <div key={model.model_id} className="flex items-center gap-2 rounded-lg bg-muted/35 px-2.5 py-1.5">
-                            <span className="min-w-0 flex-1 truncate font-mono text-[11px]">{model.model_id}</span>
+                            <input
+                              type="checkbox"
+                              checked={model.enabled}
+                              disabled={manualBusy === model.model_id}
+                              onChange={() => void toggleManualEnabled(model)}
+                              aria-label={`Показывать ${model.model_id} в списке моделей`}
+                            />
+                            <span className="min-w-0 flex-1">
+                              <span className={cn("block truncate font-mono text-[11px]", !model.enabled && "text-muted-foreground line-through")}>
+                                {model.model_id}
+                              </span>
+                              {model.name && <span className="block truncate text-[10px] text-muted-foreground">{model.name}</span>}
+                            </span>
+                            <button
+                              type="button"
+                              disabled={manualBusy === model.model_id}
+                              aria-pressed={model.is_free}
+                              onClick={() => void toggleManualFree(model)}
+                              className={cn(
+                                "rounded-full px-2 py-0.5 text-[10px] font-medium transition-colors",
+                                model.is_free ? "bg-emerald-500/10 text-emerald-700" : "bg-muted text-muted-foreground hover:text-foreground",
+                              )}
+                              title={model.is_free ? "Отметка «бесплатная» включена" : "Отметить как бесплатную"}
+                            >
+                              FREE
+                            </button>
                             <button type="button" className="rounded p-1 text-muted-foreground hover:text-destructive" onClick={() => void removeManual(model.model_id)} aria-label={`Удалить ${model.model_id}`}>
                               <CloseIcon size={12} />
                             </button>

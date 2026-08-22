@@ -25,6 +25,13 @@ function StatusDot({ model }: { model: ModelEntry }) {
   );
 }
 
+/**
+ * Выбор модели никогда не подменяется молча. Если модели нет в каталоге,
+ * шапка показывает именно её и предупреждает, а не переключается на «Авто».
+ */
+const MISSING_MODEL_TITLE =
+  "Этой модели нет в каталоге провайдера. Запрос всё равно уйдёт в неё, а причину отказа агент напишет в чат.";
+
 function sourceLabel(model: ModelEntry) {
   if (model.source === "custom") return "свой API";
   if (model.source === "discovered") return "найдена автоматически";
@@ -104,6 +111,10 @@ export default function ModelSelector() {
           m.providerID === selectedModel?.providerID &&
           m.modelID === selectedModel?.modelID,
       );
+
+  // Выбранной модели нет в каталоге: показываем её же с предупреждением,
+  // а не «Выбрать модель» и тем более не «Авто».
+  const missing = !automatic && Boolean(selectedModel) && !current;
 
   const personal = models.filter(
     (m) =>
@@ -189,15 +200,31 @@ export default function ModelSelector() {
               title="Autopilot выбирает модель на сервере"
               aria-label="Autopilot включён"
             />
+          ) : missing ? (
+            <span
+              className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
+              title={MISSING_MODEL_TITLE}
+              aria-label="Модели нет в каталоге провайдера"
+            />
           ) : (
             current && <StatusDot model={current} />
           )}
-          <span className="truncate">
-            {automatic ? "Авто" : (current?.modelName ?? "Выбрать модель")}
+          <span
+            className="truncate"
+            title={missing ? MISSING_MODEL_TITLE : undefined}
+          >
+            {automatic
+              ? "Авто"
+              : (current?.modelName ?? selectedModel?.modelID ?? "Выбрать модель")}
           </span>
           {automatic && (
             <span className="hidden shrink-0 text-[9px] text-muted-foreground sm:inline">
               Autopilot
+            </span>
+          )}
+          {missing && (
+            <span className="hidden shrink-0 rounded-full border border-amber-500/60 px-1.5 py-0.5 text-[9px] text-amber-600 sm:inline-flex dark:text-amber-400">
+              нет в каталоге
             </span>
           )}
           {current?.free && (
@@ -246,6 +273,9 @@ export default function ModelSelector() {
               </span>
               {automatic && <CheckIcon size={14} />}
             </button>
+            <p className="mt-1 px-3 text-[10px] leading-relaxed text-muted-foreground">
+              Выбранная вручную модель никогда не подменяется: если нет баланса, доступа или самой модели, агент напишет причину в чат.
+            </p>
           </div>
 
           {personal.length > 0 && (

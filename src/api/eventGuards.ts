@@ -112,8 +112,9 @@ export function statusText(raw: unknown): string {
 const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
 const MODEL_UNAVAILABLE_RE =
   /promotion has ended|model.{0,40}unavailable|upstream request failed|\{\s*"model"\s*:/i;
-const PUBLIC_MODEL_UNAVAILABLE =
-  "Выбранная модель сейчас недоступна. Нажмите «Повторить» — агент возьмёт другую.";
+// Агент больше не берёт другую модель вместо выбранной, поэтому и обещать
+// этого нельзя: текст зеркалит формулировку сервера.
+const PUBLIC_MODEL_UNAVAILABLE = "Эта модель сейчас недоступна у провайдера.";
 
 export function publicErrorText(text: string): string {
   const value = String(text || "").trim();

@@ -4,7 +4,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
+  buildModelPlan,
   fallbackEligible,
+  lockedModelMessage,
+  modelFailureReason,
+  modelKey,
+  promoteModelPlan,
   rankModelCandidates,
   runFallbackPlan,
   taskStepBudget,
@@ -176,4 +181,104 @@ test('при переходе на резервную модель строка 
   assert.match(prompts[0], /zai\/glm-5\.3/);
   assert.match(prompts[1], /openai\/gpt-5/);
   assert.ok(!prompts[1].includes('zai/glm-5.3'), 'резервная модель не представляется чужим именем');
+});
+
+test('выбранная вручную модель никогда не подменяется другой', async () => {
+  const plan = await buildModelPlan('owner-locked', { providerID: 'zai', modelID: 'glm-5.3' }, 'вопрос');
+  assert.equal(plan.locked, true, 'явный выбор закрепляется');
+  assert.equal(plan.expandOnFailure, false, 'план не расширяется резервными моделями');
+  assert.deepEqual(plan.candidates.map(modelKey), ['zai/glm-5.3']);
+
+  // Даже если рядом лежит годный кандидат, locked-план его не трогает.
+  const tried = [];
+  await assert.rejects(
+    runFallbackPlan(
+      { ...plan, candidates: [...plan.candidates, { providerID: 'openai', modelID: 'gpt-5' }] },
+      { system: 'BASE' },
+      async (model) => {
+        tried.push(modelKey(model));
+        throw Object.assign(new Error('rate limited'), { statusCode: 429 });
+      },
+    ),
+    (err) => {
+      assert.equal(err.modelLocked, true);
+      assert.equal(err.lockedModel, 'zai/glm-5.3');
+      assert.match(err.publicMessage, /zai\/glm-5\.3/);
+      assert.match(err.publicMessage, /лимит/i);
+      return true;
+    },
+  );
+  assert.deepEqual(tried, ['zai/glm-5.3'], 'вторая модель не вызывается');
+});
+
+test('в режиме «Авто» агент по-прежнему сам берёт следующую модель', async () => {
+  const plan = {
+    explicit: false,
+    locked: false,
+    candidates: [
+      { providerID: 'zai', modelID: 'glm-5.3' },
+      { providerID: 'openai', modelID: 'gpt-5' },
+    ],
+  };
+  const result = await runFallbackPlan(plan, { system: 'BASE' }, async (model) => {
+    if (model.modelID === 'glm-5.3') throw Object.assign(new Error('rate limited'), { statusCode: 429 });
+    return { text: 'ok' };
+  });
+  assert.equal(modelKey(result.model), 'openai/gpt-5');
+});
+
+test('locked-план остаётся закреплённым на всех шагах хода', () => {
+  const plan = {
+    candidates: [{ providerID: 'zai', modelID: 'glm-5.3' }],
+    explicit: true,
+    locked: true,
+    expandOnFailure: false,
+  };
+  const promoted = promoteModelPlan(plan, { providerID: 'zai', modelID: 'glm-5.3' });
+  assert.equal(promoted.locked, true);
+  assert.equal(promoted.expandOnFailure, false);
+  assert.deepEqual(promoted.candidates.map(modelKey), ['zai/glm-5.3']);
+
+  // Авто-план после выбора модели замок не получает.
+  const auto = promoteModelPlan(
+    { candidates: [{ providerID: 'zai', modelID: 'glm-5.3' }, { providerID: 'openai', modelID: 'gpt-5' }], locked: false },
+    { providerID: 'openai', modelID: 'gpt-5' },
+  );
+  assert.equal(auto.locked, false);
+  assert.equal(modelKey(auto.candidates[0]), 'openai/gpt-5');
+});
+
+test('причина отказа выбранной модели объясняется человеческим языком', () => {
+  const cases = [
+    [Object.assign(new Error('Insufficient balance'), { statusCode: 402 }), /баланс|квота/i],
+    [Object.assign(new Error('model not found'), { statusCode: 404 }), /не знает|не существует/i],
+    [Object.assign(new Error('unauthorized'), { statusCode: 401 }), /API key|доступ/i],
+    [Object.assign(new Error('rate limit'), { statusCode: 429 }), /лимит/i],
+    [Object.assign(new Error('bad gateway'), { statusCode: 502 }), /сервера/i],
+  ];
+  for (const [error, expected] of cases) assert.match(modelFailureReason(error), expected);
+
+  const text = lockedModelMessage(
+    { providerID: 'zai', modelID: 'glm-5.3' },
+    Object.assign(new Error('Insufficient balance'), { statusCode: 402 }),
+  );
+  assert.match(text, /Модель «zai\/glm-5\.3»/);
+  assert.match(text, /баланс/i);
+  assert.match(text, /Авто/, 'подсказываем, где включается автовыбор');
+  assert.doesNotMatch(text, /возьмёт другую/i, 'никаких обещаний взять другую модель');
+});
+
+test('замок модели соблюдается во всей цепочке: рантайм, чат и перезапуск', () => {
+  const read = (file) => fs.readFileSync(new URL(`../server/native/${file}`, import.meta.url), 'utf8');
+  const autopilotSource = read('autopilot.mjs');
+  const agentSource = read('agent.mjs');
+  const providersSource = read('providers.mjs');
+  const durableSource = read('durable-jobs.mjs');
+
+  assert.match(autopilotSource, /!plan\?\.locked/, 'расширение плана закрыто для locked');
+  assert.match(autopilotSource, /lockedModelMessage/);
+  assert.match(agentSource, /err\?\.modelLocked/, 'текст отказа доезжает в чат как есть');
+  assert.match(agentSource, /mode: modelLocked \? 'locked' : 'auto'/, 'в ленте виден режим выбора модели');
+  assert.match(providersSource, /err\?\.publicMessage/, 'готовое объяснение не маскируется');
+  assert.match(durableSource, /locked: Boolean\(plan\.locked\)/, 'замок выживает перезапуск');
 });

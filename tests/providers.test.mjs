@@ -402,6 +402,24 @@ test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting m
   } finally { globalThis.fetch = original; }
 });
 
+test('catalog errors shown in settings are masked like chat errors', async () => {
+  providerConfigs.upsertProviderConfig(ownerId, {
+    id: 'catalog-mask', name: 'Mask', protocol: 'openai', baseURL: 'https://1.1.1.1/mask/v1', enabled: true,
+  });
+  store.setProviderKey(ownerId, 'catalog-mask', 'sk-mask');
+  const original = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    error: { message: 'Free promotion has ended for DeepSeek V4 Flash Free. Subscribe to OpenCode Go - https://opencode.ai/go' },
+  }), { status: 400, headers: { 'content-type': 'application/json' } });
+  try {
+    const result = await providers.fetchModels(ownerId, 'catalog-mask', { force: true });
+    assert.equal(result.status, 'unavailable');
+    assert.ok(result.error);
+    assert.doesNotMatch(result.error, /opencode/i);
+    assert.doesNotMatch(result.error, /https?:\/\//);
+  } finally { globalThis.fetch = original; }
+});
+
 test('ended free-model promotions are unavailable and not advertised to the user', () => {
   const err = Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 });
   assert.equal(providers.isModelUnavailableError(err), true);

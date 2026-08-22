@@ -29,6 +29,35 @@ export interface ProviderChannelCatalogResult {
   models?: { id: string; name: string }[];
 }
 
+/** Строка ручной модели в том виде, в каком её хранит runtime. */
+export interface ProviderChannelManualModel {
+  model_id: string;
+  name: string | null;
+  enabled: boolean;
+  is_free: boolean;
+}
+
+/**
+ * Поля ручной модели, которые можно задать из настроек. Неуказанные поля
+ * сервер берёт из сохранённой строки, поэтому переключатель может прислать
+ * только изменённый флаг, не теряя название и признак «бесплатная».
+ */
+export interface ProviderChannelManualModelInput {
+  modelId: string;
+  name?: string | null;
+  isFree?: boolean;
+  enabled?: boolean;
+  /** false — переключение флагов без повторного обращения к провайдеру. */
+  probe?: boolean;
+}
+
+export interface ProviderChannelProbeResult {
+  available: boolean;
+  latencyMs: number;
+  checkedAt: number;
+  error?: string;
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`/api${path}`, {
     ...init,
@@ -49,6 +78,10 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+function channelPath(id: string, suffix = "") {
+  return `/provider-channels/${encodeURIComponent(id)}${suffix}`;
+}
+
 export const providerChannelsApi = {
   list: () => request<{ providers: ProviderChannel[] }>("/provider-channels"),
   save: (input: ProviderChannelSave) =>
@@ -57,26 +90,38 @@ export const providerChannelsApi = {
       body: JSON.stringify(input),
     }),
   remove: (id: string) =>
-    request<{ status: string }>(`/provider-channels/${encodeURIComponent(id)}`, { method: "DELETE" }),
-  resetBuiltin: (id: string) =>
-    request<{ status: string; provider: ProviderChannel }>(`/provider-channels/${encodeURIComponent(id)}/config`, { method: "DELETE" }),
+    request<{ status: string }>(channelPath(id), { method: "DELETE" }),
   removeKey: (id: string) =>
-    request<{ status: string }>(`/provider-channels/${encodeURIComponent(id)}/key`, { method: "DELETE" }),
+    request<{ status: string }>(channelPath(id, "/key"), { method: "DELETE" }),
   refresh: (id: string) =>
-    request<ProviderChannelCatalogResult>(`/provider-channels/${encodeURIComponent(id)}/refresh`, {
+    request<ProviderChannelCatalogResult>(channelPath(id, "/refresh"), {
       method: "POST",
       body: "{}",
     }),
   listManualModels: (id: string) =>
-    request<{ models: { model_id: string; name: string | null; enabled: boolean; is_free: boolean }[] }>(`/provider-channels/${encodeURIComponent(id)}/manual-models`),
-  addManualModel: (id: string, modelId: string, name?: string) =>
-    request<{ status: string; available?: boolean | null }>(`/provider-channels/${encodeURIComponent(id)}/manual-models`, {
+    request<{ models: ProviderChannelManualModel[] }>(channelPath(id, "/manual-models")),
+  addManualModel: (id: string, input: ProviderChannelManualModelInput) =>
+    request<{ status: string; available?: boolean | null }>(channelPath(id, "/manual-models"), {
       method: "POST",
-      body: JSON.stringify({ modelId, name: name || null }),
+      body: JSON.stringify(input),
+    }),
+  /** Проверить Model ID у провайдера, ничего не сохраняя. */
+  probeManualModel: (id: string, modelId: string) =>
+    request<ProviderChannelProbeResult>(channelPath(id, "/manual-models/probe"), {
+      method: "POST",
+      body: JSON.stringify({ modelId }),
     }),
   deleteManualModel: (id: string, modelId: string) =>
-    request<{ status: string }>(`/provider-channels/${encodeURIComponent(id)}/manual-models`, {
+    request<{ status: string }>(channelPath(id, "/manual-models"), {
       method: "DELETE",
       body: JSON.stringify({ modelId }),
+    }),
+  /** Скрытые модели канала: убраны из выпадающего списка, но не удалены. */
+  listHiddenModels: (id: string) =>
+    request<{ hidden: string[] }>(channelPath(id, "/hidden-models")),
+  setModelHidden: (id: string, modelId: string, hidden: boolean) =>
+    request<{ status: string }>(channelPath(id, "/hidden-models"), {
+      method: "POST",
+      body: JSON.stringify({ modelId, hidden }),
     }),
 };

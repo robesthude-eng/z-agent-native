@@ -14,8 +14,10 @@ import {
   deleteManualModel,
   deleteProviderKey,
   getProviderKey,
+  listHiddenModels,
   listManualModels,
   listProviderKeyIds,
+  setHiddenModel,
   setProviderKey,
   upsertManualModel,
 } from './store.mjs';
@@ -73,17 +75,20 @@ export async function handleProviderChannels(req, res, ownerId, url) {
     const hasKey = Boolean(getProviderKey(ownerId, id));
     const catalog = hasKey && config.enabled
       ? await fetchModels(ownerId, id, { force: true })
-      : { status: hasKey ? 'disabled' : 'unauthorized', models: [] };
+      // Выключенный канал остаётся выключенным, даже если ключа ещё нет:
+      // иначе UI просит добавить ключ вместо того, чтобы включить канал.
+      : { status: config.enabled ? 'unauthorized' : 'disabled', models: [] };
     return reply(res, 200, {
       provider: listProviderChannels(ownerId).find((item) => item.id === id),
       catalog: { status: catalog.status, count: catalog.models.length, error: catalog.error || null },
     });
   }
 
-  const match = /^\/api\/provider-channels\/([^/]+)(?:\/(key|refresh|manual-models))?$/.exec(p);
+  const match = /^\/api\/provider-channels\/([^/]+)(?:\/(key|refresh|manual-models|hidden-models)(?:\/(probe))?)?$/.exec(p);
   if (!match) return false;
   const providerId = decodePathPart(match[1]);
   const action = match[2] || '';
+  const subAction = match[3] || '';
 
   if (!providerExists(ownerId, providerId)) return reply(res, 404, { error: 'Unknown provider' });
 
@@ -103,26 +108,54 @@ export async function handleProviderChannels(req, res, ownerId, url) {
   }
 
   if (action === 'manual-models') {
+    // Проверка Model ID без сохранения: пользователь видит вердикт провайдера
+    // до того, как модель попадёт в выпадающий список.
+    if (subAction === 'probe') {
+      if (req.method !== 'POST') return false;
+      const body = await readJson(req, 64 * 1024);
+      const modelId = String(body.modelId || '').trim();
+      if (!modelId || modelId.length > 200) return reply(res, 400, { error: 'Некорректный Model ID' });
+      return reply(res, 200, await probeModel(ownerId, providerId, { modelId }));
+    }
     if (req.method === 'GET') return reply(res, 200, { models: listManualModels(ownerId, providerId) });
     if (req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
       const modelId = String(body.modelId || '').trim();
       if (!modelId || modelId.length > 200) return reply(res, 400, { error: 'Некорректный Model ID' });
+      const existing = listManualModels(ownerId, providerId).find((row) => row.model_id === modelId) || null;
+      // probe:false — это переключение флагов уже проверенной модели, поэтому
+      // провайдера не дёргаем, а неуказанные поля берём из сохранённой строки.
       const probe = body.probe === false ? null : await probeModel(ownerId, providerId, { modelId });
       if (probe && !probe.available) return reply(res, 400, { error: probe.error || 'Модель недоступна' });
+      const pick = (value, previous) => (value === undefined || value === null ? previous : value);
       upsertManualModel(ownerId, providerId, {
         modelId,
-        name: body.name || null,
+        name: pick(body.name, existing?.name ?? null),
         baseUrl: null,
-        isFree: Boolean(body.isFree),
+        isFree: Boolean(pick(body.isFree, existing?.is_free ?? false)),
         pattern: false,
-        enabled: body.enabled !== false,
+        enabled: pick(body.enabled, existing?.enabled ?? true) !== false,
       });
       return reply(res, 200, { status: 'success', available: probe?.available ?? null });
     }
     if (req.method === 'DELETE') {
       const body = await readJson(req, 64 * 1024);
-      deleteManualModel(ownerId, providerId, body.modelId);
+      const modelId = String(body.modelId || '').trim();
+      if (!modelId) return reply(res, 400, { error: 'Некорректный Model ID' });
+      deleteManualModel(ownerId, providerId, modelId);
+      return reply(res, 200, { status: 'success' });
+    }
+  }
+
+  // Скрытие моделей живёт рядом с каналом, поэтому наследует его проверку
+  // существования провайдера вместо legacy-маршрута без валидации.
+  if (action === 'hidden-models') {
+    if (req.method === 'GET') return reply(res, 200, { hidden: listHiddenModels(ownerId, providerId) });
+    if (req.method === 'POST') {
+      const body = await readJson(req, 64 * 1024);
+      const modelId = String(body.modelId || '').trim();
+      if (!modelId || modelId.length > 200) return reply(res, 400, { error: 'Некорректный Model ID' });
+      setHiddenModel(ownerId, providerId, modelId, Boolean(body.hidden));
       return reply(res, 200, { status: 'success' });
     }
   }

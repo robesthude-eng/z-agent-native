@@ -264,7 +264,7 @@ export function isNetworkTransportError(err) {
 
 const MODEL_UNAVAILABLE_RE = /promotion has ended|no longer available|model.{0,40}(?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go|upstream request failed|\{\s*"model"\s*:/i;
 const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
-const PUBLIC_MODEL_UNAVAILABLE = 'Выбранная модель сейчас недоступна. Нажмите «Повторить» — агент возьмёт другую.';
+const PUBLIC_MODEL_UNAVAILABLE = 'Эта модель сейчас недоступна у провайдера.';
 
 function providerErrorText(err) {
   return `${err?.code || ''} ${err?.message || ''} ${JSON.stringify(err?.body || '')}`;
@@ -292,6 +292,10 @@ function looksLikeOpaqueModelPayload(raw) {
 
 /** User-visible provider failures must not advertise a third-party product. */
 export function publicProviderErrorMessage(err) {
+  // Готовое объяснение (например «модель выбрана вручную и отказала потому
+  // что …») точнее generic-маскировки ниже, поэтому имеет приоритет.
+  const prepared = String(err?.publicMessage || '').trim();
+  if (prepared) return prepared;
   const raw = String(err?.message || err || '').trim();
   if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw) || looksLikeOpaqueModelPayload(raw)) return PUBLIC_MODEL_UNAVAILABLE;
   if (/error from provider \(console\)/i.test(raw) || (raw.startsWith('{') && raw.endsWith('}'))) {
@@ -585,8 +589,11 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
     cache.set(ck, { at: Date.now(), models });
     return { status: 'live', models };
   } catch (err) {
-    if (old) return { status: 'cache', models: old.models, error: err.message };
-    return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: err.message };
+    // Статус (unauthorized/unavailable) остаётся машинным сигналом для UI,
+    // а текст маскируется теми же правилами, что и ошибки чата.
+    const publicError = publicProviderErrorMessage(err);
+    if (old) return { status: 'cache', models: old.models, error: publicError };
+    return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: publicError };
   }
 }
 
@@ -1048,6 +1055,8 @@ export async function probeModel(ownerId, providerId, { modelId, baseUrl = null 
         : await callOpenAI(resolved, { system: 'Reply with OK.', frames: [{ role:'user',content:'OK' }], tools: pingTools });
     return { available: Boolean(result.text || result.finish), latencyMs: Date.now() - start, checkedAt: Date.now() };
   } catch (err) {
-    return { available: false, latencyMs: Date.now() - start, checkedAt: Date.now(), error: err.message };
+    // Настройки — такая же пользовательская поверхность, как чат: сюда тоже
+    // нельзя выносить сырой текст провайдера с рекламой или JSON-дампом.
+    return { available: false, latencyMs: Date.now() - start, checkedAt: Date.now(), error: publicProviderErrorMessage(err) };
   }
 }

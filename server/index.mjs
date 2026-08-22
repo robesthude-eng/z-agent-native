@@ -412,10 +412,15 @@ async function route(req, res) {
   const hidden = /^\/api\/providers\/([^/]+)\/hidden-models$/.exec(p);
   if (hidden) {
     const providerId = decodePathPart(hidden[1]);
+    // Тот же контракт, что у соседнего manual-models: без этой проверки в
+    // hidden_models попадали строки для несуществующих провайдеров.
+    if (!providerSpecs(ownerId)[providerId]) return sendJson(res, 404, { error: 'Unknown provider' });
     if (req.method === 'GET') return sendJson(res, 200, { hidden: listHiddenModels(ownerId, providerId) });
     if (req.method === 'POST') {
       const body = await readJson(req, 64 * 1024);
-      setHiddenModel(ownerId, providerId, body.modelId, Boolean(body.hidden));
+      const modelId = String(body.modelId || '').trim();
+      if (!modelId || modelId.length > 200) return sendJson(res, 400, { error: 'Некорректный Model ID' });
+      setHiddenModel(ownerId, providerId, modelId, Boolean(body.hidden));
       return sendJson(res, 200, { status: 'success' });
     }
   }

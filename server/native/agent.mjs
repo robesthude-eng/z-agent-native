@@ -630,10 +630,15 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       telemetry: createTurnTelemetry({ sessionId, turnId: job?.turnId || getTurn(sessionId)?.turnId || '', goal, resumed: resume }),
     };
     const initialModel = runtime.modelPlan.candidates[0];
+    const modelLocked = Boolean(runtime.modelPlan.locked);
     assistant.info.model = assistant.info.model || modelKey(initialModel);
     assistant.info.autopilot = {
       ...(assistant.info.autopilot || {}),
-      enabled: true,
+      // Автопилот включён только в режиме «Авто». При ручном выборе ход
+      // идёт только в выбранную модель, замена запрещена.
+      enabled: !modelLocked,
+      mode: modelLocked ? 'locked' : 'auto',
+      requested: modelKey(initialModel),
       budget: Number(job?.stepBudget) || taskStepBudget(goal),
       candidates: runtime.modelPlan.candidates.map(modelKey),
       selected: assistant.info.model || modelKey(initialModel),
@@ -867,14 +872,20 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         outcome,
         telemetry: runtime?.telemetry,
         finish: 'error',
-        note: `Работа остановилась из-за ошибки: ${publicProviderErrorMessage(err)}. Выполненная часть сохранена.`,
+        note: err?.modelLocked
+          ? `${publicProviderErrorMessage(err)} Выполненная часть сохранена.`
+          : `Работа остановилась из-за ошибки: ${publicProviderErrorMessage(err)}. Выполненная часть сохранена.`,
         lifecycle: 'completed',
         verdict: 'completed',
         reason: outcome.reason,
       });
     }
 
-    if (!(assistant.parts || []).some((p) => p.type === 'text')) await emitText(assistant, `Ошибка агента: ${publicProviderErrorMessage(err)}`, 'text');
+    if (!(assistant.parts || []).some((p) => p.type === 'text')) {
+      // Отказ вручную выбранной модели — не «ошибка агента»: агент ничего
+      // не подменял, а текст уже объясняет причину и что делать дальше.
+      await emitText(assistant, err?.modelLocked ? publicProviderErrorMessage(err) : `Ошибка агента: ${publicProviderErrorMessage(err)}`, 'text');
+    }
     await finalizeAssistant({
       sessionId,
       assistant,

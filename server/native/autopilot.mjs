@@ -137,12 +137,16 @@ function recordHealth(ownerId, model, ok, latencyMs, error = null) {
 export async function buildModelPlan(ownerId, requested = null, goal = '') {
   const explicit = normalizeCandidate(requested);
   if (explicit) {
-    // User choice remains the zero-overhead primary path. Alternatives are
-    // discovered only if that request fails before any visible output.
+    // Модель, выбранная в списке сверху, — закон для всего хода. Ни одна
+    // ошибка провайдера (нет баланса, модели не существует, 429, обрыв сети)
+    // не даёт права ответить другой моделью: причина обязана уехать в чат
+    // текстом. Модель за пользователя выбирается только в режиме «Авто»,
+    // то есть когда requested пуст.
     return {
       candidates: [explicit],
       explicit: true,
-      expandOnFailure: true,
+      locked: true,
+      expandOnFailure: false,
       goal: String(goal || ''),
       generatedAt: Date.now(),
     };
@@ -151,7 +155,37 @@ export async function buildModelPlan(ownerId, requested = null, goal = '') {
   const configured = configuredModel();
   const candidates = rankModelCandidates(catalog.models, null, ownerHealth(ownerId), configured, goal);
   if (!candidates.length) throw Object.assign(new Error('Нет доступной модели. Добавьте API key в Настройки → Провайдеры.'), { statusCode: 400 });
-  return { candidates, explicit: false, expandOnFailure: false, goal: String(goal || ''), generatedAt: Date.now() };
+  return { candidates, explicit: false, locked: false, expandOnFailure: false, goal: String(goal || ''), generatedAt: Date.now() };
+}
+
+const LOCKED_MODEL_HINT = 'Автовыбор выключен, потому что модель задана вручную. Выберите другую модель в списке сверху или переключитесь на «Авто» — тогда модель подберёт агент.';
+
+/** Человеческая причина отказа конкретной модели — без брендов и ссылок. */
+export function modelFailureReason(error) {
+  const status = Number(error?.statusCode) || 0;
+  const text = `${error?.code || ''} ${error?.message || ''} ${JSON.stringify(error?.body || '')}`;
+  if (/insufficient (?:credits?|quota|balance)|payment required|credit(?:s)? (?:exhausted|exceeded)|billing|not enough balance|arrears/i.test(text) || status === 402) {
+    return 'на аккаунте провайдера нет баланса или исчерпана квота';
+  }
+  if (status === 401 || status === 403) return 'провайдер отклонил API key или не даёт доступ к этой модели';
+  if (status === 404 || /model.{0,40}(?:not found|does not exist)|unknown model|not a valid model/i.test(text)) {
+    return 'провайдер не знает такую модель — её не существует или она снята';
+  }
+  if (/promotion has ended|no longer available|has been (?:disabled|retired|removed|deprecated)/i.test(text)) {
+    return 'модель отключена у провайдера';
+  }
+  if (status === 429 || /rate limit|too many requests/i.test(text)) return 'провайдер ответил лимитом запросов (429)';
+  if (isNetworkTransportError(error)) return 'нет связи с провайдером (сеть, VPN или TLS)';
+  if (error?.name === 'AbortError') return 'провайдер не ответил за отведённое время';
+  if (status >= 500) return `провайдер вернул ошибку сервера (${status})`;
+  if (isModelUnavailableError(error)) return 'модель недоступна у провайдера';
+  if (status) return `провайдер ответил ошибкой ${status}`;
+  return 'провайдер не смог выполнить запрос';
+}
+
+/** Текст для чата, когда упала именно та модель, которую выбрал человек. */
+export function lockedModelMessage(model, error) {
+  return `Модель «${modelKey(model)}» не выполнила запрос: ${modelFailureReason(error)}. ${LOCKED_MODEL_HINT}`;
 }
 
 export function fallbackEligible(error, { strict = false } = {}) {
@@ -191,7 +225,7 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       ...(typeof originalDelta === 'function'
         // Второй аргумент — род куска ('reasoning' | 'text'). Раньше обёртка
         // его теряла, и всё, что присылал провайдер, доезжало до ленты
-        // без рода — карточка рассуждений появлялась только в конце хода.
+        // без рода — карто��ка рассуждений появлялась только в конце хода.
         ? { onTextDelta(delta, type) { emitted = true; originalDelta(delta, type); } }
         : {}),
     };
@@ -205,8 +239,15 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       const attempt = { model: candidate, ok: false, latencyMs: Date.now() - startedAt, error };
       attempts.push(attempt);
       options.onAttempt?.(attempt);
-      const strict = Boolean(plan?.explicit && index === 0);
-      if (emitted || index >= candidates.length - 1 || !fallbackEligible(error, { strict })) {
+      const locked = Boolean(plan?.locked);
+      if (locked) {
+        // Ручной выбор: не подменяем модель, а объясняем отказ.
+        error.modelLocked = true;
+        error.lockedModel = modelKey(candidate);
+        error.publicMessage = lockedModelMessage(candidate, error);
+      }
+      const strict = Boolean(locked || (plan?.explicit && index === 0));
+      if (locked || emitted || index >= candidates.length - 1 || !fallbackEligible(error, { strict })) {
         error.autopilotEmitted = emitted;
         error.autopilotAttempts = attempts.map((item) => ({ model: item.model, ok: item.ok, latencyMs: item.latencyMs, error: item.ok ? '' : String(item.error?.message || item.error || '') }));
         throw error;
@@ -257,6 +298,7 @@ export async function callModelAutopilot(ownerId, plan, request) {
   } catch (error) {
     const canExpand = Boolean(
       plan?.expandOnFailure &&
+      !plan?.locked &&
       !error?.autopilotEmitted &&
       fallbackEligible(error, { strict: true }),
     );
@@ -286,11 +328,15 @@ export function promoteModelPlan(plan, selected) {
   const candidates = Array.isArray(plan?.candidates) ? plan.candidates : [];
   const hit = candidates.find((candidate) => modelKey(candidate) === key) || normalizeCandidate(selected);
   if (!hit) return plan;
+  const locked = Boolean(plan?.locked);
   return {
     ...plan,
-    explicit: false,
+    explicit: locked || false,
+    locked,
     expandOnFailure: false,
-    candidates: [hit, ...candidates.filter((candidate) => modelKey(candidate) !== key)],
+    // В ручном режиме список кандидатов не растёт: следующий шаг того же хода
+    // обязан идти в ту же модель, иначе один ответ склеится из двух моделей.
+    candidates: locked ? [hit] : [hit, ...candidates.filter((candidate) => modelKey(candidate) !== key)],
   };
 }
 
