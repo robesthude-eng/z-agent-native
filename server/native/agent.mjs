@@ -453,8 +453,7 @@ function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
     if (note) lines.push(note);
     lines.push('');
   } else {
-    lines.push('### 📋 Отчет о выполнении задачи
-');
+    lines.push('### 📋 Отчет о выполнении задачи\n');
   }
 
   if (changed) {
@@ -486,8 +485,7 @@ function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
     lines.push('- Проверьте детали ошибки и повторите выполнение после устранения сбоя.');
   }
 
-  const text = lines.join('
-').trim();
+  const text = lines.join('\n').trim();
   return text || (isFailed ? 'Задача не была завершена из-за ошибки.' : 'Операция успешно завершена. Все действия выполнены и сохранены.');
 }
 
