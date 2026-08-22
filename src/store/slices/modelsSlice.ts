@@ -8,6 +8,7 @@ import type { ModelEntry, ModelsSlice, Slice } from "../types";
 export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
   models: [],
   modelsLoaded: false,
+  modelsError: false,
   selectedModel: null,
 
   loadModels: async (force?: boolean) => {
@@ -44,8 +45,14 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
         });
       }
     } catch {
-      // A disconnected runtime/provider yields an empty selector rather than a
-      // hard-coded model that may not actually be callable.
+      // Каталог не «пустой», он неизвестен: рантайм не ответил (мобильная
+      // сеть, VPN, 45-секундный бюджет запроса к каталогу). Раньше ошибка
+      // проглатывалась целиком и ниже записывался пустой список: селектор
+      // писал «Подключить модель», как будто провайдеры не настроены, а выбранная
+      // модель молча сбрасывалась на Автопилот — следующий вопрос уходил в
+      // другую модель. Сохраняем прошлый список и выбор, пометив сбой.
+      set({ modelsLoaded: true, modelsError: true });
+      return;
     }
 
     let selected = get().selectedModel;
@@ -59,14 +66,29 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
               entry.modelID === selected?.modelID,
           ));
 
-    if (!stillAvailable) {
+    // Провайдер выбранной модели мог не отдать свой список (его каталог
+    // сбойнул или отдал cache-статус), и тогда модель исчезает из entries,
+    // хотя реально доступна: сервер зовёт её по своей конфигурации, а не по
+    // браузерному каталогу. Сбрасываем выбор на Автопилот только если
+    // провайдер жив и модель действительно пропала из его списка.
+    const providerAlive =
+      !selected || isAutoModel(selected)
+        ? true
+        : entries.some((entry) => entry.providerID === selected?.providerID);
+
+    if (!stillAvailable && providerAlive) {
       // New users and stale/removed explicit selections fall back to the
       // server-owned Autopilot. The runtime then applies configured defaults,
       // model health and provider fallback instead of the browser guessing.
       selected = entries.length > 0 ? { ...AUTO_MODEL } : null;
     }
 
-    set({ models: entries, modelsLoaded: true, selectedModel: selected });
+    set({
+      models: entries,
+      modelsLoaded: true,
+      modelsError: false,
+      selectedModel: selected,
+    });
   },
 
   setSelectedModel: (selectedModel) => {

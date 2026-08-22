@@ -47,6 +47,8 @@ export interface AuthSlice {
 export interface ModelsSlice {
   models: ModelEntry[];
   modelsLoaded: boolean;
+  /** Каталог не загрузился (сеть/рантайм) — это не то же, что пустой каталог. */
+  modelsError: boolean;
   selectedModel: PromptModel | null;
   loadModels: (force?: boolean) => Promise<void>;
   setSelectedModel: (m: PromptModel | null) => void;

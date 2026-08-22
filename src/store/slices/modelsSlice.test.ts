@@ -101,13 +101,49 @@ describe("native model catalog", () => {
     expect(store.models.map((m) => m.modelID)).toEqual(["visible-model"]);
   });
 
-  it("fails closed when runtime/catalog is unavailable", async () => {
+  it("сбой каталога не стирает уже загруженные модели и выбор пользователя", async () => {
     vi.spyOn(api, "listProviderCatalog").mockRejectedValue(new Error("offline"));
-    mockChannels(["openai"]);
-    const store = makeStore({ selectedModel: { providerID: "openai", modelID: "gone" } });
-    await store.loadModels();
-    expect(store.models).toEqual([]);
+    mockChannels(["zai"]);
+    const kept = { providerID: "zai", modelID: "glm-5.3" };
+    const store = makeStore({
+      models: [
+        { providerID: "zai", providerName: "Z.AI", modelID: "glm-5.3", modelName: "GLM-5.3", free: false },
+      ],
+      modelsLoaded: true,
+      selectedModel: kept,
+    });
+    await store.loadModels(true);
+    // Раньше один неудачный опрос (мобильная сеть, 45-секундный бюджет)
+    // обнулял селектор и выбранную модель — следующий ход уходил в Автопилот.
+    expect(store.models).toHaveLength(1);
+    expect(store.selectedModel).toEqual(kept);
     expect(store.modelsLoaded).toBe(true);
-    expect(store.selectedModel).toBeNull();
+    expect(store.modelsError).toBe(true);
+  });
+
+  it("сохраняет выбор, если провайдер выбранной модели не отдал свой список", async () => {
+    vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
+      models: [
+        { providerID: "anthropic", providerName: "Anthropic", modelID: "claude-sonnet-4-6", modelName: "Claude", free: false },
+      ],
+    });
+    mockChannels(["anthropic", "zai"]);
+    const chosen = { providerID: "zai", modelID: "glm-5.3" };
+    const store = makeStore({ selectedModel: chosen });
+    await store.loadModels();
+    expect(store.selectedModel).toEqual(chosen);
+    expect(store.modelsError).toBe(false);
+  });
+
+  it("сбрасывает выбор на Автопилот, когда провайдер жив, а модель удалили", async () => {
+    vi.spyOn(api, "listProviderCatalog").mockResolvedValue({
+      models: [
+        { providerID: "zai", providerName: "Z.AI", modelID: "glm-5.4", modelName: "GLM-5.4", free: false },
+      ],
+    });
+    mockChannels(["zai"]);
+    const store = makeStore({ selectedModel: { providerID: "zai", modelID: "glm-5.3" } });
+    await store.loadModels();
+    expect(store.selectedModel).toEqual(AUTO_MODEL);
   });
 });

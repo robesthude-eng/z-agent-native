@@ -14,6 +14,7 @@ import { getSystemInstruction } from "../../config/systemInstruction";
 import { messageText } from "../../lib/chatText";
 import { isTmpSession, newActionId } from "../../lib/ids";
 import { log } from "../../lib/log";
+import { clearStopMarker } from "../../lib/stopUx";
 import { toast } from "../../lib/toast";
 import { normalizeMessages, patchPartDelta } from "../helpers";
 import { sessionFsm } from "../sessionFsm";
@@ -260,6 +261,10 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
         if (!sid || isTmpSession(sid)) return;
       }
       const sidStr = sid as string;
+      // Новый ход стирает маркер «Стоп» прошлого: иначе ярлык
+      // «Остановлено пользователем» прилипал к следующему ответу, который
+      // агент завершил сам.
+      clearStopMarker(sidStr);
 
       const currentAttachments = attachmentsOverride ?? get().attachments;
       const userMsg = buildUserMessage(text, currentAttachments);

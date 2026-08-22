@@ -94,7 +94,10 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'task',
-    description: 'Delegate focused work to a specialized subagent using the same model. Choose explore for architecture/navigation, debug for root-cause tracing, review for defect-focused code review, or implement to carry out and verify a scoped change. explore/debug/review are read-only; only implement may modify files.',
+    // Схема берёт роли из реестра, а описание отставало от него: planner,
+    // security и tester были доступны в enum, но модель про них не знала и никогда
+    // не выбирала. Тест в dev-tools теперь требует упоминания каждой роли.
+    description: 'Delegate focused work to a specialized subagent using the same model. Choose planner for a phased architecture plan before implementation, explore for architecture/navigation, debug for root-cause tracing, review for defect-focused code review, security for vulnerability and hardening audits, tester for coverage and verification plans, or implement to carry out and verify a scoped change. Every role except implement is read-only; only implement may modify files.',
     inputSchema: object({
       // Sourced from the profile registry so a new profile can never silently
       // become unreachable through the schema.

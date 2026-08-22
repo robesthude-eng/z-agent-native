@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "description": "Executable repository-grounded coding-agent evaluations. 30 cases cover explore/debug/review/implement behavior; eval:smoke uses the deterministic fixture provider to prove the real agent/tool/verification path in CI without external credentials.",
+  "description": "Executable repository-grounded coding-agent evaluations. 33 cases cover planner/explore/debug/review/security/tester/implement behavior; eval:smoke uses the deterministic fixture provider to prove the real agent/tool/verification path in CI without external credentials.",
   "cases": [
     {
       "id": "fixture-harness-smoke",
@@ -549,6 +549,57 @@
         }
       ],
       "verifyCommand": "node --test"
+    },
+    {
+      "id": "planner-model-catalog-resilience",
+      "agent": "planner",
+      "prompt": "Plan a phased change that keeps the model selector usable when the provider catalog request fails on a slow mobile network, without losing the user's explicit model choice. Define milestones, target files, risks and verification criteria.",
+      "mustMentionPaths": [
+        "src/store/slices/modelsSlice.ts",
+        "src/components/ModelSelector.tsx",
+        "server/native/providers.mjs"
+      ],
+      "mustMentionAny": [
+        "loadModels",
+        "buildCatalog",
+        "selectedModel",
+        "phase"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "security-subagent-tool-boundary",
+      "agent": "security",
+      "prompt": "Audit the subagent capability boundary for concrete ways a read-only profile could reach mutating or process-spawning tools, then report findings by severity with paths, exploitability and remediation.",
+      "mustMentionPaths": [
+        "server/native/subagents.mjs",
+        "server/native/subagent-runner.mjs",
+        "server/native/tools.mjs"
+      ],
+      "mustMentionAny": [
+        "subagentToolNames",
+        "writes",
+        "requiresPermission",
+        "severity"
+      ],
+      "forbidMutation": true
+    },
+    {
+      "id": "tester-turn-cancellation-coverage",
+      "agent": "tester",
+      "prompt": "Assess regression coverage for turn cancellation and the stopped-by-user label: list missing edge cases, boundary conditions, required assertions and the exact commands that would verify them.",
+      "mustMentionPaths": [
+        "src/lib/stopUx.ts",
+        "server/native/agent.mjs",
+        "tests/agent.test.mjs"
+      ],
+      "mustMentionAny": [
+        "wasStoppedByUser",
+        "cancelled",
+        "edge case",
+        "node --test"
+      ],
+      "forbidMutation": true
     }
   ]
 }

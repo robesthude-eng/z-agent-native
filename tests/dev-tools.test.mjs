@@ -303,6 +303,15 @@ test('the task schema is generated from the profile registry', () => {
   assert.ok(task.inputSchema.properties.agent.enum.includes('implement'));
 });
 
+test('the task description explains every role the schema accepts', () => {
+  // Роль, которую не описали в description, модель не выберет никогда:
+  // формально доступный субагент остаётся мёртвым кодом.
+  const task = TOOL_DEFINITIONS.find((item) => item.name === 'task');
+  for (const kind of subagentKinds()) {
+    assert.ok(task.description.includes(kind), `${kind} must be described for the caller`);
+  }
+});
+
 test('process-spawning tools are gated and classified', () => {
   for (const name of ['git', 'run_tests', 'diagnostics', 'browser']) {
     assert.equal(requiresPermission(name), true, `${name} must be permission-gated`);

@@ -145,3 +145,35 @@ test('agent runtime is wired to Autopilot and persistent project context', () =>
   assert.match(subagentSource, /subagentStepBudget/);
   assert.match(subagentSource, /callModelAutopilot/);
 });
+
+test('каждой попытке сообщается, какая именно модель отвечает', async () => {
+  const prompts = [];
+  const plan = { explicit: true, expandOnFailure: false, candidates: [{ providerID: 'zai', modelID: 'glm-5.3' }] };
+  const result = await runFallbackPlan(plan, { system: 'BASE PROMPT' }, async (_model, request) => {
+    prompts.push(request.system);
+    return { text: 'ok' };
+  });
+  assert.equal(result.model.modelID, 'glm-5.3');
+  assert.ok(prompts[0].startsWith('BASE PROMPT'), 'базовый промпт сохраняется');
+  assert.match(prompts[0], /zai\/glm-5\.3/);
+  assert.match(prompts[0], /provider id "zai"/);
+});
+
+test('при переходе на резервную модель строка идентичности обновляется', async () => {
+  const prompts = [];
+  const plan = {
+    candidates: [
+      { providerID: 'zai', modelID: 'glm-5.3' },
+      { providerID: 'openai', modelID: 'gpt-5' },
+    ],
+  };
+  const result = await runFallbackPlan(plan, { system: 'BASE' }, async (model, request) => {
+    prompts.push(request.system);
+    if (model.modelID === 'glm-5.3') throw Object.assign(new Error('rate limited'), { statusCode: 429 });
+    return { text: 'ok' };
+  });
+  assert.equal(result.model.modelID, 'gpt-5');
+  assert.match(prompts[0], /zai\/glm-5\.3/);
+  assert.match(prompts[1], /openai\/gpt-5/);
+  assert.ok(!prompts[1].includes('zai/glm-5.3'), 'резервная модель не представляется чужим именем');
+});

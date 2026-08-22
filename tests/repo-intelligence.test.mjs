@@ -62,7 +62,10 @@ test('repo_map tool is read-only and returns bounded structured metadata', async
 });
 
 test('specialized subagent profiles are explicit, default safely to explore, and only implement may write', () => {
-  assert.deepEqual(subagentKinds(), ['explore', 'debug', 'review', 'implement']);
+  // Состав реестра фиксируем явно (чтобы случайное удаление профиля было
+  // видно), а инвариант read-only ниже выводим из реестра, чтобы любой новый
+  // профиль автоматически попадал под проверку, а не ломал тест списком.
+  assert.deepEqual(subagentKinds(), ['planner', 'explore', 'debug', 'review', 'security', 'tester', 'implement']);
   assert.equal(normalizeSubagentKind('DEBUG'), 'debug');
   assert.equal(normalizeSubagentKind('unknown'), 'explore');
   assert.equal(normalizeSubagentKind('IMPLEMENT'), 'implement');
@@ -76,12 +79,19 @@ test('specialized subagent profiles are explicit, default safely to explore, and
   assert.match(debug.system, /cannot execute shell commands/i);
   assert.match(review.system, /severity/i);
   assert.match(review.system, /security/i);
+  assert.match(getSubagentProfile('planner').system, /architecture plan/i);
+  assert.match(getSubagentProfile('security').system, /vulnerabilit/i);
+  assert.match(getSubagentProfile('tester').system, /edge cases/i);
   assert.ok(debug.maxSteps >= explore.maxSteps);
 
   // The read-only guarantee is what makes investigation profiles safe to run
   // speculatively; only the implement profile may mutate the workspace.
-  for (const kind of ['explore', 'debug', 'review']) {
-    assert.ok(!getSubagentProfile(kind).writes, `${kind} must stay read-only`);
+  for (const kind of subagentKinds().filter((kind) => kind !== 'implement')) {
+    const profile = getSubagentProfile(kind);
+    assert.ok(!profile.writes, `${kind} must stay read-only`);
+    for (const tool of ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests']) {
+      assert.ok(!profile.tools.includes(tool), `${kind} must not expose ${tool}`);
+    }
   }
   assert.equal(getSubagentProfile('implement').writes, true);
 });

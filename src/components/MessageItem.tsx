@@ -200,6 +200,30 @@ function assistantTurnSummary(messages: Message[]) {
   };
 }
 
+/**
+ * Автопилот может ответить не той моделью, которую выбрали: если выбранная
+ * отвалилась (429/404/сеть) до первого видимого токена, план расширяется
+ * и отвечает резервная. В ленте это никак не отражалось — выглядело как
+ * ответ выбранной модели. Показываем фактическую, когда она отличается
+ * от запрошенной (первый кандидат плана).
+ */
+function answeringModelNote(messages: Message[]): string | null {
+  for (const message of messages) {
+    if (message.role !== "assistant") continue;
+    const info = message.info as unknown as
+      | { model?: string; autopilot?: { candidates?: unknown } }
+      | undefined;
+    const used = String(info?.model || "");
+    const candidates = Array.isArray(info?.autopilot?.candidates)
+      ? (info?.autopilot?.candidates as unknown[])
+      : [];
+    const requested = String(candidates[0] || "");
+    if (!used || !requested || used === requested) continue;
+    return `ответила ${used.split("/").pop()}`;
+  }
+  return null;
+}
+
 function turnSummaryLabel(turnMeta: ReturnType<typeof assistantTurnSummary>): string {
   if (turnMeta.stopped || turnMeta.outcomeStatus === "cancelled") {
     return "Остановлено пользователем";
@@ -302,6 +326,8 @@ function MessageItem({
   const summaryBits: string[] = [];
   if (!isUser && !isWorking && turnMeta) {
     summaryBits.push(turnSummaryLabel(turnMeta));
+    const modelNote = answeringModelNote(msgArray);
+    if (modelNote) summaryBits.push(modelNote);
     if (turnMeta.durationMs != null) summaryBits.push(formatDuration(turnMeta.durationMs));
     if (turnMeta.actionCount > 0) {
       summaryBits.push(
