@@ -106,6 +106,7 @@ const READ_ONLY_BASH_PATTERNS = [
   /^\s*(?:pwd|ls\b|find\b|cat\b|head\b|tail\b|sed\s+-n\b|grep\b|rg\b|wc\b|du\b|file\b|stat\b|md5sum\b|sha1sum\b|sha256sum\b|cksum\b|echo\b|printf\b|date\b|id\b|whoami\b|uname\b|true\b|false\b|test\b|\[|dirname\b|basename\b|realpath\b|readlink\b|which\b|type\b|cut\b|sort\b|uniq\b|tr\b|nl\b|od\b|hexdump\b|cmp\b|diff\b|comm\b|awk\b|column\b|cd\b|export\b|unset\b)/i,
   /^\s*git\s+(?:status|diff|log|show|branch|rev-parse|blame)\b/i,
   /^\s*(?:node|python|python3)\s+--version\b/i,
+  /^\s*(?:curl|wget|ping|traceroute|dig|nslookup|host|ssh_tool\s+(?:test|read|service))\b/i,
 ];
 
 const STATIC_ASSET_EXTENSIONS = new Set(['html', 'htm', 'css', 'svg', 'md', 'txt', 'json', 'xml', 'csv']);

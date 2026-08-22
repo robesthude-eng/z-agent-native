@@ -798,7 +798,15 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
         });
       }
 
-      if (response.text && !streamedText) await emitText(assistant, response.text, 'text');
+      if (response.text && !streamedText) {
+        const sep = splitReasoningFromContent(response.text);
+        if (sep.reasoning) {
+          await emitText(assistant, sep.reasoning, 'reasoning');
+        }
+        if (sep.text) {
+          await emitText(assistant, sep.text, 'text');
+        }
+      }
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
       for (const call of calls) {
         const toolStartedAt = Date.now();
