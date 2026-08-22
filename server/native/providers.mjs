@@ -826,10 +826,11 @@ async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta
     const delta = choice.delta || {};
     if (typeof delta.reasoning_content === 'string' && delta.reasoning_content) {
       reasoning += delta.reasoning_content;
+      onTextDelta(delta.reasoning_content, 'reasoning');
     }
     if (typeof delta.content === 'string' && delta.content) {
       text += delta.content;
-      onTextDelta(delta.content);
+      onTextDelta(delta.content, 'text');
     }
     for (const piece of delta.tool_calls || []) {
       const index = Number.isInteger(piece.index) ? piece.index : calls.size;

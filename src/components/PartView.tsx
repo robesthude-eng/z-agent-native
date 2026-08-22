@@ -279,13 +279,20 @@ function ReasoningCard({
   const duration = useThinkingDuration(streaming);
   // Плавный вывод стримящегося reasoning-текста.
   const displayText = useSmoothStreamingText(text, !!streaming);
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (streaming && scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [displayText, streaming]);
 
   return (
-    <div className="not-prose my-1">
+    <div className="not-prose my-1.5">
       {/* Ghost-строка заголовка reasoning */}
       <button
         type="button"
-        className="group/reason flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
+        className="group/reason flex w-full items-center gap-2 px-2.5 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
         // Один клик переключает относительно видимого состояния (фикс двойного клика).
         onClick={() => setManuallyToggled(!expanded)}
       >
@@ -298,7 +305,7 @@ function ReasoningCard({
           <ThinkIcon size={15} />
         </span>
         <span className="text-[13px] font-medium text-foreground/85">
-          {streaming ? "Размышляет" : "Думал"}
+          {streaming ? "Размышляет…" : "Рассуждения"}
         </span>
         {streaming && (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
@@ -318,10 +325,11 @@ function ReasoningCard({
           />
         </span>
       </button>
-      {/* Раскрытый reasoning-текст */}
+      {/* Раскрытый reasoning-текст единого сбалансированного размера */}
       {expanded && (
         <div
-          className="oc-card-open mt-1.5 ml-6 rounded-lg border border-border px-3 py-2 text-[12.5px] leading-relaxed text-muted-foreground/90 prose prose-sm max-w-none prose-p:my-1.5 [&_*]:text-muted-foreground/90"
+          ref={scrollRef}
+          className="oc-card-open mt-1.5 ml-6 max-h-60 overflow-y-auto rounded-lg border border-border px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted-foreground/90 prose prose-sm max-w-none prose-p:my-1.5 [&_*]:text-muted-foreground/90 font-mono scroll-smooth"
           style={{
             background: "color-mix(in srgb, var(--color-card) 100%, white 4%)",
           }}
@@ -333,7 +341,7 @@ function ReasoningCard({
           >
             {displayText}
           </ReactMarkdown>
-          {streaming && <span className="streaming-cursor" />}
+          {streaming && <span className="streaming-cursor ml-0.5 inline-block w-1.5 h-3 bg-amber-400 animate-pulse" />}
         </div>
       )}
     </div>

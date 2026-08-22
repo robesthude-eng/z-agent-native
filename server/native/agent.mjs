@@ -121,21 +121,32 @@ async function emitText(assistant, text, type = 'text') {
 }
 
 function liveTextSink(assistant) {
-  let part = null;
+  let textPart = null;
+  let reasoningPart = null;
   return {
-    push(delta) {
+    push(delta, type = 'text') {
       if (!delta) return;
-      if (!part) {
-        part = { id: partId(), type: 'text', text: '' };
-        assistant.parts.push(part);
-        emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+      if (type === 'reasoning') {
+        if (!reasoningPart) {
+          reasoningPart = { id: partId(), type: 'reasoning', text: '' };
+          assistant.parts.push(reasoningPart);
+          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
+        }
+        reasoningPart.text += String(delta);
+        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: String(delta) });
+      } else {
+        if (!textPart) {
+          textPart = { id: partId(), type: 'text', text: '' };
+          assistant.parts.push(textPart);
+          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
+        }
+        textPart.text += String(delta);
+        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: String(delta) });
       }
-      part.text += String(delta);
-      emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: part.id, field: 'text', delta: String(delta) });
     },
     finish() {
-      if (part) putMessage(assistant);
-      return Boolean(part?.text);
+      if (textPart || reasoningPart) putMessage(assistant);
+      return Boolean(textPart?.text);
     },
   };
 }
@@ -572,7 +583,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           frames: providerFrames,
           tools: availableToolDefinitions(),
           signal: controller.signal,
-          onTextDelta: (delta) => live.push(delta),
+          onTextDelta: (delta, type = 'text') => live.push(delta, type),
         });
       } catch (err) {
         if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
