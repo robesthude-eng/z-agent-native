@@ -157,30 +157,105 @@ async function emitText(assistant, text, type = 'text') {
 function liveTextSink(assistant) {
   let textPart = null;
   let reasoningPart = null;
+  let rawAccum = '';
+  let mode = 'detect'; // 'detect' | 'reasoning' | 'text'
+
   return {
-    push(delta, type = 'text') {
+    push(delta, explicitType = null) {
       if (!delta) return;
-      if (type === 'reasoning') {
+      const str = String(delta);
+      
+      if (explicitType === 'reasoning') {
         if (!reasoningPart) {
           reasoningPart = { id: partId(), type: 'reasoning', text: '' };
           assistant.parts.push(reasoningPart);
           emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
         }
-        reasoningPart.text += String(delta);
-        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: String(delta) });
-      } else {
+        reasoningPart.text += str;
+        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: str });
+        return;
+      }
+
+      if (explicitType === 'text') {
         if (!textPart) {
           textPart = { id: partId(), type: 'text', text: '' };
           assistant.parts.push(textPart);
           emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
         }
-        textPart.text += String(delta);
-        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: String(delta) });
+        textPart.text += str;
+        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: str });
+        return;
       }
+
+      // Live detection for models (like DeepSeek) that stream English inner monologue before Russian reply
+      rawAccum += str;
+
+      if (mode === 'detect') {
+        // If stream starts with English reasoning text
+        if (/^[a-zA-Z\s"'`#*•-]/.test(rawAccum)) {
+          mode = 'reasoning';
+          if (!reasoningPart) {
+            reasoningPart = { id: partId(), type: 'reasoning', text: '' };
+            assistant.parts.push(reasoningPart);
+            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
+          }
+          reasoningPart.text = rawAccum;
+          emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: rawAccum });
+          return;
+        } else {
+          mode = 'text';
+        }
+      }
+
+      if (mode === 'reasoning') {
+        const m = new RegExp('([.?!]\\s*|\\n\\s*)([А-ЯЁ][а-яё]+(?:!|\\?|\\.|\\s*👋|\\s*[,\\s]))').exec(rawAccum);
+        if (m) {
+          const boundary = m.index + m[1].length;
+          const thoughtText = rawAccum.slice(0, boundary).trim();
+          const answerText = rawAccum.slice(boundary);
+
+          if (reasoningPart) {
+            reasoningPart.text = thoughtText;
+            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
+          }
+
+          mode = 'text';
+          if (!textPart) {
+            textPart = { id: partId(), type: 'text', text: '' };
+            assistant.parts.push(textPart);
+            emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
+          }
+          if (answerText) {
+            textPart.text += answerText;
+            emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: answerText });
+          }
+          return;
+        }
+
+        if (!reasoningPart) {
+          reasoningPart = { id: partId(), type: 'reasoning', text: '' };
+          assistant.parts.push(reasoningPart);
+          emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: reasoningPart });
+        }
+        reasoningPart.text += str;
+        emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: reasoningPart.id, field: 'text', delta: str });
+        return;
+      }
+
+      // mode === 'text'
+      if (!textPart) {
+        textPart = { id: partId(), type: 'text', text: '' };
+        assistant.parts.push(textPart);
+        emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: textPart });
+      }
+      textPart.text += str;
+      emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: textPart.id, field: 'text', delta: str });
     },
     finish() {
+      // Sanitize parts before saving
+      sanitizeAssistantParts(assistant);
       if (textPart || reasoningPart) putMessage(assistant);
-      return Boolean(textPart?.text);
+      return Boolean(textPart?.text || reasoningPart?.text);
     },
   };
 }
@@ -415,6 +490,24 @@ function assistantHasProgress(assistant, strategy) {
     const state = part.state && typeof part.state === 'object' ? part.state : {};
     return state.status === 'completed' || state.status === 'success';
   });
+}
+
+
+function sanitizeAssistantParts(assistant) {
+  if (!Array.isArray(assistant?.parts)) return;
+  const newParts = [];
+  for (const part of assistant.parts) {
+    if (part?.type === 'text' && typeof part.text === 'string' && part.text.length > 20) {
+      const separated = splitReasoningFromContent(part.text);
+      if (separated.reasoning && separated.text) {
+        newParts.push({ id: partId(), type: 'reasoning', text: separated.reasoning });
+        newParts.push({ id: part.id || partId(), type: 'text', text: separated.text });
+        continue;
+      }
+    }
+    newParts.push(part);
+  }
+  assistant.parts = newParts;
 }
 
 async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {

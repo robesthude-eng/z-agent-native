@@ -34,6 +34,7 @@ function sourceLabel(model: ModelEntry) {
 
 export default function ModelSelector() {
   const models = useStore((s) => s.models);
+  const modelsLoaded = useStore((s) => s.modelsLoaded);
   const selectedModel = useStore((s) => s.selectedModel);
   const setSelectedModel = useStore((s) => s.setSelectedModel);
   const setSettingsOpen = useStore((s) => s.setSettingsOpen);
@@ -75,7 +76,7 @@ export default function ModelSelector() {
         className="rounded-lg border border-border bg-card px-2.5 py-1.5 text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
         onClick={openModelSettings}
       >
-        Подключить модель
+        {!modelsLoaded ? "Загрузка моделей…" : "Подключить модель"}
       </button>
     );
   }
