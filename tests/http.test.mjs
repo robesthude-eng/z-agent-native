@@ -104,12 +104,44 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const preview = await fetch(`${previewBase}/index.html`, { headers: { cookie } });
   assert.equal(preview.status, 200);
   assert.match(await preview.text(), /preview works/);
+  // Превью живёт в iframe без allow-same-origin, то есть у документа непрозрачный
+  // origin. Источник 'self' для такого документа не совпадает ни с чем — именно
+  // поэтому раньше умирали и встроенные <script>, и соседние файлы страницы.
+  // В политике должен стоять конкретный origin и явное разрешение inline-кода.
   const csp = preview.headers.get('content-security-policy') || '';
-  assert.match(csp, /script-src 'self'/);
-  assert.match(csp, /style-src 'self'/);
+  const origin = new URL(base).origin;
+  assert.match(csp, /default-src 'none'/);
+  assert.ok(csp.includes(`script-src ${origin} 'unsafe-inline'`), csp);
+  assert.ok(csp.includes(`style-src ${origin} 'unsafe-inline'`), csp);
+  assert.ok(csp.includes(`img-src ${origin} data: blob:`), csp);
+  assert.doesNotMatch(csp, /script-src 'self'/);
+  // При этом произвольные внешние источники остаются закрыты: страница
+  // не получает канала для выгрузки данных наружу.
+  assert.doesNotMatch(csp, /\*/);
+  assert.doesNotMatch(csp, /(?:^|;)\s*[a-z-]+-src[^;]*\shttps:/);
+  assert.match(csp, /frame-ancestors 'self'/);
   const previewScript = await fetch(`${previewBase}/app.js`, { headers: { cookie } });
   assert.equal(previewScript.status, 200);
   assert.match(await previewScript.text(), /dataset\.preview/);
+
+  // Из песочницы с непрозрачным origin браузер не шлёт куку SameSite=Lax,
+  // поэтому соседние файлы страницы должны открываться по маркеру в пути.
+  const grant = await fetch(`${base}/api/workspace/preview-token?sessionId=${encodeURIComponent(session.id)}`, { headers: { cookie } });
+  assert.equal(grant.status, 200);
+  const tokenBase = (await grant.json()).base;
+  assert.match(tokenBase, /^\/api\/preview\/[a-f0-9]{64}\/~\/$/);
+  const tokenDoc = await fetch(`${base}${tokenBase}index.html`);
+  assert.equal(tokenDoc.status, 200);
+  assert.match(await tokenDoc.text(), /preview works/);
+  const tokenStyle = await fetch(`${base}${tokenBase}style.css`);
+  assert.equal(tokenStyle.status, 200, 'sibling asset must load without cookies');
+  assert.match(await tokenStyle.text(), /color: green/);
+  // Маркер — единственный ключ: подобранный не открывает ничего…
+  const forged = await fetch(`${base}/api/preview/${'0'.repeat(64)}/~/index.html`);
+  assert.equal(forged.status, 404);
+  // …а выход за пределы воркспейса закрыт и на этом входе.
+  const traversal = await fetch(`${base}${tokenBase}..%2F..%2Fsecret.txt`);
+  assert.ok(traversal.status >= 400, `traversal must fail, got ${traversal.status}`);
 
   const sessions = await fetch(`${base}/api/session`, { headers: { cookie } });
   assert.equal(sessions.status, 200);

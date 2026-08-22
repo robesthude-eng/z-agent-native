@@ -12,6 +12,7 @@ import {
   parsePreviewPath,
 } from "../api/capabilities";
 import { api } from "../api/client";
+import { usePreviewUrl } from "../api/previewUrl";
 import { buildChatMarkdown, downloadTextFile } from "../lib/chatText";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
@@ -57,6 +58,9 @@ export default function TopBar() {
     Record<CapabilityKind, CapabilityState | null>
   >({ terminal: null, preview: null, workspace: null });
   const [previewPath, setPreviewPath] = useState("index.html");
+  // Адрес берётся с маркером доступа: iframe превью не может приложить куку,
+  // иначе соседние style.css и script.js страницы получат 404.
+  const previewUrl = usePreviewUrl(currentID || "", previewPath, showPreview);
   const capsFromServer = isCapabilityStateEnabled();
 
   useEffect(() => {
@@ -274,13 +278,7 @@ export default function TopBar() {
         onClose={() => setShowPreview(false)}
       >
         <LazyPanel label={t("top_bar.predprosmotr")} skeleton={<PanelBodySkeleton />}>
-          <PreviewPanel
-            url={
-              currentID
-                ? `/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/${encodeURIComponent(previewPath)}`
-                : ""
-            }
-          />
+          <PreviewPanel url={previewUrl} />
         </LazyPanel>
       </PanelModal>
 

@@ -10,6 +10,7 @@ import { changedFilesLabel, t, tf } from "@/i18n";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { api, workspaceDownloadUrl } from "../api/client";
+import { usePreviewUrl } from "../api/previewUrl";
 import { useStore } from "../store/useStore";
 import {
   CloseIcon,
@@ -26,7 +27,6 @@ import {
   previewKind,
   type ViewMode,
   viewModesFor,
-  workspacePreviewUrl,
 } from "./workspace/fileDecisions";
 import {
   editorAfterRename,
@@ -492,6 +492,13 @@ export default function Workspace() {
     isEditablePath(activeFile.path) &&
     !looksBinary(activeFile.content);
   const activePreviewKind = activeFile ? previewKind(activeFile.path) : null;
+  // Тот же маркер доступа, что и у панели превью: без него соседние файлы
+  // страницы (style.css, script.js) в песочнице получают 404.
+  const activePreviewUrl = usePreviewUrl(
+    currentID || "",
+    activeFile?.path ?? "",
+    Boolean(activePreviewKind && currentID),
+  );
   const activeModes = activeFile
     ? viewModesFor(activeFile.path, { hasDiff: dirty })
     : [];
@@ -668,11 +675,7 @@ export default function Workspace() {
           modes={activeModes}
           mode={activeMode}
           previewKind={activePreviewKind}
-          previewUrl={
-            activePreviewKind && currentID
-              ? workspacePreviewUrl(activeFile.path, currentID)
-              : null
-          }
+          previewUrl={activePreviewKind && currentID ? activePreviewUrl : null}
           sessionId={currentID}
           readonlyNote={readonlyNote}
           onModeChange={setViewMode}

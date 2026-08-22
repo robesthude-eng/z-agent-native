@@ -36,6 +36,7 @@ import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
 import { previewDocument } from './native/preview-document.mjs';
+import { mintPreviewToken, resolvePreviewToken, revokePreviewTokens } from './native/preview-tokens.mjs';
 
 const STARTED_AT = Date.now();
 let DRAINING = false;
@@ -198,6 +199,17 @@ async function route(req, res) {
     return sendJson(res, 200, { status: 'success' }, { 'set-cookie': clearCookies() });
   }
 
+  // Файлы превью по маркеру в пути. Роут намеренно стоит ДО авторизации:
+  // запросы приходят из iframe с непрозрачным origin, и куку SameSite=Lax
+  // браузер к ним не прикладывает. Право чтения подтверждает сам маркер,
+  // а владение чатом перепроверяется на каждый файл.
+  const tokenPreview = /^\/api\/preview\/([a-f0-9]{64})\/~\/(.*)$/.exec(p);
+  if (tokenPreview && req.method === 'GET') {
+    const grant = resolvePreviewToken(tokenPreview[1]);
+    if (!grant || !ownsChat(grant.sessionId, grant.ownerId)) return sendJson(res, 404, { error: 'Not found' });
+    return servePreviewFile(req, res, grant.sessionId, tokenPreview[2]);
+  }
+
   if (!p.startsWith('/api/')) return serveStatic(req, res, p);
 
   const auth = requireAuth(req, res);
@@ -253,6 +265,8 @@ async function route(req, res) {
       closeWorkspaceWatcher(sid);
       emit(sid, 'session.removed', {});
       deleteChat(sid, ownerId);
+      // Вместе с чатом гаснет и выданный на него маркер превью.
+      revokePreviewTokens(sid);
       clearAgentSessionState(sid);
       clearSessionEvents(sid);
       return sendJson(res, 204, null);
@@ -376,27 +390,21 @@ async function route(req, res) {
     if (handled !== false) return;
   }
 
+  // Маркер превью выдаётся только владельцу чата и только по его запросу.
+  if (p === '/api/workspace/preview-token' && req.method === 'GET') {
+    const psid = url.searchParams.get('sessionId') || '';
+    if (!psid || !ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Session not found' });
+    const token = mintPreviewToken(ownerId, psid);
+    if (!token) return sendJson(res, 404, { error: 'Session not found' });
+    return sendJson(res, 200, { base: `/api/preview/${token}/~/` });
+  }
+
   // Sandboxed file preview used by the right sidebar.
   const preview = /^\/api\/sandbox-proxy\/(ses_[A-Za-z0-9]+)\/~\/(.*)$/.exec(p);
   if (preview && req.method === 'GET') {
     const psid = preview[1];
     if (!ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Not found' });
-    let relative;
-    try { relative = preview[2].split('/').map(decodeURIComponent).join('/'); }
-    catch { return sendJson(res, 400, { error: 'Bad request' }); }
-    const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
-    const st = fs.statSync(full);
-    if (!st.isFile()) return sendJson(res, 404, { error: 'Not a file' });
-    res.writeHead(200, {
-      'content-type': mimeFor(full), 'content-length': st.size,
-      // The iframe is sandboxed without allow-same-origin. Local scripts and
-      // styles may run for a useful app preview, but the document remains an
-      // opaque origin and cannot reach the authenticated parent DOM/cookies.
-      'content-security-policy': "default-src 'none'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; font-src 'self' data:; media-src 'self' blob:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'none'",
-      'cache-control': 'no-store',
-    });
-    fs.createReadStream(full).pipe(res);
-    return;
+    return servePreviewFile(req, res, psid, preview[2]);
   }
 
   return sendJson(res, 404, { error: `Unknown route: ${req.method} ${p}` });
@@ -415,6 +423,72 @@ const APP_CONTENT_SECURITY_POLICY_BASE = [
   "media-src 'self' blob:",
   "worker-src 'self' blob:",
 ];
+
+/**
+ * Отдаёт один файл из воркспейса в панель превью. Общий хвост для двух
+ * входов: по cookie (само приложение) и по маркеру в пути (iframe превью).
+ * Права проверяет вызывающий; граница пути — всё та же safeWorkspacePath.
+ */
+function servePreviewFile(req, res, psid, rawRelative) {
+  let relative;
+  try { relative = rawRelative.split('/').map(decodeURIComponent).join('/'); }
+  catch { return sendJson(res, 400, { error: 'Bad request' }); }
+  const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
+  const st = fs.statSync(full);
+  if (!st.isFile()) return sendJson(res, 404, { error: 'Not a file' });
+  res.writeHead(200, {
+    'content-type': mimeFor(full),
+    'content-length': st.size,
+    'content-security-policy': previewSecurityPolicy(req),
+    'x-content-type-options': 'nosniff',
+    // Маркер доступа лежит в пути, поэтому реферер наружу не отдаём.
+    'referrer-policy': 'no-referrer',
+    'cache-control': 'no-store',
+  });
+  fs.createReadStream(full).pipe(res);
+}
+
+/**
+ * CSP для страницы из воркспейса, которую показывает панель превью.
+ *
+ * Превью открывается в iframe без `allow-same-origin`, то есть у документа
+ * непрозрачный (opaque) origin. Для такого документа источник `'self'` не
+ * совпадает ни с чем: прежняя политика `script-src 'self'` резала и встроенные
+ * <script>, и соседние script.js/style.css. Страница загружалась, но оставалась
+ * пустой — именно так выглядела игра, у которой не отрисовывалась доска.
+ *
+ * Поэтому вместо `'self'` подставляем конкретный origin сервера, а inline-код
+ * разрешаем явно. Изоляция от приложения при этом остаётся: origin всё так же
+ * opaque, доступа к cookie и DOM родителя у страницы нет, а сеть ограничена тем же
+ * самым origin — выгрузить данные на чужой сервер страница не может.
+ */
+function previewSecurityPolicy(req) {
+  const rawHost = String(req?.headers?.host || '').trim();
+  const host = /^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(rawHost) ? rawHost : '';
+  const forwarded = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  // За прокси (как на бою) схему знает только заголовок; локально — сокет.
+  const scheme = forwarded === 'https' || forwarded === 'http'
+    ? forwarded
+    : (req?.socket?.encrypted ? 'https' : 'http');
+  const own = host ? `${scheme}://${host}` : '';
+  // Без валидного Host остаётся только inline: подключить собственные файлы
+  // страницы нечем, зато однофайловая страница всё равно работает.
+  const from = own ? `${own} ` : '';
+  return [
+    "default-src 'none'",
+    `script-src ${from}'unsafe-inline' 'unsafe-eval'`,
+    `style-src ${from}'unsafe-inline'`,
+    `img-src ${from}data: blob:`,
+    `font-src ${from}data:`,
+    `media-src ${from}data: blob:`,
+    `connect-src ${from}data: blob:`,
+    `worker-src ${from}blob:`,
+    `frame-src ${from}data: blob:`,
+    "frame-ancestors 'self'",
+    "base-uri 'none'",
+    `form-action ${own || "'none'"}`,
+  ].join('; ');
+}
 
 function appSecurityHeaders(req) {
   const rawHost = String(req?.headers?.host || '').trim();
