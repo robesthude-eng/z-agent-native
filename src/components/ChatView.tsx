@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { isAbortedError, statusText } from "../api/eventGuards";
@@ -139,23 +139,23 @@ export default function ChatView() {
     status,
   ]);
 
-  const resetNewAnswers = () => {
+  const resetNewAnswers = useCallback(() => {
     unreadAssistantIdsRef.current.clear();
     setNewAnswerCount(0);
-  };
+  }, []);
 
-  const scrollToBottom = () => {
+  const scrollToBottom = useCallback(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
     atBottomRef.current = true;
     setIsScrolledUp(false);
     resetNewAnswers();
-  };
+  }, [resetNewAnswers]);
 
   useEffect(() => {
     atBottomRef.current = true;
     setIsScrolledUp(false);
     resetNewAnswers();
-  }, [resetNewAnswers]);
+  }, [currentID, resetNewAnswers]);
 
   const scrollRafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
     null,
