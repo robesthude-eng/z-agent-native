@@ -7,6 +7,14 @@ const MAX_CONTROLS = 120;
 const DEFAULT_ACTION_TIMEOUT_MS = 30_000;
 const MAX_ACTION_TIMEOUT_MS = 120_000;
 const SESSION_IDLE_MS = 10 * 60 * 1000;
+// Production routes browser work to the isolated service in
+// server/browser-service.mjs, which already caps concurrent workers
+// (Z_AGENT_BROWSER_MAX_WORKERS). This in-process fallback — used for dev and
+// single-container bare-metal — had no ceiling at all: every session is its own
+// Chromium, so N sessions meant N browsers against an unbounded host. Evict the
+// least recently used session rather than refusing: a refusal reads to the model
+// as a broken tool and it retries, an eviction does not.
+const MAX_SESSIONS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_SESSIONS) || 4, 1), 64);
 
 export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'press', 'console', 'close'];
 
@@ -44,6 +52,36 @@ export function browserUnavailableMessage() {
 
 const sessions = new Map();
 
+// Wall-clock milliseconds are too coarse to order two sessions touched inside
+// the same millisecond, and eviction has to be deterministic. Idle sweeping
+// still uses lastUsed; only recency ordering uses this counter.
+let touchCounter = 0;
+function touch(state) {
+  state.lastUsed = Date.now();
+  touchCounter += 1;
+  state.touchSeq = touchCounter;
+  return state;
+}
+
+async function evictLeastRecentlyUsedSession() {
+  let victimKey = null;
+  let victimSeq = Number.POSITIVE_INFINITY;
+  for (const [key, state] of sessions) {
+    if (state.touchSeq >= victimSeq) continue;
+    victimSeq = state.touchSeq;
+    victimKey = key;
+  }
+  if (victimKey === null) return false;
+  const victim = sessions.get(victimKey);
+  sessions.delete(victimKey);
+  await disposeSession(victim);
+  return true;
+}
+
+export function browserSessionCapacity() {
+  return { active: sessions.size, max: MAX_SESSIONS };
+}
+
 function timeoutFor(input) {
   return Math.min(Math.max(Number(input?.timeoutMs) || DEFAULT_ACTION_TIMEOUT_MS, 1000), MAX_ACTION_TIMEOUT_MS);
 }
@@ -76,11 +114,15 @@ export async function closeAllBrowserSessions() {
   await Promise.all(states.map((state) => disposeSession(state)));
 }
 
-async function ensureSession(playwright, sessionId) {
+// Exported so the session ceiling can be exercised with an injected Playwright
+// double instead of launching real Chromium processes in the test suite.
+export async function ensureBrowserSession(playwright, sessionId) {
   const existing = sessions.get(sessionId);
-  if (existing) {
-    existing.lastUsed = Date.now();
-    return existing;
+  if (existing) return touch(existing);
+  // Reclaim before launching, never after: the point is to never hold
+  // MAX_SESSIONS + 1 Chromium processes at once, not to trim afterwards.
+  while (sessions.size >= MAX_SESSIONS) {
+    if (!(await evictLeastRecentlyUsedSession())) break;
   }
   const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
   const browser = await playwright.chromium.launch({
@@ -100,7 +142,7 @@ async function ensureSession(playwright, sessionId) {
     // routing, bypassing the per-request network policy below.
     serviceWorkers: 'block',
   });
-  const state = { browser, context, page: null, console: [], lastUsed: Date.now() };
+  const state = touch({ browser, context, page: null, console: [], lastUsed: 0, touchSeq: 0 });
   await context.route('**/*', async (route) => {
     const request = route.request();
     const target = request.url();
@@ -229,7 +271,7 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
   await sweepIdleBrowserSessions();
   if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
 
-  const state = await ensureSession(playwright, sessionId);
+  const state = await ensureBrowserSession(playwright, sessionId);
   state.lastUsed = Date.now();
   const page = state.page;
   const timeout = timeoutFor(input);

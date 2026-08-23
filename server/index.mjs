@@ -547,15 +547,15 @@ server.listen(PORT, '0.0.0.0', () => {
   console.log(`Z Agent Native listening on http://0.0.0.0:${PORT}${RECOVERED_TURNS ? ` · resumed ${RECOVERED_TURNS} durable turn(s)` : ''}`);
 });
 
-async function shutdown(signal = 'SIGTERM') {
+async function shutdown(signal = 'SIGTERM', { graceMs = SHUTDOWN_GRACE_MS } = {}) {
   if (SHUTTING_DOWN) return;
   SHUTTING_DOWN = true;
   DRAINING = true;
-  console.log(`[shutdown] ${signal}: draining up to ${SHUTDOWN_GRACE_MS}ms (${activeTurnCount()} active turn(s))`);
+  console.log(`[shutdown] ${signal}: draining up to ${graceMs}ms (${activeTurnCount()} active turn(s))`);
   // Stop accepting new TCP connections immediately. Existing SSE/provider work
   // may finish while the agent's durable checkpoint remains recoverable.
   server.close();
-  const deadline = Date.now() + SHUTDOWN_GRACE_MS;
+  const deadline = Date.now() + graceMs;
   while (activeTurnCount() > 0 && Date.now() < deadline) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
@@ -568,3 +568,32 @@ async function shutdown(signal = 'SIGTERM') {
 }
 process.on('SIGTERM', () => { shutdown('SIGTERM').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
 process.on('SIGINT', () => { shutdown('SIGINT').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
+
+// Node's default for both faults below is an immediate crash with no record of
+// the cause. For an agent runtime that is the worst of both worlds: the turn is
+// lost *and* the reason is lost. Write the fault down first, then drain briefly
+// and exit non-zero so the supervisor restarts a clean process — durable
+// recovery resumes the interrupted turns on boot. The grace is deliberately
+// short: after an uncaught fault the heap is suspect, so waiting the full deploy
+// grace would only prolong serving from a broken process.
+const FATAL_GRACE_MS = Math.min(SHUTDOWN_GRACE_MS, 5_000);
+function fatal(kind, cause) {
+  try {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      event: kind,
+      at: new Date().toISOString(),
+      activeTurns: activeTurnCount(),
+      message: String(cause?.message || cause),
+      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+    }));
+  } catch {
+    // Never let log serialization be the reason a fatal fault goes unrecorded.
+    console.error('[fatal]', kind, cause);
+  }
+  shutdown(kind, { graceMs: FATAL_GRACE_MS }).catch(() => process.exit(1));
+  // If the drain itself is what is stuck, do not linger in a broken state.
+  setTimeout(() => process.exit(1), FATAL_GRACE_MS + 2_000).unref();
+}
+process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
+process.on('uncaughtException', (err) => { fatal('uncaughtException', err); });

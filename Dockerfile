@@ -44,4 +44,10 @@ ENV PORT=3000 \
     Z_AGENT_DIST_DIR=/app/dist
 EXPOSE 3000
 VOLUME ["/data", "/workspaces"]
+# docker-compose.yml defines the same probe for the composed deployment, but
+# image metadata is what a bare `docker run` or a different orchestrator sees.
+# Keep the two in sync. Readiness rather than liveness on purpose: a runtime
+# that cannot reach SQLite or write Z_AGENT_DATA_DIR must not be sent traffic.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS http://127.0.0.1:3000/health/ready || exit 1
 CMD ["node", "server/index.mjs"]

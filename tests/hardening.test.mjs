@@ -320,3 +320,42 @@ test('production API drains active turns before Docker may SIGKILL it', () => {
   assert.match(server, /status: 'draining'/);
   assert.match(compose, /z-agent:[\s\S]*stop_grace_period:\s*75s/);
 });
+
+test('an uncaught fault is recorded and turned into a clean restart, not a silent crash', () => {
+  const server = fs.readFileSync(path.join(repoRoot, 'server/index.mjs'), 'utf8');
+  // Node's default for both of these is a crash with no record of the cause.
+  // Handling them must still end the process, so durable recovery gets a clean
+  // boot rather than a runtime serving from a suspect heap.
+  assert.match(server, /process\.on\('unhandledRejection'/);
+  assert.match(server, /process\.on\('uncaughtException'/);
+  assert.match(server, /level: 'fatal'/);
+  assert.match(server, /shutdown\(kind, \{ graceMs: FATAL_GRACE_MS \}\)/);
+  assert.match(server, /setTimeout\(\(\) => process\.exit\(1\), FATAL_GRACE_MS/);
+});
+
+test('the API image carries its own readiness probe, not only the Compose one', () => {
+  const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
+  const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
+  assert.match(dockerfile, /^HEALTHCHECK /m);
+  assert.match(dockerfile, /\/health\/ready/);
+  // A bare `docker run` must not get a weaker contract than the composed
+  // deployment, so image metadata and Compose probe the same endpoint.
+  assert.match(compose, /z-agent:[\s\S]*health\/ready/);
+});
+
+test('every CI job is a blocking gate', () => {
+  const ci = fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
+  assert.doesNotMatch(ci, /continue-on-error:\s*true/);
+  assert.match(ci, /npm run lint:ci/);
+  assert.match(ci, /npm run format:check/);
+});
+
+test('the in-process browser fallback bounds concurrent Chromium sessions', () => {
+  const browser = fs.readFileSync(path.join(repoRoot, 'server/native/browser.mjs'), 'utf8');
+  const service = fs.readFileSync(path.join(repoRoot, 'server/browser-service.mjs'), 'utf8');
+  // The isolated service has always had a worker ceiling; the local fallback
+  // must not be the unbounded path around it.
+  assert.match(service, /Z_AGENT_BROWSER_MAX_WORKERS/);
+  assert.match(browser, /Z_AGENT_BROWSER_MAX_SESSIONS/);
+  assert.match(browser, /while \(sessions\.size >= MAX_SESSIONS\)/);
+});

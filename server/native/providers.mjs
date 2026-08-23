@@ -535,7 +535,7 @@ async function assertSafeProviderUrl(value) {
   return url;
 }
 
-async function routedProviderTarget(directUrl, trustedBaseURL, { preferDirect = false } = {}) {
+async function routedProviderTarget(directUrl, trustedBaseURL) {
   // Validate the user-controlled destination before a trusted relay hides the
   // original host from the SSRF guard.
   if (!trustedBaseURL) await assertSafeProviderUrl(directUrl);
@@ -546,8 +546,10 @@ async function routedProviderTarget(directUrl, trustedBaseURL, { preferDirect = 
   // Relay-first for every request, including streaming turns: an
   // egress-constrained host (geo-blocked from the provider) needs the relay
   // to be reliable even for streams, because the direct path can time out or
-  // be cut. The direct URL remains the fallback. `preferDirect` is kept for
-  // callers/tests but no longer changes routing.
+  // be cut. The direct URL remains the fallback. The relay is opt-in through
+  // Z_AGENT_RELAY_URL, so an operator who configured one has already decided
+  // that direct egress is unreliable from this host; there is no streaming
+  // exception to that decision.
   return { ...relayTarget, fallback: directTarget };
 }
 
@@ -842,9 +844,7 @@ function openAiMessages(frames) {
 
 async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
-    preferDirect: typeof onTextDelta === 'function',
-  });
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
@@ -942,9 +942,7 @@ function anthropicMessages(frames) {
 
 async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
-    preferDirect: typeof onTextDelta === 'function',
-  });
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
   const headers = { 'content-type': 'application/json', accept: 'application/json', 'x-api-key': resolved.key, 'anthropic-version': '2023-06-01' };
   if (typeof onTextDelta !== 'function') {
@@ -1021,9 +1019,7 @@ async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta
   const base = resolved.spec.baseURL.replace(/\/$/, '');
   const suffix = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
   const directUrl = `${base}/models/${encodeURIComponent(resolved.modelId)}:${suffix}${typeof onTextDelta === 'function' ? '?alt=sse' : ''}`;
-  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL, {
-    preferDirect: typeof onTextDelta === 'function',
-  });
+  const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
     systemInstruction: { parts: [{ text: system }] },
     contents: geminiContents(frames),

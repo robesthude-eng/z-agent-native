@@ -18,7 +18,7 @@ permissions:
 jobs:
   # ---------------------------------------------------------------------------
   # Blocking gates. Deploy runs on `workflow_run: CI completed && success`, so
-  # every job below that is not `continue-on-error` is a real production gate.
+  # every job below is a real production gate; there are no advisory jobs left.
   # ---------------------------------------------------------------------------
 
   native:
@@ -262,12 +262,14 @@ jobs:
           path: sbom.cdx.json
           retention-days: 30
 
-  # Formatting churn is useful feedback but not a production correctness gate.
+  # Promoted from advisory to blocking: correctness lint and formatting are the
+  # last non-gating checks in this workflow. Run `npm run lint:ci` and
+  # `npm run format:check` locally before pushing — a red result now stops the
+  # deploy instead of only annotating the run.
   quality:
-    name: Formatting (report only)
+    name: Lint and formatting
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    continue-on-error: true
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0

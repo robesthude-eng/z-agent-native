@@ -243,13 +243,18 @@ test('idle watchdog still aborts at the hard ceiling while tokens keep arriving'
   }
 });
 
-test('streaming prefers the direct provider URL and falls back to the relay', async () => {
+// The relay is opt-in through Z_AGENT_RELAY_URL. Configuring one is a statement
+// that direct egress from this host is unreliable, so routing is relay-first for
+// every request including streams (see routedProviderTarget). Streaming used to
+// be an exception; this test locks in that it no longer is, and that the direct
+// URL is still tried when the relay itself drops the socket.
+test('streaming prefers the configured relay and falls back to the direct provider URL', async () => {
   const original = globalThis.fetch;
   const urls = [];
   globalThis.fetch = async (url) => {
     const value = String(url);
     urls.push(value);
-    if (!value.includes('/relay/')) {
+    if (value.includes('/relay/')) {
       const err = new Error('read ECONNRESET');
       err.code = 'ECONNRESET';
       throw err;
@@ -265,8 +270,8 @@ test('streaming prefers the direct provider URL and falls back to the relay', as
       onTextDelta: () => {},
     });
     assert.equal(result.text, 'OK');
-    assert.match(urls[0], /^https:\/\/1\.1\.1\.1\/v1\/chat\/completions$/);
-    assert.ok(urls.some((url) => url.startsWith('https://1.1.1.2/relay/')));
+    assert.match(urls[0], /^https:\/\/1\.1\.1\.2\/relay\/1\.1\.1\.1\/v1\/chat\/completions$/);
+    assert.ok(urls.some((url) => url === 'https://1.1.1.1/v1/chat/completions'));
   } finally { globalThis.fetch = original; }
 });
 
