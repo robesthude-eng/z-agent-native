@@ -543,11 +543,11 @@ async function routedProviderTarget(directUrl, trustedBaseURL, { preferDirect = 
   const directTarget = { url: directUrl, pinned: !trustedBaseURL };
   if (relayed === directUrl) return directTarget;
   const relayTarget = { url: relayed, pinned: true };
-  // Streaming a 30-minute turn through a serverless relay (Cloudflare Workers
-  // typically cut HTTP at 30–100s) looks like read ECONNRESET. Prefer the
-  // direct provider URL for streams; JSON catalog/probe still try the relay
-  // first and fall back to direct, matching fetchModelList.
-  if (preferDirect) return { ...directTarget, fallback: relayTarget };
+  // Relay-first for every request, including streaming turns: an
+  // egress-constrained host (geo-blocked from the provider) needs the relay
+  // to be reliable even for streams, because the direct path can time out or
+  // be cut. The direct URL remains the fallback. `preferDirect` is kept for
+  // callers/tests but no longer changes routing.
   return { ...relayTarget, fallback: directTarget };
 }
 
