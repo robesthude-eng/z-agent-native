@@ -596,31 +596,7 @@ export default function Composer() {
 
   return (
     <div className="w-full max-w-3xl shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
-      {/* Именованная <section>, а не безымянный div: это зона приёма файлов
-          (drag&drop), и у интерактивного контейнера должна быть роль. Клавиатурный
-          путь для тех же файлов — кнопка «Прикрепить файл» и вставка из буфера. */}
-      <section
-        aria-label={t("composer.pole_vvoda_soobscheniya")}
-        className={cn(
-          "pointer-events-auto relative w-full transition-all duration-[200ms]",
-          // Крупный радиус и мягкая тень вместо жёсткой рамки — так поле
-          // ввода выглядит в обоих референсах. Тень границу ЗАМЕНЯЕТ, а не
-          // дополняет: рамка осталась, но приглушена до половины, иначе
-          // получались бы два контура один в другом.
-          "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 border border-border/60 shadow-sm",
-          // Фокус подсвечивает ОБЁРТКУ, а не саму textarea. У textarea стили
-          // фокуса сняты явно (`focus-visible:ring-0` ниже) и это правильно:
-          // кольцо внутри рамки композера читалось бы как рамка в рамке.
-          // Но без подсветки контейнера главное поле приложения оставалось
-          // единственным местом, где клавиатурный пользователь не видит, где
-          // он, — при том что кнопки, поля и переключатели кольцо имеют.
-          "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25",
-          dragOver && "ring-2 ring-primary bg-primary/5",
-        )}
-        onDragOver={onDragOver}
-        onDragLeave={onDragLeave}
-        onDrop={onDrop}
-      >
+      <div className="relative pointer-events-auto w-full">
         {(slashMatches.length > 0 || mentionMatches.length > 0) && (
           <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
             {slashMatches.map((c, i) => (
@@ -658,6 +634,45 @@ export default function Composer() {
               ))}
           </div>
         )}
+
+        {uploadError && (
+          <div className="absolute -top-8 left-0 right-0 text-center text-xs text-red-400 animate-in fade-in slide-in-from-bottom-1">
+            {uploadError}
+          </div>
+        )}
+
+        <BorderBeam
+          size="md"
+          colorVariant="colorful"
+          borderRadius={24}
+          className="w-full rounded-3xl"
+          active
+        >
+          {/* Именованная <section>, а не безымянный div: это зона приёма файлов
+              (drag&drop), и у интерактивного контейнера должна быть роль. Клавиатурный
+              путь для тех же файлов — кнопка «Прикрепить файл» и вставка из буфера. */}
+          <section
+            aria-label={t("composer.pole_vvoda_soobscheniya")}
+            className={cn(
+              "relative w-full transition-all duration-[200ms]",
+              // Крупный радиус и мягкая тень вместо жёсткой рамки — так поле
+              // ввода выглядит в обоих референсах. Тень границу ЗАМЕНЯЕТ, а не
+              // дополняет: рамка осталась, но приглушена до половины, иначе
+              // получались бы два контура один в другом.
+              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 border border-border/60 shadow-sm",
+              // Фокус подсвечивает ОБЁРТКУ, а не саму textarea. У textarea стили
+              // фокуса сняты явно (`focus-visible:ring-0` ниже) и это правильно:
+              // кольцо внутри рамки композера читалось бы как рамка в рамке.
+              // Но без подсветки контейнера главное поле приложения оставалось
+              // единственным местом, где клавиатурный пользователь не видит, где
+              // он, — при том что кнопки, поля и переключатели кольцо имеют.
+              "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25",
+              dragOver && "ring-2 ring-primary bg-primary/5",
+            )}
+            onDragOver={onDragOver}
+            onDragLeave={onDragLeave}
+            onDrop={onDrop}
+          >
         <div className="flex flex-col gap-1">
           {/* P2-fix: очередь сообщений, ожидающих окончания генерации */}
           {queued.length > 0 && (
@@ -915,18 +930,9 @@ export default function Composer() {
             </div>
           </div>
         </div>
-        {uploadError && (
-          <div className="absolute -top-8 left-0 right-0 text-center text-xs text-red-400 animate-in fade-in slide-in-from-bottom-1">
-            {uploadError}
-          </div>
-        )}
-        <BorderBeam
-          className="pointer-events-none absolute inset-0 rounded-3xl"
-          size="md"
-          colorVariant="colorful"
-          active
-        />
       </section>
+    </BorderBeam>
+  </div>
 
       {/* Подсказка на всё окно, пока над страницей тащат файл. */}
       {windowDrag && (
