@@ -386,7 +386,7 @@ async function providerFetch(target, init) {
   return target.pinned ? await safeExternalFetch(target.url, init) : await fetch(target.url, init);
 }
 
-async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateLimit = false } = {}) {
+async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateLimit = false, timeoutMs = reqTimeout } = {}) {
   let lastError = null;
   let current = { url: target.url, pinned: target.pinned };
   let fallback = target.fallback || null;
@@ -399,7 +399,7 @@ async function fetchJson(target, init, outerSignal, { retries = 2, failFastRateL
   let attempt = 0;
   while (state.attemptsLeft > 0) {
     state.attemptsLeft -= 1;
-    const t = timeoutSignal(reqTimeout, outerSignal);
+    const t = timeoutSignal(timeoutMs, outerSignal);
     try {
       const res = await providerFetch(current, { ...init, signal: t.signal });
       const text = await res.text();
@@ -1152,7 +1152,7 @@ export function mediaHeaders(resolved, extra = {}) {
  * @param {{providerID: string, modelID: string}} model
  * @param {{path: string, body: object, signal?: AbortSignal, retries?: number}} options
  */
-export async function callProviderJson(ownerId, model, { path, body, signal, retries = 1 } = {}) {
+export async function callProviderJson(ownerId, model, { path, body, signal, retries = 1, timeoutMs = MEDIA_REQUEST_TIMEOUT_MS } = {}) {
   const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
   const url = mediaEndpointUrl(resolved, path);
   const target = await routedProviderTarget(url, resolved.trustedBaseURL);
@@ -1160,7 +1160,7 @@ export async function callProviderJson(ownerId, model, { path, body, signal, ret
     target,
     { method: 'POST', headers: mediaHeaders(resolved), body: JSON.stringify(body ?? {}) },
     signal,
-    { retries },
+    { retries, timeoutMs },
   );
 }
 
