@@ -110,14 +110,22 @@ function publicTurnResult(result) {
   };
 }
 
+// Агентные ссылки на файлы иногда приходят с обёрткой из бэктиков/кавычек
+// («📎 x → `src/a.ts`»). В URL она кодируется как %60 и safeWorkspacePath
+// отдаёт ENOENT, хотя файл существует. Снимаем обёртку на входе HTTP-роутов,
+// чтобы открывались и старые сообщения из истории.
+function unwrapWorkspaceQueryPath(value) {
+  return String(value || '').trim().replace(/^["'`]+/, '').replace(/["'`]+$/, '');
+}
+
 export async function handleWorkspace(req, res, sessionId, url) {
   const root = workspaceFor(sessionId);
   const pathname = url.pathname;
 
   if (pathname === '/api/workspace/tree' && req.method === 'GET') return sendJson(res, 200, tree(root));
-  if (pathname === '/api/file' && req.method === 'GET') return sendJson(res, 200, listDir(root, url.searchParams.get('path') || '.'));
+  if (pathname === '/api/file' && req.method === 'GET') return sendJson(res, 200, listDir(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')) || '.'));
   if (pathname === '/api/file/content' && req.method === 'GET') {
-    const full = safeWorkspacePath(root, url.searchParams.get('path') || '', { allowMissing: false });
+    const full = safeWorkspacePath(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')), { allowMissing: false });
     const buf = fs.readFileSync(full);
     if (buf.length > 4 * 1024 * 1024) return sendJson(res, 413, { error: 'Файл слишком большой для редактора' });
     if (buf.includes(0)) return sendJson(res, 415, { error: 'Бинарный файл нельзя открыть как текст' });
@@ -132,7 +140,7 @@ export async function handleWorkspace(req, res, sessionId, url) {
   }
   if (pathname === '/api/file/diff' && req.method === 'GET') {
     try {
-      const relativePath = url.searchParams.get('path') || '';
+      const relativePath = unwrapWorkspaceQueryPath(url.searchParams.get('path'));
       return sendJson(res, 200, diffGitChange(root, relativePath, gitOptions(sessionId, root)));
     } catch (err) {
       return workspaceError(res, err, 'Не удалось построить diff');
@@ -279,7 +287,7 @@ export async function handleWorkspace(req, res, sessionId, url) {
   }
 
   if (pathname === '/api/workspace/download' && req.method === 'GET') {
-    const p = url.searchParams.get('path') || '';
+    const p = unwrapWorkspaceQueryPath(url.searchParams.get('path'));
     const full = safeWorkspacePath(root, p, { allowMissing: false });
     const st = fs.statSync(full);
     if (!st.isFile()) return sendJson(res, 400, { error: 'Скачивание каталогов пока не поддерживается' });

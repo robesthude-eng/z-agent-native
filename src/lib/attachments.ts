@@ -1,4 +1,5 @@
 import { formatSize } from "../api/files";
+import { toWorkspaceRelPath } from "./workspacePath";
 import { t } from "@/i18n";
 
 /**
@@ -60,7 +61,7 @@ function parseManifestLine(line: string): AttachmentRef | null {
   const tail = body.slice(arrow + ARROW.length);
   if (!name || !tail) return null;
   const [pathPart, ...metaParts] = tail.split(META);
-  const path = (pathPart ?? "").trim();
+  const path = toWorkspaceRelPath(pathPart ?? "") ?? (pathPart ?? "").trim();
   if (!path) return null;
   // Размер печатался formatSize — как заметку его не показываем.
   const note = metaParts
@@ -111,8 +112,12 @@ export function parseAgentAttachmentLines(text: string): {
       continue;
     }
     const name = m[1] ?? "";
-    const path = m[2] ?? "";
+    // Модель любит оборачивать путь бэктиками: «📎 x → `src/a.ts`». Раньше
+    // обёртка попадала в /api/workspace/download (%60src/a.ts%60 → ENOENT),
+    // поэтому прогоняем путь через общий нормализатор.
+    const path = toWorkspaceRelPath(m[2] ?? "") ?? (m[2] ?? "").trim();
     const note = (m[3] ?? "").replace(/^[\s—-]+/, "").trim();
+    if (!path) continue;
     refs.push(note ? { name, path, note } : { name, path });
   }
   if (refs.length === 0) return { refs: [], rest: text };

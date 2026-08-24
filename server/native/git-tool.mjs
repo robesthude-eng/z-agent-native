@@ -1,3 +1,4 @@
+import fs from 'node:fs';
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { ensureManagedHome, sandboxCommand } from './sandbox.mjs';
@@ -165,26 +166,121 @@ async function runGit(root, identity, args, signal, timeoutMs) {
   });
 }
 
+// Проект часто приезжает в воркспейс распакованным архивом: тогда репозиторий
+// лежит не в корне, а в подпапке (z-agent-native-main/…), и git-команды из
+// корня падали с «not a git repository». Ищем ближайший предок первого path
+// (или сам корень), в котором есть .git — глубже-раньше, чтобы вложенные
+// сабмодули выбирались корректно.
+// Экспортируется для тестов: логика выбора каталога репозитория полностью fs-овая.
+export function findRepoDir(root, input = {}) {
+  const rawPaths = Array.isArray(input.paths) ? input.paths.slice(0, 20) : [];
+  const candidates = [];
+  for (const value of rawPaths) {
+    let dir;
+    try { dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true })); } catch { continue; }
+    while (true) {
+      const rel = path.relative(root, dir);
+      if (!rel || rel.startsWith('..')) break;
+      candidates.push(dir);
+      if (rel === '') break;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+  }
+  // Сначала самые глубокие: для src/a/b.ts подпапка с .git важнее корня.
+  const ordered = [...candidates].sort((a, b) => b.length - a.length);
+  for (const dir of [root, ...ordered]) {
+    try { if (fs.statSync(path.join(dir, '.git')).isDirectory()) return dir; } catch { /* not a repo here */ }
+  }
+  try { if (fs.statSync(path.join(root, '.git')).isFile()) return root; } catch { /* gitfile (.git "gitdir:…") редок, но валиден */ }
+  return root;
+}
+
+// Маркеры корня проекта: по ним решаем, ГДЕ делать git init, когда репозитория
+// нет вообще. Инициализировать в корне воркспейса неудобно — распакованный
+// архив почти всегда лежит в подпапке со своим package.json.
+const PROJECT_MARKERS = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', 'CMakeLists.txt', '.gitignore', 'README.md', 'README.rst', 'README.txt'];
+
+function hasProjectMarker(dir) {
+  try {
+    const entries = fs.readdirSync(dir);
+    return PROJECT_MARKERS.some((marker) => entries.includes(marker));
+  } catch { return false; }
+}
+
+// Самый верхний каталог над первым path, похожий на корень проекта.
+// Экспортируется для тестов.
+export function pickInitDir(root, input = {}) {
+  const rawPaths = Array.isArray(input.paths) ? input.paths.slice(0, 20) : [];
+  for (const value of rawPaths) {
+    let dir;
+    try { dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true })); } catch { continue; }
+    let best = null;
+    while (true) {
+      const rel = path.relative(root, dir);
+      if (!rel || rel.startsWith('..')) break;
+      if (hasProjectMarker(dir)) best = dir;
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      dir = parent;
+    }
+    if (best) return best;
+  }
+  return root;
+}
+
 export async function executeGitTool({ root, identity, input = {}, signal, sessionId = null }) {
   ensureManagedHome(sessionId, root);
   const action = String(input.action || '').trim().toLowerCase();
   if (!GIT_ACTIONS.includes(action)) {
     throw new Error(`Unsupported git action "${input.action}". Use one of: ${GIT_ACTIONS.join(', ')}`);
   }
-  const plan = buildGitArgs(root, action, input);
-  const result = await runGit(root, identity, plan.args, signal, input.timeoutMs);
+  // Команды выполняются от корня воркспейса; если репозиторий нашёлся в
+  // подпапке — git получает -C <подпапка>, а paths считаются от неё.
+  let repoDir = findRepoDir(root, input);
+  const relOf = (dir) => path.relative(root, dir).split(path.sep).join('/');
+  const gitArgsFor = (dir, args) => {
+    const rel = relOf(dir);
+    return rel && rel !== '.' ? ['-C', rel, ...args] : args;
+  };
+
+  let plan = buildGitArgs(repoDir, action, input);
+  let result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs);
+
+  // Распакованный проект без .git — обычная ситуация, а не ошибка модели:
+  // инициализируем репозиторий в каталоге проекта и повторяем команду. Первый
+  // commit агент сделает сам, когда решит зафиксировать историю.
+  if (result.code !== 0 && /not a git repository/i.test((result.stderr || result.stdout || ''))) {
+    const initDir = repoDir !== root ? repoDir : pickInitDir(root, input);
+    const init = await runGit(root, identity, gitArgsFor(initDir, ['init']), signal, input.timeoutMs);
+    if (init.code !== 0) {
+      throw new Error(`Could not initialize a git repository in ${relOf(initDir) || '.'}: ${(init.stderr || init.stdout || '').trim()}`);
+    }
+    repoDir = initDir;
+    plan = buildGitArgs(repoDir, action, input);
+    result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs);
+  }
+
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || '').trim();
     if (/not a git repository/i.test(detail)) {
-      throw new Error('This workspace is not a git repository yet. Initialize one with bash before using git actions.');
+      throw new Error('This workspace is not a git repository yet and git init failed; check the workspace for permission errors.');
+    }
+    // Пустой репозиторий — не ошибка модели: подсказываем, что нужен commit.
+    if (/does not have any commits|unknown revision|bad revision|fatal: your current branch/i.test(detail)
+      && ['log', 'show', 'blame', 'diff'].includes(action)) {
+      throw new Error('The repository has no commits yet. Use action=commit first (it stages tracked files), then repeat this action.');
     }
     throw new Error(detail || `${plan.title} exited with code ${result.code}`);
   }
   const body = (result.stdout || '').trim() || (result.stderr || '').trim();
+  const relRepo = relOf(repoDir);
+  const inSubrepo = relRepo && relRepo !== '.';
   return {
     output: body || `${plan.title}: no output`,
     title: plan.title,
-    mutatedPaths: gitActionMutates(action) ? ['.'] : [],
-    metadata: { git: { action, exit: result.code } },
+    mutatedPaths: gitActionMutates(action) ? [inSubrepo ? relRepo : '.'] : [],
+    metadata: { git: { action, exit: result.code, ...(inSubrepo ? { repo: relRepo } : {}) } },
   };
 }

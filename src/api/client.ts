@@ -618,6 +618,10 @@ export function workspaceDownloadUrl(
   // Старые истории могли сохранить абсолютный/legacy-путь; download route
   // принимает только путь относительно корня workspace текущей сессии.
   const rel = filePath
+    // Обёртка из бэктиков/кавычек («📎 x → `src/a.ts`») — тоже legacy-мусор:
+    // с ней path в URL кодируется как %60src/a.ts%60 и сервер отдаёт ENOENT.
+    .replace(/^["'`]+/, "")
+    .replace(/["'`]+$/, "")
     .replace(/^file:\/\//, "")
     .replace(/\\/g, "/")
     .replace(/^\/session\/workspace\//, "")

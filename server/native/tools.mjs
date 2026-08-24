@@ -186,7 +186,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'git',
-    description: 'Inspect and record repository history: status, log, diff, show, blame, branches, create_branch, commit. Use this instead of bash for git work; arguments are passed as structured argv, never as a shell string.',
+    description: 'Inspect and record repository history: status, log, diff, show, blame, branches, create_branch, commit. Use this instead of bash for git work; arguments are passed as structured argv, never as a shell string. The repository root is detected automatically: if the project lives in a subfolder (for example after unzipping an archive), pass any of its paths. A missing repository is initialized automatically in the project folder, so status works right away; make the first commit before log/diff of history.',
     inputSchema: object({
       action: { type: 'string', enum: GIT_ACTIONS },
       rev: { type: 'string', description: 'Commit, tag, branch, or range such as HEAD~3..HEAD.' },

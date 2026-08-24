@@ -20,6 +20,12 @@ describe("toWorkspaceRelPath", () => {
     ["sessions/ses_b/workspace/pkg/main.go", "pkg/main.go"],
     ["/session/workspace/notes.md", "notes.md"],
     ["dir/", "dir"],
+    // Агент оборачивает пути бэктиками/кавычками в «📎 имя → путь» — раньше
+    // обёртка ехала в /api/workspace/download как %60 и сервер отдавал ENOENT.
+    ["`src/app.tsx`", "src/app.tsx"],
+    ['"src/app.tsx"', "src/app.tsx"],
+    ["'src/app.tsx'", "src/app.tsx"],
+    ["`z-agent-native-main/dist/index.html`", "z-agent-native-main/dist/index.html"],
   ])("normalizes %s", (input, expected) => {
     expect(toWorkspaceRelPath(input)).toBe(expected);
   });
@@ -48,6 +54,8 @@ describe("looksLikeWorkspacePath", () => {
     ".env.example",
     "pkg/sub/main.go",
     "a/b/c/style.css",
+    // Инлайн-код внутри бэктиков — это тот же путь.
+    "`src/app.tsx`",
   ])("accepts %s", (input) => {
     expect(looksLikeWorkspacePath(input)).toBe(true);
   });

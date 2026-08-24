@@ -1,4 +1,4 @@
-import { assertSafeExternalUrl } from './security.mjs';
+import { assertSafeExternalUrl, isLoopbackOrPrivateHost } from './security.mjs';
 import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 
 const MAX_SNAPSHOT_CHARS = 40_000;
@@ -17,6 +17,24 @@ const SESSION_IDLE_MS = 10 * 60 * 1000;
 const MAX_SESSIONS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_SESSIONS) || 4, 1), 64);
 
 export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'press', 'console', 'close'];
+
+// Дев-сервер, поднятый bash-инструментом (vite/webpack/npm run dev), живёт в
+// executor-песочнице без сети — браузер до него физически не достучится, и
+// попытка открыть 127.0.0.1:PORT раньше умирала в ERR_BLOCKED_BY_CLIENT без
+// объяснений. Даём модели сразу рабочий рецепт: собрать статику и открыть её
+// как workspace-документ.
+function assertNotLocalBrowserTarget(target) {
+  let host;
+  try { host = new URL(String(target)).hostname; } catch { return; }
+  if (!isLoopbackOrPrivateHost(host)) return;
+  throw Object.assign(
+    new Error(
+      `Local/private address ${host} is unreachable from the agent browser: the bash sandbox has no shared network with it, so dev servers (vite/npm run dev) cannot be previewed live. ` +
+      'Instead build the project (for example `npm run build` / `npx vite build`) and open the static output as a workspace document: {"action":"open","url":"dist/index.html"}.',
+    ),
+    { code: 'BROWSER_LOCAL_ADDRESS' },
+  );
+}
 
 // Рендер страницы в файл — внутренняя операция медиа-слоя, а не действие
 // инструмента `browser`. Модели она в схеме не нужна: у неё есть
@@ -281,12 +299,13 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
     // `load` вместо `domcontentloaded`: документ с картинками иначе успевает
     // напечататься с пустыми местами вместо иллюстраций.
     await page.setContent(html, { timeout, waitUntil: 'load' });
-  } else {
-    assertAgentNetworkUrl(target, { tool: 'browser' });
-    const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
-    if (!proxyServer) await assertSafeExternalUrl(target);
-    await page.goto(target, { timeout, waitUntil: 'load' });
-  }
+    } else {
+      assertNotLocalBrowserTarget(target);
+      assertAgentNetworkUrl(target, { tool: 'browser' });
+      const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
+      if (!proxyServer) await assertSafeExternalUrl(target);
+      await page.goto(target, { timeout, waitUntil: 'load' });
+    }
 
   let buffer;
   try {
@@ -354,7 +373,10 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
     const html = String(input.html || '');
     const target = String(input.url || '').trim();
     if (!html && !target) throw new Error('open requires url');
-    if (!html) assertAgentNetworkUrl(target, { tool: 'browser' });
+    if (!html) {
+      assertNotLocalBrowserTarget(target);
+      assertAgentNetworkUrl(target, { tool: 'browser' });
+    }
   }
 
   const playwright = await loadPlaywright();
@@ -380,6 +402,7 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
       // Same SSRF policy as webfetch: no loopback, no private ranges, no
       // non-http schemes. Navigation is still a live fetch, so this check is a
       // policy gate rather than a pinned connection.
+      assertNotLocalBrowserTarget(target);
       assertAgentNetworkUrl(target, { tool: 'browser' });
       const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
       if (!proxyServer) {

@@ -16,9 +16,14 @@ export function toWorkspaceRelPath(value: string): string | null {
   if (typeof value !== "string") return null;
   const trimmed = value.trim();
   if (!trimmed) return null;
+  // Агент часто оборачивает пути бэктиками/кавычками в тексте («📎 x →
+  // `src/a.ts`»). Раньше обёртка ехала в URL /api/workspace/* как есть и
+  // скачивание падало с ENOENT — снимаем её до нормализации.
+  const unwrapped = trimmed.replace(/^["'`]+/, "").replace(/["'`]+$/, "");
+  if (!unwrapped) return null;
   // file:// снимается (так агент ссылается на файл воркспейса), остальные схемы
   // отбрасываются ниже — http(s)://, ws:// и прочее файлами не являются.
-  const path = trimmed
+  const path = unwrapped
     .replace(/^file:\/\//, "")
     .replace(/\\/g, "/")
     .replace(/^\/app\/workspace\/sessions\/[^/]+\/workspace\//, "")
@@ -41,7 +46,7 @@ export function toWorkspaceRelPath(value: string): string | null {
  * а ложная кнопка «открыть» раздражает сильнее, чем пропущенная.
  */
 export function looksLikeWorkspacePath(value: string): boolean {
-  const trimmed = value.trim();
+  const trimmed = value.trim().replace(/^["'`]+/, "").replace(/["'`]+$/, "");
   if (!trimmed || trimmed.length > 200) return false;
   if (/\s/.test(trimmed)) return false;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return false;

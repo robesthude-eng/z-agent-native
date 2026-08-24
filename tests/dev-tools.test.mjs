@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-import { GIT_ACTIONS, buildGitArgs, executeGitTool, gitActionMutates } from '../server/native/git-tool.mjs';
+import { GIT_ACTIONS, buildGitArgs, executeGitTool, findRepoDir, gitActionMutates, pickInitDir } from '../server/native/git-tool.mjs';
 import { buildTestCommand, formatTestReport, guessFramework, parseTestOutput } from '../server/native/test-runner.mjs';
 import { formatDiagnosticsReport, parseDiagnostics, planDiagnostics } from '../server/native/diagnostics.mjs';
 import { BROWSER_ACTIONS, browserUnavailableMessage, executeBrowserTool } from '../server/native/browser.mjs';
@@ -96,6 +96,65 @@ test('git rejects unknown actions before spawning anything', async () => {
     /Unsupported git action/,
   );
   assert.ok(!GIT_ACTIONS.includes('push'), 'push must not be exposed');
+});
+
+test('git detects a repository in a project subfolder', () => {
+  // Распакованный архив: репозитория в корне нет, .git — в подпапке проекта.
+  const root = tempRoot();
+  const project = path.join(root, 'z-agent-native-main');
+  fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+  fs.mkdirSync(path.join(project, '.git'));
+  assert.equal(findRepoDir(root, {}), root, 'without paths the workspace root is used');
+  assert.equal(
+    findRepoDir(root, { paths: ['z-agent-native-main/src/index.css'] }),
+    project,
+    'deepest ancestor with .git wins over the root',
+  );
+});
+
+test('git pickInitDir prefers the project marker folder for auto-init', () => {
+  const root = tempRoot();
+  const project = path.join(root, 'unpacked-project');
+  fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'package.json'), '{}');
+  assert.equal(pickInitDir(root, { paths: ['unpacked-project/src/app.tsx'] }), project);
+  // Нет маркеров — init остаётся в корне воркспейса.
+  const bare = tempRoot();
+  fs.mkdirSync(path.join(bare, 'somedir'), { recursive: true });
+  assert.equal(pickInitDir(bare, { paths: ['somedir/a.txt'] }), bare);
+  assert.equal(pickInitDir(bare, {}), bare);
+});
+
+test('git auto-initializes a missing repository and reports status', async () => {
+  const root = tempRoot();
+  const project = path.join(root, 'proj');
+  fs.mkdirSync(path.join(project, 'src'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'package.json'), '{}');
+  fs.writeFileSync(path.join(project, 'src', 'a.ts'), 'export {};\n');
+
+  const result = await executeGitTool({
+    root,
+    identity: { isolated: false },
+    input: { action: 'status', paths: ['proj/src/a.ts'] },
+  });
+  assert.match(result.output, /## (No commits yet|master|main)/);
+  assert.ok(fs.statSync(path.join(project, '.git')).isDirectory(), 'git init должен создать .git в папке проекта');
+
+  // Повторный вызов находит уже созданный репозиторий без повторного init.
+  const again = await executeGitTool({
+    root,
+    identity: { isolated: false },
+    input: { action: 'status', paths: ['proj/src/a.ts'] },
+  });
+  assert.match(again.output, /No commits yet|nothing to commit|\?\?/);
+});
+
+test('git explains that an empty repository needs a first commit', async () => {
+  const root = tempRoot();
+  await assert.rejects(
+    () => executeGitTool({ root, identity: { isolated: false }, input: { action: 'log' } }),
+    /no commits yet/i,
+  );
 });
 
 /* ------------------------------ test runner ----------------------------- */
@@ -249,6 +308,28 @@ test('browser degrades with an actionable message when Playwright is absent', ()
   assert.match(browserUnavailableMessage(), /Playwright/);
   assert.match(browserUnavailableMessage(), /playwright install/);
   assert.ok(BROWSER_ACTIONS.includes('snapshot') && BROWSER_ACTIONS.includes('close'));
+});
+
+test('browser explains why dev-server localhost is unreachable instead of ERR_BLOCKED_BY_CLIENT', async () => {
+  // Дев-сервер песочницы физически недоступен из браузера (executor без сети):
+  // модель должна получить рецепт «собери статику и открой workspace-файл»,
+  // а не загадочный ERR_BLOCKED_BY_CLIENT от прокси.
+  for (const url of ['http://127.0.0.1:5173/', 'http://localhost:3000/', 'http://10.0.0.5:8080/']) {
+    await assert.rejects(
+      () => executeBrowserTool({ sessionId: 's-local', input: { action: 'open', url } }),
+      (error) => {
+        assert.equal(error.code, 'BROWSER_LOCAL_ADDRESS', url);
+        assert.match(error.message, /dist\/index\.html|workspace/);
+        return true;
+      },
+      `expected ${url} to be rejected with guidance`,
+    );
+  }
+  // Рабочие workspace-пути остаются доступны: локальной проверки на них нет.
+  await assert.rejects(
+    () => executeBrowserTool({ sessionId: 's-local2', input: { action: 'open', url: 'dist/index.html' } }),
+    (error) => error.code !== 'BROWSER_LOCAL_ADDRESS',
+  );
 });
 
 /* ------------------------------- subagents ------------------------------ */
