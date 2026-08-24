@@ -924,6 +924,7 @@ export default function Composer() {
           className="pointer-events-none absolute inset-0 rounded-3xl"
           size="md"
           colorVariant="colorful"
+          active
         />
       </section>
 
