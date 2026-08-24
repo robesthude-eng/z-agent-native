@@ -642,7 +642,7 @@ export default function Composer() {
         )}
 
         <BorderBeam
-          size="line"
+          size="md"
           colorVariant="colorful"
           borderRadius={24}
           className="w-full rounded-3xl"
@@ -655,8 +655,7 @@ export default function Composer() {
             aria-label={t("composer.pole_vvoda_soobscheniya")}
             className={cn(
               "relative w-full transition-all duration-[200ms]",
-              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 border border-border/40 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]",
-              "focus-within:border-primary/80 focus-within:ring-2 focus-within:ring-primary/25",
+              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 shadow-sm",
               dragOver && "ring-2 ring-primary bg-primary/5",
             )}
             onDragOver={onDragOver}
