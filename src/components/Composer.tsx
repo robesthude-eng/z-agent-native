@@ -642,7 +642,7 @@ export default function Composer() {
         )}
 
         <BorderBeam
-          size="md"
+          size="line"
           colorVariant="colorful"
           borderRadius={24}
           className="w-full rounded-3xl"
@@ -655,18 +655,8 @@ export default function Composer() {
             aria-label={t("composer.pole_vvoda_soobscheniya")}
             className={cn(
               "relative w-full transition-all duration-[200ms]",
-              // Крупный радиус и мягкая тень вместо жёсткой рамки — так поле
-              // ввода выглядит в обоих референсах. Тень границу ЗАМЕНЯЕТ, а не
-              // дополняет: рамка осталась, но приглушена до половины, иначе
-              // получались бы два контура один в другом.
-              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 border border-border/60 shadow-sm",
-              // Фокус подсвечивает ОБЁРТКУ, а не саму textarea. У textarea стили
-              // фокуса сняты явно (`focus-visible:ring-0` ниже) и это правильно:
-              // кольцо внутри рамки композера читалось бы как рамка в рамке.
-              // Но без подсветки контейнера главное поле приложения оставалось
-              // единственным местом, где клавиатурный пользователь не видит, где
-              // он, — при том что кнопки, поля и переключатели кольцо имеют.
-              "focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/25",
+              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 border border-border/40 shadow-[inset_0_0_0_1px_rgba(255,255,255,0.04)]",
+              "focus-within:border-primary/80 focus-within:ring-2 focus-within:ring-primary/25",
               dragOver && "ring-2 ring-primary bg-primary/5",
             )}
             onDragOver={onDragOver}
