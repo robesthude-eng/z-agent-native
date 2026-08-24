@@ -19,6 +19,7 @@ import {
 import { log } from "../lib/log";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
+import { QuestionTool, type QuestionConfig, type QuestionAnswer } from "./QuestionTool";
 import { t, tf } from "@/i18n";
 
 /**
@@ -281,6 +282,72 @@ export default function InterruptionBar() {
   if (!bar.visible || !active) return null;
 
   const isPermission = active.kind === "permission";
+
+  // Если активен вопрос агента — рендерим красивый QuestionTool с 21st.dev
+  if (!isPermission && queue.length > 0) {
+    const questionConfigs: QuestionConfig[] = queue.map((q, idx) => ({
+      id: q.id ?? `q-${idx}`,
+      title: q.prompt,
+      header: q.title || "Question",
+      description: q.detail || undefined,
+      allowCustom: q.allowCustom,
+      options: q.options.map((opt, oIdx) => ({
+        id: opt.value || `opt-${oIdx}`,
+        label: opt.label,
+        description: opt.description,
+      })),
+    }));
+
+    return (
+      <section
+        className="pointer-events-none fixed inset-x-0 bottom-[116px] z-40 px-3 md:px-6"
+        aria-live="polite"
+        aria-label="Вопрос агента"
+      >
+        <div className="pointer-events-auto mx-auto w-full max-w-lg animate-in fade-in slide-in-from-bottom-2">
+          <QuestionTool
+            questions={questionConfigs}
+            busy={busy}
+            onSubmitAnswer={async (answers: QuestionAnswer[]) => {
+              const allValues = answers.map((ans) => {
+                if (ans.kind === "skip") return ["skip"];
+                if (ans.text) return [ans.text];
+                return ans.selectedLabels && ans.selectedLabels.length > 0
+                  ? ans.selectedLabels
+                  : ans.selectedIds ?? [];
+              });
+              setBusy(true);
+              try {
+                let confirmedQuestionId = pendingQuestionId;
+                if (currentID && !confirmedQuestionId) {
+                  const pending = await api.waitForPendingQuestion(currentID);
+                  confirmedQuestionId = pending?.id ?? null;
+                  if (confirmedQuestionId) setPendingQuestionId(confirmedQuestionId);
+                }
+
+                const chosen = batchReplyPlan(queue, allValues, {
+                  pendingQuestionId: confirmedQuestionId,
+                });
+
+                if (chosen.transport === "question") {
+                  if (!currentID) throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
+                  await api.replyQuestion(currentID, chosen.id, chosen.answers);
+                } else if (chosen.transport === "none") {
+                  log.warn(t("interruption_bar.interruptionbar_otvet_poka_ne_otpravlen"), chosen.reason);
+                  toast("error", t("interruption_bar.ne_udalos_svyazat_otvet_s_voprosom"));
+                }
+              } catch (e) {
+                log.error(t("interruption_bar.interruptionbar_otvet_ne_otpravlen"), e);
+                toast("error", t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"));
+              } finally {
+                setBusy(false);
+              }
+            }}
+          />
+        </div>
+      </section>
+    );
+  }
 
   return (
     <section

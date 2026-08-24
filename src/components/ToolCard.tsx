@@ -33,6 +33,7 @@ import {
   extractWrittenContent,
 } from "../lib/toolEdits";
 import { useSmoothStreamingText } from "../lib/useSmoothText";
+import { QuestionTool, type QuestionConfig } from "./QuestionTool";
 import { useStore } from "../store/useStore";
 import { toolIcon } from "../utils/toolUtils";
 import DiffView from "./DiffView";
@@ -418,27 +419,12 @@ function QuestionTrace({ part }: { part: ToolPart }) {
 function QuestionCard({ part }: { part: ToolPart }) {
   const input = getInput(part);
   const state = getState(part);
-  // Разбор даёт новые объекты на каждом рендере. Без useMemo список вопросов
-  // менял бы ссылку постоянно и обнулял бы useCallback-обработчики ниже,
-  // которые обязаны видеть актуальный вопрос при отправке ответа.
   const questions = useMemo(() => parseQuestions(input), [input]);
   const currentID = useStore((s) => s.currentID);
-  const [customText, setCustomText] = useState<Record<number, string>>({});
-  // Статус «отвечено» — по каждому вопросу отдельно (раньше был один
-  // флаг на всю карточку, и ответ на один вопрос помечал «Ответ отправлен»
-  // сразу у всех).
-  const [answeredIdx, setAnsweredIdx] = useState<Record<number, boolean>>({});
-  const [selectedIdx, setSelectedIdx] = useState<Record<number, number | null>>(
-    {},
-  );
-  const [draftAnswers, setDraftAnswers] = useState<Record<number, string[]>>({});
   const [submitting, setSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const isWaiting = state === "running";
 
-  // Question tool блокируется на pending request. Ответ должен вернуться в
-  // ЭТОТ ЖЕ request через /question/:id/reply; отдельное user-message здесь
-  // запрещено, потому что оно создаёт новый turn и раньше требовало abort.
   const submitAnswers = useCallback(
     async (answers: string[][]) => {
       const sid = currentID;
@@ -454,197 +440,56 @@ function QuestionCard({ part }: { part: ToolPart }) {
     [currentID],
   );
 
-  const commitAnswer = useCallback(
-    (qIdx: number, labels: string[], optIdx: number | null) => {
-      if (answeredIdx[qIdx] || submitting) return;
-      const clean = labels.map((v) => v.trim()).filter(Boolean);
-      if (clean.length === 0) return;
-
-      const nextDrafts = { ...draftAnswers, [qIdx]: clean };
-      setDraftAnswers(nextDrafts);
-      setSelectedIdx((prev) => ({ ...prev, [qIdx]: optIdx }));
-      setAnsweredIdx((prev) => ({ ...prev, [qIdx]: true }));
-
-      const complete = questions.every((_, idx) => nextDrafts[idx]?.length);
-      if (!complete) return;
-
-      setSubmitting(true);
-      submitAnswers(questions.map((_, idx) => nextDrafts[idx] ?? []))
-        .then(() => setSubmitted(true))
-        .catch((err) => {
-          log.error("[QuestionCard] submitAnswers failed:", err);
-          toast(
-            "error",
-            err instanceof Error
-              ? err.message
-              : t("tool_card.ne_udalos_otpravit_otvet_na_vopros"),
-          );
-          // Ничего не abort'им и не создаём новую реплику. Возвращаем карточку
-          // в редактируемое состояние, чтобы пользователь мог повторить.
-          setAnsweredIdx({});
-          setDraftAnswers({});
-          setSelectedIdx({});
-        })
-        .finally(() => setSubmitting(false));
-    },
-    [answeredIdx, draftAnswers, questions, submitAnswers, submitting],
-  );
-
-  const handleOptionClick = useCallback(
-    (qIdx: number, optIdx: number, label: string) => {
-      commitAnswer(qIdx, [label], optIdx);
-    },
-    [commitAnswer],
-  );
-
-  const handleCustomSubmit = useCallback(
-    (qIdx: number) => {
-      const text = customText[qIdx]?.trim();
-      if (!text) return;
-      commitAnswer(qIdx, [text], null);
-    },
-    [commitAnswer, customText],
-  );
-
   if (questions.length === 0) return <DefaultToolCard part={part} />;
 
-  // Этап 2.1: пока полоса включена, вопрос показывается ТОЛЬКО в ней.
-  // Две карточки на одно прерывание — два места, куда можно нажать, и ни
-  // одного очевидного; к тому же карточка в ленте уходит прокруткой, ради
-  // чего полоса и заводилась.
-  //
-  // Условие берётся из `isBarQuestionPart` — той же функции, по которой полоса
-  // вопрос и находит. Своё условие здесь дало бы дыру: лента спрятала бы
-  // вопрос, полоса его не узнала бы, и ход ждал бы ответа, которого не видно
-  // нигде. Отвеченный вопрос предикат не проходит и остаётся в ленте историей.
   if (isInterruptionBarEnabled() && isBarQuestionPart(part)) return null;
 
-  // Отвеченный вопрос при включённой полосе — свёрнутая строка. Активная
-  // карточка живёт над композером, а после прямого Question reply выбранные
-  // ответы читаются из metadata завершённого tool-call. Отдельной user-реплики
-  // для выбора больше нет.
   if (isInterruptionBarEnabled()) {
     return <QuestionTrace part={part} />;
   }
 
-  // По одному вопросу за раз: видны отвеченные и первый неотвеченный;
-  // остальные появляются после ответа.
-  const firstUnanswered = questions.findIndex((_, i) => !answeredIdx[i]);
-  const allAnswered = firstUnanswered === -1;
-  const hiddenCount = allAnswered ? 0 : questions.length - firstUnanswered - 1;
+  const questionConfigs: QuestionConfig[] = questions.map((q, idx) => ({
+    id: `q-${idx}`,
+    title: q.question || q.header || `Question ${idx + 1}`,
+    header: q.header,
+    allowCustom: q.allowCustomResponse !== false,
+    options: (q.options ?? []).map((opt, oIdx) => ({
+      id: opt.id ?? opt.label ?? `opt-${oIdx}`,
+      label: opt.label,
+      description: opt.description,
+    })),
+  }));
 
   return (
-    <div
-      className={cn(
-        "not-prose my-1.5 overflow-hidden rounded-xl border",
-        allAnswered || !isWaiting
-          ? "border-foreground/25 bg-foreground/[0.04]"
-          : "border-foreground/25 bg-foreground/[0.04]",
-      )}
-    >
-      {questions.map((q, qIdx) => {
-        const isAnswered = !!answeredIdx[qIdx];
-        if (!isAnswered && qIdx !== firstUnanswered) return null;
-        return (
-          // id у вопросов нет, идентичность даёт их собственный текст: список
-          // раскрывается по одному вопросу, и индекс переносил бы введённый
-          // «свой ответ» на следующий вопрос.
-          <div
-            key={`${q.header ?? ""}|${q.question ?? ""}`}
-            className={cn(
-              "flex flex-col gap-2 p-3",
-              qIdx > 0 && "border-t border-border",
-            )}
-          >
-            {q.header && (
-              <div className="text-[11px] font-bold uppercase tracking-wider text-foreground">
-                {q.header}
-              </div>
-            )}
-            {q.question && (
-              <div className="text-[13.5px] font-medium leading-snug">
-                {q.question}
-              </div>
-            )}
-            {q.options && q.options.length > 0 && (
-              <div className="flex flex-col gap-1">
-                {q.options.map((opt, optIdx) => {
-                  const selected = selectedIdx[qIdx] === optIdx;
-                  const disabled = isAnswered;
-                  return (
-                    <button
-                      key={opt.id ?? `${opt.label}|${opt.description}`}
-                      type="button"
-                      className={cn(
-                        "flex w-full flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition",
-                        selected
-                          ? "border-primary bg-primary/10"
-                          : "border-border/80 bg-card/50 hover:border-primary/40 hover:bg-muted/40",
-                        disabled && "cursor-default opacity-70",
-                      )}
-                      onClick={() =>
-                        handleOptionClick(qIdx, optIdx, opt.label || "")
-                      }
-                      disabled={disabled}
-                    >
-                      <span className="text-[13px] font-semibold">
-                        {opt.label}
-                      </span>
-                      {opt.description && (
-                        <span className="text-[11px] text-muted-foreground">
-                          {opt.description}
-                        </span>
-                      )}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-            {q.allowCustomResponse !== false && isWaiting && !isAnswered && (
-              <div className="mt-0.5 flex items-center gap-1.5">
-                <Input
-                  type="text"
-                  className="h-8 text-[13px]"
-                  placeholder={t("tool_card.ili_svoy_otvet")}
-                  value={customText[qIdx] || ""}
-                  onChange={(e) =>
-                    setCustomText((prev) => ({
-                      ...prev,
-                      [qIdx]: e.target.value,
-                    }))
-                  }
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") handleCustomSubmit(qIdx);
-                  }}
-                />
-                <Button
-                  size="icon"
-                  className="h-8 w-8 shrink-0 rounded-full"
-                  onClick={() => handleCustomSubmit(qIdx)}
-                  disabled={!customText[qIdx]?.trim()}
-                >
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
-            )}
-            {isAnswered && (
-              <div className="flex items-center gap-1 text-[11px] font-semibold text-foreground">
-                <Check className="h-3 w-3" />
-                {submitted
-                  ? t("tool_card.otvet_otpravlen")
-                  : submitting
-                    ? t("tool_card.otpravlyaem_otvety")
-                    : t("tool_card.otvet_vybran")}
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {hiddenCount > 0 && (
-        <div className="border-t border-border px-3 py-2 font-mono text-[11px] text-muted-foreground/60">
-          Следующий вопрос появится после ответа · осталось {hiddenCount}
-        </div>
-      )}
+    <div className="not-prose my-2 w-full max-w-lg">
+      <QuestionTool
+        questions={questionConfigs}
+        busy={submitting || !isWaiting || submitted}
+        onSubmitAnswer={async (answers) => {
+          const allValues = answers.map((ans) => {
+            if (ans.kind === "skip") return ["skip"];
+            if (ans.text) return [ans.text];
+            return ans.selectedLabels && ans.selectedLabels.length > 0
+              ? ans.selectedLabels
+              : ans.selectedIds ?? [];
+          });
+          setSubmitting(true);
+          try {
+            await submitAnswers(allValues);
+            setSubmitted(true);
+          } catch (err) {
+            log.error("[QuestionCard] submitAnswers failed:", err);
+            toast(
+              "error",
+              err instanceof Error
+                ? err.message
+                : t("tool_card.ne_udalos_otpravit_otvet_na_vopros"),
+            );
+          } finally {
+            setSubmitting(false);
+          }
+        }}
+      />
     </div>
   );
 }
