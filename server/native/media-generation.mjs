@@ -10,7 +10,8 @@ import {
   wavFromPcm,
   writeMediaFile,
 } from './media.mjs';
-import { callProviderBinary, callProviderJson } from './providers.mjs';
+import { callProviderBinary, callProviderJson, providerSpecs } from './providers.mjs';
+import { getProviderKey } from './store.mjs';
 
 // Model backed generation: images and speech.
 //
@@ -52,6 +53,136 @@ export function defaultImageModel() {
 
 export function defaultSpeechModel() {
   return process.env.Z_AGENT_SPEECH_MODEL || DEFAULT_SPEECH_MODEL;
+}
+
+/**
+ * Автоматический подбор модели и провайдера для генерации изображений:
+ * находит активный провайдер пользователя (Sora, Z.ai, OpenAI и др.).
+ */
+export function resolveImageModelRef(ownerId, modelInput) {
+  let specs = {};
+  try { specs = providerSpecs(ownerId); } catch { /* ignore */ }
+  const raw = String(modelInput || '').trim();
+
+  if (raw) {
+    if (raw.includes('/')) {
+      const { providerID, modelID } = parseModelRef(raw);
+      if (specs[providerID] && getProviderKey(ownerId, providerID)) {
+        return { providerID, modelID };
+      }
+      // Если провайдер с таким ID не найден (например, передали 'openai/gpt-image-1'),
+      // подбираем реального провайдера пользователя с этим ключом
+      for (const [pId, spec] of Object.entries(specs)) {
+        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
+        const name = (spec.name || '').toLowerCase();
+        if (pId === providerID || name === providerID.toLowerCase() || name.includes('sora') || name.includes('openai') || spec.protocol === 'openai') {
+          return { providerID: pId, modelID };
+        }
+      }
+    } else {
+      // Имя модели без слэша (например 'gpt-image-1' или 'cogview-3-plus')
+      for (const [pId, spec] of Object.entries(specs)) {
+        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
+        const name = (spec.name || '').toLowerCase();
+        if (raw.startsWith('cogview') && pId === 'zai') return { providerID: pId, modelID: raw };
+        if (!raw.startsWith('cogview') && (name.includes('sora') || name.includes('sota') || spec.protocol === 'openai')) {
+          return { providerID: pId, modelID: raw };
+        }
+      }
+      for (const [pId, spec] of Object.entries(specs)) {
+        if (spec.enabled && getProviderKey(ownerId, pId)) {
+          return { providerID: pId, modelID: raw };
+        }
+      }
+    }
+  }
+
+  // Модель не указана явно — выбираем лучший провайдер
+  const envModel = process.env.Z_AGENT_IMAGE_MODEL;
+  if (envModel && envModel.includes('/')) {
+    const { providerID, modelID } = parseModelRef(envModel);
+    if (specs[providerID] && getProviderKey(ownerId, providerID)) {
+      return { providerID, modelID };
+    }
+  }
+
+  // 1. Sora / True-SOTA (gpt-image-1)
+  for (const [pId, spec] of Object.entries(specs)) {
+    if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
+    const name = (spec.name || '').toLowerCase();
+    if (name.includes('sora') || name.includes('sota') || (spec.baseURL || '').includes('true-sota')) {
+      return { providerID: pId, modelID: 'gpt-image-1' };
+    }
+  }
+
+  // 2. Z.ai (cogview-3-plus)
+  if (specs.zai && specs.zai.enabled && getProviderKey(ownerId, 'zai')) {
+    return { providerID: 'zai', modelID: 'cogview-3-plus' };
+  }
+
+  // 3. Любой доступный провайдер с ключом
+  for (const [pId, spec] of Object.entries(specs)) {
+    if (spec.enabled && getProviderKey(ownerId, pId)) {
+      return { providerID: pId, modelID: 'gpt-image-1' };
+    }
+  }
+
+  return parseModelRef(defaultImageModel());
+}
+
+/**
+ * Автоматический подбор модели для синтеза речи (TTS).
+ */
+export function resolveSpeechModelRef(ownerId, modelInput) {
+  let specs = {};
+  try { specs = providerSpecs(ownerId); } catch { /* ignore */ }
+  const raw = String(modelInput || '').trim();
+
+  if (raw) {
+    if (raw.includes('/')) {
+      const { providerID, modelID } = parseModelRef(raw);
+      if (specs[providerID] && getProviderKey(ownerId, providerID)) {
+        return { providerID, modelID };
+      }
+      for (const [pId, spec] of Object.entries(specs)) {
+        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
+        const name = (spec.name || '').toLowerCase();
+        if (pId === providerID || name === providerID.toLowerCase() || name.includes('sora') || name.includes('openai') || spec.protocol === 'openai') {
+          return { providerID: pId, modelID };
+        }
+      }
+    } else {
+      for (const [pId, spec] of Object.entries(specs)) {
+        if (spec.enabled && getProviderKey(ownerId, pId)) {
+          return { providerID: pId, modelID: raw };
+        }
+      }
+    }
+  }
+
+  const envModel = process.env.Z_AGENT_SPEECH_MODEL;
+  if (envModel && envModel.includes('/')) {
+    const { providerID, modelID } = parseModelRef(envModel);
+    if (specs[providerID] && getProviderKey(ownerId, providerID)) {
+      return { providerID, modelID };
+    }
+  }
+
+  for (const [pId, spec] of Object.entries(specs)) {
+    if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
+    const name = (spec.name || '').toLowerCase();
+    if (name.includes('sora') || name.includes('sota') || spec.protocol === 'openai') {
+      return { providerID: pId, modelID: 'gpt-4o-mini-tts' };
+    }
+  }
+
+  for (const [pId, spec] of Object.entries(specs)) {
+    if (spec.enabled && getProviderKey(ownerId, pId)) {
+      return { providerID: pId, modelID: 'gpt-4o-mini-tts' };
+    }
+  }
+
+  return parseModelRef(defaultSpeechModel());
 }
 
 /** `1024x1536` → `{ width, height }`. Пустое значение — размер выбирает провайдер. */
@@ -198,7 +329,7 @@ export async function generateImageAsset({ root, input = {}, ctx = {} }) {
   if (!prompt) throw Object.assign(new Error('prompt обязателен'), { statusCode: 400 });
 
   const target = resolveMediaOutput(root, input.path, IMAGE_FORMATS, 'path');
-  const model = parseModelRef(input.model, defaultImageModel());
+  const model = resolveImageModelRef(ctx.ownerId, input.model);
   const size = parseImageSize(input.size);
   const count = Math.max(1, Math.min(4, Number(input.count) || 1));
   const references = readReferences(root, input.referenceImages);
@@ -269,7 +400,7 @@ export async function generateSpeechAsset({ root, input = {}, ctx = {} }) {
   if (!text) throw Object.assign(new Error('text обязателен'), { statusCode: 400 });
 
   const target = resolveMediaOutput(root, input.path, AUDIO_FORMATS, 'path');
-  const model = parseModelRef(input.model, defaultSpeechModel());
+  const model = resolveSpeechModelRef(ctx.ownerId, input.model);
   const voice = String(input.voice || '').trim();
   const google = isGoogle(model.providerID);
 
