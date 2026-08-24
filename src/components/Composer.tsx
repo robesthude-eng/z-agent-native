@@ -3,6 +3,7 @@ import {
   FileText as FileTextIcon,
   Image as ImageIcon,
 } from "lucide-react";
+import { BorderBeam } from "border-beam";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -919,6 +920,11 @@ export default function Composer() {
             {uploadError}
           </div>
         )}
+        <BorderBeam
+          className="pointer-events-none absolute inset-0 rounded-3xl"
+          size="md"
+          colorVariant="colorful"
+        />
       </section>
 
       {/* Подсказка на всё окно, пока над страницей тащат файл. */}
