@@ -786,7 +786,7 @@ export default function Composer() {
               type="button"
               variant="ghost"
               size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground"
+              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
               onClick={() => fileInputRef.current?.click()}
               title={t("composer.prikrepit_fayl")}
               aria-label={t("composer.prikrepit_fayl")}
@@ -866,22 +866,10 @@ export default function Composer() {
               {busy ? (
                 <Button
                   type="button"
-                  // Не `destructive`: остановить собственного агента — обычное
-                  // управление, а не разрушительное действие и не ошибка.
-                  // Красный сигналил об опасности там, где её нет, и вдобавок
-                  // брал цвет мимо темы (у варианта захардкожен `bg-red-600`).
-                  variant="secondary"
+                  variant="ghost"
                   size="icon"
-                  className="oc-tap h-7 w-7 shrink-0 rounded-full"
+                  className="oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-red-500/50 bg-red-500/15 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25),inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:bg-red-500/25 hover:border-red-500/70 hover:scale-105 active:scale-95"
                   onClick={() => {
-                    // «Стоп» означает «стоп», включая то, что уйдёт само.
-                    // Раньше очередь переживала остановку и отправляла
-                    // следующую запись сразу, как только сессия освобождалась:
-                    // агент останавливался и тут же начинал новый ход —
-                    // со стороны неотличимо от «остановиться не может».
-                    //
-                    // Серверные записи снимаются и на сервере: оставить их там
-                    // значило бы вернуть очередь при следующем обновлении.
                     for (const q of queued) {
                       const plan = removalPlan(q, currentID);
                       if (plan.kind === "server") {
@@ -903,17 +891,17 @@ export default function Composer() {
                   type="button"
                   size="icon"
                   className={cn(
-                    "oc-tap h-7 w-7 shrink-0 rounded-full transition-all",
+                    "oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200",
                     canSend
-                      ? "bg-primary text-primary-foreground"
-                      : "bg-muted text-muted-foreground",
+                      ? "border border-white/20 bg-primary text-primary-foreground shadow-[0_0_12px_rgba(var(--primary),0.35),inset_0_1px_0_0_rgba(255,255,255,0.2)] hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
+                      : "border border-white/10 bg-white/[0.05] text-muted-foreground/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.3)] cursor-not-allowed opacity-80",
                   )}
                   onClick={submit}
                   disabled={!canSend}
                   title={blockedReason ?? t("composer.otpravit")}
                   aria-label={t("composer.otpravit_soobschenie")}
                 >
-                  <SendIcon size={14} />
+                  <SendIcon size={15} />
                 </Button>
               )}
             </div>
