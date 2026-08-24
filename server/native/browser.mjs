@@ -18,6 +18,18 @@ const MAX_SESSIONS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_SE
 
 export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'press', 'console', 'close'];
 
+// Рендер страницы в файл — внутренняя операция медиа-слоя, а не действие
+// инструмента `browser`. Модели она в схеме не нужна: у неё есть
+// render_document, который сам выберет движок и сохранит результат в воркспейс.
+export const BROWSER_RENDER_ACTIONS = ['pdf', 'screenshot'];
+export const ALL_BROWSER_ACTIONS = [...BROWSER_ACTIONS, ...BROWSER_RENDER_ACTIONS];
+
+// Потолок одного артефакта. Ответ едет через IPC в base64, то есть в памяти
+// оказывается примерно втрое больше; без потолка одна гигантская страница
+// уронит сервис целиком.
+const MAX_RENDER_BYTES = 24 * 1024 * 1024;
+const PDF_PAGE_FORMATS = { a4: 'A4', letter: 'Letter', legal: 'Legal' };
+
 // Playwright is an optional runtime dependency. The same degradation pattern as
 // terminal.mjs/socket.io: never let a missing optional module break startup or
 // the rest of the tool surface.
@@ -240,9 +252,87 @@ function formatSnapshot(snapshot, extra = []) {
   ].join('\n');
 }
 
+/**
+ * Рендер HTML или адреса в PDF либо скриншот.
+ *
+ * Использует ту же сессию Chromium, что и обычные действия браузера: отдельный
+ * процесс на каждый документ обошёлся бы в секунды старта и сотни мегабайт
+ * памяти, а лимит сессий уже считает именно браузеры.
+ *
+ * @returns {Promise<{output: string, title: string, metadata: object, data: string}>}
+ *          `data` — артефакт в base64.
+ */
+export async function renderPageArtifact(sessionId, action, input = {}, signal) {
+  const playwright = await loadPlaywright();
+  if (!playwright) throw new Error(browserUnavailableMessage());
+
+  await sweepIdleBrowserSessions();
+  if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
+
+  const state = await ensureBrowserSession(playwright, sessionId);
+  state.lastUsed = Date.now();
+  const page = state.page;
+  const timeout = timeoutFor(input);
+  const html = String(input.html || '');
+  const target = String(input.url || '').trim();
+  if (!html && !target) throw new Error(`${action} requires html or url`);
+
+  if (html) {
+    // `load` вместо `domcontentloaded`: документ с картинками иначе успевает
+    // напечататься с пустыми местами вместо иллюстраций.
+    await page.setContent(html, { timeout, waitUntil: 'load' });
+  } else {
+    assertAgentNetworkUrl(target, { tool: 'browser' });
+    const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
+    if (!proxyServer) await assertSafeExternalUrl(target);
+    await page.goto(target, { timeout, waitUntil: 'load' });
+  }
+
+  let buffer;
+  try {
+    if (action === 'pdf') {
+      await page.emulateMedia({ media: 'print' });
+      buffer = await page.pdf({
+        format: PDF_PAGE_FORMATS[String(input.pageSize || 'a4').toLowerCase()] || 'A4',
+        landscape: Boolean(input.landscape),
+        printBackground: true,
+        margin: { top: '14mm', bottom: '16mm', left: '14mm', right: '14mm' },
+      });
+    } else {
+      const width = Math.min(Math.max(Number(input.width) || 1280, 200), 4000);
+      const height = Math.min(Math.max(Number(input.height) || 1600, 200), 8000);
+      await page.setViewportSize({ width: Math.round(width), height: Math.round(height) });
+      const jpeg = String(input.imageType || '').toLowerCase() === 'jpeg';
+      buffer = await page.screenshot({
+        fullPage: input.fullPage !== false,
+        type: jpeg ? 'jpeg' : 'png',
+        ...(jpeg ? { quality: 90 } : {}),
+      });
+    }
+  } finally {
+    // Сессия переиспользуется следующими действиями: оставить её в print-режиме
+    // значило бы отдавать потом снимки с чужой вёрсткой.
+    if (action === 'pdf') {
+      try { await page.emulateMedia({ media: 'screen' }); } catch { /* страница могла закрыться */ }
+    }
+  }
+
+  if (!buffer?.length) throw new Error(`${action} produced an empty artifact`);
+  if (buffer.length > MAX_RENDER_BYTES) {
+    throw new Error(`${action} artifact is ${Math.round(buffer.length / (1024 * 1024))} MB, over the ${MAX_RENDER_BYTES / (1024 * 1024)} MB limit`);
+  }
+
+  return {
+    output: `Rendered ${action} (${Math.round(buffer.length / 1024)} KB)`,
+    title: `browser ${action}`,
+    metadata: { browser: { action, bytes: buffer.length } },
+    data: Buffer.from(buffer).toString('base64'),
+  };
+}
+
 export async function executeBrowserTool({ sessionId, input = {}, signal }) {
   const action = String(input.action || '').trim().toLowerCase();
-  if (!BROWSER_ACTIONS.includes(action)) {
+  if (!ALL_BROWSER_ACTIONS.includes(action)) {
     throw new Error(`Unsupported browser action "${input.action}". Use one of: ${BROWSER_ACTIONS.join(', ')}`);
   }
   if (!sessionId) throw new Error('Browser automation requires a session sandbox');
@@ -255,6 +345,8 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
       metadata: { browser: { action } },
     };
   }
+
+  if (BROWSER_RENDER_ACTIONS.includes(action)) return await renderPageArtifact(sessionId, action, input, signal);
 
   // Fail closed on destination policy before loading/launching Chromium.
   // Workspace HTML arrives as `html` and never hits the network.

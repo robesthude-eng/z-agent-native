@@ -37,6 +37,7 @@ import { QuestionTool, type QuestionConfig } from "./QuestionTool";
 import { useStore } from "../store/useStore";
 import { toolIcon } from "../utils/toolUtils";
 import DiffView from "./DiffView";
+import MediaArtifact, { readMediaArtifact } from "./MediaArtifact";
 import { t, tf } from "@/i18n";
 
 function fmt(value: unknown): string {
@@ -94,6 +95,13 @@ function useDuration(
     : (time.end ?? frozenEndRef.current ?? Date.now());
   const secs = Math.max(0, (end - time.start) / 1000);
   return secs < 10 ? `${secs.toFixed(1)}s` : `${Math.round(secs)}s`;
+}
+
+/** Метаданные вызова: туда медиа-инструменты кладут путь к готовому файлу. */
+function getMetadata(part: ToolPart): unknown {
+  const s = part.state;
+  if (s && typeof s === "object") return (s as ToolState).metadata;
+  return undefined;
 }
 
 function getInput(part: ToolPart): unknown {
@@ -204,6 +212,12 @@ export function friendlyToolLabel(tool?: string): string {
   if (kind === "environment_status")
     return t("tool_card.proveryaet_okruzhenie");
   if (kind === "repo_map") return t("tool_card.smotrit_strukturu_proekta");
+  if (kind === "generate_image") return t("tool_card.risuet_izobrazhenie");
+  if (kind === "generate_speech") return t("tool_card.ozvuchivaet_tekst");
+  if (kind === "render_document") return t("tool_card.sobiraet_dokument");
+  if (kind === "render_video") return t("tool_card.sobiraet_video");
+  if (kind === "convert_media") return t("tool_card.konvertiruet_fayl");
+  if (kind === "media_info") return t("tool_card.smotrit_svedeniya_o_fayle");
   if (!tool) return t("tool_card.instrument");
   // Незнакомый инструмент называем его же именем, а не выдумываем перевод.
   return tf("tool_card.instrument_0", [tool]);
@@ -604,6 +618,9 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
   // «oldString/newString» в одну строку изменение не прочитать.
   const filePath = extractToolFilePath(getInput(part));
   const edits = extractToolEdits(getInput(part));
+  // Сгенерированный файл показываем сразу, а не внутри свёрнутой секции:
+  // картинка или видео — это и есть ответ инструмента, а не подробность вызова.
+  const media = readMediaArtifact(getMetadata(part));
 
   return (
     <div className="not-prose my-1 oc-msg-in">
@@ -664,6 +681,8 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
           </span>
         )}
       </button>
+
+      {media && <MediaArtifact media={media} className="mt-1.5 ml-6" />}
 
       {/* Раскрытые секции в стиле Arena: COMMAND / STDOUT etc */}
       {hasBody && expanded && (

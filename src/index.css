@@ -566,3 +566,70 @@
     animation: none;
   }
 }
+
+/* AI-лоадер (компонент src/components/ui/ai-loader.tsx).
+   Два встречно вращающихся кольца и пульсирующее ядро. Размер задаётся
+   переменной --oc-ai-size из inline-стиля, цвет — токенами темы, чтобы
+   лоадер одинаково читался на светлой и тёмной теме. */
+.oc-ai-loader {
+  --oc-ai-size: 30px;
+  position: relative;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: var(--oc-ai-size);
+  height: var(--oc-ai-size);
+}
+.oc-ai-loader-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 9999px;
+  border: 1.5px solid color-mix(in oklab, var(--color-foreground) 14%, transparent);
+  /* Цветные только две грани: сплошное кольцо при вращении выглядит
+     неподвижным. */
+  border-top-color: var(--color-primary, var(--color-foreground));
+  border-right-color: color-mix(in oklab, var(--color-primary, var(--color-foreground)) 45%, transparent);
+  animation: oc-spin 1.15s cubic-bezier(0.45, 0.05, 0.35, 0.95) infinite;
+}
+.oc-ai-loader-ring--inner {
+  inset: calc(var(--oc-ai-size) * 0.18);
+  border-width: 1.5px;
+  border-top-color: transparent;
+  border-right-color: transparent;
+  border-bottom-color: color-mix(in oklab, var(--color-foreground) 55%, transparent);
+  border-left-color: color-mix(in oklab, var(--color-foreground) 25%, transparent);
+  animation: oc-spin-reverse 1.7s linear infinite;
+}
+.oc-ai-loader-core {
+  width: calc(var(--oc-ai-size) * 0.2);
+  height: calc(var(--oc-ai-size) * 0.2);
+  border-radius: 9999px;
+  background: var(--color-primary, var(--color-foreground));
+  animation: oc-breathe 1.6s ease-in-out infinite;
+}
+.oc-ai-loader--muted .oc-ai-loader-ring {
+  border-top-color: var(--color-muted-foreground);
+  border-right-color: color-mix(in oklab, var(--color-muted-foreground) 40%, transparent);
+}
+.oc-ai-loader--muted .oc-ai-loader-core {
+  background: var(--color-muted-foreground);
+}
+@keyframes oc-spin-reverse {
+  to {
+    transform: rotate(-360deg);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  /* Без анимации лоадер должен остаться видимым знаком работы, а не
+     превратиться в пустое место. */
+  .oc-ai-loader-ring,
+  .oc-ai-loader-ring--inner,
+  .oc-ai-loader-core {
+    animation: none;
+  }
+  .oc-ai-loader-ring {
+    border-color: color-mix(in oklab, var(--color-foreground) 30%, transparent);
+    border-top-color: var(--color-primary, var(--color-foreground));
+  }
+}

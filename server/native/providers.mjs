@@ -1097,3 +1097,133 @@ export async function probeModel(ownerId, providerId, { modelId, baseUrl = null 
     return { available: false, latencyMs: Date.now() - start, checkedAt: Date.now(), error: publicProviderErrorMessage(err) };
   }
 }
+
+// ---------------------------------------------------------------------------
+// Мультимедийные вызовы провайдера (генерация изображений и речи).
+//
+// Генерация идёт по тому же каналу, что и обычный чат-запрос: те же SSRF-
+// проверки адреса, тот же релей, те же заголовки авторизации. Второго HTTP-
+// клиента для медиа сознательно нет: это был бы второй набор проверок,
+// который рано или поздно разойдётся с основным и отстанет по безопасности.
+
+/** Какие виды провайдеров точно не умеют генерировать файлы. */
+const MEDIA_UNSUPPORTED_KINDS = new Set(['anthropic', 'fixture']);
+
+/** Потолок ответа с бинарными данными: 64 МБ — это уже не картинка, а авария. */
+const MEDIA_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;
+const MEDIA_REQUEST_TIMEOUT_MS = 180_000;
+
+/**
+ * Проверка, что у выбранного провайдера вообще есть медиа-API.
+ *
+ * Ошибка здесь лучше, чем 404 с чужого эндпоинта: модель увидит внятную
+ * причину и перестанет повторять вызов.
+ */
+export function assertMediaCapableProvider(resolved, what = 'медиа-генерацию') {
+  const kind = resolved?.spec?.kind || '';
+  if (MEDIA_UNSUPPORTED_KINDS.has(kind)) {
+    throw Object.assign(
+      new Error(`Провайдер ${resolved?.spec?.name || kind} не поддерживает ${what}`),
+      { statusCode: 400 },
+    );
+  }
+  if (!resolved?.spec?.baseURL) {
+    throw Object.assign(new Error('У провайдера не настроен baseURL'), { statusCode: 400 });
+  }
+  return resolved;
+}
+
+/** Абсолютный URL медиа-эндпоинта для уже разобранной модели. */
+export function mediaEndpointUrl(resolved, apiPath) {
+  const base = String(resolved.spec.baseURL || '').replace(/\/+$/, '');
+  const tail = String(apiPath || '').replace(/^\/+/, '');
+  return `${base}/${tail}`;
+}
+
+/** Заголовки медиа-запроса: авторизация та же, что у чат-вызовов. */
+export function mediaHeaders(resolved, extra = {}) {
+  return { 'content-type': 'application/json', ...providerAuth(resolved.spec, resolved.key), ...extra };
+}
+
+/**
+ * POST с JSON-ответом к медиа-эндпоинту провайдера.
+ *
+ * @param {string|null} ownerId  владелец ключей (тот же, что у чат-турна)
+ * @param {{providerID: string, modelID: string}} model
+ * @param {{path: string, body: object, signal?: AbortSignal, retries?: number}} options
+ */
+export async function callProviderJson(ownerId, model, { path, body, signal, retries = 1 } = {}) {
+  const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
+  const url = mediaEndpointUrl(resolved, path);
+  const target = await routedProviderTarget(url, resolved.trustedBaseURL);
+  return await fetchJson(
+    target,
+    { method: 'POST', headers: mediaHeaders(resolved), body: JSON.stringify(body ?? {}) },
+    signal,
+    { retries },
+  );
+}
+
+/**
+ * POST с бинарным ответом (например, `audio/speech` у OpenAI).
+ *
+ * Ответ читается потоком с жёстким потолком: `content-length` может врать
+ * или отсутствовать, а одного ответа на несколько гигабайт хватит, чтобы
+ * уронить весь рантайм по памяти.
+ *
+ * @returns {Promise<{bytes: Buffer, mimeType: string}>}
+ */
+export async function callProviderBinary(ownerId, model, {
+  path,
+  body,
+  signal,
+  timeoutMs = MEDIA_REQUEST_TIMEOUT_MS,
+  maxBytes = MEDIA_MAX_RESPONSE_BYTES,
+} = {}) {
+  const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
+  const url = mediaEndpointUrl(resolved, path);
+  const target = await routedProviderTarget(url, resolved.trustedBaseURL);
+  const attempts = [{ url: target.url, pinned: target.pinned }];
+  if (target.fallback) attempts.push(target.fallback);
+
+  let lastError = null;
+  for (const attempt of attempts) {
+    const t = timeoutSignal(timeoutMs, signal);
+    try {
+      const res = await providerFetch(attempt, {
+        method: 'POST',
+        headers: mediaHeaders(resolved),
+        body: JSON.stringify(body ?? {}),
+        signal: t.signal,
+      });
+      if (!res.ok) {
+        const text = await res.text().catch(() => '');
+        let parsed = null;
+        try { parsed = text ? JSON.parse(text) : null; } catch { /* ошибка может быть и не JSON */ }
+        throw providerError(res, text, parsed);
+      }
+      const chunks = [];
+      let total = 0;
+      // Node отдаёт web-стрим; читаем кусками, чтобы оборваться до OOM.
+      for await (const chunk of res.body) {
+        const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+        total += buf.length;
+        if (total > maxBytes) {
+          throw Object.assign(
+            new Error(`Ответ провайдера больше лимита ${Math.round(maxBytes / (1024 * 1024))} МБ`),
+            { statusCode: 502 },
+          );
+        }
+        chunks.push(buf);
+      }
+      const mimeType = String(res.headers.get('content-type') || '').split(';')[0].trim();
+      return { bytes: Buffer.concat(chunks, total), mimeType: mimeType || 'application/octet-stream' };
+    } catch (err) {
+      lastError = err;
+      if (!isTransientProviderError(err, signal)) throw err;
+    } finally {
+      t.cleanup();
+    }
+  }
+  throw lastError || new Error('Медиа-запрос к провайдеру не удался');
+}

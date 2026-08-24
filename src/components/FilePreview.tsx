@@ -6,7 +6,14 @@ import remarkGfm from "remark-gfm";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { t, tf } from "@/i18n";
 
-export type FilePreviewKind = "image" | "html" | "svg" | "markdown";
+export type FilePreviewKind =
+  | "image"
+  | "html"
+  | "svg"
+  | "markdown"
+  | "video"
+  | "audio"
+  | "pdf";
 
 // Тот же набор, что в PartView: сначала санитайзер, потом подсветка —
 // hljs-классы добавляются после очистки и не вырезаются.
@@ -88,6 +95,61 @@ export default function FilePreview({
             onError={() => setImageError(true)}
           />
         )}
+      </div>
+    );
+  }
+
+  if (kind === "video" || kind === "audio") {
+    // Плеер браузера, а не свой: перемотка, громкость и скорость там уже
+    // есть, а файл отдаётся тем же превью-роутом, что и картинки.
+    return (
+      <div className="flex flex-1 min-h-0 items-center justify-center bg-black/85 p-4">
+        {kind === "video" ? (
+          // biome-ignore lint/a11y/useMediaCaption: субтитров к файлу из workspace не существует — это просмотр артефакта, а не публикация видео
+          <video
+            key={reloadKey}
+            src={url}
+            controls
+            preload="metadata"
+            className="max-h-full max-w-full"
+          />
+        ) : (
+          // biome-ignore lint/a11y/useMediaCaption: у аудиофайла workspace нет дорожки субтитров
+          <audio
+            key={reloadKey}
+            src={url}
+            controls
+            preload="metadata"
+            className="w-full max-w-xl"
+          />
+        )}
+      </div>
+    );
+  }
+
+  if (kind === "pdf") {
+    // PDF рисует встроенный просмотрщик браузера; рядом всегда есть ссылка
+    // «Скачать»: если просмотрщик отключён, пустой фрейм не должен оставаться
+    // единственным способом добраться до документа.
+    return (
+      <div className="flex flex-1 min-h-0 flex-col">
+        <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-1.5 text-[11px] text-muted-foreground">
+          <span className="truncate">{t("file_preview.dokument_iz_workspace_etogo_chata")}</span>
+          <a
+            href={url}
+            download
+            className="shrink-0 rounded px-1.5 py-0.5 hover:bg-accent hover:text-foreground"
+          >
+            {t("file_preview.skachat")}
+          </a>
+        </div>
+        <iframe
+          key={`${sessionId}:${path}:${reloadKey}`}
+          src={url}
+          title={tf("file_preview.prevyu_0", [path])}
+          className="flex-1 min-h-0 w-full border-none bg-neutral-900"
+          sandbox="allow-scripts"
+        />
       </div>
     );
   }

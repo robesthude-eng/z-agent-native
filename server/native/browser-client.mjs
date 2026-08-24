@@ -1,8 +1,13 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { BROWSER_ACTIONS, executeBrowserTool as executeBrowserToolLocal } from './browser.mjs';
+import { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, executeBrowserTool as executeBrowserToolLocal } from './browser.mjs';
 
-export { BROWSER_ACTIONS };
+export { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS };
+// Снимок страницы и текстовый ответ — разные порядки величин. Общий потолок
+// пришлось бы ставить по самому большому, и тогда обычный snapshot потерял бы
+// защиту от ответа на десятки мегабайт.
+const MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const MAX_RENDER_RESPONSE_BYTES = 32 * 1024 * 1024;
 const SOCKET_PATH = process.env.Z_AGENT_BROWSER_SOCKET || '/run/z-agent-browser/browser.sock';
 const REQUIRED = process.env.Z_AGENT_BROWSER_REQUIRED === '1';
 
@@ -10,7 +15,7 @@ export function browserServiceAvailable() {
   try { return fs.statSync(SOCKET_PATH).isSocket(); } catch { return false; }
 }
 
-function remote(payload, signal, timeoutMs = 130_000) {
+function remote(payload, signal, timeoutMs = 130_000, maxBytes = MAX_RESPONSE_BYTES) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify(payload));
     let settled = false;
@@ -24,7 +29,7 @@ function remote(payload, signal, timeoutMs = 130_000) {
       const chunks = []; let size = 0;
       res.on('data', (chunk) => {
         size += chunk.length;
-        if (size > 2 * 1024 * 1024) req.destroy(new Error('Browser service response too large'));
+        if (size > maxBytes) req.destroy(new Error('Browser service response too large'));
         else chunks.push(chunk);
       });
       res.on('end', () => {
@@ -47,7 +52,15 @@ function remote(payload, signal, timeoutMs = 130_000) {
 }
 
 export async function executeBrowserTool({ sessionId, uid = null, input = {}, signal }) {
-  if (browserServiceAvailable()) return await remote({ sessionId, uid, input }, signal, Math.min(Math.max(Number(input?.timeoutMs) || 30_000, 1000), 120_000) + 10_000);
+  const isRender = BROWSER_RENDER_ACTIONS.includes(String(input?.action || '').trim().toLowerCase());
+  if (browserServiceAvailable()) {
+    return await remote(
+      { sessionId, uid, input },
+      signal,
+      Math.min(Math.max(Number(input?.timeoutMs) || 30_000, 1000), 120_000) + 10_000,
+      isRender ? MAX_RENDER_RESPONSE_BYTES : MAX_RESPONSE_BYTES,
+    );
+  }
   if (REQUIRED) throw Object.assign(new Error(`Secure browser service is required but unavailable at ${SOCKET_PATH}`), { code: 'BROWSER_SERVICE_UNAVAILABLE' });
   return await executeBrowserToolLocal({ sessionId, input, signal });
 }

@@ -367,7 +367,9 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       let attempt = 0;
       while (true) {
         try {
-          result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, signal: controller.signal, onOutput: emitLiveOutput });
+          // ownerId нужен медиа-инструментам: генерация изображений и речи идёт к
+          // провайдеру того же владельца, что и сам ход, а ключи хранятся поаккаунтно.
+          result = await executeTool(call.name, call.arguments || {}, { workspace, sessionId, ownerId: runtime.ownerId, signal: controller.signal, onOutput: emitLiveOutput });
           break;
         } catch (err) {
           if (err?.name === 'AbortError' || controller.signal.aborted) throw err;

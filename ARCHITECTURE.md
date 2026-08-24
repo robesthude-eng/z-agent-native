@@ -114,6 +114,29 @@ First-party file tools still execute in the trusted runtime, but every path is r
 
 `workspace-policy.mjs` remains a second defense-in-depth layer: `guarded` rejects common direct network clients/credential references and `tool-only` rejects additional package-manager/remote-Git paths, while `read`/`grep` exclude common secret files. These textual policies are **not** the security boundary for arbitrary code; Docker `network_mode:none` on the executor is. Model-selected `webfetch`, `websearch` and browser networking are separately fail-closed by default (`Z_AGENT_NETWORK_POLICY=off`) and may be enabled only with an allowlist or explicit `public` compatibility mode. Chromium runs in its own service with no data/workspace/secret mounts. A minimal root controller owns only the browser UDS and launches each session worker through `setpriv --clear-groups --no-new-privs` as that session's dedicated UID, so separate chats do not share an OS browser identity. Service workers/WebSockets are blocked and HTTP(S) requests are revalidated. It shares no Docker network with the API and has no direct external network. A separate no-secret egress proxy is its only route outward and pins the validated destination address when opening the actual upstream connection.
 
+## Media pipeline
+
+`media.mjs` owns the media tool surface: schemas, ffmpeg/ffprobe argument
+builders, the Markdown→HTML renderer, a dependency-free PDF writer and the
+executor that ties them together. `media-generation.mjs` holds the provider side
+(image and speech requests, payload parsing, variant naming) and reaches the
+configured provider through the same credential store, SSRF filter and relay
+routing as model calls — media traffic never gets its own key path. Provider
+responses are streamed with a hard byte ceiling and a request timeout.
+
+Everything lands in the session workspace through the same boundary checks as
+`write`, with sandbox ownership synced afterwards. Tools that spawn ffmpeg or
+ffprobe are gated exactly like `bash` and go through `assertShellCommandAllowed`;
+`render_document` is deliberately not gated, because without a sandbox it still
+renders through the built-in writer without spawning anything. Document rendering
+degrades in three steps — isolated Chromium service, local Chromium binary,
+built-in writer — and marks the result as degraded so the UI can say so instead
+of pretending the layout is final. The built-in writer covers Latin-1 only and
+raises `PDF_UNSUPPORTED_CHARSET` rather than printing blank glyphs. PDF and
+screenshot rendering reuse the existing per-session Chromium instead of starting
+a browser per document, and carry a separate, larger IPC response ceiling than
+text actions.
+
 ## Turn telemetry
 
 `turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. Shared SQLite turn-capacity leases bound global/per-owner model concurrency and expire after crash; executor/browser/egress layers apply their own lower-level resource budgets. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records. Bearer-protected `/metrics` exposes low-cardinality Prometheus aggregates without user/session/turn labels.

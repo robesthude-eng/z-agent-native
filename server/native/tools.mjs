@@ -14,6 +14,9 @@ import { SSH_ACTIONS, SSH_SERVICE_ACTIONS, executeSshTool } from './ssh-tool.mjs
 import { buildTestCommand, formatTestReport } from './test-runner.mjs';
 import { DIAGNOSTIC_KINDS, formatDiagnosticsReport, planDiagnostics } from './diagnostics.mjs';
 import { BROWSER_ACTIONS, executeBrowserTool } from './browser-client.mjs';
+import {
+  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, executeMediaTool, isMediaTool,
+} from './media.mjs';
 import { subagentKinds } from './subagents.mjs';
 import { classifyBash } from './context.mjs';
 import { isPublicHttpUrl, readWorkspaceBrowserDocument } from './browser-local.mjs';
@@ -229,15 +232,28 @@ export const TOOL_DEFINITIONS = [
       timeoutMs: { type: 'integer' },
     }, ['action']),
   },
+  // Медиа-инструменты описаны в media.mjs рядом со своей реализацией: схема и
+  // код, который её исполняет, должны расходиться как можно реже.
+  ...MEDIA_TOOL_DEFINITIONS,
 ];
 
-const risky = new Set(['write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool']);
+const risky = new Set([
+  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool',
+  // Генерация идёт к платному провайдеру, рендер и конвертация запускают
+  // процессы и пишут в воркспейс — тот же класс риска, что и bash.
+  'generate_image', 'generate_speech', 'render_document', 'render_video', 'convert_media', 'media_info',
+]);
 export function requiresPermission(name) { return risky.has(String(name).toLowerCase()); }
-export function mutatesWorkspace(name) { return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(String(name).toLowerCase()); }
+export function mutatesWorkspace(name) {
+  const tool = String(name).toLowerCase();
+  return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
+}
 
 // Everything that spawns a process or drives a browser must be gated exactly
 // like bash: without a session sandbox there is no isolation to run it in.
-const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool'];
+// render_document сюда не входит намеренно: без сандбокса он всё равно соберёт
+// PDF и HTML встроенным генератором, без единого внешнего процесса.
+const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
 export function availableToolDefinitions() {
   let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
   // The hardened executor has no network by construction. Dependency installers
@@ -902,6 +918,34 @@ export async function executeTool(name, input, ctx) {
     }
     const identity = sandboxIdentity(ctx.sessionId);
     return executeBrowserTool({ sessionId: ctx.sessionId, uid: identity?.isolated ? identity.uid : null, input: payload, signal: ctx.signal });
+  }
+
+  if (isMediaTool(tool)) {
+    // Медиа-слой не знает ни про сандбокс, ни про браузерный сервис: он просит
+    // две функции и работает с тем, что дали. Благодаря этому ffmpeg и Chromium
+    // запускаются ровно там же, где bash и browser, а не в обход изоляции.
+    const run = async (command, timeoutMs) => {
+      // Команда собрана из argv с поквоченными аргументами, но политику всё равно
+      // проверяем: пути в неё приходят из ввода модели.
+      assertShellCommandAllowed(command);
+      const result = await execBash(root, command, Number(timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
+      return { exit: result.code, output: [result.stdout, result.stderr].filter(Boolean).join('\n') };
+    };
+    const identity = sandboxIdentity(ctx.sessionId);
+    const renderPage = async (payload) => await executeBrowserTool({
+      sessionId: ctx.sessionId,
+      uid: identity?.isolated ? identity.uid : null,
+      input: payload,
+      signal: ctx.signal,
+    });
+    return await executeMediaTool({
+      tool,
+      input: input && typeof input === 'object' ? input : {},
+      ctx,
+      root,
+      run: shellSandboxAvailable() ? run : null,
+      renderPage: ctx.sessionId ? renderPage : null,
+    });
   }
 
   throw new Error(`Unknown tool: ${name}`);

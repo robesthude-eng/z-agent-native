@@ -18,7 +18,9 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   if (!prompt) throw new Error('Subagent prompt must not be empty');
   const profile = getSubagentProfile(input?.agent);
   const tools = toolsFor(profile);
-  const toolContext = subagentWrites(profile.name) ? { workspace, sessionId, signal } : { workspace, signal };
+  // Тот же ownerId, что и у родительского хода: без него generate_image и
+  // generate_speech не найдут ключ провайдера в подзадаче.
+  const toolContext = subagentWrites(profile.name) ? { workspace, sessionId, ownerId, signal } : { workspace, ownerId, signal };
   const mutatedPaths = new Set();
   let repositorySnapshot = '';
 

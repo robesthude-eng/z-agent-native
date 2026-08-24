@@ -24,6 +24,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential cmake ninja-build pkg-config libffi-dev libssl-dev \
     openjdk-17-jdk-headless \
     sqlite3 \
+    ffmpeg \
+    fonts-dejavu-core fonts-noto-core \
     && rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json

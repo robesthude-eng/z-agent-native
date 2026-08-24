@@ -126,6 +126,30 @@ one after validation.
 
 `webfetch` works without an external search service for a URL the model already knows. The `websearch` tool uses Brave Search when `BRAVE_SEARCH_API_KEY` is configured, and otherwise DuckDuckGo web results, falling back to Instant Answer plus Wikipedia OpenSearch. A search that legitimately finds nothing returns an empty-result note instead of failing the tool. Both require `Z_AGENT_NETWORK_POLICY` other than `off` (`public` also needs `Z_AGENT_ALLOW_PUBLIC_WEB=1` in production).
 
+## Media generation
+
+The agent produces media as ordinary workspace files, so the file tree, preview,
+diff and download paths keep working unchanged:
+
+| Tool | Produces | Engine |
+| --- | --- | --- |
+| `generate_image` | `png` `jpg` `webp`, up to 4 variants, optional reference images | image model of the configured provider |
+| `generate_speech` | `mp3` `wav` `ogg` `opus` `m4a` `flac` | speech model of the configured provider |
+| `render_document` | `pdf` `html` `png` `txt` `md` from Markdown/HTML | isolated Chromium → local Chromium → built-in writer |
+| `render_video` | `mp4` `webm` `mov` `gif` from frames or clips, optional audio track | ffmpeg |
+| `convert_media` | convert, resize, crop, trim, thumbnail, extract audio, mute | ffmpeg |
+| `media_info` | duration, resolution, codecs, bitrate | ffprobe |
+
+`Z_AGENT_IMAGE_MODEL` (default `openai/gpt-image-1`) and `Z_AGENT_SPEECH_MODEL`
+(default `openai/gpt-4o-mini-tts`) select the models; both split on the first
+slash, so `openrouter/google/gemini-2.5-flash-image` resolves to provider
+`openrouter`. `render_document` degrades in three visible steps and marks the
+result when the dependency-free writer was used instead of Chromium. ffmpeg and
+ffprobe are gated exactly like `bash`: they need a session sandbox, and their
+commands pass the same shell policy. Chat cards render the finished artifact
+inline — image, video player, audio player or document link. See
+[docs/MEDIA.md](docs/MEDIA.md).
+
 ## Workspace and remote servers
 
 Every real chat has exactly one isolated directory:

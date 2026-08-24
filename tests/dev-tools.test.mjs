@@ -397,9 +397,13 @@ test('the writer subagent capability registry grants verification but not delega
 test('a writer subagent inherits the parent session sandbox and reports mutations', () => {
   const runner = source('server/native/subagent-runner.mjs');
   const agent = source('server/native/agent.mjs');
-  assert.match(runner, /subagentWrites\(profile\.name\) \? \{ workspace, sessionId, signal \}/);
+  // Only the writing subagent inherits sessionId (the sandbox identity), while
+  // ownerId travels with every branch so provider-backed media tools can resolve
+  // the same account credentials the parent turn uses.
+  assert.match(runner, /subagentWrites\(profile\.name\) \? \{ workspace, sessionId, ownerId, signal \} : \{ workspace, ownerId, signal \}/);
   assert.match(runner, /mutatedPaths: \[\.\.\.mutatedPaths\]/);
   assert.match(agent, /runSubagent\(\{[\s\S]*projectContext: runtime\.projectContext,[\s\S]*sessionId/);
+  assert.match(agent, /executeTool\(call\.name, call\.arguments \|\| \{\}, \{ workspace, sessionId, ownerId: runtime\.ownerId,/);
 });
 
 test('subagent tools are resolved against sandbox availability, not a static advertised list', () => {

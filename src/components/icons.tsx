@@ -483,3 +483,54 @@ export const ExitFullscreenIcon = (p: { size?: number }) => (
     <path d="M16 21v-3a2 2 0 0 1 2-2h3" />
   </S>
 );
+
+// Иконки медиа-инструментов: без них все шесть новых вызовов выглядят в ленте
+// одинаково (DefaultToolIcon), и в длинном ходе не понять, где была картинка,
+// а где — сборка видео.
+
+export const ImageGenIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <rect x="3" y="3" width="18" height="18" rx="2" />
+    <circle cx="8.5" cy="8.5" r="1.5" />
+    <path d="m21 15-4.5-4.5L7 20" />
+  </S>
+);
+
+export const VideoIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <rect x="2" y="5" width="14" height="14" rx="2" />
+    <path d="m16 10 6-3v10l-6-3z" />
+  </S>
+);
+
+export const AudioIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <path d="M11 5 6 9H3v6h3l5 4z" />
+    <path d="M15.5 8.5a5 5 0 0 1 0 7" />
+    <path d="M18.5 5.5a9 9 0 0 1 0 13" />
+  </S>
+);
+
+export const DocumentIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z" />
+    <path d="M14 3v5h5" />
+    <path d="M9 13h6" />
+    <path d="M9 17h4" />
+  </S>
+);
+
+export const ConvertIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <path d="M4 8h13l-3-3" />
+    <path d="M20 16H7l3 3" />
+  </S>
+);
+
+export const MediaInfoIcon = (p: { size?: number }) => (
+  <S size={p.size}>
+    <circle cx="12" cy="12" r="9" />
+    <path d="M12 11v5" />
+    <path d="M12 8h.01" />
+  </S>
+);
