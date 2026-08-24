@@ -111,14 +111,17 @@ export function parseAgentAttachmentLines(text: string): {
       kept.push(line);
       continue;
     }
-    const name = m[1] ?? "";
-    // Модель любит оборачивать путь бэктиками: «📎 x → `src/a.ts`». Раньше
-    // обёртка попадала в /api/workspace/download (%60src/a.ts%60 → ENOENT),
-    // поэтому прогоняем путь через общий нормализатор.
+    const rawName = (m[1] ?? "").trim();
     const path = toWorkspaceRelPath(m[2] ?? "") ?? (m[2] ?? "").trim();
     const note = (m[3] ?? "").replace(/^[\s—-]+/, "").trim();
     if (!path) continue;
-    refs.push(note ? { name, path, note } : { name, path });
+    // Агент иногда вписывал вместо имени файла человеческое описание
+    // («📎 Стили темы → src/index.css»). Пользователь должен видеть настоящее
+    // имя сохранённого файла, поэтому описание уезжает в подзаголовок чипа.
+    const base = path.split("/").pop() || path;
+    const name = base;
+    const notes = [rawName !== base ? rawName : "", note].filter(Boolean).join(" · ");
+    refs.push(notes ? { name, path, note: notes } : { name, path });
   }
   if (refs.length === 0) return { refs: [], rest: text };
   return { refs, rest: kept.join("\n").trim() };

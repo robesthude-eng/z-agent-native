@@ -68,6 +68,24 @@ describe("parseAgentAttachmentLines", () => {
     ]);
     expect(rest).toBe("Готово.");
   });
+
+  it("показывает настоящее имя файла, а не придуманное описание", () => {
+    // Агент вписывал вместо имени человеческое описание. Пользователь в чипе
+    // должен видеть реальное имя сохранённого файла, описание — в подзаголовке.
+    const { refs } = parseAgentAttachmentLines(
+      "📎 Стили темы → `z-agent-native-main/src/index.css`\n📎 Собранное приложение → z-agent-native-main/dist/index.html",
+    );
+    expect(refs[0]).toMatchObject({
+      name: "index.css",
+      path: "z-agent-native-main/src/index.css",
+      note: "Стили темы",
+    });
+    expect(refs[1]).toMatchObject({
+      name: "index.html",
+      path: "z-agent-native-main/dist/index.html",
+      note: "Собранное приложение",
+    });
+  });
 });
 
 describe("extractAttachments", () => {
