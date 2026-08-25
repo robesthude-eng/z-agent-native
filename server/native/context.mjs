@@ -421,7 +421,11 @@ function htmlPagesWithoutIndex(strategy) {
   const paths = Array.isArray(strategy?.changedPaths) ? strategy.changedPaths : [];
   const html = paths.filter((item) => /\.html?$/i.test(String(item || '')) && !String(item).includes('/'));
   const hasIndex = html.some((item) => /^index\.html?$/i.test(item));
-  if (!html.length || hasIndex) return [];
+  // Единственная корневая страница откроется в превью автоматически (fallback
+  // выбирает её), так что подсказка не нужна. Она полезна, только когда корневых
+  // страниц несколько и index.html среди них нет: превью возьмёт самую свежую,
+  // и это может оказаться не та страница.
+  if (!html.length || hasIndex || html.length === 1) return [];
   return html;
 }
 
@@ -435,7 +439,7 @@ export function strategyGuidance(strategy) {
   if (strategy?.changedPaths?.length) lines.push(`Changed paths (latest tracked set): ${strategy.changedPaths.slice(-12).join(', ')}`);
   const misplaced = htmlPagesWithoutIndex(strategy);
   if (misplaced.length) {
-    lines.push(`The in-product Preview panel shows index.html at the workspace root. You wrote ${misplaced.slice(-4).join(', ')} — copy or write the main page to index.html before telling the user they can see it. Do not tell them to open a differently named file instead.`);
+    lines.push(`The in-product Preview panel opens index.html at the root, or the newest root-level HTML when there is no index.html. You wrote several root pages (${misplaced.slice(-4).join(', ')}) — write or rename the main page to index.html so the preview shows the right one.`);
   }
   if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion. Prefer a test/check that covers the changed paths above rather than an unrelated green command.');
   else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
