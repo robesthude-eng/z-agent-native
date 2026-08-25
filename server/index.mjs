@@ -449,6 +449,12 @@ function servePreviewFile(req, res, psid, rawRelative) {
       res.writeHead(200, {
         'content-type': mimeFor(full),
         'content-length': rewritten.length,
+        // iframe превью имеет непрозрачный origin (Origin: null). Сборки Vite
+        // грузят скрипты как <script type="module" crossorigin> — такие запросы
+        // всегда CORS-режимные, и без этого заголовка браузер молча роняет
+        // каждый модуль: страница остаётся белой. Право чтения по-прежнему
+        // подтверждает только маркер в пути.
+        'access-control-allow-origin': '*',
         'content-security-policy': previewSecurityPolicy(req),
         'x-content-type-options': 'nosniff',
         'referrer-policy': 'no-referrer',
@@ -461,6 +467,7 @@ function servePreviewFile(req, res, psid, rawRelative) {
   res.writeHead(200, {
     'content-type': mimeFor(full),
     'content-length': st.size,
+    'access-control-allow-origin': '*',
     'content-security-policy': previewSecurityPolicy(req),
     'x-content-type-options': 'nosniff',
     // Маркер доступа лежит в пути, поэтому реферер наружу не отдаём.
