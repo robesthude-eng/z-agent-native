@@ -121,3 +121,19 @@ test('absolute asset paths in preview html become relative', () => {
   assert.match(keep, /href="\/"/);
   assert.match(keep, /src="\/\/cdn\.example\.com\/a\.png"/);
 });
+
+test('preview html gets a localStorage shim before any script', () => {
+  // Sandbox-iframe без allow-same-origin: обращение к localStorage кидает
+  // SecurityError и роняет SPA на старте (серый экран). Шим должен стоять
+  // до первого скрипта страницы — сразу после <head>.
+  const html = '<!doctype html><html><head><title>t</title></head><body><script type="module" src="assets/x.js"></script></body></html>';
+  const out = rewritePreviewHtml(html);
+  const shimAt = out.indexOf('__pv_probe');
+  const scriptAt = out.indexOf('assets/x.js');
+  assert.ok(shimAt > -1, 'шим присутствует');
+  assert.ok(shimAt < scriptAt, 'шим до первого скрипта');
+  // Без <head> шим ставится в начало документа.
+  const noHead = rewritePreviewHtml('<!doctype html><html><body>BODYMARK</body></html>');
+  assert.ok(noHead.indexOf('__pv_probe') > -1);
+  assert.ok(noHead.indexOf('__pv_probe') < noHead.indexOf('BODYMARK'));
+});

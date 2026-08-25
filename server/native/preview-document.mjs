@@ -121,9 +121,36 @@ export function previewIsReady(workspace) {
  * наследуют маркер доступа из URL превью. Протокол-относительные (//host),
  * якорные (/#…) и одиночный «/» не трогаем.
  */
+/**
+ * Sandbox-iframe превью имеет непрозрачный origin, и обращение к
+ * localStorage/sessionStorage там кидает SecurityError. Многие SPA (включая
+ * сборки этого же проекта) трогают storage при старте — необработанный краш
+ * оставлял серый экран вместо интерфейса. Подкладываем in-memory заглушку
+ * ДО первого скрипта страницы: приложения загружаются, данные живут в
+ * памяти вкладки (для превью этого достаточно).
+ */
+const PREVIEW_STORAGE_SHIM = `<script>(function(){
+function makeStore(){var m={};return{setItem:function(k,v){m[String(k)]=String(v);},getItem:function(k){return Object.prototype.hasOwnProperty.call(m,String(k))?m[String(k)]:null;},removeItem:function(k){delete m[String(k)];},clear:function(){m={};},key:function(i){var ks=Object.keys(m);return i<ks.length?ks[i]:null;},get length(){return Object.keys(m).length;}};}
+function shim(name){
+try{var probe=window[name];if(probe&&typeof probe.getItem==='function'){probe.getItem('__pv_probe');return;}}catch(e){}
+var store=null;
+try{Object.defineProperty(window,name,{get:function(){if(!store)store=makeStore();return store;},configurable:true});}catch(e){}
+}
+shim('localStorage');shim('sessionStorage');
+})();</script>`;
+
+export function injectPreviewShims(html) {
+  const doc = String(html);
+  if (doc.includes('__pv_probe') || doc.includes('makeStore')) return doc;
+  if (/<head[^>]*>/i.test(doc)) return doc.replace(/<head[^>]*>/i, (head) => `${head}${PREVIEW_STORAGE_SHIM}`);
+  return PREVIEW_STORAGE_SHIM + doc;
+}
+
 export function rewritePreviewHtml(html) {
-  return String(html).replace(
-    /\b(src|href|poster)\s*=\s*(["'])(\/(?!\/|#|["'])[^"']*)\2/gi,
-    (all, attr, quote, value) => `${attr}=${quote}${String(value).slice(1)}${quote}`,
+  return injectPreviewShims(
+    String(html).replace(
+      /\b(src|href|poster)\s*=\s*(["'])(\/(?!\/|#|["'])[^"']*)\2/gi,
+      (all, attr, quote, value) => `${attr}=${quote}${String(value).slice(1)}${quote}`,
+    ),
   );
 }
