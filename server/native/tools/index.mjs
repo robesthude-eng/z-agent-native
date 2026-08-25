@@ -1,5 +1,6 @@
 // Tool layer boundary.
-// This module is intentionally small during the migration phase.
-// Existing runtime imports continue to use tools.mjs until dispatch extraction is complete.
+// Existing runtime imports continue to use tools.mjs during migration.
+// New modules can be introduced behind this stable surface.
 
-export {};
+export { registerTool, getTool, listTools } from './registry.mjs';
+export { dispatchTool } from './dispatcher.mjs';
