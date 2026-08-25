@@ -1,6 +1,15 @@
-// Dispatcher extraction target.
-// Runtime routing will be moved here from tools.mjs after compatibility checks.
+import { getTool } from './registry.mjs';
 
+/**
+ * Central tool dispatch boundary.
+ * Tool modules should register handlers here instead of growing tools.mjs.
+ */
 export async function dispatchTool(name, input, context) {
-  throw new Error(`Tool dispatcher migration pending: ${name}`);
+  const handler = getTool(name);
+
+  if (!handler) {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+
+  return handler(input, context);
 }
