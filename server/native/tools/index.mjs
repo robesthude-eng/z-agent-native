@@ -4,3 +4,4 @@
 
 export { registerTool, getTool, listTools } from './registry.mjs';
 export { dispatchTool } from './dispatcher.mjs';
+export * from '../tools.mjs';
