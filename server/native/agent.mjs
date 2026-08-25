@@ -1,36 +1,6 @@
+import { splitReasoningFromContent } from './reasoning-parser.mjs';
+export { splitReasoningFromContent } from './reasoning-parser.mjs';
 
-export function splitReasoningFromContent(rawText) {
-  const text = String(rawText || '').trim();
-  if (!text || text.length < 15) return { reasoning: '', text };
-
-  // 1. Explicit <think> or <thought> tags
-  if (text.includes('<think>')) {
-    const parts = text.split('</think>');
-    const thought = parts[0].replace('<think>', '').trim();
-    const body = (parts[1] || '').trim();
-    return { reasoning: thought, text: body || thought };
-  }
-  if (text.includes('<thought>')) {
-    const parts = text.split('</thought>');
-    const thought = parts[0].replace('<thought>', '').trim();
-    const body = (parts[1] || '').trim();
-    return { reasoning: thought, text: body || thought };
-  }
-
-  // 2. English internal monologue transitioning into Russian user response
-  const m = new RegExp('([.?!]\\s*|\\n\\s*)([А-ЯЁ][а-яё]+(?:!|\\?|\\.|\\s*👋|\\s*[,\\s]))').exec(text);
-  if (m) {
-    const boundary = m.index + m[1].length;
-    const prefix = text.slice(0, boundary).trim();
-    const suffix = text.slice(boundary).trim();
-    const latinChars = (prefix.match(/[a-zA-Z]/g) || []).length;
-    if (latinChars >= 25 && (latinChars / Math.max(1, prefix.length)) > 0.4 && suffix) {
-      return { reasoning: prefix, text: suffix };
-    }
-  }
-
-  return { reasoning: '', text };
-}
 
 import {
   clearTurn, claimAction, completeAction, createQuestion, failAction, findQuestionForRecovery, getAction, getChat, getQuestion,
@@ -62,6 +32,7 @@ import { isIncompleteToolCall, isNetworkTransportError, publicProviderErrorMessa
 import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from './context.mjs';
 import { runSubagent } from './subagent-runner.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from './turn-telemetry.mjs';
+import { persistAssistant, emitPart, emitText } from './agent/message-parts.mjs';
 import {
   classifyTaskOutcome,
   createLoopGuard,
@@ -79,15 +50,16 @@ import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance
 import { assertTurnTransition } from './turn-lifecycle.mjs';
 import { recordTurnCapacityRejection } from './metrics.mjs';
 
-const activeTurns = new Map();
-const activeActions = new Map();
-const questionWaiters = new Map();
-// sessionId -> Set<resolver>. Lets waitForTurnIdle react to the moment a turn
-// ends instead of polling activeTurns every 20 ms.
-const idleWaiters = new Map();
-const MAX_ACTIVE_TURNS = Math.min(Math.max(Number(process.env.Z_AGENT_MAX_ACTIVE_TURNS) || 32, 1), 256);
-const MAX_ACTIVE_TURNS_PER_OWNER = Math.min(Math.max(Number(process.env.Z_AGENT_MAX_ACTIVE_TURNS_PER_OWNER) || 4, 1), MAX_ACTIVE_TURNS);
-const TURN_CAPACITY_TTL_MS = Math.min(Math.max(Number(process.env.Z_AGENT_TURN_CAPACITY_TTL_MS) || 120_000, 30_000), 30 * 60 * 1000);
+import {
+  activeTurns,
+  activeActions,
+  questionWaiters,
+  idleWaiters,
+  MAX_ACTIVE_TURNS,
+  MAX_ACTIVE_TURNS_PER_OWNER,
+  TURN_CAPACITY_TTL_MS,
+  resetRuntimeState,
+} from './agent/state.mjs';
 
 
 function notifyTurnIdle(sessionId) {
@@ -126,34 +98,14 @@ function updateTurn(sessionId, state, transitionOptions = {}) {
   return projection;
 }
 
-function persistAssistant(assistant) {
-  putMessage(assistant);
-  emit(assistant.sessionID, 'message.updated', { message: assistant });
+function persistAssistantMessage(assistant) {
+  return persistAssistant(assistant, { putMessage, emit });
 }
-
-function emitPart(assistant, part) {
-  const i = assistant.parts.findIndex((p) => p.id === part.id);
-  if (i === -1) assistant.parts.push(part); else assistant.parts[i] = part;
-  putMessage(assistant);
-  emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+function emitMessagePart(assistant, part) {
+  return emitPart(assistant, part, { putMessage, emit });
 }
-
-async function emitText(assistant, text, type = 'text') {
-  if (!text) return;
-  const trimmed = String(text).trim();
-  const last = assistant.parts[assistant.parts.length - 1];
-  // Повтор той же фразы отдельной частью — частый дубль в ленте, если
-  // стрим уже записал текст, а финальный emitText пришёл с тем же абзацем.
-  if (type === 'text' && last?.type === 'text' && String(last.text || '').trim() === trimmed) return;
-  const part = { id: partId(), type, text: '' };
-  assistant.parts.push(part);
-  emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
-  const chunks = String(text).match(/[\s\S]{1,96}/g) || [];
-  for (const chunk of chunks) {
-    part.text += chunk;
-    emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: part.id, field: 'text', delta: chunk });
-  }
-  putMessage(assistant);
+function emitAssistantText(assistant, text, type = 'text') {
+  return emitText(assistant, text, type, { putMessage, emit });
 }
 
 function liveTextSink(assistant) {
@@ -262,7 +214,7 @@ async function resumePendingQuestion(sessionId, assistant, signal) {
     metadata: { ...(part.state?.metadata || {}), answers, questionId: stored.id, recovered: true },
     time: { ...(part.state?.time || {}), end: Date.now() },
   };
-  emitPart(assistant, part);
+  emitMessagePart(assistant, part);
   updateTurn(sessionId, { lifecycle: 'running', since: Date.now(), reason: 'question_answered_after_restart' });
   return true;
 }
@@ -293,13 +245,13 @@ function interruptedToolParts(assistant) {
     if (sideEffects) ambiguous.push(toolCallSignature(call));
     changed = true;
   }
-  if (changed) persistAssistant(assistant);
+  if (changed) persistAssistantMessage(assistant);
   return ambiguous;
 }
 
 async function executeCall(sessionId, assistant, call, controller, runtime) {
   const part = toolPart(call);
-  emitPart(assistant, part);
+  emitMessagePart(assistant, part);
   if (isIncompleteToolCall(call)) {
     const output = 'Аргументы инструмента обрезаны или не являются JSON. Вызов не выполнен. Повторите его с полными аргументами.';
     part.state = {
@@ -309,7 +261,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       metadata: { ...(part.state?.metadata || {}), incompleteArguments: true },
       time: { ...part.state.time, end: Date.now() },
     };
-    emitPart(assistant, part);
+    emitMessagePart(assistant, part);
     return { content: output, isError: true, metadata: part.state.metadata, mutatedPaths: [] };
   }
   const recovery = runtime?.recovery;
@@ -322,7 +274,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       metadata: { ...(part.state?.metadata || {}), restartGuardBlocked: true },
       time: { ...part.state.time, end: Date.now() },
     };
-    emitPart(assistant, part);
+    emitMessagePart(assistant, part);
     return { content: part.state.output, isError: true, metadata: part.state.metadata, mutatedPaths: [] };
   }
 
@@ -384,7 +336,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
               lastRetryError: err?.message || String(err),
             },
           };
-          emitPart(assistant, part);
+          emitMessagePart(assistant, part);
           await waitForRetry(retryDelayMs(attempt - 1), controller.signal);
         }
       }
@@ -395,7 +347,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
           ...part.state,
           metadata: { ...(part.state?.metadata || {}), questionId: id },
         };
-        emitPart(assistant, part);
+        emitMessagePart(assistant, part);
       });
       part.state = {
         ...part.state,
@@ -404,7 +356,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
         metadata: { ...(part.state?.metadata || {}), answers: q.answers, questionId: q.id },
         time: { ...part.state.time, end: Date.now() },
       };
-      emitPart(assistant, part);
+      emitMessagePart(assistant, part);
       return { content: JSON.stringify({ answers: q.answers }), isError: false, metadata: part.state.metadata, mutatedPaths: [] };
     }
     const resultMetadata = { ...(part.state?.metadata || {}), ...(result?.metadata || {}) };
@@ -416,7 +368,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       metadata: resultMetadata,
       time: { ...part.state.time, end: Date.now() },
     };
-    emitPart(assistant, part);
+    emitMessagePart(assistant, part);
     if (result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result.mutatedPaths });
     return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [] };
   } catch (err) {
@@ -426,7 +378,7 @@ async function executeCall(sessionId, assistant, call, controller, runtime) {
       output: `Error: ${err?.message || String(err)}`,
       time: { ...part.state.time, end: Date.now() },
     };
-    emitPart(assistant, part);
+    emitMessagePart(assistant, part);
     if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
     return { content: `Error: ${err?.message || String(err)}`, isError: true, metadata: part.state?.metadata || {}, mutatedPaths: [] };
   }
@@ -479,7 +431,7 @@ function sanitizeAssistantParts(assistant) {
 }
 
 async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
-  if (note) await emitText(assistant, note, 'text');
+  if (note) await emitAssistantText(assistant, note, 'text');
   assistant.time.completed = Date.now();
   assistant.info.finish = finish;
   assistant.info.tokens = usage ? {
@@ -498,7 +450,7 @@ async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcom
     changed: Boolean(strategy?.changed),
     summary: textParts(assistant).slice(-2_000),
   });
-  persistAssistant(assistant);
+  persistAssistantMessage(assistant);
   if (assistant.info.telemetry) emit(sessionId, 'turn.telemetry', { telemetry: assistant.info.telemetry });
   try { markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed }); } catch { /* final message remains authoritative */ }
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
@@ -758,9 +710,9 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
           const separated = splitReasoningFromContent(finalText);
           // Если карточка уже была в стриме, вторую не открываем.
           if (separated.reasoning && !streamed.reasoning) {
-            await emitText(assistant, separated.reasoning, 'reasoning');
+            await emitAssistantText(assistant, separated.reasoning, 'reasoning');
           }
-          await emitText(assistant, separated.text || finalText, 'text');
+          await emitAssistantText(assistant, separated.text || finalText, 'text');
         }
         const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
         return await finalizeAssistant({
@@ -780,10 +732,10 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
       if (response.text && !streamed.text) {
         const sep = splitReasoningFromContent(response.text);
         if (sep.reasoning && !streamed.reasoning) {
-          await emitText(assistant, sep.reasoning, 'reasoning');
+          await emitAssistantText(assistant, sep.reasoning, 'reasoning');
         }
         if (sep.text) {
-          await emitText(assistant, sep.text, 'text');
+          await emitAssistantText(assistant, sep.text, 'text');
         }
       }
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
@@ -806,7 +758,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     if (guardedStop && loopStopSatisfiesTask(strategy)) {
       const outcome = classifyTaskOutcome({ strategy, kind: 'completed', reason: 'verified_repeat_stop' });
       const hasText = (assistant.parts || []).some((part) => part.type === 'text' && String(part.text || '').trim());
-      if (!hasText) await emitText(assistant, synthesizeTurnSummary({ strategy, outcome }), 'text');
+      if (!hasText) await emitAssistantText(assistant, synthesizeTurnSummary({ strategy, outcome }), 'text');
       return await finalizeAssistant({
         sessionId,
         assistant,
@@ -886,7 +838,7 @@ async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedMo
     if (!(assistant.parts || []).some((p) => p.type === 'text')) {
       // Отказ вручную выбранной модели — не «ошибка агента»: агент ничего
       // не подменял, а текст уже объясняет причину и что делать дальше.
-      await emitText(assistant, err?.modelLocked ? publicProviderErrorMessage(err) : `Ошибка агента: ${publicProviderErrorMessage(err)}`, 'text');
+      await emitAssistantText(assistant, err?.modelLocked ? publicProviderErrorMessage(err) : `Ошибка агента: ${publicProviderErrorMessage(err)}`, 'text');
     }
     await finalizeAssistant({
       sessionId,
@@ -1009,7 +961,7 @@ export async function runTurn({ sessionId, ownerId, parts, model, system, action
       time: { created: Date.now() },
       info: { role: 'assistant', time: { created: Date.now() } },
     };
-    persistAssistant(assistant);
+    persistAssistantMessage(assistant);
 
     const result = await executeTurnLifecycle({
       sessionId,
@@ -1197,7 +1149,6 @@ export function clearAgentSessionState(sessionId) {
 export function resetAgentStateForTests() {
   for (const active of activeTurns.values()) active.controller.abort();
   const sessions = [...activeTurns.keys()];
-  activeTurns.clear(); activeActions.clear(); questionWaiters.clear();
+  resetRuntimeState();
   for (const sessionId of sessions) notifyTurnIdle(sessionId);
-  idleWaiters.clear();
 }
