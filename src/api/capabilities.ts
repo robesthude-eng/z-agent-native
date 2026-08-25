@@ -105,13 +105,23 @@ export function reasonFor(
  */
 /**
  * Путь HTML для панели превью. Сервер предпочитает index.html, иначе
- * единственный (или самый свежий) HTML в корне workspace.
+ * единственный (или самый свежий) HTML в корне workspace, а для собранных
+ * проектов — dist/build/out/index.html, в том числе в подпапке проекта
+ * (распакованный архив). Поэтому путь может содержать подкаталоги,
+ * но не должен содержать traversal и служебные сегменты.
  */
+const PREVIEW_SEGMENT = /^[A-Za-z0-9._-]{1,80}$/;
+
 export function parsePreviewPath(input: unknown): string | null {
   if (!input || typeof input !== "object") return null;
   const raw = (input as { previewPath?: unknown }).previewPath;
   if (typeof raw !== "string") return null;
-  if (!/^[A-Za-z0-9._-]{1,80}\.html?$/i.test(raw)) return null;
+  if (raw.length > 240 || raw.includes("\\")) return null;
+  const segments = raw.split("/");
+  if (segments.length < 1 || segments.length > 4) return null;
+  if (segments.some((s) => !s || !PREVIEW_SEGMENT.test(s))) return null;
+  if (segments.some((s) => s === "." || s === "..")) return null;
+  if (!/\.html?$/i.test(segments[segments.length - 1])) return null;
   return raw;
 }
 

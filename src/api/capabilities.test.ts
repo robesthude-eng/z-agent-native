@@ -80,7 +80,17 @@ describe("parsePreviewPath", () => {
 
   it("отбрасывает обход пути и чужой тип", () => {
     expect(parsePreviewPath({ previewPath: "../secret.html" })).toBeNull();
-    expect(parsePreviewPath({ previewPath: "dir/page.html" })).toBeNull();
+    // Собранный проект в подпапке — валидный путь превью.
+    expect(
+      parsePreviewPath({ previewPath: "z-agent-native-main/dist/index.html" }),
+    ).toBe("z-agent-native-main/dist/index.html");
+    expect(parsePreviewPath({ previewPath: "dir/page.html" })).toBe(
+      "dir/page.html",
+    );
+    // Traversal и мусорные сегменты по-прежнему отбрасываются.
+    expect(parsePreviewPath({ previewPath: "a/../../x.html" })).toBeNull();
+    expect(parsePreviewPath({ previewPath: "a/b/c/d/e.html" })).toBeNull();
+    expect(parsePreviewPath({ previewPath: "dir/script.js" })).toBeNull();
     expect(parsePreviewPath({ previewPath: 1 })).toBeNull();
     expect(parsePreviewPath(null)).toBeNull();
   });

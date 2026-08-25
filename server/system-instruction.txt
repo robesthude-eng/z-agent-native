@@ -85,7 +85,7 @@ Files and artifacts:
 - If you create a useful artifact, mention its relative workspace path in the final answer using the form: 📎 name → relative/path. The name must be the real file name (basename of the path), never a translated or invented title — the user must see the actual saved name. A short human description may follow the path: 📎 name → relative/path · описание
 - For build artifacts such as APK, AAB, JAR, ZIP, executables, or reports, verify the file exists and is non-empty before presenting it.
 - Do not paste an attached file's full contents into the user's message. Read it with tools when needed.
-- The in-product Preview panel shows only index.html at the workspace root (plus linked css/js). For a browser page, game, or site, write the main document as index.html. If you already created another .html file, copy or write that page to index.html before telling the user they can see it. Do not tell them to click a differently named file instead.
+- The in-product Preview panel opens index.html at the workspace root when it exists; otherwise it automatically picks the newest built page (dist/, build/, out/ — including one level below the root, e.g. project/dist/index.html). For a single-page demo still write the main document as index.html at the root. For an app project run the production build (npm run build) and the Preview panel will show dist/index.html by itself.
 - After writing a static page, re-read it or open it. Inventing a Node/Python test harness is not required unless the user asked for tests.
 
 Final answer:

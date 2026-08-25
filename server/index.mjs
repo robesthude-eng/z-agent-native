@@ -35,7 +35,7 @@ import { initTerminal, terminalEnabled } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
-import { previewDocument } from './native/preview-document.mjs';
+import { previewDocument, rewritePreviewHtml } from './native/preview-document.mjs';
 import { mintPreviewToken, resolvePreviewToken, revokePreviewTokens } from './native/preview-tokens.mjs';
 
 const STARTED_AT = Date.now();
@@ -429,6 +429,10 @@ const APP_CONTENT_SECURITY_POLICY_BASE = [
  * входов: по cookie (само приложение) и по маркеру в пути (iframe превью).
  * Права проверяет вызывающий; граница пути — всё та же safeWorkspacePath.
  */
+// Абсолютные пути ассетов в HTML превью переписываются на относительные —
+// реализация и обоснование в native/preview-document.mjs.
+const PREVIEW_HTML_REWRITE_LIMIT = 2 * 1024 * 1024;
+
 function servePreviewFile(req, res, psid, rawRelative) {
   let relative;
   try { relative = rawRelative.split('/').map(decodeURIComponent).join('/'); }
@@ -436,6 +440,24 @@ function servePreviewFile(req, res, psid, rawRelative) {
   const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
   const st = fs.statSync(full);
   if (!st.isFile()) return sendJson(res, 404, { error: 'Not a file' });
+
+  // Однофайловые демо-страницы не трогаем — стримим как раньше.
+  if (/\.html?$/i.test(full) && st.size > 0 && st.size <= PREVIEW_HTML_REWRITE_LIMIT) {
+    let rewritten = null;
+    try { rewritten = Buffer.from(rewritePreviewHtml(fs.readFileSync(full, 'utf8')), 'utf8'); } catch { rewritten = null; }
+    if (rewritten) {
+      res.writeHead(200, {
+        'content-type': mimeFor(full),
+        'content-length': rewritten.length,
+        'content-security-policy': previewSecurityPolicy(req),
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'cache-control': 'no-store',
+      });
+      return res.end(rewritten);
+    }
+  }
+
   res.writeHead(200, {
     'content-type': mimeFor(full),
     'content-length': st.size,
