@@ -137,13 +137,76 @@ var store=null;
 try{Object.defineProperty(window,name,{get:function(){if(!store)store=makeStore();return store;},configurable:true});}catch(e){}
 }
 shim('localStorage');shim('sessionStorage');
+// document.cookie в sandbox-iframe тоже кидает SecurityError, а многие клиенты
+// читают его для CSRF/темы — подкладываем in-memory банку cookie.
+try{var c=document.cookie;}catch(e){var jar={};try{Object.defineProperty(document,'cookie',{get:function(){var out=[];for(var k in jar)out.push(k+'='+jar[k]);return out.join('; ');},set:function(v){var s=String(v||'');var eq=s.indexOf('=');var name=(eq>-1?s.slice(0,eq):s).trim();if(!name)return;jar[name]=eq>-1?s.slice(eq+1).split(';')[0]:'';},configurable:true});}catch(e2){}}
+})();</script>`;
+
+/**
+ * Демо-режим API для превью. SPA в песочнице не может достучаться до
+ * настоящего бэкенда (opaque origin + CORS), поэтому любой «настоящий» вход
+ * обречён, и дальше экрана логина приложение не уходит. Перехватываем fetch
+ * на наш /api-namespace и отвечаем правдоподобными демо-данными: вход
+ * выполнен, один демо-чат, пустые сообщения. Так превью показывает весь
+ * интерфейс, а не только форму входа. Реальные файлы превью
+ * (/api/preview/<token>/~/...) и внешние URL не перехватываются.
+ */
+const PREVIEW_API_MOCK_SHIM = `<script>(function(){
+if (window.__previewMock) return; window.__previewMock = true;
+var DEMO_USER = { email: 'demo@preview.local', role: 'user' };
+var NOW = Date.now();
+var DEMO_CHAT = { id: 'ses_preview_demo', owner_id: DEMO_USER.email, title: 'Демо-чат', created_at: NOW, updated_at: NOW, sandbox_uid: 0 };
+function J(obj, status) { return new Response(JSON.stringify(obj), { status: status || 200, headers: { 'content-type': 'application/json' } }); }
+function verb(init) { return String((init && init.method) || 'GET').toUpperCase(); }
+function mockApi(url, init) {
+  var u; try { u = new URL(url, location.href); } catch (e) { return null; }
+  var p = u.pathname.replace(/\\/+$/, '');
+  if (p.indexOf('/api/') !== 0) return null;
+  if (/^\\/api\\/preview\\/[a-f0-9]{64}\\/~\\//.test(p)) return null;
+  if (p === '/api/ui-config') return J({ systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
+  if (p === '/api/global/health' || p === '/api/health') return J({ status: 'ok' });
+  if (p === '/api/auth/me') return J({ status: 'success', user: DEMO_USER });
+  if (p === '/api/auth/login' || p === '/api/auth/register' || p === '/api/auth/custom') return J({ status: 'success', user: DEMO_USER });
+  if (p === '/api/auth/logout') return J({ status: 'success' });
+  if (p === '/api/user/prefs') return J({});
+  if (p === '/api/providers/models') return J({ models: [{ providerID: 'demo', providerName: 'Demo', modelID: 'demo-model', modelName: 'Демо-модель', free: true, source: 'discovered' }], providers: {}, generatedAt: NOW });
+  if (p === '/api/provider-channels') return J({ providers: [{ id: 'demo', name: 'Demo', enabled: true }] });
+  if (p.indexOf('/api/provider-channels/') === 0) return J({ models: [] });
+  if (p === '/api/session' && verb(init) === 'GET') return J([DEMO_CHAT]);
+  if (p === '/api/session' && verb(init) === 'POST') return J(DEMO_CHAT);
+  if (/^\\/api\\/session\\/[^/]+\\/capabilities$/.test(p)) return J({ capabilities: { workspace: 'ready', preview: 'unavailable', terminal: 'unavailable' }, previewPath: null });
+  if (/^\\/api\\/session\\/[^/]+\\/message$/.test(p)) return verb(init) === 'GET' ? J([]) : J({ ok: true });
+  if (/^\\/api\\/session\\/[^/]+\\/queue$/.test(p)) return verb(init) === 'GET' ? J({ queue: [] }) : J({ ok: true });
+  if (/^\\/api\\/session\\/[^/]+$/.test(p)) return verb(init) === 'DELETE' ? J({ ok: true }) : J(DEMO_CHAT);
+  if (p === '/api/question') return J([]);
+  if (p === '/api/file' || p === '/api/file/status' || p === '/api/workspace/tree') return J([]);
+  return J({});
+}
+var originalFetch = window.fetch ? window.fetch.bind(window) : null;
+window.fetch = function (input, init) {
+  try {
+    var url = typeof input === 'string' ? input : (input && input.url) || String(input);
+    var mocked = mockApi(url, init);
+    if (mocked) return Promise.resolve(mocked);
+  } catch (e) { /* fall through to real fetch */ }
+  return originalFetch ? originalFetch(input, init) : Promise.reject(new Error('offline preview'));
+};
+// SSE в превью неоткуда взять: тишина вместо бесконечных реконнектов.
+function FakeEventSource(url) { this.url = url; this.readyState = 0; this.__open = null; var self = this; setTimeout(function () { self.readyState = 1; try { if (self.__open) self.__open({ type: 'open' }); } catch (e) {} }, 40); }
+FakeEventSource.prototype.addEventListener = function () {};
+FakeEventSource.prototype.removeEventListener = function () {};
+FakeEventSource.prototype.close = function () { this.readyState = 2; };
+Object.defineProperty(FakeEventSource.prototype, 'onopen', { set: function (f) { this.__open = typeof f === 'function' ? f : null; }, get: function () { return this.__open; }, configurable: true });
+Object.defineProperty(FakeEventSource.prototype, 'onmessage', { set: function () {}, get: function () { return null; }, configurable: true });
+Object.defineProperty(FakeEventSource.prototype, 'onerror', { set: function () {}, get: function () { return null; }, configurable: true });
+window.EventSource = FakeEventSource;
 })();</script>`;
 
 export function injectPreviewShims(html) {
   const doc = String(html);
-  if (doc.includes('__pv_probe') || doc.includes('makeStore')) return doc;
-  if (/<head[^>]*>/i.test(doc)) return doc.replace(/<head[^>]*>/i, (head) => `${head}${PREVIEW_STORAGE_SHIM}`);
-  return PREVIEW_STORAGE_SHIM + doc;
+  if (doc.includes('__pv_probe') || doc.includes('__previewMock')) return doc;
+  if (/<head[^>]*>/i.test(doc)) return doc.replace(/<head[^>]*>/i, (head) => `${head}${PREVIEW_STORAGE_SHIM}${PREVIEW_API_MOCK_SHIM}`);
+  return PREVIEW_STORAGE_SHIM + PREVIEW_API_MOCK_SHIM + doc;
 }
 
 export function rewritePreviewHtml(html) {
