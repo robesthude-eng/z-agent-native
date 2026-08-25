@@ -8,7 +8,7 @@ export { pluralRu };
  * error rather than a blank label.
  */
 export function t(key: MessageKey): string {
-	return messages[key];
+  return messages[key];
 }
 
 /**
@@ -19,10 +19,10 @@ export function t(key: MessageKey): string {
  * разбросанных по компонентам.
  */
 export function tf(key: MessageKey, values: Array<string | number>): string {
-	return messages[key].replace(/\{(\d+)\}/g, (match, index) => {
-		const value = values[Number(index)];
-		return value === undefined ? match : String(value);
-	});
+  return messages[key].replace(/\{(\d+)\}/g, (match, index) => {
+    const value = values[Number(index)];
+    return value === undefined ? match : String(value);
+  });
 }
 
 /**
@@ -32,7 +32,7 @@ export function tf(key: MessageKey, values: Array<string | number>): string {
  * wrong forms for every Russian number ending in 2-4.
  */
 export function changedFilesLabel(count: number): string {
-	const verb = pluralRu(count, "изменён", "изменено", "изменено");
-	const noun = pluralRu(count, "файл", "файла", "файлов");
-	return `${verb} ${count} ${noun}`;
+  const verb = pluralRu(count, "изменён", "изменено", "изменено");
+  const noun = pluralRu(count, "файл", "файла", "файлов");
+  return `${verb} ${count} ${noun}`;
 }

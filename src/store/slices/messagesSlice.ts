@@ -241,7 +241,8 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
 
     send: async (text, attachmentsOverride, actionIdOverride) => {
       const actionId = actionIdOverride || newActionId();
-      const { currentID, newSession, materializeSession, selectedModel } = get();
+      const { currentID, newSession, materializeSession, selectedModel } =
+        get();
       let sid = currentID;
       if (!sid || isTmpSession(sid)) {
         if (!sid) await newSession();
@@ -278,10 +279,8 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
         },
       }));
 
-      const mergeMessages = (
-        msgs: Message[],
-        existing: Message[],
-      ): Message[] => mergeMessagesDeterministic(msgs, existing);
+      const mergeMessages = (msgs: Message[], existing: Message[]): Message[] =>
+        mergeMessagesDeterministic(msgs, existing);
 
       const doFinalFetch = async () => {
         try {
@@ -329,7 +328,9 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
               });
               if (verdict === "assume-delivered") {
                 log.warn(
-                  t("messages_slice.send_prompt_soedinenie_oborvalos_posle_dosta"),
+                  t(
+                    "messages_slice.send_prompt_soedinenie_oborvalos_posle_dosta",
+                  ),
                 );
                 return null;
               }

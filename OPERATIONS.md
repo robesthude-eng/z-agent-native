@@ -22,6 +22,14 @@ curl -fsS http://127.0.0.1:3000/health/live
 curl -fsS http://127.0.0.1:3000/health/ready
 ```
 
+The default command is the hardened profile: autonomous execution remains in
+the networkless executor and terminal, SSH, public web and networked installers
+stay disabled. For a trusted single-user host only, opt in explicitly:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.trusted.yml up -d
+```
+
 Public traffic should terminate at the supplied reverse proxy. The public vhost intentionally does not expose `/metrics`.
 
 ## 3. Release qualification

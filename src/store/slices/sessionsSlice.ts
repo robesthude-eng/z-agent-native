@@ -63,7 +63,10 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     // UX-fix: если sid уже в blacklist (сервер подтвердил отсутствие сессии) —
     // не идём в сеть повторно. Просто чистим URL и переключаемся на первую живую.
     if (id && isSessionDead(id)) {
-      log.warn(t("sessions_slice.select_sid_uzhe_pomechen_dead_propuskaem"), id);
+      log.warn(
+        t("sessions_slice.select_sid_uzhe_pomechen_dead_propuskaem"),
+        id,
+      );
       set((state) => {
         const messages = { ...state.messages };
         delete messages[id];
@@ -190,7 +193,8 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       throw e;
     } finally {
       creatingSession = false;
-      if (sessionCreationSettled === creation) sessionCreationSettled = Promise.resolve();
+      if (sessionCreationSettled === creation)
+        sessionCreationSettled = Promise.resolve();
     }
   },
 
@@ -227,7 +231,6 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       // - ownership record
       // - runtime storage (messages, metadata)
       // So like Claude, everything is gone — no overlap, no leftover files
-
     } catch (e) {
       unmarkSessionDead(id);
       // Rollback on error — функциональная форма: возвращаем только

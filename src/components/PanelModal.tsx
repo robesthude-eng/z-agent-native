@@ -230,8 +230,16 @@ export default function PanelModal({
               size="icon"
               className="h-7 w-7 rounded-md text-muted-foreground hover:bg-accent hover:text-foreground"
               onClick={() => setFull((f) => !f)}
-              title={full ? t("panel_modal.svernut_iz_polnogo_ekrana") : t("panel_modal.na_ves_ekran")}
-              aria-label={full ? t("panel_modal.svernut_iz_polnogo_ekrana") : t("panel_modal.na_ves_ekran")}
+              title={
+                full
+                  ? t("panel_modal.svernut_iz_polnogo_ekrana")
+                  : t("panel_modal.na_ves_ekran")
+              }
+              aria-label={
+                full
+                  ? t("panel_modal.svernut_iz_polnogo_ekrana")
+                  : t("panel_modal.na_ves_ekran")
+              }
             >
               {full ? (
                 <ExitFullscreenIcon size={14} />

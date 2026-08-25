@@ -25,7 +25,10 @@ describe("toWorkspaceRelPath", () => {
     ["`src/app.tsx`", "src/app.tsx"],
     ['"src/app.tsx"', "src/app.tsx"],
     ["'src/app.tsx'", "src/app.tsx"],
-    ["`z-agent-native-main/dist/index.html`", "z-agent-native-main/dist/index.html"],
+    [
+      "`z-agent-native-main/dist/index.html`",
+      "z-agent-native-main/dist/index.html",
+    ],
   ])("normalizes %s", (input, expected) => {
     expect(toWorkspaceRelPath(input)).toBe(expected);
   });

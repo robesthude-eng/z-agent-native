@@ -156,7 +156,9 @@ export function isSettled(turn: TurnProjection | null): boolean {
  * одно понятное действие. Скрытая неопределённость ничем не отличается от
  * зависшего интерфейса — именно так это и выглядело до сих пор.
  */
-export const STUCK_NOTICE = t("turn_verdict.ne_udalos_podtverdit_sostoyanie_otveta");
+export const STUCK_NOTICE = t(
+  "turn_verdict.ne_udalos_podtverdit_sostoyanie_otveta",
+);
 
 /** Подпись действия для состояния `stuck`. */
 export const STUCK_ACTION = t("turn_verdict.proverit_snova");

@@ -25,21 +25,38 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: t("shortcuts_overlay.navigaciya"),
     items: [
-      { keys: [MOD, "K"], description: t("shortcuts_overlay.poisk_po_spisku_chatov") },
-      { keys: [MOD, "Shift", "O"], description: t("shortcuts_overlay.novyy_chat") },
+      {
+        keys: [MOD, "K"],
+        description: t("shortcuts_overlay.poisk_po_spisku_chatov"),
+      },
+      {
+        keys: [MOD, "Shift", "O"],
+        description: t("shortcuts_overlay.novyy_chat"),
+      },
       { keys: [MOD, "/"], description: t("shortcuts_overlay.eta_shpargalka") },
-      { keys: ["Esc"], description: t("shortcuts_overlay.zakryt_okno_poisk_ili_otmenit_vvod") },
+      {
+        keys: ["Esc"],
+        description: t("shortcuts_overlay.zakryt_okno_poisk_ili_otmenit_vvod"),
+      },
     ],
   },
   {
     title: t("settings_panel.chat"),
     items: [
       { keys: ["Enter"], description: t("composer.otpravit_soobschenie") },
-      { keys: ["Shift", "Enter"], description: t("shortcuts_overlay.perenos_stroki") },
-      { keys: [MOD, "F"], description: t("shortcuts_overlay.poisk_po_tekuschemu_chatu") },
+      {
+        keys: ["Shift", "Enter"],
+        description: t("shortcuts_overlay.perenos_stroki"),
+      },
+      {
+        keys: [MOD, "F"],
+        description: t("shortcuts_overlay.poisk_po_tekuschemu_chatu"),
+      },
       {
         keys: [MOD, "Enter"],
-        description: t("shortcuts_overlay.otpravit_otredaktirovannoe_soobschenie_zanov"),
+        description: t(
+          "shortcuts_overlay.otpravit_otredaktirovannoe_soobschenie_zanov",
+        ),
       },
       {
         keys: ["↑", "↓", "Enter"],
@@ -50,8 +67,14 @@ const GROUPS: ShortcutGroup[] = [
   {
     title: t("workspace.files"),
     items: [
-      { keys: [MOD, "S"], description: t("shortcuts_overlay.sohranit_otkrytyy_fayl") },
-      { keys: ["Enter"], description: t("shortcuts_overlay.podtverdit_imya_fayla_ili_papki") },
+      {
+        keys: [MOD, "S"],
+        description: t("shortcuts_overlay.sohranit_otkrytyy_fayl"),
+      },
+      {
+        keys: ["Enter"],
+        description: t("shortcuts_overlay.podtverdit_imya_fayla_ili_papki"),
+      },
     ],
   },
 ];
@@ -150,7 +173,9 @@ export default function ShortcutsOverlay() {
         aria-label={t("settings_panel.goryachie_klavishi")}
       >
         <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
-          <h2 className="text-sm font-semibold">{t("settings_panel.goryachie_klavishi")}</h2>
+          <h2 className="text-sm font-semibold">
+            {t("settings_panel.goryachie_klavishi")}
+          </h2>
           <Button
             variant="ghost"
             size="icon"

@@ -4,13 +4,13 @@
 /* Composer already reserves 1.5rem below itself. On devices with a larger
    home-indicator inset, add only the missing remainder instead of stacking a
    second fixed spacer in the chat. */
-section[aria-label="Поле ввода сообщения"] {
+section[aria-label='Поле ввода сообщения'] {
   border-radius: 1.35rem !important;
   padding: 0.4rem 0.5rem !important;
   margin-bottom: max(0px, calc(env(safe-area-inset-bottom) - 1.5rem));
 }
 
-section[aria-label="Поле ввода сообщения"] textarea {
+section[aria-label='Поле ввода сообщения'] textarea {
   min-height: 34px !important;
   max-height: 160px !important;
   padding-top: 0.35rem !important;
@@ -23,15 +23,15 @@ section[aria-label="Поле ввода сообщения"] textarea {
 
 /* Stop acknowledges the tap immediately while the server is confirming
    cancellation. The actual abort remains owned by React/store/runtime. */
-button[data-z-stopping="true"] {
+button[data-z-stopping='true'] {
   width: auto !important;
   min-width: 44px !important;
   padding-inline: 0.8rem !important;
   gap: 0.45rem !important;
 }
 
-button[data-z-stopping="true"]::after {
-  content: "Останавливаю…";
+button[data-z-stopping='true']::after {
+  content: 'Останавливаю…';
   font-size: 12px;
   font-weight: 500;
   white-space: nowrap;
@@ -50,23 +50,24 @@ button[data-z-stopping="true"]::after {
 }
 
 @media (max-width: 640px) {
-  section[aria-label="Поле ввода сообщения"] {
+  section[aria-label='Поле ввода сообщения'] {
     border-radius: 1.2rem !important;
   }
 
   /* 44px physical hit areas on touch screens, while the icons themselves stay
      visually compact. */
-  section[aria-label="Поле ввода сообщения"] button[aria-label="Прикрепить файл"],
-  section[aria-label="Поле ввода сообщения"] .oc-tap {
+  section[aria-label='Поле ввода сообщения']
+  button[aria-label='Прикрепить файл'],
+  section[aria-label='Поле ввода сообщения'] .oc-tap {
     width: 44px !important;
     height: 44px !important;
     min-width: 44px !important;
     min-height: 44px !important;
   }
 
-  .oc-msg-in button[aria-label="Изменить сообщение"],
-  .oc-msg-in button[aria-label="Перегенерировать ответ"],
-  .oc-msg-in button[aria-label^="Копировать"] {
+  .oc-msg-in button[aria-label='Изменить сообщение'],
+  .oc-msg-in button[aria-label='Перегенерировать ответ'],
+  .oc-msg-in button[aria-label^='Копировать'] {
     min-width: 40px !important;
     min-height: 40px !important;
   }

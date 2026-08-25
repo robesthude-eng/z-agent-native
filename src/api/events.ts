@@ -51,10 +51,7 @@ export function getActiveStreamStatus(): StreamStatus {
 // null означает, что подключаться пока некуда.
 let activeStreamSessionId: string | null = null;
 export function isSseHealthyForSession(sessionId: string): boolean {
-  return (
-    activeStreamStatus === "open" &&
-    activeStreamSessionId === sessionId
-  );
+  return activeStreamStatus === "open" && activeStreamSessionId === sessionId;
 }
 
 export class EventStream {

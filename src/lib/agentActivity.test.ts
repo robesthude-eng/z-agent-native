@@ -29,9 +29,24 @@ describe("describeAgentActivity", () => {
   it("собирает след последних шагов с их статусами", () => {
     const activity = describeAgentActivity(
       assistant([
-        { type: "tool", tool: "read", callID: "c1", state: { status: "completed", input: { path: "src/app/main.ts" } } },
-        { type: "tool", tool: "websearch", callID: "c2", state: { status: "error", input: { query: "x" } } },
-        { type: "tool", tool: "bash", callID: "c3", state: { status: "running", input: { command: "npm test" } } },
+        {
+          type: "tool",
+          tool: "read",
+          callID: "c1",
+          state: { status: "completed", input: { path: "src/app/main.ts" } },
+        },
+        {
+          type: "tool",
+          tool: "websearch",
+          callID: "c2",
+          state: { status: "error", input: { query: "x" } },
+        },
+        {
+          type: "tool",
+          tool: "bash",
+          callID: "c3",
+          state: { status: "running", input: { command: "npm test" } },
+        },
       ]),
     );
     expect(activity.step).toBe(3);
@@ -45,11 +60,24 @@ describe("describeAgentActivity", () => {
   });
 
   it("различает размышление, письмо ответа и паузу после действия", () => {
-    expect(describeAgentActivity(assistant([{ type: "reasoning", text: "…" }])).label).toBe("Размышляет");
-    expect(describeAgentActivity(assistant([{ type: "text", text: "Готово" }])).label).toBe("Пишет ответ");
+    expect(
+      describeAgentActivity(assistant([{ type: "reasoning", text: "…" }]))
+        .label,
+    ).toBe("Размышляет");
+    expect(
+      describeAgentActivity(assistant([{ type: "text", text: "Готово" }]))
+        .label,
+    ).toBe("Пишет ответ");
     expect(
       describeAgentActivity(
-        assistant([{ type: "tool", tool: "read", callID: "c1", state: { status: "completed", input: { path: "a.ts" } } }]),
+        assistant([
+          {
+            type: "tool",
+            tool: "read",
+            callID: "c1",
+            state: { status: "completed", input: { path: "a.ts" } },
+          },
+        ]),
       ).label,
     ).toBe("Готовит следующий шаг");
     expect(describeAgentActivity([]).label).toBe("Начинает");
@@ -58,10 +86,24 @@ describe("describeAgentActivity", () => {
 
 describe("activityDetail", () => {
   it("берёт цель из аргументов инструмента", () => {
-    expect(activityDetail("webfetch", { state: { input: { url: "https://example.com/a/b" } } })).toBe("example.com");
-    expect(activityDetail("glob", { state: { input: { pattern: "**/*.ts" } } })).toBe("**/*.ts");
-    expect(activityDetail("read", { state: { input: { path: "src/deep/nested/file.ts" } } })).toBe("nested/file.ts");
-    expect(activityDetail("todowrite", { state: { input: { todos: [1, 2, 3] } } })).toBe("3 п.");
-    expect(activityDetail("task", { state: { input: { agent: "security" } } })).toBe("security");
+    expect(
+      activityDetail("webfetch", {
+        state: { input: { url: "https://example.com/a/b" } },
+      }),
+    ).toBe("example.com");
+    expect(
+      activityDetail("glob", { state: { input: { pattern: "**/*.ts" } } }),
+    ).toBe("**/*.ts");
+    expect(
+      activityDetail("read", {
+        state: { input: { path: "src/deep/nested/file.ts" } },
+      }),
+    ).toBe("nested/file.ts");
+    expect(
+      activityDetail("todowrite", { state: { input: { todos: [1, 2, 3] } } }),
+    ).toBe("3 п.");
+    expect(
+      activityDetail("task", { state: { input: { agent: "security" } } }),
+    ).toBe("security");
   });
 });

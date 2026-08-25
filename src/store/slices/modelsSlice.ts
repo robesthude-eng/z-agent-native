@@ -25,7 +25,10 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
       ]);
       const hiddenByProvider = catalog.hidden ?? {};
       const configured = new Map(
-        (channelsResponse.providers ?? []).map((provider) => [provider.id, provider]),
+        (channelsResponse.providers ?? []).map((provider) => [
+          provider.id,
+          provider,
+        ]),
       );
 
       for (const model of catalog.models ?? []) {
@@ -33,8 +36,10 @@ export const createModelsSlice: Slice<ModelsSlice> = (set, get) => ({
         const sourceProviderID = model.sourceProviderID || model.providerID;
         const provider = configured.get(sourceProviderID);
         if (!provider?.enabled) continue;
-        if (catalog.providers?.[sourceProviderID]?.status === "disabled") continue;
-        if (hiddenByProvider[sourceProviderID]?.includes(model.modelID)) continue;
+        if (catalog.providers?.[sourceProviderID]?.status === "disabled")
+          continue;
+        if (hiddenByProvider[sourceProviderID]?.includes(model.modelID))
+          continue;
         entries.push({
           providerID: model.providerID,
           providerName: provider.name || model.providerName || sourceProviderID,

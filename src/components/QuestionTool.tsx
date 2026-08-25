@@ -133,15 +133,15 @@ export function QuestionTool({
   const resolvedSubmitLabel = submitLabel ?? t("composer.otpravit");
   const resolvedNextLabel = nextLabel ?? "Next";
   const resolvedSkipLabel = skipLabel ?? "Skip";
-  const primaryLabel = isLastQuestion
-    ? resolvedSubmitLabel
-    : resolvedNextLabel;
+  const primaryLabel = isLastQuestion ? resolvedSubmitLabel : resolvedNextLabel;
 
   const canSubmit = useMemo(() => {
     if (!activeQuestion) return false;
     if (kind === "text") return freeText.trim().length > 0;
 
-    const selectedNonCustom = selectedIds.filter((id) => id !== CUSTOM_ID).length;
+    const selectedNonCustom = selectedIds.filter(
+      (id) => id !== CUSTOM_ID,
+    ).length;
     const hasCustomText = customText.trim().length > 0;
     const count = selectedNonCustom + (hasCustomText ? 1 : 0);
 
@@ -208,7 +208,7 @@ export function QuestionTool({
       kind,
       selectedIds: nonCustomIds,
       selectedLabels: nonCustomLabels,
-      text: trimmedCustom,
+      ...(trimmedCustom ? { text: trimmedCustom } : {}),
     };
   }, [activeQuestion?.options, customText, freeText, kind, selectedIds]);
 
@@ -348,91 +348,93 @@ export function QuestionTool({
         </div>
 
         {/* Варианты ответов */}
-        {kind !== "text" && activeQuestion.options && activeQuestion.options.length > 0 && (
-          <div className="space-y-1.5 pt-0.5">
-            {activeQuestion.options.map((opt, idx) => {
-              const checked = selectedIds.includes(opt.id);
-              const badgeLetter = optionBadge(idx);
+        {kind !== "text" &&
+          activeQuestion.options &&
+          activeQuestion.options.length > 0 && (
+            <div className="space-y-1.5 pt-0.5">
+              {activeQuestion.options.map((opt, idx) => {
+                const checked = selectedIds.includes(opt.id);
+                const badgeLetter = optionBadge(idx);
 
-              return (
-                <button
-                  key={opt.id || `${opt.label}-${idx}`}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => handleSelectOption(opt.id)}
+                return (
+                  <button
+                    key={opt.id || `${opt.label}-${idx}`}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => handleSelectOption(opt.id)}
+                    className={cn(
+                      "w-full text-left rounded-xl border px-3 py-2 flex items-center gap-2.5 transition-all duration-150 group",
+                      checked
+                        ? "border-primary/60 bg-primary/10 text-foreground shadow-[0_0_12px_rgba(var(--primary),0.12)]"
+                        : "border-white/[0.08] bg-white/[0.03] text-foreground/90 hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.995]",
+                    )}
+                  >
+                    <span
+                      className={cn(
+                        "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
+                        checked
+                          ? "bg-primary text-primary-foreground shadow-sm"
+                          : "border border-white/10 bg-white/[0.05] text-muted-foreground group-hover:text-foreground",
+                      )}
+                    >
+                      {badgeLetter}
+                    </span>
+
+                    <div className="min-w-0 flex-1 flex flex-col">
+                      <span className="text-[13.5px] font-medium leading-snug">
+                        {opt.label}
+                      </span>
+                      {opt.description && (
+                        <span className="text-[11.5px] leading-tight text-muted-foreground mt-0.5">
+                          {opt.description}
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+
+              {/* Вариант ввода своего ответа */}
+              {customEnabled && (
+                <div
                   className={cn(
-                    "w-full text-left rounded-xl border px-3 py-2 flex items-center gap-2.5 transition-all duration-150 group",
-                    checked
-                      ? "border-primary/60 bg-primary/10 text-foreground shadow-[0_0_12px_rgba(var(--primary),0.12)]"
-                      : "border-white/[0.08] bg-white/[0.03] text-foreground/90 hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.995]",
+                    "w-full rounded-xl border px-3 py-1.5 flex items-center gap-2.5 transition-all duration-150",
+                    selectedIds.includes(CUSTOM_ID)
+                      ? "border-primary/60 bg-primary/10 shadow-[0_0_12px_rgba(var(--primary),0.12)]"
+                      : "border-white/[0.08] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]",
                   )}
                 >
                   <span
                     className={cn(
                       "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
-                      checked
+                      selectedIds.includes(CUSTOM_ID)
                         ? "bg-primary text-primary-foreground shadow-sm"
-                        : "border border-white/10 bg-white/[0.05] text-muted-foreground group-hover:text-foreground",
+                        : "border border-white/10 bg-white/[0.05] text-muted-foreground",
                     )}
                   >
-                    {badgeLetter}
+                    {optionBadge(activeQuestion.options.length)}
                   </span>
 
-                  <div className="min-w-0 flex-1 flex flex-col">
-                    <span className="text-[13.5px] font-medium leading-snug">
-                      {opt.label}
-                    </span>
-                    {opt.description && (
-                      <span className="text-[11.5px] leading-tight text-muted-foreground mt-0.5">
-                        {opt.description}
-                      </span>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-
-            {/* Вариант ввода своего ответа */}
-            {customEnabled && (
-              <div
-                className={cn(
-                  "w-full rounded-xl border px-3 py-1.5 flex items-center gap-2.5 transition-all duration-150",
-                  selectedIds.includes(CUSTOM_ID)
-                    ? "border-primary/60 bg-primary/10 shadow-[0_0_12px_rgba(var(--primary),0.12)]"
-                    : "border-white/[0.08] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]",
-                )}
-              >
-                <span
-                  className={cn(
-                    "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
-                    selectedIds.includes(CUSTOM_ID)
-                      ? "bg-primary text-primary-foreground shadow-sm"
-                      : "border border-white/10 bg-white/[0.05] text-muted-foreground",
-                  )}
-                >
-                  {optionBadge(activeQuestion.options.length)}
-                </span>
-
-                <input
-                  type="text"
-                  disabled={busy}
-                  value={customText}
-                  onChange={(e) => handleCustomChange(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter" && canSubmit) {
-                      e.preventDefault();
-                      handleNextOrSubmit();
+                  <input
+                    type="text"
+                    disabled={busy}
+                    value={customText}
+                    onChange={(e) => handleCustomChange(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && canSubmit) {
+                        e.preventDefault();
+                        handleNextOrSubmit();
+                      }
+                    }}
+                    placeholder={
+                      activeQuestion.customPlaceholder ?? "Type your answer"
                     }
-                  }}
-                  placeholder={
-                    activeQuestion.customPlaceholder ?? "Type your answer"
-                  }
-                  className="w-full h-8 bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none border-none focus:outline-none focus:ring-0"
-                />
-              </div>
-            )}
-          </div>
-        )}
+                    className="w-full h-8 bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none border-none focus:outline-none focus:ring-0"
+                  />
+                </div>
+              )}
+            </div>
+          )}
 
         {/* Текстовый ввод для kind === 'text' */}
         {kind === "text" && (

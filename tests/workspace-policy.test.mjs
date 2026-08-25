@@ -11,6 +11,7 @@ process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 
 const policy = await import('../server/native/workspace-policy.mjs');
 const tools = await import('../server/native/tools.mjs');
+const ssh = await import('../server/native/ssh-tool.mjs');
 
 test('sensitive workspace paths are blocked but templates remain readable', () => {
   assert.equal(policy.isSensitiveWorkspacePath('.env'), true);
@@ -72,27 +73,62 @@ test('the capability block tells the model what this instance actually allows', 
   const previousSudo = process.env.Z_AGENT_ALLOW_SUDO;
   const previousWeb = process.env.Z_AGENT_NETWORK_POLICY;
   const previousShell = process.env.Z_AGENT_SHELL_NETWORK_POLICY;
+  const previousSsh = process.env.Z_AGENT_SSH_POLICY;
   try {
     process.env.Z_AGENT_NETWORK_POLICY = 'public';
     process.env.Z_AGENT_SHELL_NETWORK_POLICY = 'open';
     process.env.Z_AGENT_ALLOW_SUDO = '1';
+    process.env.Z_AGENT_SSH_POLICY = 'any';
     const enabled = policy.runtimeCapabilityPrompt();
     assert.match(enabled, /Internet: enabled/);
     assert.match(enabled, /sudo is available/);
     assert.match(enabled, /direct egress is allowed/);
+    assert.match(enabled, /Remote SSH: enabled/);
 
     process.env.Z_AGENT_NETWORK_POLICY = 'off';
     process.env.Z_AGENT_SHELL_NETWORK_POLICY = 'tool-only';
     delete process.env.Z_AGENT_ALLOW_SUDO;
+    process.env.Z_AGENT_SSH_POLICY = 'off';
     const disabled = policy.runtimeCapabilityPrompt();
     assert.match(disabled, /Internet: disabled/);
     assert.match(disabled, /no sudo/);
-    assert.match(disabled, /ensure_environment/);
+    assert.match(disabled, /installers are disabled/);
+    assert.match(disabled, /Remote SSH: disabled/);
   } finally {
     if (previousSudo === undefined) delete process.env.Z_AGENT_ALLOW_SUDO;
     else process.env.Z_AGENT_ALLOW_SUDO = previousSudo;
     if (previousWeb === undefined) delete process.env.Z_AGENT_NETWORK_POLICY;
     else process.env.Z_AGENT_NETWORK_POLICY = previousWeb;
+    if (previousShell === undefined) delete process.env.Z_AGENT_SHELL_NETWORK_POLICY;
+    else process.env.Z_AGENT_SHELL_NETWORK_POLICY = previousShell;
+    if (previousSsh === undefined) delete process.env.Z_AGENT_SSH_POLICY;
+    else process.env.Z_AGENT_SSH_POLICY = previousSsh;
+  }
+});
+
+test('remote SSH is fail-closed and requires an explicit destination policy', () => {
+  const previousPolicy = process.env.Z_AGENT_SSH_POLICY;
+  const previousAllowlist = process.env.Z_AGENT_SSH_ALLOWLIST;
+  const previousShell = process.env.Z_AGENT_SHELL_NETWORK_POLICY;
+  try {
+    process.env.Z_AGENT_SHELL_NETWORK_POLICY = 'guarded';
+    delete process.env.Z_AGENT_SSH_POLICY;
+    delete process.env.Z_AGENT_SSH_ALLOWLIST;
+    assert.equal(policy.sshPolicy(), 'off');
+    assert.throws(() => ssh.assertSshDestinationAllowed('server.example.com'), /disabled/i);
+
+    process.env.Z_AGENT_SSH_POLICY = 'allowlist';
+    process.env.Z_AGENT_SSH_ALLOWLIST = 'server.example.com';
+    assert.doesNotThrow(() => ssh.assertSshDestinationAllowed('server.example.com'));
+    assert.throws(() => ssh.assertSshDestinationAllowed('other.example.com'), /allowlist/i);
+
+    process.env.Z_AGENT_SSH_POLICY = 'any';
+    assert.doesNotThrow(() => ssh.assertSshDestinationAllowed('other.example.com'));
+  } finally {
+    if (previousPolicy === undefined) delete process.env.Z_AGENT_SSH_POLICY;
+    else process.env.Z_AGENT_SSH_POLICY = previousPolicy;
+    if (previousAllowlist === undefined) delete process.env.Z_AGENT_SSH_ALLOWLIST;
+    else process.env.Z_AGENT_SSH_ALLOWLIST = previousAllowlist;
     if (previousShell === undefined) delete process.env.Z_AGENT_SHELL_NETWORK_POLICY;
     else process.env.Z_AGENT_SHELL_NETWORK_POLICY = previousShell;
   }

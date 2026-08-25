@@ -24,7 +24,7 @@ import { safeExternalRequest, safeWorkspacePath } from './security.mjs';
 import { runWebSearch } from './websearch.mjs';
 import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership } from './sandbox.mjs';
 import { executeInExecutor, executorRequired } from './executor-client.mjs';
-import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy } from './workspace-policy.mjs';
+import { agentNetworkPolicy, assertAgentNetworkHost, assertAgentNetworkUrl, assertAgentReadablePath, assertShellCommandAllowed, isSensitiveWorkspacePath, shellNetworkPolicy, sshPolicy } from './workspace-policy.mjs';
 
 const MAX_READ_BYTES = 512 * 1024;
 const MAX_TOOL_OUTPUT = 512 * 1024;
@@ -256,11 +256,15 @@ export function mutatesWorkspace(name) {
 const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
 export function availableToolDefinitions() {
   let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
+  if (agentNetworkPolicy() === 'off') tools = tools.filter((tool) => !['webfetch', 'websearch'].includes(tool.name));
+  if (sshPolicy() === 'off') tools = tools.filter((tool) => tool.name !== 'ssh_tool');
   // The hardened executor has no network by construction. Dependency installers
   // therefore cannot be autonomous in production without creating a second
   // code-execution egress path. Provision dependencies in the image/operator
   // workflow instead; trusted local mode may explicitly retain this tool.
-  if (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1') tools = tools.filter((tool) => tool.name !== 'ensure_environment');
+  if (agentNetworkPolicy() !== 'public' || (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1')) {
+    tools = tools.filter((tool) => tool.name !== 'ensure_environment');
+  }
   return tools;
 }
 

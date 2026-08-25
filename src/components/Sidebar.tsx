@@ -94,7 +94,10 @@ export default function Sidebar() {
   const normalizedFilter = filter.trim().toLowerCase();
 
   const titleOf = useCallback(
-    (s: SessionInfo) => sessionTitleOverrides[s.id] || s.title || t("shortcuts_overlay.novyy_chat"),
+    (s: SessionInfo) =>
+      sessionTitleOverrides[s.id] ||
+      s.title ||
+      t("shortcuts_overlay.novyy_chat"),
     [sessionTitleOverrides],
   );
 
@@ -329,7 +332,9 @@ export default function Sidebar() {
           >
             {totalVisible === 0 && chatFolders.length === 0 && (
               <p className="px-3 py-8 text-sm text-muted-foreground text-center">
-                {normalizedFilter ? t("settings_panel.nichego_ne_naydeno") : t("sidebar.poka_net_dialogov")}
+                {normalizedFilter
+                  ? t("settings_panel.nichego_ne_naydeno")
+                  : t("sidebar.poka_net_dialogov")}
               </p>
             )}
 
@@ -411,7 +416,12 @@ export default function Sidebar() {
                             })
                           }
                           className="flex min-w-0 flex-1 items-center gap-1.5 rounded-md px-2 py-1 text-left text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
-                          title={tf("sidebar.0_papku_1", [collapsedFolders.has(g.folderId) ? t("sidebar.razvernut") : t("sidebar.svernut"), g.label])}
+                          title={tf("sidebar.0_papku_1", [
+                            collapsedFolders.has(g.folderId)
+                              ? t("sidebar.razvernut")
+                              : t("sidebar.svernut"),
+                            g.label,
+                          ])}
                         >
                           <span aria-hidden="true">
                             {collapsedFolders.has(g.folderId) ? "▸" : "▾"}
@@ -428,7 +438,9 @@ export default function Sidebar() {
                             setEditingFolderId(g.folderId ?? null);
                           }}
                           title={t("sidebar.pereimenovat_papku")}
-                          aria-label={tf("sidebar.pereimenovat_papku_0", [g.label])}
+                          aria-label={tf("sidebar.pereimenovat_papku_0", [
+                            g.label,
+                          ])}
                           className="shrink-0 rounded p-0.5 text-[11px] opacity-0 transition group-hover/folder:opacity-60 hover:opacity-100"
                         >
                           <PencilIcon size={13} />
@@ -446,8 +458,13 @@ export default function Sidebar() {
                                 if (g.folderId) deleteChatFolder(g.folderId);
                                 setConfirmDeleteFolderId(null);
                               }}
-                              title={t("sidebar.podtverdit_udalenie_papki_chaty_ostanutsya")}
-                              aria-label={tf("sidebar.podtverdit_udalenie_papki_0", [g.label])}
+                              title={t(
+                                "sidebar.podtverdit_udalenie_papki_chaty_ostanutsya",
+                              )}
+                              aria-label={tf(
+                                "sidebar.podtverdit_udalenie_papki_0",
+                                [g.label],
+                              )}
                               className="inline-flex h-5 w-5 items-center justify-center rounded-md bg-destructive text-background transition hover:brightness-110"
                             >
                               <CheckIcon size={11} />
@@ -497,7 +514,9 @@ export default function Sidebar() {
                   g.items.map((s) => {
                     const isActive = s.id === currentID;
                     const displayTitle =
-                      sessionTitleOverrides[s.id] || s.title || t("shortcuts_overlay.novyy_chat");
+                      sessionTitleOverrides[s.id] ||
+                      s.title ||
+                      t("shortcuts_overlay.novyy_chat");
                     const isPinned = pinnedSessions.includes(s.id);
                     const sStatus =
                       typeof status[s.id] === "string"
@@ -573,9 +592,16 @@ export default function Sidebar() {
                                   togglePinnedSession(s.id);
                                 }}
                                 title={
-                                  isPinned ? t("sidebar.otkrepit_chat") : t("sidebar.zakrepit_chat")
+                                  isPinned
+                                    ? t("sidebar.otkrepit_chat")
+                                    : t("sidebar.zakrepit_chat")
                                 }
-                                aria-label={tf("sidebar.0_chat_1", [isPinned ? t("sidebar.otkrepit") : t("sidebar.zakrepit"), displayTitle])}
+                                aria-label={tf("sidebar.0_chat_1", [
+                                  isPinned
+                                    ? t("sidebar.otkrepit")
+                                    : t("sidebar.zakrepit"),
+                                  displayTitle,
+                                ])}
                                 className={cn(
                                   "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
                                   isPinned
@@ -594,7 +620,10 @@ export default function Sidebar() {
                                   );
                                 }}
                                 title={t("sidebar.papka_chata")}
-                                aria-label={tf("sidebar.vybrat_papku_dlya_chata_0", [displayTitle])}
+                                aria-label={tf(
+                                  "sidebar.vybrat_papku_dlya_chata_0",
+                                  [displayTitle],
+                                )}
                                 className={cn(
                                   "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
                                   chatFolderAssignments[s.id]
@@ -616,7 +645,9 @@ export default function Sidebar() {
                                   );
                                 }}
                                 title={t("sidebar.pereimenovat_chat")}
-                                aria-label={tf("sidebar.pereimenovat_chat_0", [displayTitle])}
+                                aria-label={tf("sidebar.pereimenovat_chat_0", [
+                                  displayTitle,
+                                ])}
                                 className="oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current opacity-45 transition-all hover:bg-accent hover:opacity-100 active:scale-90"
                               >
                                 <PencilIcon size={13} />
@@ -660,7 +691,9 @@ export default function Sidebar() {
                                 setConfirmDeleteId(s.id);
                               }}
                               title={t("sidebar.udalit_chat")}
-                              aria-label={tf("sidebar.udalit_chat_0", [displayTitle])}
+                              aria-label={tf("sidebar.udalit_chat_0", [
+                                displayTitle,
+                              ])}
                               className="oc-reveal mr-0.5 inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-current opacity-45 transition-all hover:bg-destructive/15 hover:text-destructive hover:opacity-100 active:scale-90"
                             >
                               <TrashIcon size={14} />
@@ -714,7 +747,9 @@ export default function Sidebar() {
                                 }
                               }}
                               placeholder={t("sidebar.novaya_papka_2")}
-                              aria-label={t("sidebar.sozdat_papku_i_perenesti_chat_v")}
+                              aria-label={t(
+                                "sidebar.sozdat_papku_i_perenesti_chat_v",
+                              )}
                               className="mt-1 w-full rounded-md border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-ring"
                             />
                           </div>
@@ -784,7 +819,10 @@ export default function Sidebar() {
                   onClick={async () => {
                     const ok = await askConfirm({
                       title: t("sidebar.vyyti_iz_akkaunta"),
-                      description: tf("sidebar.seans_0_zakroetsya_na_etom_ustroystve", [currentUser.email]),
+                      description: tf(
+                        "sidebar.seans_0_zakroetsya_na_etom_ustroystve",
+                        [currentUser.email],
+                      ),
                       confirmLabel: t("sidebar.vyyti"),
                       destructive: true,
                     });

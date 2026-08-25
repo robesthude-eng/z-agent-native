@@ -73,7 +73,11 @@ export function serverQueueEnabled(): boolean {
 export function enqueuePlan(
   text: string,
   sessionId: string | null,
-  opts: { enabled?: boolean; actionId?: string; attachments?: ProcessedFile[] } = {},
+  opts: {
+    enabled?: boolean;
+    actionId?: string;
+    attachments?: ProcessedFile[];
+  } = {},
 ): EnqueuePlan {
   const actionId = opts.actionId ?? newActionId();
   const attachments = (opts.attachments ?? []).map((attachment) => {
@@ -81,7 +85,8 @@ export function enqueuePlan(
     return metadata;
   });
   const enabled = opts.enabled ?? serverQueueEnabled();
-  if (!enabled) return { kind: "local", actionId, text, attachments, why: "flag_off" };
+  if (!enabled)
+    return { kind: "local", actionId, text, attachments, why: "flag_off" };
   // Правило «сессия настоящая» берётся у `sessionActionPrep`, а не пишется
   // заново: вторая копия того же условия разошлась бы с первой молча, и
   // разошлась бы именно на `tmp_` — то есть в новом чате.

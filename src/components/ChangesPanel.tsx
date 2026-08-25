@@ -32,7 +32,9 @@ type ResultInfo = {
 };
 
 function changeKind(status?: string): ChangeKind {
-  const value = String(status || "").trim().toLowerCase();
+  const value = String(status || "")
+    .trim()
+    .toLowerCase();
   if (
     value === "added" ||
     value === "untracked" ||
@@ -100,7 +102,9 @@ export default function ChangesPanel() {
   const [error, setError] = useState<string | null>(null);
   const [diff, setDiff] = useState<ProjectChangeDiff | null>(null);
   const [diffLoadingPath, setDiffLoadingPath] = useState<string | null>(null);
-  const [confirmRevertPath, setConfirmRevertPath] = useState<string | null>(null);
+  const [confirmRevertPath, setConfirmRevertPath] = useState<string | null>(
+    null,
+  );
   const [revertingPath, setRevertingPath] = useState<string | null>(null);
 
   const ready = !!currentID && !isTmpSession(currentID);
@@ -109,7 +113,9 @@ export default function ChangesPanel() {
     for (let i = messages.length - 1; i >= 0; i -= 1) {
       const message = messages[i];
       if (message?.role !== "assistant") continue;
-      const info = message.info as (ResultInfo & Record<string, unknown>) | undefined;
+      const info = message.info as
+        | (ResultInfo & Record<string, unknown>)
+        | undefined;
       if (info?.outcome || info?.strategy) return info;
     }
     return null;
@@ -122,20 +128,32 @@ export default function ChangesPanel() {
     if (strategy.lastVerificationOk === true) {
       return {
         label: t("changes_panel.proverka_proydena"),
-        detail: attempts > 0 ? tf("changes_panel.0_zapuskov", [attempts]) : t("changes_panel.uspeshno"),
+        detail:
+          attempts > 0
+            ? tf("changes_panel.0_zapuskov", [attempts])
+            : t("changes_panel.uspeshno"),
         tone: "text-emerald-300",
       };
     }
     if (strategy.lastVerificationOk === false) {
       return {
         label: t("changes_panel.proverka_ne_proshla"),
-        detail: attempts > 0 ? tf("changes_panel.0_zapuskov", [attempts]) : t("changes_panel.est_oshibka"),
+        detail:
+          attempts > 0
+            ? tf("changes_panel.0_zapuskov", [attempts])
+            : t("changes_panel.est_oshibka"),
         tone: "text-amber-300",
       };
     }
     return {
-      label: attempts > 0 ? t("changes_panel.proverka_ne_podtverzhdena") : t("changes_panel.proverka_ne_zapuskalas"),
-      detail: attempts > 0 ? tf("changes_panel.0_popytok", [attempts]) : t("changes_panel.rezultat_trebuet_proverki"),
+      label:
+        attempts > 0
+          ? t("changes_panel.proverka_ne_podtverzhdena")
+          : t("changes_panel.proverka_ne_zapuskalas"),
+      detail:
+        attempts > 0
+          ? tf("changes_panel.0_popytok", [attempts])
+          : t("changes_panel.rezultat_trebuet_proverki"),
       tone: "text-muted-foreground",
     };
   }, [latestResult]);
@@ -153,10 +171,15 @@ export default function ChangesPanel() {
       const next = Array.isArray(result) ? (result as ProjectChange[]) : [];
       setFiles(next);
       setDiff((current) =>
-        current && next.some((file) => file.path === current.path) ? current : null,
+        current && next.some((file) => file.path === current.path)
+          ? current
+          : null,
       );
     } catch (e: unknown) {
-      setError((e as Error)?.message || t("changes_panel.ne_udalos_poluchit_izmeneniya"));
+      setError(
+        (e as Error)?.message ||
+          t("changes_panel.ne_udalos_poluchit_izmeneniya"),
+      );
     } finally {
       setLoading(false);
     }
@@ -193,7 +216,9 @@ export default function ChangesPanel() {
       try {
         setDiff(await changesApi.diff(currentID, file.path));
       } catch (e: unknown) {
-        setError((e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"));
+        setError(
+          (e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"),
+        );
       } finally {
         setDiffLoadingPath(null);
       }
@@ -213,7 +238,9 @@ export default function ChangesPanel() {
         setDiff(null);
         await refresh();
       } catch (e: unknown) {
-        const message = (e as Error)?.message || t("changes_panel.ne_udalos_otkatit_izmenenie");
+        const message =
+          (e as Error)?.message ||
+          t("changes_panel.ne_udalos_otkatit_izmenenie");
         setError(message);
         toast("error", message);
       } finally {
@@ -239,11 +266,18 @@ export default function ChangesPanel() {
         <div className="flex items-center gap-2">
           <GitBranch className="h-4 w-4 text-muted-foreground" />
           <div className="min-w-0 flex-1">
-            <div className="text-sm font-medium text-foreground">{t("changes_panel.rezultat_raboty")}</div>
+            <div className="text-sm font-medium text-foreground">
+              {t("changes_panel.rezultat_raboty")}
+            </div>
             <div className="mt-0.5 text-[11px] text-muted-foreground">
               {files.length === 0
                 ? t("changes_panel.rabochaya_oblast_bez_izmeneniy")
-                : tf("changes_panel.0_faylov_1_2_3", [files.length, counts.added, counts.modified, counts.deleted])}
+                : tf("changes_panel.0_faylov_1_2_3", [
+                    files.length,
+                    counts.added,
+                    counts.modified,
+                    counts.deleted,
+                  ])}
             </div>
           </div>
           <Button
@@ -267,7 +301,9 @@ export default function ChangesPanel() {
               </span>
             )}
             {verification && (
-              <span className={`inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 ${verification.tone}`}>
+              <span
+                className={`inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2.5 py-1 ${verification.tone}`}
+              >
                 <ShieldCheck className="h-3 w-3" />
                 {verification.label} · {verification.detail}
               </span>
@@ -288,9 +324,12 @@ export default function ChangesPanel() {
             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-muted text-muted-foreground">
               ✓
             </div>
-            <div className="text-sm font-medium text-foreground">{t("changes_panel.vse_chisto")}</div>
+            <div className="text-sm font-medium text-foreground">
+              {t("changes_panel.vse_chisto")}
+            </div>
             <p className="max-w-xs text-xs leading-relaxed text-muted-foreground">
-              Когда агент изменит файлы, здесь появятся diff и результат проверки.
+              Когда агент изменит файлы, здесь появятся diff и результат
+              проверки.
             </p>
           </div>
         ) : (
@@ -310,7 +349,9 @@ export default function ChangesPanel() {
                     className="flex min-h-12 w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent/60"
                     onClick={() => openDiff(file).catch(() => {})}
                     aria-expanded={expanded}
-                    title={tf("changes_panel.pokazat_izmeneniya_0", [file.path])}
+                    title={tf("changes_panel.pokazat_izmeneniya_0", [
+                      file.path,
+                    ])}
                   >
                     <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg border border-border bg-card font-mono text-[11px] font-semibold text-muted-foreground">
                       {statusMark(file.status)}
@@ -321,7 +362,9 @@ export default function ChangesPanel() {
                       </span>
                       <span className="mt-0.5 block text-[10.5px] text-muted-foreground">
                         {statusLabel(file.status)}
-                        {file.originalPath ? tf("changes_panel.iz_0", [file.originalPath]) : ""}
+                        {file.originalPath
+                          ? tf("changes_panel.iz_0", [file.originalPath])
+                          : ""}
                       </span>
                     </span>
                     <ChevronDown
@@ -334,11 +377,17 @@ export default function ChangesPanel() {
                       <div className="flex flex-wrap items-center gap-2 px-3 py-2 text-[10.5px] text-muted-foreground">
                         {!diff.binary && (
                           <>
-                            <span className="text-emerald-300/90">+{diff.additions}</span>
-                            <span className="text-red-300/90">−{diff.deletions}</span>
+                            <span className="text-emerald-300/90">
+                              +{diff.additions}
+                            </span>
+                            <span className="text-red-300/90">
+                              −{diff.deletions}
+                            </span>
                           </>
                         )}
-                        {diff.truncated && <span>{t("changes_panel.diff_sokraschen")}</span>}
+                        {diff.truncated && (
+                          <span>{t("changes_panel.diff_sokraschen")}</span>
+                        )}
                         <span className="ml-auto flex gap-1">
                           {changeKind(file.status) !== "deleted" && (
                             <button
@@ -354,7 +403,9 @@ export default function ChangesPanel() {
                             type="button"
                             className="inline-flex min-h-9 items-center gap-1 rounded-full px-2.5 text-muted-foreground transition hover:bg-red-500/10 hover:text-red-300 disabled:opacity-40"
                             onClick={() =>
-                              setConfirmRevertPath(confirming ? null : file.path)
+                              setConfirmRevertPath(
+                                confirming ? null : file.path,
+                              )
                             }
                             disabled={reverting}
                           >
@@ -366,11 +417,17 @@ export default function ChangesPanel() {
 
                       {confirming && (
                         <div className="mx-3 mb-2 rounded-lg border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-                          <div className="text-foreground/90">{t("changes_panel.otmenit_izmenenie_etogo_fayla")}</div>
+                          <div className="text-foreground/90">
+                            {t("changes_panel.otmenit_izmenenie_etogo_fayla")}
+                          </div>
                           <div className="mt-1">
                             {changeKind(file.status) === "added"
-                              ? t("changes_panel.novyy_fayl_budet_udalen_iz_workspace")
-                              : t("changes_panel.fayl_budet_vosstanovlen_do_sostoyaniya_git")}
+                              ? t(
+                                  "changes_panel.novyy_fayl_budet_udalen_iz_workspace",
+                                )
+                              : t(
+                                  "changes_panel.fayl_budet_vosstanovlen_do_sostoyaniya_git",
+                                )}
                           </div>
                           <div className="mt-2 flex justify-end gap-1">
                             <button
@@ -387,7 +444,9 @@ export default function ChangesPanel() {
                               onClick={() => revert(file).catch(() => {})}
                               disabled={reverting}
                             >
-                              {reverting ? t("changes_panel.otkatyvayu") : t("changes_panel.otkatit_fayl")}
+                              {reverting
+                                ? t("changes_panel.otkatyvayu")
+                                : t("changes_panel.otkatit_fayl")}
                             </button>
                           </div>
                         </div>

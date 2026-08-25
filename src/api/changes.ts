@@ -34,7 +34,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     credentials: "include",
     headers: {
-      ...(init?.method && init.method !== "GET" ? { "Content-Type": "application/json", ...csrfHeaders() } : {}),
+      ...(init?.method && init.method !== "GET"
+        ? { "Content-Type": "application/json", ...csrfHeaders() }
+        : {}),
       ...(init?.headers as Record<string, string> | undefined),
     },
   });
@@ -58,10 +60,15 @@ export const changesApi = {
       `/file/diff?sessionId=${encodeURIComponent(sessionId)}&path=${encodeURIComponent(path)}`,
     ),
   revert: (sessionId: string, path: string) =>
-    request<{ ok: boolean; path: string; status: string; originalPath?: string | null }>(
-      `/file/revert?sessionId=${encodeURIComponent(sessionId)}`,
-      { method: "POST", body: JSON.stringify({ path }) },
-    ),
+    request<{
+      ok: boolean;
+      path: string;
+      status: string;
+      originalPath?: string | null;
+    }>(`/file/revert?sessionId=${encodeURIComponent(sessionId)}`, {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    }),
   turnResult: (sessionId: string, messageId: string) =>
     request<TurnResult>(
       `/workspace/turn-result?sessionId=${encodeURIComponent(sessionId)}&messageId=${encodeURIComponent(messageId)}`,
@@ -71,7 +78,12 @@ export const changesApi = {
       `/workspace/turn-result/diff?sessionId=${encodeURIComponent(sessionId)}&messageId=${encodeURIComponent(messageId)}&path=${encodeURIComponent(path)}`,
     ),
   rollbackTurn: (sessionId: string, messageId: string) =>
-    request<{ ok: boolean; restored: string[]; alreadyRolledBack?: boolean; rolledBackAt: number }>(
+    request<{
+      ok: boolean;
+      restored: string[];
+      alreadyRolledBack?: boolean;
+      rolledBackAt: number;
+    }>(
       `/workspace/turn-result/rollback?sessionId=${encodeURIComponent(sessionId)}`,
       { method: "POST", body: JSON.stringify({ messageId }) },
     ),

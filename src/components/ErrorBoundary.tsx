@@ -70,7 +70,9 @@ export default class ErrorBoundary extends Component<Props, State> {
               <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-amber-500/10 text-amber-400">
                 <AlertTriangle className="h-6 w-6" />
               </div>
-              <h2 className="text-xl font-semibold">{t("error_boundary.prilozhenie_ostanovilos")}</h2>
+              <h2 className="text-xl font-semibold">
+                {t("error_boundary.prilozhenie_ostanovilos")}
+              </h2>
               <p className="text-sm text-muted-foreground">
                 Интерфейс не смог отрисовать этот экран. Перезагрузите
                 приложение: данные чата и workspace хранятся в runtime и не

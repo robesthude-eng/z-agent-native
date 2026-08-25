@@ -16,42 +16,32 @@ const STEPS: TourStep[] = [
   {
     emoji: "👋",
     title: t("welcome_tour.eto_z_agent"),
-    body:
-      t("welcome_tour.postavte_zadachu_obychnym_yazykom_agent_sam"),
-    hint:
-      t("welcome_tour.esli_dlya_resheniya_deystvitelno_nuzhny_vash"),
+    body: t("welcome_tour.postavte_zadachu_obychnym_yazykom_agent_sam"),
+    hint: t("welcome_tour.esli_dlya_resheniya_deystvitelno_nuzhny_vash"),
   },
   {
     emoji: "⚡",
     title: t("welcome_tour.avtonomnaya_rabota"),
-    body:
-      t("welcome_tour.vo_vremya_zadachi_v_chate_viden"),
-    hint:
-      t("welcome_tour.kvadratnaya_knopka_v_pole_vvoda_stop"),
+    body: t("welcome_tour.vo_vremya_zadachi_v_chate_viden"),
+    hint: t("welcome_tour.kvadratnaya_knopka_v_pole_vvoda_stop"),
   },
   {
     emoji: "📁",
     title: t("welcome_tour.proekt_i_izmeneniya"),
-    body:
-      t("welcome_tour.knopka_papki_v_verhney_stroke_otkryvaet"),
-    hint:
-      t("welcome_tour.kazhdyy_chat_poluchaet_svoy_izolirovannyy_wo"),
+    body: t("welcome_tour.knopka_papki_v_verhney_stroke_otkryvaet"),
+    hint: t("welcome_tour.kazhdyy_chat_poluchaet_svoy_izolirovannyy_wo"),
   },
   {
     emoji: "🖥️",
     title: t("welcome_tour.terminal_i_predprosmotr"),
-    body:
-      t("welcome_tour.ikonka_terminala_otkryvaet_konsol_proekta_a"),
-    hint:
-      t("welcome_tour.na_kompyutere_navedite_na_ikonku_chtoby"),
+    body: t("welcome_tour.ikonka_terminala_otkryvaet_konsol_proekta_a"),
+    hint: t("welcome_tour.na_kompyutere_navedite_na_ikonku_chtoby"),
   },
   {
     emoji: "🔑",
     title: t("welcome_tour.svoi_modeli_i_klyuchi"),
-    body:
-      t("welcome_tour.podklyuchayte_nuzhnyh_provayderov_i_modeli_s"),
-    hint:
-      t("welcome_tour.nastroyki_modeli_i_api_klyuchi_parol"),
+    body: t("welcome_tour.podklyuchayte_nuzhnyh_provayderov_i_modeli_s"),
+    hint: t("welcome_tour.nastroyki_modeli_i_api_klyuchi_parol"),
   },
 ];
 

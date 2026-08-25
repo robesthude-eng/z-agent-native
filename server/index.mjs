@@ -37,6 +37,7 @@ import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers, closeWorkspaceWatcher, ensureWorkspaceWatcher } from './native/watcher.mjs';
 import { previewDocument, rewritePreviewHtml } from './native/preview-document.mjs';
 import { mintPreviewToken, resolvePreviewToken, revokePreviewTokens } from './native/preview-tokens.mjs';
+import { runtimeCapabilities } from './native/runtime-capabilities.mjs';
 
 const STARTED_AT = Date.now();
 let DRAINING = false;
@@ -221,6 +222,9 @@ async function route(req, res) {
     // Runtime owns its system prompt. The field remains for old frontends but
     // is intentionally empty so policy is never round-tripped through browser state.
     return sendJson(res, 200, { systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
+  }
+  if (p === '/api/runtime-capabilities' && req.method === 'GET') {
+    return sendJson(res, 200, runtimeCapabilities());
   }
   if (p === '/api/auth/change-password' && req.method === 'POST') {
     const body = await readJson(req, 64 * 1024);

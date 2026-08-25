@@ -6,7 +6,7 @@ import type { Message, Part, TextPart, ToolPart } from "../api/types";
 import { isLocalMessage } from "../lib/ids";
 
 export function cleanSysText(t: string): string {
-  return typeof t === "string" ? t : (t || "");
+  return typeof t === "string" ? t : t || "";
 }
 
 /** Type guard: is this Part a TextPart (has .text string)? */
@@ -225,7 +225,8 @@ function applyFieldDelta(
     // Повтор длинной SSE-дельты после реконнекта: короткий токен вроде «с»
     // всё равно дописываем, иначе стрим встанет. Пропускаем только кусок,
     // который уже есть как суффикс или как начало текущего текста.
-    if (next.length >= 12 && (prev.endsWith(next) || prev.startsWith(next))) return;
+    if (next.length >= 12 && (prev.endsWith(next) || prev.startsWith(next)))
+      return;
     obj[leaf] = prev + next;
   } else {
     obj[leaf] = delta;

@@ -20,7 +20,8 @@ export function toolIcon(name?: string | null): ReactNode {
   if (typeof name !== "string" || !name) return <DefaultToolIcon size={13} />;
   const n = name.toLowerCase();
   if (n === "read") return <FileIcon size={13} />;
-  if (n === "edit" || n === "applypatch" || n === "apply_patch") return <EditIcon size={13} />;
+  if (n === "edit" || n === "applypatch" || n === "apply_patch")
+    return <EditIcon size={13} />;
   if (n === "write") return <WriteIcon size={13} />;
   if (
     n === "bash" ||

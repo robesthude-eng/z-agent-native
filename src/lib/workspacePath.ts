@@ -46,7 +46,10 @@ export function toWorkspaceRelPath(value: string): string | null {
  * а ложная кнопка «открыть» раздражает сильнее, чем пропущенная.
  */
 export function looksLikeWorkspacePath(value: string): boolean {
-  const trimmed = value.trim().replace(/^["'`]+/, "").replace(/["'`]+$/, "");
+  const trimmed = value
+    .trim()
+    .replace(/^["'`]+/, "")
+    .replace(/["'`]+$/, "");
   if (!trimmed || trimmed.length > 200) return false;
   if (/\s/.test(trimmed)) return false;
   if (/^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed)) return false;

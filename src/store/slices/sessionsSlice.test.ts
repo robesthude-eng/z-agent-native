@@ -99,7 +99,9 @@ describe("newSession: кнопка не поднимает контейнер", 
   });
 
   it("не переключает неудавшуюся отправку нового чата на старую сессию", async () => {
-    vi.spyOn(api, "createSession").mockRejectedValue(new Error("create failed"));
+    vi.spyOn(api, "createSession").mockRejectedValue(
+      new Error("create failed"),
+    );
     const store = makeStore({
       sessions: [ses("ses_old", 1)],
       currentID: "ses_old",

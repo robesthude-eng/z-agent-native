@@ -142,7 +142,8 @@ describe("flowParts", () => {
 
 describe("collapseRepeatedTextParts", () => {
   test("две одинаковые текстовые части подряд — одна остаётся", () => {
-    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const paragraph =
+      "Проверю корректность логики — запущу тесты на движке Node.js.";
     const parts = collapseRepeatedTextParts([
       text("a", paragraph),
       text("b", paragraph),
@@ -152,7 +153,8 @@ describe("collapseRepeatedTextParts", () => {
   });
 
   test("абзац повторён внутри одной части через пустую строку", () => {
-    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const paragraph =
+      "Проверю корректность логики — запущу тесты на движке Node.js.";
     const parts = collapseRepeatedTextParts([
       text("a", `${paragraph}\n\n${paragraph}`),
     ]);
@@ -161,7 +163,8 @@ describe("collapseRepeatedTextParts", () => {
   });
 
   test("усечённый стрим и полный тот же абзац — остаётся полный", () => {
-    const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const full =
+      "Проверю корректность логики — запущу тесты на движке Node.js.";
     const parts = collapseRepeatedTextParts([
       text("a", full.slice(0, 18)),
       text("b", full),
@@ -171,7 +174,8 @@ describe("collapseRepeatedTextParts", () => {
   });
 
   test("полный абзац и усечённый повтор — усечённый отбрасывается", () => {
-    const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const full =
+      "Проверю корректность логики — запущу тесты на движке Node.js.";
     const parts = collapseRepeatedTextParts([
       text("a", full),
       text("b", full.slice(0, 18)),
@@ -199,11 +203,7 @@ describe("невидимые части не разрывают цепочку",
   test("три хода подряд склеиваются в одну цепочку на пять шагов", () => {
     const messages = [
       msg("m1", [stepStart("s1"), tool("t1", "grep"), text("e1", "")]),
-      msg("m2", [
-        stepStart("s2"),
-        tool("t2", "read"),
-        text("e2", "   "),
-      ]),
+      msg("m2", [stepStart("s2"), tool("t2", "read"), text("e2", "   ")]),
       msg("m3", [stepStart("s3"), tool("t3", "edit")]),
     ];
     const flow = groupActivityRuns(groupParts(flowParts(messages)));
@@ -319,7 +319,9 @@ describe("карточка рассуждений остаётся на своё
   test("цепочка не собирается из одних рассуждений", () => {
     // Две вспышки подряд — не «2 шага» работы, прятать их под шапку с
     // гаечным ключом нельзя.
-    const flow = groupActivityRuns(groupParts([reasoning("r1"), reasoning("r2")]));
+    const flow = groupActivityRuns(
+      groupParts([reasoning("r1"), reasoning("r2")]),
+    );
     expect(
       flow.filter((f) => "kind" in f && f.kind === "activity").length,
     ).toBe(0);

@@ -17,7 +17,11 @@ import Composer from "./components/Composer";
 import { ConfirmProvider } from "./components/ConfirmDialog";
 import ErrorBoundary from "./components/ErrorBoundary";
 import InterruptionBar from "./components/InterruptionBar";
-import { LazyPanel, SettingsPanelSkeleton } from "./components/LazyPanel";
+import {
+  LazyPanel,
+  PanelBodySkeleton,
+  SettingsPanelSkeleton,
+} from "./components/LazyPanel";
 import LoginPage from "./components/LoginPage";
 import PermissionDialog from "./components/PermissionDialog";
 import ShortcutsOverlay from "./components/ShortcutsOverlay";
@@ -26,7 +30,6 @@ import ToastHost from "./components/ToastHost";
 import TopBar from "./components/TopBar";
 import { TouchHints } from "./components/TouchHints";
 import WelcomeTour from "./components/WelcomeTour";
-import Workspace from "./components/Workspace";
 import { applyTheme } from "./config/theme";
 import { isTmpSession } from "./lib/ids";
 import { useStore } from "./store/useStore";
@@ -38,6 +41,7 @@ import { t } from "@/i18n";
  * она не участвует в первой отрисовке чата.
  */
 const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
+const Workspace = lazy(() => import("./components/Workspace"));
 
 /**
  * SettingsPanel сам возвращает null, когда закрыт, и держит выбранную вкладку
@@ -55,7 +59,10 @@ function SettingsPanelHost() {
 
   if (!everOpened) return null;
   return (
-    <LazyPanel label={t("router.nastroyki")} skeleton={<SettingsPanelSkeleton />}>
+    <LazyPanel
+      label={t("router.nastroyki")}
+      skeleton={<SettingsPanelSkeleton />}
+    >
       <SettingsPanel />
     </LazyPanel>
   );
@@ -73,9 +80,7 @@ function AuthGate({ children }: { children: React.ReactNode }) {
   if (authChecking) {
     return (
       <div className="flex h-dvh w-dvw items-center justify-center bg-background">
-        <div className="text-sm text-muted-foreground">
-          Загрузка Z Agent…
-        </div>
+        <div className="text-sm text-muted-foreground">Загрузка Z Agent…</div>
       </div>
     );
   }
@@ -107,13 +112,16 @@ function AppShell() {
   // мигал бы постоянно. Показываем только если поток реально лежит >8с
   // (статус closed, не idle без выбранного чата).
   const [sseDown, setSseDown] = useState(false);
+  const [workspaceMounted, setWorkspaceMounted] = useState(false);
   const sseDownTimer = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (workspaceOpen) setWorkspaceMounted(true);
+  }, [workspaceOpen]);
 
   useEffect(() => {
     applyTheme(theme);
   }, [theme]);
-
-
 
   useEffect(() => {
     if (!currentUser) return;
@@ -334,7 +342,14 @@ function AppShell() {
                 <ErrorBoundary
                   fallback={(m: string) => <PanelCrash message={m} />}
                 >
-                  <Workspace />
+                  {workspaceMounted && (
+                    <LazyPanel
+                      label={t("workspace.files")}
+                      skeleton={<PanelBodySkeleton />}
+                    >
+                      <Workspace />
+                    </LazyPanel>
+                  )}
                 </ErrorBoundary>
               </div>
             </div>
@@ -359,18 +374,19 @@ function ConnectionBanner({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 border-b border-amber-500/30",
-        "bg-amber-500/10 px-3 py-2 text-sm text-amber-200",
+        "flex items-center justify-between gap-3 border-b border-warning/30",
+        "bg-warning/10 px-3 py-2 text-sm text-warning",
       )}
     >
       <span className="inline-flex items-center gap-2">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-amber-400" />
-        Нет соединения с Z Agent runtime. Проверьте, что сервер приложения запущен.
+        <span className="h-2 w-2 animate-pulse rounded-full bg-warning" />
+        Нет соединения с Z Agent runtime. Проверьте, что сервер приложения
+        запущен.
       </span>
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 text-amber-100 hover:bg-amber-500/15 hover:text-amber-50"
+        className="h-7 text-warning hover:bg-warning/15 hover:text-warning"
         onClick={onRetry}
       >
         Повторить
@@ -383,18 +399,18 @@ function SseReconnectBanner({ onRetry }: { onRetry: () => void }) {
   return (
     <div
       className={cn(
-        "flex items-center justify-between gap-3 border-b border-sky-500/30",
-        "bg-sky-500/10 px-3 py-2 text-sm text-sky-200",
+        "flex items-center justify-between gap-3 border-b border-info/30",
+        "bg-info/10 px-3 py-2 text-sm text-info",
       )}
     >
       <span className="inline-flex items-center gap-2">
-        <span className="h-2 w-2 animate-pulse rounded-full bg-sky-400" />
+        <span className="h-2 w-2 animate-pulse rounded-full bg-info" />
         Потеряно соединение с потоком событий — переподключение…
       </span>
       <Button
         size="sm"
         variant="ghost"
-        className="h-7 text-sky-100 hover:bg-sky-500/15 hover:text-sky-50"
+        className="h-7 text-info hover:bg-info/15 hover:text-info"
         onClick={onRetry}
       >
         Переподключить

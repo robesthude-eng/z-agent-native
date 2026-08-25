@@ -13,7 +13,7 @@ fs.chmodSync(root, 0o755);
 process.env.Z_AGENT_DATA_DIR = path.join(root, 'data');
 process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 process.env.Z_AGENT_ENABLE_FIXTURE_PROVIDER = '1';
-if (typeof process.getuid === 'function' && process.getuid() !== 0) {
+if (typeof process.getuid === 'function' && (process.getuid() !== 0 || process.env.Z_AGENT_ALLOW_ROOT_SHELL === '1')) {
   process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 }
 

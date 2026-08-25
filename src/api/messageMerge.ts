@@ -105,11 +105,18 @@ function assertMergeInvariants(messages: MergeMessage[]): void {
       continue;
     }
     if (seenIds.has(m.id)) {
-      log.error(t("message_merge.merge_invariant_dublikat_id_soobscheniya"), m.id);
+      log.error(
+        t("message_merge.merge_invariant_dublikat_id_soobscheniya"),
+        m.id,
+      );
     }
     seenIds.add(m.id);
     if (m.role !== "user" && m.role !== "assistant" && m.role !== "system") {
-      log.error(t("message_merge.merge_invariant_nevalidnaya_rol"), m.id, m.role);
+      log.error(
+        t("message_merge.merge_invariant_nevalidnaya_rol"),
+        m.id,
+        m.role,
+      );
     }
     if (!Array.isArray(m.parts)) {
       log.error(t("message_merge.merge_invariant_soobschenie_bez_parts"), m.id);
@@ -120,7 +127,11 @@ function assertMergeInvariants(messages: MergeMessage[]): void {
       const pid = (p as { id?: string }).id;
       if (pid) {
         if (partIds.has(pid)) {
-          log.error(t("message_merge.merge_invariant_dublikat_id_chasti"), m.id, pid);
+          log.error(
+            t("message_merge.merge_invariant_dublikat_id_chasti"),
+            m.id,
+            pid,
+          );
         }
         partIds.add(pid);
       }
@@ -243,13 +254,16 @@ export function mergeMessages(
         // SSE мог создать text-часть с другим id, чем HTTP-снимок той же
         // фразы. Второй раз в ленту её тащить нельзя.
         if (lPart.type === "text") {
-          const localText = String((lPart as { text?: string }).text || "").trim();
+          const localText = String(
+            (lPart as { text?: string }).text || "",
+          ).trim();
           if (
             localText &&
             mergedParts.some(
               (part) =>
                 part.type === "text" &&
-                String((part as { text?: string }).text || "").trim() === localText,
+                String((part as { text?: string }).text || "").trim() ===
+                  localText,
             )
           ) {
             continue;

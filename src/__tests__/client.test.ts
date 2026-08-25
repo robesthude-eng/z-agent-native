@@ -2,12 +2,7 @@
  * Tests for src/api/client.ts
  */
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import {
-  api,
-  configure,
-  getConfig,
-  SessionGoneError,
-} from "../api/client";
+import { api, configure, getConfig, SessionGoneError } from "../api/client";
 
 // Mock fetch
 global.fetch = vi.fn();

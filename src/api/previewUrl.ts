@@ -20,11 +20,7 @@ import { workspacePreviewUrl } from "@/components/workspace/fileDecisions";
 const BASE_SHAPE = /^\/api\/preview\/[a-f0-9]{64}\/~\/$/;
 
 function encodeRelative(filePath: string): string {
-  return filePath
-    .split("/")
-    .filter(Boolean)
-    .map(encodeURIComponent)
-    .join("/");
+  return filePath.split("/").filter(Boolean).map(encodeURIComponent).join("/");
 }
 
 export async function fetchPreviewBase(

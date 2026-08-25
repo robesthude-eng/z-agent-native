@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { ensureManagedHome, sandboxCommand } from './sandbox.mjs';
 import { safeWorkspacePath } from './security.mjs';
-import { shellNetworkPolicy } from './workspace-policy.mjs';
+import { shellNetworkPolicy, sshHostAllowlist, sshPolicy } from './workspace-policy.mjs';
 
 const MAX_SSH_OUTPUT = 256 * 1024;
 const DEFAULT_SSH_TIMEOUT_MS = 60_000;
@@ -40,20 +40,11 @@ function assertPattern(value, pattern, label) {
   return text;
 }
 
-export function sshHostAllowlist() {
-  return String(process.env.Z_AGENT_SSH_ALLOWLIST || '')
-    .split(',')
-    .map((item) => item.trim().toLowerCase())
-    .filter(Boolean);
-}
-
 /**
  * Egress gate for remote SSH.
  *
- * ssh_tool is a structured tool, not a raw shell, so `guarded` (which exists to
- * stop the model from hand-rolling curl/nc pipelines) still permits it. The
- * fail-closed posture belongs to `tool-only`, where no autonomous egress is
- * intended at all. An explicit host allowlist narrows this further when set.
+ * ssh_tool is structured but still grants remote code execution. It therefore
+ * needs an explicit SSH policy instead of inheriting public web access.
  */
 export function assertSshDestinationAllowed(host) {
   if (shellNetworkPolicy() === 'tool-only') {
@@ -62,15 +53,23 @@ export function assertSshDestinationAllowed(host) {
       code: 'SSH_EGRESS_BLOCKED',
     });
   }
+  const policy = sshPolicy();
+  if (policy === 'off') {
+    throw Object.assign(new Error('Remote SSH is disabled by Z_AGENT_SSH_POLICY=off.'), {
+      statusCode: 403,
+      code: 'SSH_DISABLED',
+    });
+  }
   const allowed = sshHostAllowlist();
-  if (!allowed.length) return;
-  if (!allowed.includes(String(host || '').toLowerCase())) {
+  if (policy === 'allowlist' && (!allowed.length || !allowed.includes(String(host || '').toLowerCase()))) {
     throw Object.assign(new Error(`SSH host is not in Z_AGENT_SSH_ALLOWLIST: ${host}`), {
       statusCode: 403,
       code: 'SSH_HOST_BLOCKED',
     });
   }
 }
+
+export { sshHostAllowlist, sshPolicy };
 
 /**
  * Locate the CLI. Docker installs it as /usr/local/bin/ssh_tool; a source

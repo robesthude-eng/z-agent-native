@@ -39,7 +39,9 @@ export function TouchHints() {
     const onPointerDown = (event: PointerEvent) => {
       if (event.pointerType !== "touch") return;
       const start = event.target as Element | null;
-      const target = start?.closest?.("[title],[aria-label]") as HTMLElement | null;
+      const target = start?.closest?.(
+        "[title],[aria-label]",
+      ) as HTMLElement | null;
       if (!target) return;
       const text = (
         target.getAttribute("title") ||
@@ -72,7 +74,10 @@ export function TouchHints() {
     window.addEventListener("pointerdown", onPointerDown, { passive: true });
     window.addEventListener("pointerup", dismiss, { passive: true });
     window.addEventListener("pointercancel", dismiss, { passive: true });
-    window.addEventListener("scroll", dismiss, { passive: true, capture: true });
+    window.addEventListener("scroll", dismiss, {
+      passive: true,
+      capture: true,
+    });
     window.addEventListener("click", onClickCapture, { capture: true });
 
     return () => {

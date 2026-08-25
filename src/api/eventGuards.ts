@@ -110,19 +110,19 @@ export function statusText(raw: unknown): string {
  * "text" | { message: string } | { data: { message: string } }.
  * Заменяет as any-касты в MessageItem/ToolCard.
  */
-const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
+const PROVIDER_SALES_RE =
+  /opencode\.ai|opencode\s+go|free promotion has ended/i;
 const MODEL_UNAVAILABLE_RE =
   /promotion has ended|model.{0,40}unavailable|upstream request failed|\{\s*"model"\s*:/i;
 // Агент больше не берёт другую модель вместо выбранной, поэтому и обещать
 // этого нельзя: текст зеркалит формулировку сервера.
-const PUBLIC_MODEL_UNAVAILABLE = t("event_guards.eta_model_seychas_nedostupna_u_provaydera");
+const PUBLIC_MODEL_UNAVAILABLE = t(
+  "event_guards.eta_model_seychas_nedostupna_u_provaydera",
+);
 
 export function publicErrorText(text: string): string {
   const value = String(text || "").trim();
-  if (
-    PROVIDER_SALES_RE.test(value) ||
-    MODEL_UNAVAILABLE_RE.test(value)
-  ) {
+  if (PROVIDER_SALES_RE.test(value) || MODEL_UNAVAILABLE_RE.test(value)) {
     return PUBLIC_MODEL_UNAVAILABLE;
   }
   return value;

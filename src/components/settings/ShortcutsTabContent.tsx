@@ -11,7 +11,9 @@ export function ShortcutsTabContent() {
     <div className="space-y-6">
       <SettingsSection
         title={t("settings_panel.goryachie_klavishi")}
-        description={t("shortcuts_tab_content.tot_zhe_spisok_otkryvaetsya_v_lyuboy")}
+        description={t(
+          "shortcuts_tab_content.tot_zhe_spisok_otkryvaetsya_v_lyuboy",
+        )}
       >
         <div className="rounded-xl border border-border bg-card p-3">
           <ShortcutsList />

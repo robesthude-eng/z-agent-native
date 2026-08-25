@@ -21,7 +21,14 @@
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
-    "includes": ["**", "!server/**", "!tests/**", "!eval/**"]
+    "includes": [
+      "**",
+      "!server/**",
+      "!tests/**",
+      "!evals/**",
+      "!e2e/**",
+      "!cloudflare/**"
+    ]
   },
   "css": {
     "parser": { "tailwindDirectives": true, "cssModules": false },

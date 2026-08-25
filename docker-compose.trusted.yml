@@ -1,0 +1,31 @@
+# Explicit compatibility profile for a trusted, single-user host.
+#
+# This deliberately relaxes the production security boundary: autonomous code
+# gets outbound network, networked installers and SSH; the human terminal is
+# enabled. Never add this file to the default Compose invocation on a shared or
+# Internet-facing multi-user deployment.
+services:
+  z-agent:
+    environment:
+      Z_AGENT_TERMINAL_ENABLED: '1'
+      Z_AGENT_ALLOW_PRODUCTION_TERMINAL: '1'
+      Z_AGENT_ALLOW_NETWORKED_INSTALLERS: '1'
+      Z_AGENT_NETWORK_POLICY: public
+      Z_AGENT_ALLOW_PUBLIC_WEB: '1'
+      Z_AGENT_SHELL_NETWORK_POLICY: open
+      Z_AGENT_SSH_POLICY: any
+
+  z-agent-executor:
+    network_mode: !override bridge
+    environment:
+      Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE: '0'
+    tmpfs: !override
+      - /tmp:size=256m,nosuid,nodev
+
+  z-agent-browser:
+    environment:
+      Z_AGENT_NETWORK_POLICY: public
+
+  z-agent-browser-egress:
+    environment:
+      Z_AGENT_NETWORK_POLICY: public

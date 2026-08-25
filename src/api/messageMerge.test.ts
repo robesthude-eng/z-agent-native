@@ -148,7 +148,8 @@ describe("mergeMessages deterministic", () => {
   });
 
   test("does not append a local text part whose wording already exists on the server", () => {
-    const paragraph = "Проверю корректность логики — запущу тесты на движке Node.js.";
+    const paragraph =
+      "Проверю корректность логики — запущу тесты на движке Node.js.";
     const server: Message[] = [
       {
         id: "msg_1",

@@ -465,12 +465,12 @@ function QuestionCard({ part }: { part: ToolPart }) {
   const questionConfigs: QuestionConfig[] = questions.map((q, idx) => ({
     id: `q-${idx}`,
     title: q.question || q.header || `Question ${idx + 1}`,
-    header: q.header,
+    ...(q.header ? { header: q.header } : {}),
     allowCustom: q.allowCustomResponse !== false,
     options: (q.options ?? []).map((opt, oIdx) => ({
       id: opt.id ?? opt.label ?? `opt-${oIdx}`,
-      label: opt.label,
-      description: opt.description,
+      label: opt.label ?? opt.id ?? `Option ${oIdx + 1}`,
+      ...(opt.description ? { description: opt.description } : {}),
     })),
   }));
 
@@ -485,7 +485,7 @@ function QuestionCard({ part }: { part: ToolPart }) {
             if (ans.text) return [ans.text];
             return ans.selectedLabels && ans.selectedLabels.length > 0
               ? ans.selectedLabels
-              : ans.selectedIds ?? [];
+              : (ans.selectedIds ?? []);
           });
           setSubmitting(true);
           try {
@@ -708,7 +708,9 @@ function DefaultToolCard({ part }: { part: ToolPart }) {
             // глазах — это тот же поток, что у вывода команды, просто
             // раньше он показывался JSON'ом.
             <CodeBlock
-              label={filePath ? t("tool_card.soderzhimoe") : t("tool_card.fayl")}
+              label={
+                filePath ? t("tool_card.soderzhimoe") : t("tool_card.fayl")
+              }
               text={written}
               streaming={running}
             />

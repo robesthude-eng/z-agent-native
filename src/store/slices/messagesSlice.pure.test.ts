@@ -137,7 +137,11 @@ describe("buildPromptParts", () => {
   it("в mixed-наборе передаются только уже загруженные вложения", () => {
     const parts = buildPromptParts(
       [
-        att({ kind: "pdf", name: "готов.pdf", workspacePath: "uploads/готов.pdf" }),
+        att({
+          kind: "pdf",
+          name: "готов.pdf",
+          workspacePath: "uploads/готов.pdf",
+        }),
         att({ kind: "pdf", name: "не-загрузился.pdf" }),
       ],
       "запрос",

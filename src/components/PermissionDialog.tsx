@@ -41,7 +41,9 @@ function presentTool(tool: string, input: unknown): ToolPresentation {
 
   if (["bash", "shell", "cmd"].includes(kind)) {
     return {
-      action: t("permission_dialog.vypolnit_komandu_v_terminale_pesochnicy_etoy"),
+      action: t(
+        "permission_dialog.vypolnit_komandu_v_terminale_pesochnicy_etoy",
+      ),
       detail: str("command") ?? str("cmd"),
     };
   }
@@ -125,7 +127,9 @@ export default function PermissionDialog() {
           <span aria-hidden="true" className="text-warning">
             <KeyIcon size={15} />
           </span>
-          <span className="text-sm font-semibold">{t("interruptions.zapros_razresheniya")}</span>
+          <span className="text-sm font-semibold">
+            {t("interruptions.zapros_razresheniya")}
+          </span>
           <span className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
             {tool}
           </span>
@@ -175,7 +179,9 @@ export default function PermissionDialog() {
             <Button
               variant="ghost"
               onClick={() => answer("always")}
-              aria-label={t("permission_dialog.razreshat_takie_vyzovy_do_konca_tekuschey")}
+              aria-label={t(
+                "permission_dialog.razreshat_takie_vyzovy_do_konca_tekuschey",
+              )}
             >
               Всегда — до конца сессии
             </Button>

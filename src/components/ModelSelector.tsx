@@ -30,12 +30,14 @@ function StatusDot({ model }: { model: ModelEntry }) {
  * Выбор модели никогда не подменяется молча. Если модели нет в каталоге,
  * шапка показывает именно её и предупреждает, а не переключается на «Авто».
  */
-const MISSING_MODEL_TITLE =
-  t("model_selector.etoy_modeli_net_v_kataloge_provaydera");
+const MISSING_MODEL_TITLE = t(
+  "model_selector.etoy_modeli_net_v_kataloge_provaydera",
+);
 
 function sourceLabel(model: ModelEntry) {
   if (model.source === "custom") return t("model_selector.svoy_api");
-  if (model.source === "discovered") return t("model_selector.naydena_avtomaticheski");
+  if (model.source === "discovered")
+    return t("model_selector.naydena_avtomaticheski");
   if (model.source === "manual") return t("model_selector.dobavlena_vruchnuyu");
   return null;
 }
@@ -54,7 +56,8 @@ export default function ModelSelector() {
 
   useEffect(() => {
     const onDoc = (event: MouseEvent) => {
-      if (ref.current && !ref.current.contains(event.target as Node)) setOpen(false);
+      if (ref.current && !ref.current.contains(event.target as Node))
+        setOpen(false);
     };
     document.addEventListener("mousedown", onDoc);
     return () => document.removeEventListener("mousedown", onDoc);
@@ -164,7 +167,9 @@ export default function ModelSelector() {
           <StatusDot model={model} />
           <span className="min-w-0">
             <span className="flex flex-wrap items-center gap-1.5">
-              <span className="truncate text-foreground">{model.modelName}</span>
+              <span className="truncate text-foreground">
+                {model.modelName}
+              </span>
               {model.free && (
                 <span className="rounded-full bg-accent px-1.5 py-0.5 text-[10px] font-semibold text-foreground">
                   FREE
@@ -178,7 +183,9 @@ export default function ModelSelector() {
             </span>
             <span className="mt-0.5 block truncate text-[10px] text-muted-foreground/80">
               {model.providerName}
-              {model.status === "cache" ? t("model_selector.sohranennyy_katalog") : ""}
+              {model.status === "cache"
+                ? t("model_selector.sohranennyy_katalog")
+                : ""}
             </span>
           </span>
         </span>
@@ -216,7 +223,9 @@ export default function ModelSelector() {
           >
             {automatic
               ? t("model_selector.avto")
-              : (current?.modelName ?? selectedModel?.modelID ?? t("model_selector.vybrat_model"))}
+              : (current?.modelName ??
+                selectedModel?.modelID ??
+                t("model_selector.vybrat_model"))}
           </span>
           {automatic && (
             <span className="hidden shrink-0 text-[9px] text-muted-foreground sm:inline">
@@ -267,15 +276,19 @@ export default function ModelSelector() {
               }}
             >
               <span className="min-w-0">
-                <span className="block text-sm font-medium text-foreground">{t("model_selector.avto_autopilot")}</span>
+                <span className="block text-sm font-medium text-foreground">
+                  {t("model_selector.avto_autopilot")}
+                </span>
                 <span className="mt-0.5 block text-[10px] leading-relaxed text-muted-foreground">
-                  Сервер выбирает модель по доступности и истории успехов и может переключиться до начала ответа при временном сбое.
+                  Сервер выбирает модель по доступности и истории успехов и
+                  может переключиться до начала ответа при временном сбое.
                 </span>
               </span>
               {automatic && <CheckIcon size={14} />}
             </button>
             <p className="mt-1 px-3 text-[10px] leading-relaxed text-muted-foreground">
-              Выбранная вручную модель никогда не подменяется: если нет баланса, доступа или самой модели, агент напишет причину в чат.
+              Выбранная вручную модель никогда не подменяется: если нет баланса,
+              доступа или самой модели, агент напишет причину в чат.
             </p>
           </div>
 

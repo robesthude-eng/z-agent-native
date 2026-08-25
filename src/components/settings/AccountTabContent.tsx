@@ -33,11 +33,17 @@ export function AccountTabContent() {
   const submit = async () => {
     setError(null);
     if (newPassword !== repeatPassword) {
-      setError(t("account_tab_content.novyy_parol_i_podtverzhdenie_ne_sovpadayut"));
+      setError(
+        t("account_tab_content.novyy_parol_i_podtverzhdenie_ne_sovpadayut"),
+      );
       return;
     }
     if (newPassword.length < MIN_PASSWORD_LENGTH) {
-      setError(tf("account_tab_content.minimalnaya_dlina_parolya_0_simvolov", [MIN_PASSWORD_LENGTH]));
+      setError(
+        tf("account_tab_content.minimalnaya_dlina_parolya_0_simvolov", [
+          MIN_PASSWORD_LENGTH,
+        ]),
+      );
       return;
     }
     setBusy(true);
@@ -49,7 +55,10 @@ export function AccountTabContent() {
       toast(
         "success",
         res.revokedSessions > 0
-          ? tf("account_tab_content.parol_izmenen_drugie_ustroystva_0_razloginen", [res.revokedSessions])
+          ? tf(
+              "account_tab_content.parol_izmenen_drugie_ustroystva_0_razloginen",
+              [res.revokedSessions],
+            )
           : t("account_tab_content.parol_izmenen"),
       );
     } catch (e: unknown) {
@@ -58,9 +67,13 @@ export function AccountTabContent() {
       if (raw.includes("Current password is incorrect")) {
         setError(t("account_tab_content.tekuschiy_parol_nevernyy"));
       } else if (raw.includes("must differ")) {
-        setError(t("account_tab_content.novyy_parol_dolzhen_otlichatsya_ot_tekuscheg"));
+        setError(
+          t("account_tab_content.novyy_parol_dolzhen_otlichatsya_ot_tekuscheg"),
+        );
       } else if (raw.includes("Too many") || raw.includes("429")) {
-        setError(t("account_tab_content.slishkom_mnogo_popytok_povtorite_pozzhe"));
+        setError(
+          t("account_tab_content.slishkom_mnogo_popytok_povtorite_pozzhe"),
+        );
       } else {
         setError(raw || t("account_tab_content.ne_udalos_izmenit_parol"));
       }
@@ -71,13 +84,18 @@ export function AccountTabContent() {
 
   return (
     <div className="space-y-8">
-      <SettingsSection title={t("account_tab_content.profil")} description={t("account_tab_content.tekuschaya_uchetnaya_zapis")}>
+      <SettingsSection
+        title={t("account_tab_content.profil")}
+        description={t("account_tab_content.tekuschaya_uchetnaya_zapis")}
+      >
         <SettingsCard>
           <SettingsRow
             label={currentUser?.email ?? "—"}
             description={
               currentUser?.role === "admin"
-                ? t("account_tab_content.administrator_dostupny_razdely_administrirov")
+                ? t(
+                    "account_tab_content.administrator_dostupny_razdely_administrirov",
+                  )
                 : t("account_tab_content.obychnyy_polzovatel")
             }
           />
@@ -86,7 +104,9 @@ export function AccountTabContent() {
 
       <SettingsSection
         title={t("login_page.parol")}
-        description={t("account_tab_content.posle_smeny_parolya_vse_ostalnye_ustroystva")}
+        description={t(
+          "account_tab_content.posle_smeny_parolya_vse_ostalnye_ustroystva",
+        )}
       >
         <SettingsCard>
           <form
@@ -97,7 +117,9 @@ export function AccountTabContent() {
           >
             <div className="space-y-4 p-4">
               <div className="space-y-1.5">
-                <Label htmlFor="current-password">{t("account_tab_content.tekuschiy_parol")}</Label>
+                <Label htmlFor="current-password">
+                  {t("account_tab_content.tekuschiy_parol")}
+                </Label>
                 <Input
                   id="current-password"
                   type="password"
@@ -107,7 +129,9 @@ export function AccountTabContent() {
                 />
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="new-password">{t("account_tab_content.novyy_parol")}</Label>
+                <Label htmlFor="new-password">
+                  {t("account_tab_content.novyy_parol")}
+                </Label>
                 <Input
                   id="new-password"
                   type="password"
@@ -120,7 +144,9 @@ export function AccountTabContent() {
                 </p>
               </div>
               <div className="space-y-1.5">
-                <Label htmlFor="repeat-password">{t("account_tab_content.povtorite_novyy_parol")}</Label>
+                <Label htmlFor="repeat-password">
+                  {t("account_tab_content.povtorite_novyy_parol")}
+                </Label>
                 <Input
                   id="repeat-password"
                   type="password"
@@ -138,7 +164,9 @@ export function AccountTabContent() {
             {/* Классический футер формы: действие справа, отделено линией. */}
             <div className="flex justify-end border-t border-border bg-muted/30 px-4 py-3">
               <Button type="submit" disabled={!canSubmit}>
-                {busy ? t("account_tab_content.sohranenie") : t("account_tab_content.izmenit_parol")}
+                {busy
+                  ? t("account_tab_content.sohranenie")
+                  : t("account_tab_content.izmenit_parol")}
               </Button>
             </div>
           </form>

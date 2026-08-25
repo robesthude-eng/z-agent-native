@@ -8,6 +8,7 @@ import { AboutTabContent } from "./settings/AboutTabContent";
 import { AccountTabContent } from "./settings/AccountTabContent";
 import { AppearanceTabContent } from "./settings/AppearanceTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
+import { RuntimeTabContent } from "./settings/RuntimeTabContent";
 import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
 import { t } from "@/i18n";
 
@@ -15,6 +16,7 @@ type SettingsTab =
   | "account"
   | "appearance"
   | "models"
+  | "runtime"
   | "shortcuts"
   | "about";
 
@@ -51,15 +53,15 @@ const TAB_GROUPS: TabGroup[] = [
         id: "account",
         label: t("settings_panel.akkaunt_i_parol"),
         title: t("settings_panel.akkaunt_i_parol"),
-        keywords:
-          t("settings_panel.akkaunt_profil_email_parol_smenit_smena"),
+        keywords: t("settings_panel.akkaunt_profil_email_parol_smenit_smena"),
       },
       {
         id: "appearance",
         label: t("settings_panel.vneshniy_vid"),
         title: t("settings_panel.vneshniy_vid"),
-        keywords:
-          t("settings_panel.tema_cvet_temnaya_svetlaya_srednyaya_oformle"),
+        keywords: t(
+          "settings_panel.tema_cvet_temnaya_svetlaya_srednyaya_oformle",
+        ),
       },
     ],
   },
@@ -70,8 +72,15 @@ const TAB_GROUPS: TabGroup[] = [
         id: "models",
         label: t("settings_panel.modeli"),
         title: t("settings_panel.modeli_i_api_klyuchi"),
-        keywords:
-          t("settings_panel.modeli_klyuch_provaydery_api_byok_models"),
+        keywords: t("settings_panel.modeli_klyuch_provaydery_api_byok_models"),
+      },
+      {
+        id: "runtime",
+        label: t("settings_panel.runtime"),
+        title: t("settings_panel.runtime_i_instrumenty"),
+        keywords: t(
+          "settings_panel.runtime_instrumenty_bash_shell_internet_ssh_browser",
+        ),
       },
     ],
   },
@@ -82,14 +91,17 @@ const TAB_GROUPS: TabGroup[] = [
         id: "shortcuts",
         label: t("settings_panel.goryachie_klavishi"),
         title: t("settings_panel.goryachie_klavishi"),
-        keywords:
-          t("settings_panel.goryachie_klavishi_shortkaty_sochetaniya_hot"),
+        keywords: t(
+          "settings_panel.goryachie_klavishi_shortkaty_sochetaniya_hot",
+        ),
       },
       {
         id: "about",
         label: t("settings_panel.o_sisteme"),
         title: t("settings_panel.o_sisteme_i_arhitekture"),
-        keywords: t("settings_panel.versiya_stek_arhitektura_spravka_about_versi"),
+        keywords: t(
+          "settings_panel.versiya_stek_arhitektura_spravka_about_versi",
+        ),
       },
     ],
   },
@@ -111,7 +123,6 @@ export default function SettingsPanel() {
   // Mobile: "menu" shows nav list; "content" shows selected tab with Back
   const [mobileView, setMobileView] = useState<"menu" | "content">("menu");
   const panelRef = useRef<HTMLDivElement | null>(null);
-
 
   // UX-fix: reset mobileView/search + reload auth ТОЛЬКО когда open переключается
   // false→true, а НЕ на каждый ре-рендер стора.
@@ -144,10 +155,10 @@ export default function SettingsPanel() {
       ...g,
       items: g.items.filter(
         (t) =>
-          (!q ||
-            t.label.toLowerCase().includes(q) ||
-            t.title.toLowerCase().includes(q) ||
-            t.keywords.includes(q)),
+          !q ||
+          t.label.toLowerCase().includes(q) ||
+          t.title.toLowerCase().includes(q) ||
+          t.keywords.includes(q),
       ),
     })).filter((g) => g.items.length > 0);
   }, [query]);
@@ -172,7 +183,9 @@ export default function SettingsPanel() {
   );
 
   const emptyResults = (
-    <p className="px-3 py-2 text-xs text-muted-foreground">{t("settings_panel.nichego_ne_naydeno")}</p>
+    <p className="px-3 py-2 text-xs text-muted-foreground">
+      {t("settings_panel.nichego_ne_naydeno")}
+    </p>
   );
 
   return (
@@ -199,7 +212,9 @@ export default function SettingsPanel() {
         {/* Desktop sidebar */}
         <aside className="hidden md:flex w-64 border-r border-border bg-muted/20 p-3 flex-col gap-3 shrink-0">
           <div className="flex items-center justify-between px-2 pt-1">
-            <h2 className="text-base font-semibold">{t("settings_panel.nastroyki")}</h2>
+            <h2 className="text-base font-semibold">
+              {t("settings_panel.nastroyki")}
+            </h2>
             <Button
               variant="ghost"
               size="icon"
@@ -245,7 +260,9 @@ export default function SettingsPanel() {
           )}
         >
           <header className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0 safe-top">
-            <h2 className="text-lg font-semibold">{t("settings_panel.nastroyki")}</h2>
+            <h2 className="text-lg font-semibold">
+              {t("settings_panel.nastroyki")}
+            </h2>
             <Button
               variant="ghost"
               size="icon"
@@ -318,6 +335,7 @@ export default function SettingsPanel() {
               {activeTab === "account" && <AccountTabContent />}
               {activeTab === "appearance" && <AppearanceTabContent />}
               {activeTab === "models" && <ModelsTabContent />}
+              {activeTab === "runtime" && <RuntimeTabContent />}
               {activeTab === "shortcuts" && <ShortcutsTabContent />}
               {activeTab === "about" && <AboutTabContent />}
             </div>

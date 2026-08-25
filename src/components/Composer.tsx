@@ -1,15 +1,10 @@
-import {
-  FileArchive as FileArchiveIcon,
-  FileText as FileTextIcon,
-  Image as ImageIcon,
-} from "lucide-react";
 import { BorderBeam } from "border-beam";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "../api/client";
 import { statusText } from "../api/eventGuards";
-import type { ProcessedFile } from "../api/files";
 import { formatSize, MAX_UPLOAD_BYTES, processFile } from "../api/files";
 import {
   enqueuePlan,
@@ -22,21 +17,20 @@ import {
   serverQueueEnabled,
 } from "../api/sendQueue";
 import { dispositionOf, sendBlockReason } from "../api/turnVerdict";
-import type { FileNode } from "../api/types";
 import { sessionActionPrep } from "../lib/ids";
 import { useStore } from "../store/useStore";
-import { CloseIcon, PaperclipIcon, SendIcon, StopIcon } from "./icons";
-import { t, tf } from "@/i18n";
-
-// Черновики по сессиям: текст композера не теряется при переключении чатов.
-// Живёт в памяти вкладки — намеренно не персистится.
-const sessionDrafts = new Map<string, string>();
-
-// То же для вложений. Раньше массив вложений был один на всё приложение:
-// прикрепив файл в чате A и переключившись в B, вы отправляли в B сообщение
-// со строкой «📎 name → uploads/name», но сам файл лежал в workspace чата A —
-// у агента B такого файла нет, и задача падала на ровном месте.
-const sessionAttachments = new Map<string, ProcessedFile[]>();
+import { ComposerAttachments } from "./composer/ComposerAttachments";
+import { ComposerDropOverlay } from "./composer/ComposerDropOverlay";
+import { ComposerQueue } from "./composer/ComposerQueue";
+import { ComposerSuggestions } from "./composer/ComposerSuggestions";
+import { useComposerSuggestions } from "./composer/useComposerSuggestions";
+import {
+  clearSessionComposerCache,
+  storeSessionAttachment,
+  useSessionComposerDrafts,
+} from "./composer/useSessionComposerDrafts";
+import { useWindowFileDrop } from "./composer/useWindowFileDrop";
+import { PaperclipIcon, SendIcon, StopIcon } from "./icons";
 
 /**
  * Сколько сессия должна пробыть свободной, прежде чем очередь имеет право
@@ -56,48 +50,6 @@ const QUEUE_SETTLE_MS = 1200;
 // параллельно сдвигается автоотправкой. Прежний локальный `q1, q2, …` ушёл
 // вместе с собственной нумерацией: ключ теперь тот же, с которым сообщение
 // уйдёт, и придумывать для очереди второй нельзя.
-
-// Slash-команды: быстрые шаблоны запросов, дропдаун открывается по «/».
-const SLASH_COMMANDS: Array<{ cmd: string; hint: string; insert: string }> = [
-  {
-    cmd: t("composer.rezyume"),
-    hint: t("composer.kratkoe_rezyume_dialoga"),
-    insert:
-      t("composer.sdelay_kratkoe_rezyume_nashego_dialoga_klyuc"),
-  },
-  {
-    cmd: t("composer.testy"),
-    hint: t("composer.zapustit_testy"),
-    insert:
-      t("composer.zapusti_testy_i_pokazhi_rezultat_esli"),
-  },
-  {
-    cmd: t("composer.fiks"),
-    hint: t("composer.pochinit_poslednyuyu_oshibku"),
-    insert:
-      t("composer.naydi_prichinu_posledney_oshibki_i_predlozhi"),
-  },
-  {
-    cmd: t("composer.revyu"),
-    hint: t("composer.kod_revyu_izmeneniy"),
-    insert:
-      t("composer.sdelay_kod_revyu_poslednih_izmeneniy_oshibki"),
-  },
-  {
-    cmd: t("composer.kommit"),
-    hint: t("composer.soobschenie_kommita"),
-    insert:
-      t("composer.sformuliruy_soobschenie_kommita_dlya_tekusch"),
-  },
-];
-
-/** Иконка по типу вложения — тот же набор, что в чипах сообщений. */
-function attachmentIcon(kind: string) {
-  if (kind === "image") return <ImageIcon size={15} />;
-  if (kind === "zip") return <FileArchiveIcon size={15} />;
-  if (kind === "pdf" || kind === "text") return <FileTextIcon size={15} />;
-  return <PaperclipIcon size={15} />;
-}
 
 export default function Composer() {
   const currentID = useStore((s) => s.currentID);
@@ -145,9 +97,6 @@ export default function Composer() {
   );
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [caret, setCaret] = useState(0);
-  const [slashIdx, setSlashIdx] = useState(0);
-  const [mentionIdx, setMentionIdx] = useState(0);
-  const [mentionFiles, setMentionFiles] = useState<FileNode[] | null>(null);
 
   const busy =
     status === "busy" ||
@@ -178,35 +127,14 @@ export default function Composer() {
     }
   }, [failedSendText, clearFailedSendText]);
 
-  // Черновик на сессию: при переключении чата сохраняем набранный текст
-  // и вложения, восстанавливаем сохранённые для выбранной сессии.
-  const textRef = useRef(text);
-  textRef.current = text;
-  const attachmentsRef = useRef(attachments);
-  attachmentsRef.current = attachments;
-  const prevSessionRef = useRef<string | null>(null);
-  useEffect(() => {
-    const prev = prevSessionRef.current;
-    if (prev !== null && prev !== currentID) {
-      if (textRef.current) sessionDrafts.set(prev, textRef.current);
-      else sessionDrafts.delete(prev);
-      setText(sessionDrafts.get(currentID ?? "") ?? "");
-
-      // Вложения принадлежат workspace своей сессии — переносить их
-      // в другой чат нельзя (файла там физически нет).
-      if (attachmentsRef.current.length > 0) {
-        sessionAttachments.set(prev, attachmentsRef.current);
-      } else {
-        sessionAttachments.delete(prev);
-      }
-      clearAttachments();
-      const restored = currentID
-        ? sessionAttachments.get(currentID)
-        : undefined;
-      if (restored?.length) addAttachments(restored);
-    }
-    prevSessionRef.current = currentID;
-  }, [currentID, clearAttachments, addAttachments]);
+  useSessionComposerDrafts({
+    sessionId: currentID,
+    text,
+    attachments,
+    setText,
+    addAttachments,
+    clearAttachments,
+  });
 
   // Сессия освободилась — отправляем следующее из очереди.
   //
@@ -322,8 +250,7 @@ export default function Composer() {
         ]);
         setText("");
         clearAttachments();
-        if (currentID) sessionDrafts.delete(currentID);
-        if (currentID) sessionAttachments.delete(currentID);
+        if (currentID) clearSessionComposerCache(currentID);
         if (plan.kind === "server") {
           api
             .enqueueAction(
@@ -346,8 +273,7 @@ export default function Composer() {
     }
     setText("");
     if (currentID) {
-      sessionDrafts.delete(currentID);
-      sessionAttachments.delete(currentID);
+      clearSessionComposerCache(currentID);
     }
     await send(value);
   };
@@ -364,7 +290,10 @@ export default function Composer() {
     if (tooBig.length > 0) {
       const names = tooBig.map((f) => `${f.name} (${formatSize(f.size)})`);
       setUploadError(
-        tf("composer.slishkom_bolshoy_fayl_maksimum_0_1", [formatSize(MAX_UPLOAD_BYTES), names.join(", ")]),
+        tf("composer.slishkom_bolshoy_fayl_maksimum_0_1", [
+          formatSize(MAX_UPLOAD_BYTES),
+          names.join(", "),
+        ]),
       );
       setTimeout(() => setUploadError(null), 8000);
     }
@@ -436,11 +365,7 @@ export default function Composer() {
             // result with the workspace that received its bytes; putting it in
             // the active global attachment array would forge a path in the
             // newly selected chat.
-            const saved = sessionAttachments.get(sid) ?? [];
-            sessionAttachments.set(sid, [
-              ...saved.filter((item) => item.name !== processed.name),
-              processed,
-            ]);
+            storeSessionAttachment(sid, processed);
           }
         } catch (err: unknown) {
           const msg = (err as Error)?.message || String(err);
@@ -475,165 +400,36 @@ export default function Composer() {
 
   const onDragLeave = () => setDragOver(false);
 
-  // Приём файла в любой точке окна, а не только над полем ввода.
-  //
-  // Раньше drop мимо композера обрабатывал сам браузер: он открывал файл
-  // как страницу, и чат просто исчезал вместе с несохранённым вводом.
-  // Попадание в узкую полосу композера с первого раза — неудобно, поэтому
-  // теперь зона приёма — всё окно, с явной подсказкой поверх.
-  const [windowDrag, setWindowDrag] = useState(false);
-  const dragDepth = useRef(0);
-  const handleFilesRef = useRef(handleFiles);
-  handleFilesRef.current = handleFiles;
-
-  useEffect(() => {
-    // dragenter/dragleave приходят и от вложенных элементов, поэтому
-    // считаем глубину, иначе подсказка мигает при движении курсора.
-    const hasFiles = (e: DragEvent) =>
-      Array.from(e.dataTransfer?.types ?? []).includes("Files");
-
-    const onEnter = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      dragDepth.current += 1;
-      setWindowDrag(true);
-    };
-    const onOver = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault(); // без этого drop не сработает
-    };
-    const onLeave = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      dragDepth.current = Math.max(0, dragDepth.current - 1);
-      if (dragDepth.current === 0) setWindowDrag(false);
-    };
-    const onDropWindow = (e: DragEvent) => {
-      if (!hasFiles(e)) return;
-      e.preventDefault(); // иначе браузер откроет файл вместо чата
-      dragDepth.current = 0;
-      setWindowDrag(false);
-      setDragOver(false);
-      handleFilesRef.current(e.dataTransfer?.files ?? null);
-    };
-
-    window.addEventListener("dragenter", onEnter);
-    window.addEventListener("dragover", onOver);
-    window.addEventListener("dragleave", onLeave);
-    window.addEventListener("drop", onDropWindow);
-    return () => {
-      window.removeEventListener("dragenter", onEnter);
-      window.removeEventListener("dragover", onOver);
-      window.removeEventListener("dragleave", onLeave);
-      window.removeEventListener("drop", onDropWindow);
-    };
-  }, []);
+  const windowDrag = useWindowFileDrop(
+    (files) => {
+      void handleFiles(files);
+    },
+    () => setDragOver(false),
+  );
 
   const canSend =
     (text.trim().length > 0 || attachments.length > 0) && !blockedReason;
 
-  // --- Slash-команды и @-упоминания файлов workspace ---
-  const slashQuery = /^\/[^\s\n]*$/.test(text) ? text.toLowerCase() : null;
-  const slashMatches = slashQuery
-    ? SLASH_COMMANDS.filter((c) => c.cmd.startsWith(slashQuery))
-    : [];
-
-  const mentionMatch = /(^|\s)@([\w./-]*)$/.exec(text.slice(0, caret));
-  const mentionQuery = mentionMatch
-    ? (mentionMatch[2] ?? "").toLowerCase()
-    : null;
-
-  const mentionMatches =
-    mentionQuery !== null && mentionFiles
-      ? mentionFiles
-          .filter((f) => f.path.toLowerCase().includes(mentionQuery))
-          .slice(0, 8)
-      : [];
-
-  // Дерево файлов workspace грузим лениво при первом «@» и кэшируем.
-  useEffect(() => {
-    if (mentionQuery === null || mentionFiles !== null || !currentID) return;
-    let cancelled = false;
-    api
-      .listTree(currentID)
-      .then((nodes) => {
-        if (cancelled) return;
-        const files = nodes.filter(
-          (n) => n.type !== "directory" && !n.isDirectory,
-        );
-        setMentionFiles(files.slice(0, 2000));
-      })
-      .catch(() => {
-        if (!cancelled) setMentionFiles([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [mentionQuery, mentionFiles, currentID]);
-
-  // Кэш дерева файлов принадлежит сессии. Сброс на рендере, а не в useEffect:
-  // тело эффекта не читало currentID (для линтера зависимость лишняя), да и
-  // подсказки @ один кадр показывали файлы предыдущего чата.
-  const mentionSessionRef = useRef(currentID);
-  if (mentionSessionRef.current !== currentID) {
-    mentionSessionRef.current = currentID;
-    setMentionFiles(null);
-  }
-
-  const applySlash = (c: (typeof SLASH_COMMANDS)[number]) => {
-    setText(c.insert);
-    setSlashIdx(0);
-    textareaRef.current?.focus();
-  };
-
-  const applyMention = (f: FileNode) => {
-    if (!mentionMatch) return;
-    const start = caret - (mentionMatch[2] ?? "").length;
-    const next = `${text.slice(0, start)}${f.path} ${text.slice(caret)}`;
-    setText(next);
-    setMentionIdx(0);
-    setCaret(start + f.path.length + 1);
-    textareaRef.current?.focus();
-  };
+  const suggestions = useComposerSuggestions({
+    sessionId: currentID,
+    text,
+    caret,
+    setText,
+    setCaret,
+    textareaRef,
+  });
 
   return (
     <div className="w-full max-w-3xl shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
       <div className="relative pointer-events-auto w-full">
-        {(slashMatches.length > 0 || mentionMatches.length > 0) && (
-          <div className="absolute bottom-full left-0 right-0 z-30 mb-2 overflow-hidden rounded-xl border border-border bg-card shadow-xl">
-            {slashMatches.map((c, i) => (
-              <button
-                key={c.cmd}
-                type="button"
-                className={cn(
-                  "flex w-full items-center gap-2 px-3 py-2 text-left text-xs",
-                  i === slashIdx % slashMatches.length
-                    ? "bg-accent text-foreground"
-                    : "text-muted-foreground",
-                )}
-                onClick={() => applySlash(c)}
-              >
-                <span className="font-mono font-semibold">{c.cmd}</span>
-                <span className="truncate opacity-70">{c.hint}</span>
-              </button>
-            ))}
-            {slashMatches.length === 0 &&
-              mentionMatches.map((f, i) => (
-                <button
-                  key={f.path}
-                  type="button"
-                  className={cn(
-                    "flex w-full items-center gap-2 px-3 py-2 text-left text-xs",
-                    i === mentionIdx % mentionMatches.length
-                      ? "bg-accent text-foreground"
-                      : "text-muted-foreground",
-                  )}
-                  onClick={() => applyMention(f)}
-                >
-                  <span aria-hidden="true">📄</span>
-                  <span className="truncate font-mono">{f.path}</span>
-                </button>
-              ))}
-          </div>
-        )}
+        <ComposerSuggestions
+          commands={suggestions.commands}
+          files={suggestions.files}
+          commandIndex={suggestions.commandIndex}
+          fileIndex={suggestions.fileIndex}
+          onCommand={suggestions.chooseCommand}
+          onFile={suggestions.chooseFile}
+        />
 
         {uploadError && (
           <div className="absolute -top-8 left-0 right-0 text-center text-xs text-red-400 animate-in fade-in slide-in-from-bottom-1">
@@ -662,274 +458,165 @@ export default function Composer() {
             onDragLeave={onDragLeave}
             onDrop={onDrop}
           >
-        <div className="flex flex-col gap-1">
-          {/* P2-fix: очередь сообщений, ожидающих окончания генерации */}
-          {queued.length > 0 && (
-            <div className="flex flex-wrap gap-2 px-2 pb-1">
-              {queued.map((q) => (
-                <div
-                  key={q.actionId}
-                  className="flex items-center gap-2 rounded-full bg-muted border border-border px-2 py-1 text-xs text-muted-foreground"
-                  title={q.text}
-                >
-                  <span className="opacity-60">⏳</span>
-                  <span className="truncate max-w-[160px]">
-                    {q.text ||
-                      q.attachments
-                        ?.map((attachment) => attachment.name)
-                        .join(", ") ||
-                      t("composer.vlozhenie")}
-                  </span>
-                  <button
-                    type="button"
-                    className="hover:text-destructive"
-                    aria-label={t("composer.ubrat_soobschenie_iz_ocheredi")}
-                    onClick={() => {
-                      const plan = removalPlan(q, currentID);
-                      setQueued((prev) =>
-                        prev.filter((m) => m.actionId !== plan.actionId),
-                      );
-                      if (plan.kind === "server") {
-                        api
-                          .dequeueAction(plan.sessionId, plan.actionId)
-                          .catch(() => {});
-                      }
-                    }}
-                  >
-                    <CloseIcon size={12} />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-          {/* Вложения и незавершённые загрузки — одним рядом карточек.
+            <div className="flex flex-col gap-1">
+              {/* P2-fix: очередь сообщений, ожидающих окончания генерации */}
+              <ComposerQueue
+                entries={queued}
+                onRemove={(entry) => {
+                  const plan = removalPlan(entry, currentID);
+                  setQueued((previous) =>
+                    previous.filter(
+                      (message) => message.actionId !== plan.actionId,
+                    ),
+                  );
+                  if (plan.kind === "server") {
+                    api
+                      .dequeueAction(plan.sessionId, plan.actionId)
+                      .catch(() => {});
+                  }
+                }}
+              />
+              {/* Вложения и незавершённые загрузки — одним рядом карточек.
               Раньше это были два разных ряда безымянных «пилюль»: загрузка
               показывалась в одном месте, а готовый файл появлялся в другом,
               без иконки, размера и превью. */}
-          {(attachments.length > 0 ||
-            Object.keys(uploadProgress).length > 0) && (
-            <div className="flex flex-wrap gap-2 px-2 pb-2">
-              {attachments.map((att) => (
-                <div
-                  key={att.name}
-                  className="group/chip flex max-w-[240px] items-center gap-2 rounded-lg border border-border bg-muted/40 py-1.5 pl-1.5 pr-1 text-xs"
-                >
-                  {att.kind === "image" && att.workspacePath && currentID ? (
-                    <img
-                      src={`/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/${att.workspacePath
-                        .split("/")
-                        .map(encodeURIComponent)
-                        .join("/")}`}
-                      alt={att.name}
-                      className="h-8 w-8 shrink-0 rounded-md object-cover"
-                    />
-                  ) : (
-                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-background/70 text-muted-foreground">
-                      {attachmentIcon(att.kind)}
-                    </span>
-                  )}
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-foreground">
-                      {att.name}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      {formatSize(att.size)}
-                      {typeof att.entryCount === "number" &&
-                        tf("composer.0_faylov", [att.entryCount])}
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="shrink-0 rounded p-1 text-muted-foreground/60 transition hover:bg-background/60 hover:text-destructive"
-                    aria-label={tf("composer.ubrat_fayl_0", [att.name])}
-                    onClick={() => removeAttachment(att.name)}
-                  >
-                    <CloseIcon size={12} />
-                  </button>
-                </div>
-              ))}
+              <ComposerAttachments
+                attachments={attachments}
+                uploadProgress={uploadProgress}
+                sessionId={currentID}
+                onRemove={removeAttachment}
+              />
 
-              {Object.entries(uploadProgress).map(([name, pct]) => (
-                <div
-                  key={`up:${name}`}
-                  className="flex max-w-[240px] items-center gap-2 rounded-lg border border-border bg-muted/40 py-1.5 pl-1.5 pr-2.5 text-xs"
-                >
-                  <span className="relative flex h-8 w-8 shrink-0 items-center justify-center">
-                    {/* Кольцевой индикатор: conic-gradient по проценту. */}
-                    <span
-                      className="absolute inset-0 rounded-full"
-                      style={{
-                        background: `conic-gradient(var(--color-primary) ${pct * 3.6}deg, color-mix(in srgb, var(--color-border) 100%, transparent) 0deg)`,
-                      }}
-                    />
-                    <span className="absolute inset-[3px] rounded-full bg-card" />
-                    <span className="relative text-[9px] font-semibold tabular-nums text-foreground/80">
-                      {pct}
-                    </span>
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate font-medium text-foreground">
-                      {name}
-                    </div>
-                    <div className="text-[11px] text-muted-foreground">
-                      Загрузка…
-                    </div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {/* Input area */}
-          <div className="flex items-end gap-2 px-2 py-1 mt-1">
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
-              className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
-              onClick={() => fileInputRef.current?.click()}
-              title={t("composer.prikrepit_fayl")}
-              aria-label={t("composer.prikrepit_fayl")}
-            >
-              <PaperclipIcon size={16} />
-            </Button>
-            <input
-              type="file"
-              multiple
-              ref={fileInputRef}
-              className="hidden"
-              onChange={(e) => handleFiles(e.target.files)}
-            />
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              placeholder={t("composer.chto_hotite_sdelat")}
-              aria-label={t("composer.soobschenie_assistentu")}
-              className="flex-1 min-h-[40px] max-h-[200px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-2 text-[15px] leading-relaxed"
-              value={text}
-              onChange={(e) => {
-                setText(e.target.value);
-                setCaret(e.target.selectionStart ?? e.target.value.length);
-                grow(e.target);
-              }}
-              onKeyDown={(e) => {
-                if (slashMatches.length > 0) {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    const d = e.key === "ArrowDown" ? 1 : -1;
-                    const len = slashMatches.length;
-                    setSlashIdx((i) => (i + d + len) % len);
-                    return;
-                  }
-                  if (e.key === "Enter" || e.key === "Tab") {
-                    e.preventDefault();
-                    const c = slashMatches[slashIdx % slashMatches.length];
-                    if (c) applySlash(c);
-                    return;
-                  }
-                }
-                if (mentionMatches.length > 0) {
-                  if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                    e.preventDefault();
-                    const d = e.key === "ArrowDown" ? 1 : -1;
-                    const len = mentionMatches.length;
-                    setMentionIdx((i) => (i + d + len) % len);
-                    return;
-                  }
-                  if (e.key === "Enter" || e.key === "Tab") {
-                    e.preventDefault();
-                    const f =
-                      mentionMatches[mentionIdx % mentionMatches.length];
-                    if (f) applyMention(f);
-                    return;
-                  }
-                }
-                if (e.key === "Enter" && !e.shiftKey) {
-                  e.preventDefault();
-                  submit();
-                }
-              }}
-              onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-              onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-              onPaste={(e) => {
-                const files = Array.from(e.clipboardData?.items ?? [])
-                  .filter((it) => it.kind === "file")
-                  .map((it) => it.getAsFile())
-                  .filter((f): f is File => f !== null);
-                if (files.length > 0) {
-                  e.preventDefault();
-                  handleFiles(files);
-                }
-              }}
-            />
-            <div className="flex items-center gap-1 pb-1">
-              {busy ? (
+              {/* Input area */}
+              <div className="flex items-end gap-2 px-2 py-1 mt-1">
                 <Button
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-red-500/50 bg-red-500/15 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25),inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:bg-red-500/25 hover:border-red-500/70 hover:scale-105 active:scale-95"
-                  onClick={() => {
-                    for (const q of queued) {
-                      const plan = removalPlan(q, currentID);
-                      if (plan.kind === "server") {
-                        api
-                          .dequeueAction(plan.sessionId, plan.actionId)
-                          .catch(() => {});
+                  className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
+                  onClick={() => fileInputRef.current?.click()}
+                  title={t("composer.prikrepit_fayl")}
+                  aria-label={t("composer.prikrepit_fayl")}
+                >
+                  <PaperclipIcon size={16} />
+                </Button>
+                <input
+                  type="file"
+                  multiple
+                  ref={fileInputRef}
+                  className="hidden"
+                  onChange={(e) => handleFiles(e.target.files)}
+                />
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  placeholder={t("composer.chto_hotite_sdelat")}
+                  aria-label={t("composer.soobschenie_assistentu")}
+                  className="flex-1 min-h-[40px] max-h-[200px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-2 text-[15px] leading-relaxed"
+                  value={text}
+                  onChange={(e) => {
+                    setText(e.target.value);
+                    setCaret(e.target.selectionStart ?? e.target.value.length);
+                    grow(e.target);
+                  }}
+                  onKeyDown={(e) => {
+                    if (suggestions.commands.length > 0) {
+                      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                        e.preventDefault();
+                        suggestions.moveCommand(e.key === "ArrowDown" ? 1 : -1);
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        if (suggestions.activeCommand) {
+                          suggestions.chooseCommand(suggestions.activeCommand);
+                        }
+                        return;
                       }
                     }
-                    setQueued([]);
-                    abort();
+                    if (suggestions.files.length > 0) {
+                      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                        e.preventDefault();
+                        suggestions.moveFile(e.key === "ArrowDown" ? 1 : -1);
+                        return;
+                      }
+                      if (e.key === "Enter" || e.key === "Tab") {
+                        e.preventDefault();
+                        if (suggestions.activeFile) {
+                          suggestions.chooseFile(suggestions.activeFile);
+                        }
+                        return;
+                      }
+                    }
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      submit();
+                    }
                   }}
-                  title={t("stop.action")}
-                  aria-label={t("stop.action")}
-                >
-                  <StopIcon size={14} />
-                </Button>
-              ) : (
-                <Button
-                  type="button"
-                  size="icon"
-                  className={cn(
-                    "oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200",
-                    canSend
-                      ? "border border-white/20 bg-primary text-primary-foreground shadow-[0_0_12px_rgba(var(--primary),0.35),inset_0_1px_0_0_rgba(255,255,255,0.2)] hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
-                      : "border border-white/10 bg-white/[0.05] text-muted-foreground/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.3)] cursor-not-allowed opacity-80",
+                  onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                  onPaste={(e) => {
+                    const files = Array.from(e.clipboardData?.items ?? [])
+                      .filter((it) => it.kind === "file")
+                      .map((it) => it.getAsFile())
+                      .filter((f): f is File => f !== null);
+                    if (files.length > 0) {
+                      e.preventDefault();
+                      handleFiles(files);
+                    }
+                  }}
+                />
+                <div className="flex items-center gap-1 pb-1">
+                  {busy ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon"
+                      className="oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-red-500/50 bg-red-500/15 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25),inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:bg-red-500/25 hover:border-red-500/70 hover:scale-105 active:scale-95"
+                      onClick={() => {
+                        for (const q of queued) {
+                          const plan = removalPlan(q, currentID);
+                          if (plan.kind === "server") {
+                            api
+                              .dequeueAction(plan.sessionId, plan.actionId)
+                              .catch(() => {});
+                          }
+                        }
+                        setQueued([]);
+                        abort();
+                      }}
+                      title={t("stop.action")}
+                      aria-label={t("stop.action")}
+                    >
+                      <StopIcon size={14} />
+                    </Button>
+                  ) : (
+                    <Button
+                      type="button"
+                      size="icon"
+                      className={cn(
+                        "oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200",
+                        canSend
+                          ? "border border-white/20 bg-primary text-primary-foreground shadow-[0_0_12px_rgba(var(--primary),0.35),inset_0_1px_0_0_rgba(255,255,255,0.2)] hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
+                          : "border border-white/10 bg-white/[0.05] text-muted-foreground/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.3)] cursor-not-allowed opacity-80",
+                      )}
+                      onClick={submit}
+                      disabled={!canSend}
+                      title={blockedReason ?? t("composer.otpravit")}
+                      aria-label={t("composer.otpravit_soobschenie")}
+                    >
+                      <SendIcon size={15} />
+                    </Button>
                   )}
-                  onClick={submit}
-                  disabled={!canSend}
-                  title={blockedReason ?? t("composer.otpravit")}
-                  aria-label={t("composer.otpravit_soobschenie")}
-                >
-                  <SendIcon size={15} />
-                </Button>
-              )}
+                </div>
+              </div>
             </div>
-          </div>
-        </div>
-      </section>
-    </BorderBeam>
-  </div>
+          </section>
+        </BorderBeam>
+      </div>
 
       {/* Подсказка на всё окно, пока над страницей тащат файл. */}
-      {windowDrag && (
-        <div className="pointer-events-none fixed inset-0 z-50 flex items-center justify-center bg-background/70 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3 rounded-2xl border-2 border-dashed border-primary/60 bg-card/90 px-10 py-8 shadow-xl">
-            <span className="text-primary">
-              <PaperclipIcon size={28} />
-            </span>
-            <div className="text-center">
-              <div className="text-sm font-semibold text-foreground">
-                Отпустите, чтобы прикрепить
-              </div>
-              <div className="mt-0.5 text-xs text-muted-foreground">
-                Файлы попадут в workspace этого чата · до{" "}
-                {formatSize(MAX_UPLOAD_BYTES)}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <ComposerDropOverlay visible={windowDrag} />
     </div>
   );
 }

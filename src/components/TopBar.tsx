@@ -269,7 +269,10 @@ export default function TopBar() {
         onClose={() => setShowTerminal(false)}
       >
         <div className="h-full w-full p-2">
-          <LazyPanel label={t("top_bar.terminal_2")} skeleton={<PanelBodySkeleton />}>
+          <LazyPanel
+            label={t("top_bar.terminal_2")}
+            skeleton={<PanelBodySkeleton />}
+          >
             <Terminal workdir={currentID || ""} />
           </LazyPanel>
         </div>
@@ -280,7 +283,10 @@ export default function TopBar() {
         open={showPreview}
         onClose={() => setShowPreview(false)}
       >
-        <LazyPanel label={t("top_bar.predprosmotr")} skeleton={<PanelBodySkeleton />}>
+        <LazyPanel
+          label={t("top_bar.predprosmotr")}
+          skeleton={<PanelBodySkeleton />}
+        >
           <PreviewPanel url={previewUrl} />
         </LazyPanel>
       </PanelModal>
@@ -290,7 +296,10 @@ export default function TopBar() {
         open={showChanges}
         onClose={() => setShowChanges(false)}
       >
-        <LazyPanel label={t("top_bar.rezultat_2")} skeleton={<PanelBodySkeleton />}>
+        <LazyPanel
+          label={t("top_bar.rezultat_2")}
+          skeleton={<PanelBodySkeleton />}
+        >
           <ChangesPanel />
         </LazyPanel>
       </PanelModal>

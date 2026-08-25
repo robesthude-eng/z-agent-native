@@ -120,7 +120,9 @@ export function parseAgentAttachmentLines(text: string): {
     // имя сохранённого файла, поэтому описание уезжает в подзаголовок чипа.
     const base = path.split("/").pop() || path;
     const name = base;
-    const notes = [rawName !== base ? rawName : "", note].filter(Boolean).join(" · ");
+    const notes = [rawName !== base ? rawName : "", note]
+      .filter(Boolean)
+      .join(" · ");
     refs.push(notes ? { name, path, note: notes } : { name, path });
   }
   if (refs.length === 0) return { refs: [], rest: text };

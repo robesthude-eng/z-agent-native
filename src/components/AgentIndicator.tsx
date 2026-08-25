@@ -63,10 +63,7 @@ export function AgentIndicator({ activity }: { activity: AgentActivity }) {
             </span>
           ) : (
             activity.steps.map((step, index) => (
-              <div
-                key={step.key}
-                className="flex min-w-0 items-center gap-1.5"
-              >
+              <div key={step.key} className="flex min-w-0 items-center gap-1.5">
                 {index > 0 && (
                   <span className="shrink-0 text-[9px] text-muted-foreground/30">
                     →

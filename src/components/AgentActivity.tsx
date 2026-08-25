@@ -53,7 +53,10 @@ const AgentActivity = ({
       <button
         type="button"
         aria-expanded={expanded}
-        aria-label={tf("agent_activity.0_1_pokazat_podrobnosti", [status, formatSteps(count)])}
+        aria-label={tf("agent_activity.0_1_pokazat_podrobnosti", [
+          status,
+          formatSteps(count),
+        ])}
         className={cn(
           "group/activity flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-accent/30",
           hasError && !running && "text-red-400",

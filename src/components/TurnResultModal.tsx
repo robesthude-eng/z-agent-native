@@ -1,9 +1,4 @@
-import {
-  ChevronDown,
-  ExternalLink,
-  GitBranch,
-  RotateCcw,
-} from "lucide-react";
+import { ChevronDown, ExternalLink, GitBranch, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   changesApi,
@@ -19,7 +14,8 @@ import { t, tf } from "@/i18n";
 type ChangeKind = "added" | "deleted" | "modified";
 
 function kind(status?: string): ChangeKind {
-  if (status === "added" || status === "untracked" || status === "A") return "added";
+  if (status === "added" || status === "untracked" || status === "A")
+    return "added";
   if (status === "deleted" || status === "D") return "deleted";
   return "modified";
 }
@@ -58,7 +54,8 @@ function pluralFiles(n: number) {
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return t("message_item.fayl");
-  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return t("message_item.fayla");
+  if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14))
+    return t("message_item.fayla");
   return t("message_item.faylov");
 }
 
@@ -89,7 +86,9 @@ export default function TurnResultModal({
       const next = await changesApi.turnResult(sessionId, messageId);
       setResult(next);
     } catch (e: unknown) {
-      const message = (e as Error)?.message || t("turn_result_modal.ne_udalos_poluchit_rezultat_etogo_otveta");
+      const message =
+        (e as Error)?.message ||
+        t("turn_result_modal.ne_udalos_poluchit_rezultat_etogo_otveta");
       setResult(null);
       setError(
         /нет сохранённого результата workspace|404/i.test(message)
@@ -129,9 +128,13 @@ export default function TurnResultModal({
       setDiffLoading(file.path);
       setError(null);
       try {
-        setDiff(await changesApi.turnResultDiff(sessionId, messageId, file.path));
+        setDiff(
+          await changesApi.turnResultDiff(sessionId, messageId, file.path),
+        );
       } catch (e: unknown) {
-        setError((e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"));
+        setError(
+          (e as Error)?.message || t("changes_panel.ne_udalos_zagruzit_diff"),
+        );
       } finally {
         setDiffLoading(null);
       }
@@ -145,16 +148,23 @@ export default function TurnResultModal({
     try {
       const response = await changesApi.rollbackTurn(sessionId, messageId);
       const rolledBackAt = response.rolledBackAt || Date.now();
-      setResult((current) => (current ? { ...current, rolledBackAt } : current));
+      setResult((current) =>
+        current ? { ...current, rolledBackAt } : current,
+      );
       setConfirmRollback(false);
       toast(
         "success",
         response.alreadyRolledBack
           ? t("turn_result_modal.etot_hod_uzhe_byl_otkatan")
-          : tf("turn_result_modal.otkat_vypolnen_vosstanovleno_0_1", [response.restored.length, pluralFiles(response.restored.length)]),
+          : tf("turn_result_modal.otkat_vypolnen_vosstanovleno_0_1", [
+              response.restored.length,
+              pluralFiles(response.restored.length),
+            ]),
       );
     } catch (e: unknown) {
-      const message = (e as Error)?.message || t("turn_result_modal.ne_udalos_otkatit_etot_hod");
+      const message =
+        (e as Error)?.message ||
+        t("turn_result_modal.ne_udalos_otkatit_etot_hod");
       setError(message);
       toast("error", message);
     } finally {
@@ -165,7 +175,11 @@ export default function TurnResultModal({
   const rolledBack = Boolean(result?.rolledBackAt);
 
   return (
-    <PanelModal title={t("turn_result_modal.rezultat_etogo_otveta")} open={open} onClose={onClose}>
+    <PanelModal
+      title={t("turn_result_modal.rezultat_etogo_otveta")}
+      open={open}
+      onClose={onClose}
+    >
       <div className="flex h-full min-h-0 flex-col bg-background">
         <div className="shrink-0 border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -181,7 +195,9 @@ export default function TurnResultModal({
               {result && (
                 <div className="mt-0.5 text-[11px] text-muted-foreground">
                   +{counts.added} · ~{counts.modified} · −{counts.deleted}
-                  {rolledBack ? t("turn_result_modal.otkat_vypolnen_2") : t("turn_result_modal.snimok_do_posle_sohranen")}
+                  {rolledBack
+                    ? t("turn_result_modal.otkat_vypolnen_2")
+                    : t("turn_result_modal.snimok_do_posle_sohranen")}
                 </div>
               )}
             </div>
@@ -198,7 +214,11 @@ export default function TurnResultModal({
               >
                 <span className="inline-flex items-center gap-1.5">
                   <RotateCcw className="h-3 w-3" />
-                  {rolledBack ? t("turn_result_modal.otkat_vypolnen") : rollingBack ? t("changes_panel.otkatyvayu") : t("turn_result_modal.otkatit_ves_hod")}
+                  {rolledBack
+                    ? t("turn_result_modal.otkat_vypolnen")
+                    : rollingBack
+                      ? t("changes_panel.otkatyvayu")
+                      : t("turn_result_modal.otkatit_ves_hod")}
                 </span>
               </button>
             )}
@@ -206,9 +226,14 @@ export default function TurnResultModal({
 
           {confirmRollback && result && !rolledBack && (
             <div className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/8 px-3 py-2.5 text-[11px] leading-relaxed text-muted-foreground">
-              <div className="font-medium text-foreground/90">{t("turn_result_modal.vernut_proekt_k_sostoyaniyu_do_etogo")}</div>
+              <div className="font-medium text-foreground/90">
+                {t("turn_result_modal.vernut_proekt_k_sostoyaniyu_do_etogo")}
+              </div>
               <div className="mt-1">
-                Сервер сначала проверит все {result.changeCount} {pluralFiles(result.changeCount)}. Если более поздняя задача изменила хотя бы один из них, откат не начнётся и новая работа останется нетронутой.
+                Сервер сначала проверит все {result.changeCount}{" "}
+                {pluralFiles(result.changeCount)}. Если более поздняя задача
+                изменила хотя бы один из них, откат не начнётся и новая работа
+                останется нетронутой.
               </div>
               <div className="mt-2 flex justify-end gap-1">
                 <button
@@ -225,7 +250,9 @@ export default function TurnResultModal({
                   onClick={() => void rollback()}
                   disabled={rollingBack}
                 >
-                  {rollingBack ? t("changes_panel.otkatyvayu") : t("turn_result_modal.podtverdit_otkat")}
+                  {rollingBack
+                    ? t("changes_panel.otkatyvayu")
+                    : t("turn_result_modal.podtverdit_otkat")}
                 </button>
               </div>
             </div>
@@ -241,9 +268,12 @@ export default function TurnResultModal({
         <div className="min-h-0 flex-1 overflow-y-auto p-2">
           {!loading && result && result.changes.length === 0 && (
             <div className="flex min-h-48 flex-col items-center justify-center px-5 text-center">
-              <div className="text-sm font-medium text-foreground">{t("turn_result_modal.fayly_ne_menyalis")}</div>
+              <div className="text-sm font-medium text-foreground">
+                {t("turn_result_modal.fayly_ne_menyalis")}
+              </div>
               <div className="mt-1 max-w-sm text-xs leading-relaxed text-muted-foreground">
-                Ответ мог выполнять чтение, поиск или проверку — снимки до и после совпадают.
+                Ответ мог выполнять чтение, поиск или проверку — снимки до и
+                после совпадают.
               </div>
             </div>
           )}
@@ -252,7 +282,10 @@ export default function TurnResultModal({
             {result?.changes.map((file) => {
               const expanded = diff?.path === file.path;
               return (
-                <div key={`${file.status}:${file.path}`} className="overflow-hidden rounded-xl bg-card/35">
+                <div
+                  key={`${file.status}:${file.path}`}
+                  className="overflow-hidden rounded-xl bg-card/35"
+                >
                   <button
                     type="button"
                     className="flex min-h-12 w-full items-center gap-3 px-3 py-2.5 text-left transition hover:bg-accent/60"
@@ -263,8 +296,12 @@ export default function TurnResultModal({
                       {statusMark(file.status)}
                     </span>
                     <span className="min-w-0 flex-1">
-                      <span className="block truncate font-mono text-xs text-foreground/90">{file.path}</span>
-                      <span className="mt-0.5 block text-[10.5px] text-muted-foreground">{statusLabel(file.status)}</span>
+                      <span className="block truncate font-mono text-xs text-foreground/90">
+                        {file.path}
+                      </span>
+                      <span className="mt-0.5 block text-[10.5px] text-muted-foreground">
+                        {statusLabel(file.status)}
+                      </span>
                     </span>
                     <ChevronDown
                       className={`h-4 w-4 shrink-0 text-muted-foreground transition ${expanded ? "rotate-180" : ""} ${diffLoading === file.path ? "animate-pulse" : ""}`}
@@ -276,11 +313,17 @@ export default function TurnResultModal({
                       <div className="flex items-center gap-2 px-3 py-2 text-[10.5px] text-muted-foreground">
                         {!diff.binary && (
                           <>
-                            <span className="text-emerald-300/90">+{diff.additions}</span>
-                            <span className="text-red-300/90">−{diff.deletions}</span>
+                            <span className="text-emerald-300/90">
+                              +{diff.additions}
+                            </span>
+                            <span className="text-red-300/90">
+                              −{diff.deletions}
+                            </span>
                           </>
                         )}
-                        {diff.truncated && <span>{t("changes_panel.diff_sokraschen")}</span>}
+                        {diff.truncated && (
+                          <span>{t("changes_panel.diff_sokraschen")}</span>
+                        )}
                         {!rolledBack && kind(file.status) !== "deleted" && (
                           <button
                             type="button"
@@ -297,11 +340,18 @@ export default function TurnResultModal({
                       </div>
 
                       {diff.binary ? (
-                        <div className="px-3 pb-3 text-xs text-muted-foreground">{t("turn_result_modal.dvoichnyy_fayl_izmenen_tekstovyy_diff_nedost")}</div>
+                        <div className="px-3 pb-3 text-xs text-muted-foreground">
+                          {t(
+                            "turn_result_modal.dvoichnyy_fayl_izmenen_tekstovyy_diff_nedost",
+                          )}
+                        </div>
                       ) : (
                         <pre className="max-h-[52dvh] overflow-auto border-t border-border/60 bg-black/15 py-2 font-mono text-[11px] leading-[1.55]">
                           {diff.patch.split("\n").map((line, index) => (
-                            <div key={`${index}:${line.slice(0, 32)}`} className={`min-w-max whitespace-pre px-3 ${lineClass(line)}`}>
+                            <div
+                              key={`${index}:${line.slice(0, 32)}`}
+                              className={`min-w-max whitespace-pre px-3 ${lineClass(line)}`}
+                            >
                               {line || " "}
                             </div>
                           ))}

@@ -31,6 +31,16 @@ function splitKey(raw) {
   return { name, labels };
 }
 
+function residentMemoryBytes() {
+  try {
+    return process.memoryUsage().rss;
+  } catch {
+    // Some restricted runtimes deliberately hide /proc. Metrics must remain
+    // scrapeable even when the optional process RSS gauge is unavailable.
+    return 0;
+  }
+}
+
 export function observeTurnSummary(summary) {
   if (!summary) return;
   const outcome = ['completed', 'partial', 'failed', 'cancelled'].includes(String(summary.outcome)) ? String(summary.outcome) : 'unknown';
@@ -75,7 +85,7 @@ export function prometheusMetrics({ activeTurns = 0 } = {}) {
     metricLine('z_agent_active_turns', activeTurns),
     '# HELP z_agent_process_resident_memory_bytes Node resident memory.',
     '# TYPE z_agent_process_resident_memory_bytes gauge',
-    metricLine('z_agent_process_resident_memory_bytes', process.memoryUsage().rss),
+    metricLine('z_agent_process_resident_memory_bytes', residentMemoryBytes()),
   ];
   const entries = [...counters.entries()].sort(([a], [b]) => a.localeCompare(b));
   for (const [raw, value] of entries) {

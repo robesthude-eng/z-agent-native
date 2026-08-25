@@ -41,7 +41,9 @@ export default function CopyButton({
     });
   };
 
-  const label = copied ? t("copy_button.skopirovano") : (title ?? t("copy_button.kopirovat"));
+  const label = copied
+    ? t("copy_button.skopirovano")
+    : (title ?? t("copy_button.kopirovat"));
 
   return (
     <Button
@@ -54,7 +56,11 @@ export default function CopyButton({
         className,
       )}
       onClick={handleCopy}
-      title={copied ? t("copy_button.skopirovano_2") : (title ?? t("copy_button.kopirovat"))}
+      title={
+        copied
+          ? t("copy_button.skopirovano_2")
+          : (title ?? t("copy_button.kopirovat"))
+      }
       aria-label={label}
     >
       {copied ? (

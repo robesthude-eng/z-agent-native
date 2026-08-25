@@ -164,6 +164,19 @@ function mockApi(url, init) {
   if (p.indexOf('/api/') !== 0) return null;
   if (/^\\/api\\/preview\\/[a-f0-9]{64}\\/~\\//.test(p)) return null;
   if (p === '/api/ui-config') return J({ systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
+  if (p === '/api/runtime-capabilities') return J({
+    runtime: 'z-agent-native', version: '1.0.0',
+    capabilities: {
+      workspace: { state: 'ready', mode: 'preview-demo' },
+      shell: { state: 'disabled' }, executor: { state: 'disabled', required: false },
+      browser: { state: 'disabled', isolated: false },
+      web: { state: 'disabled', mode: 'off', allowlistCount: 0 },
+      terminal: { state: 'disabled' }, ssh: { state: 'disabled', mode: 'off', allowlistCount: 0 },
+      installers: { state: 'disabled' }, sudo: { state: 'disabled' }
+    },
+    policies: { web: 'off', shellNetwork: 'off', ssh: 'off', sensitiveFiles: 'deny', privilege: 'none' },
+    tools: []
+  });
   if (p === '/api/global/health' || p === '/api/health') return J({ status: 'ok' });
   if (p === '/api/auth/me') return J({ status: 'success', user: DEMO_USER });
   if (p === '/api/auth/login' || p === '/api/auth/register' || p === '/api/auth/custom') return J({ status: 'success', user: DEMO_USER });
@@ -204,16 +217,22 @@ window.EventSource = FakeEventSource;
 
 export function injectPreviewShims(html) {
   const doc = String(html);
-  if (doc.includes('__pv_probe') || doc.includes('__previewMock')) return doc;
-  if (/<head[^>]*>/i.test(doc)) return doc.replace(/<head[^>]*>/i, (head) => `${head}${PREVIEW_STORAGE_SHIM}${PREVIEW_API_MOCK_SHIM}`);
-  return PREVIEW_STORAGE_SHIM + PREVIEW_API_MOCK_SHIM + doc;
+  const isZAgent = /<meta\s+[^>]*name=["']app-version["'][^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*>/i.test(doc)
+    || /<meta\s+[^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*name=["']app-version["'][^>]*>/i.test(doc);
+  const shims = [
+    ...(doc.includes('__pv_probe') ? [] : [PREVIEW_STORAGE_SHIM]),
+    ...(isZAgent && !doc.includes('__previewMock') ? [PREVIEW_API_MOCK_SHIM] : []),
+  ].join('');
+  if (!shims) return doc;
+  if (/<head[^>]*>/i.test(doc)) return doc.replace(/<head[^>]*>/i, (head) => `${head}${shims}`);
+  return shims + doc;
 }
 
 export function rewritePreviewHtml(html) {
   return injectPreviewShims(
     String(html).replace(
       /\b(src|href|poster)\s*=\s*(["'])(\/(?!\/|#|["'])[^"']*)\2/gi,
-      (all, attr, quote, value) => `${attr}=${quote}${String(value).slice(1)}${quote}`,
+      (_all, attr, quote, value) => `${attr}=${quote}${String(value).slice(1)}${quote}`,
     ),
   );
 }

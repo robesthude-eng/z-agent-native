@@ -68,7 +68,9 @@ export function operationGate(sessionId?: string | null): OperationGate {
     return {
       allowed: false,
       reason: "draft_chat",
-      explanation: t("file_operations.vorkspeys_poyavitsya_posle_pervogo_soobschen"),
+      explanation: t(
+        "file_operations.vorkspeys_poyavitsya_posle_pervogo_soobschen",
+      ),
     };
   }
   return { allowed: true, reason: null, explanation: "" };

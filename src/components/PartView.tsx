@@ -306,7 +306,9 @@ function ReasoningCard({
           <ThinkIcon size={15} />
         </span>
         <span className="text-[13px] font-medium text-foreground/85">
-          {streaming ? t("part_view.razmyshlyaet") : t("part_view.rassuzhdeniya")}
+          {streaming
+            ? t("part_view.razmyshlyaet")
+            : t("part_view.rassuzhdeniya")}
         </span>
         {streaming && (
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
@@ -342,7 +344,9 @@ function ReasoningCard({
           >
             {displayText}
           </ReactMarkdown>
-          {streaming && <span className="streaming-cursor ml-0.5 inline-block w-1.5 h-3 bg-amber-400 animate-pulse" />}
+          {streaming && (
+            <span className="streaming-cursor ml-0.5 inline-block w-1.5 h-3 bg-amber-400 animate-pulse" />
+          )}
         </div>
       )}
     </div>

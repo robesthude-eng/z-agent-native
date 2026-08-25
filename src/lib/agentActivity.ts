@@ -73,7 +73,9 @@ function shorten(value: string): string {
 function inputOf(part: LoosePart): Record<string, unknown> {
   const st = part.state;
   const input =
-    st && typeof st === "object" ? (st as { input?: unknown }).input : undefined;
+    st && typeof st === "object"
+      ? (st as { input?: unknown }).input
+      : undefined;
   return input && typeof input === "object"
     ? (input as Record<string, unknown>)
     : {};
@@ -170,13 +172,22 @@ export function describeAgentActivity(
       label = t("agent_activity.razmyshlyaet");
       break;
     }
-    if (part.type === "text" && typeof part.text === "string" && part.text.trim()) {
+    if (
+      part.type === "text" &&
+      typeof part.text === "string" &&
+      part.text.trim()
+    ) {
       label = t("agent_activity.pishet_otvet");
       break;
     }
   }
 
-  return { label, detail, step: steps.length, steps: steps.slice(-TRAIL_LIMIT) };
+  return {
+    label,
+    detail,
+    step: steps.length,
+    steps: steps.slice(-TRAIL_LIMIT),
+  };
 }
 
 export default describeAgentActivity;

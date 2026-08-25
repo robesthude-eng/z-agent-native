@@ -37,9 +37,17 @@ describe("helpers.ts — Token & Message Processing Architecture", () => {
     });
 
     it("5. preserves literal user text", () => {
-      const raw: Message = { id: "msg_user_1", role: "user", parts: [{ type: "text", text: "Help me check bugs\n\n[SYSTEM: literal]" }] };
+      const raw: Message = {
+        id: "msg_user_1",
+        role: "user",
+        parts: [
+          { type: "text", text: "Help me check bugs\n\n[SYSTEM: literal]" },
+        ],
+      };
       const res = normalizeMessage(raw);
-      expect((res.parts[0] as any).text).toBe("Help me check bugs\n\n[SYSTEM: literal]");
+      expect((res.parts[0] as any).text).toBe(
+        "Help me check bugs\n\n[SYSTEM: literal]",
+      );
     });
 
     it("6. leaves assistant messages untouched by system text cleaning", () => {
@@ -72,7 +80,9 @@ describe("helpers.ts — Token & Message Processing Architecture", () => {
       const res = normalizeMessages(input);
       expect(res).toHaveLength(2);
       expect(res[0]?.id).toBe("m1");
-      expect((res[0]?.parts[0] as any)?.text).toBe("Hi\n\n[SYSTEM: Режим саморазвития тест]");
+      expect((res[0]?.parts[0] as any)?.text).toBe(
+        "Hi\n\n[SYSTEM: Режим саморазвития тест]",
+      );
       expect(res[1]?.id).toBe("m2");
     });
   });
@@ -247,13 +257,16 @@ describe("patchPart() / patchPartDelta() — P3 edge cases", () => {
 
     it("does not append a long SSE paragraph that is already the suffix", () => {
       const paragraph = "Проверю корректность логики — запущу тесты.";
-      const start = [shell([{ id: "p1", type: "text", text: paragraph } as any])];
+      const start = [
+        shell([{ id: "p1", type: "text", text: paragraph } as any]),
+      ];
       const res = patchPartDelta(start, "m1", "p1", "text", paragraph);
       expect((res[0]?.parts[0] as any)?.text).toBe(paragraph);
     });
 
     it("does not append a long replayed first chunk already at the start", () => {
-      const full = "Проверю корректность логики — запущу тесты на движке Node.js.";
+      const full =
+        "Проверю корректность логики — запущу тесты на движке Node.js.";
       const first = full.slice(0, 24);
       const start = [shell([{ id: "p1", type: "text", text: full } as any])];
       const res = patchPartDelta(start, "m1", "p1", "text", first);

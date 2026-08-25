@@ -76,12 +76,20 @@ export function reasonFor(
 ): string | null {
   if (canOpen(state)) return null;
   const what =
-    kind === "terminal" ? t("top_bar.terminal") : kind === "preview" ? t("file_editor.prevyu") : t("workspace.files");
+    kind === "terminal"
+      ? t("top_bar.terminal")
+      : kind === "preview"
+        ? t("file_editor.prevyu")
+        : t("workspace.files");
   switch (state) {
     case "provisioning":
-      return tf("capabilities.0_okruzhenie_podnimaetsya_podozhdite_paru_se", [what]);
+      return tf("capabilities.0_okruzhenie_podnimaetsya_podozhdite_paru_se", [
+        what,
+      ]);
     case "failed":
-      return tf("capabilities.0_okruzhenie_ne_podnyalos_otpravte_soobschen", [what]);
+      return tf("capabilities.0_okruzhenie_ne_podnyalos_otpravte_soobschen", [
+        what,
+      ]);
     case "detaching":
       return tf("capabilities.0_okruzhenie_otklyuchaetsya", [what]);
     case "unavailable":
@@ -121,7 +129,8 @@ export function parsePreviewPath(input: unknown): string | null {
   if (segments.length < 1 || segments.length > 4) return null;
   if (segments.some((s) => !s || !PREVIEW_SEGMENT.test(s))) return null;
   if (segments.some((s) => s === "." || s === "..")) return null;
-  if (!/\.html?$/i.test(segments[segments.length - 1])) return null;
+  const lastSegment = segments.at(-1);
+  if (!lastSegment || !/\.html?$/i.test(lastSegment)) return null;
   return raw;
 }
 

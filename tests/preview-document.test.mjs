@@ -1,8 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import test from 'node:test';
 import { previewDocument, previewIsReady, rewritePreviewHtml } from '../server/native/preview-document.mjs';
 
 function tmp() {
@@ -136,4 +136,21 @@ test('preview html gets a localStorage shim before any script', () => {
   const noHead = rewritePreviewHtml('<!doctype html><html><body>BODYMARK</body></html>');
   assert.ok(noHead.indexOf('__pv_probe') > -1);
   assert.ok(noHead.indexOf('__pv_probe') < noHead.indexOf('BODYMARK'));
+});
+
+test('preview API mock is limited to Z Agent builds and exposes runtime capabilities', () => {
+  const zAgent = rewritePreviewHtml('<!doctype html><html><head><meta name="app-version" content="z-agent-native-v1"></head><body></body></html>');
+  assert.match(zAgent, /__previewMock/);
+  assert.match(zAgent, /\/api\/runtime-capabilities/);
+
+  const generic = rewritePreviewHtml('<!doctype html><html><head><title>Other SPA</title></head><body></body></html>');
+  assert.match(generic, /__pv_probe/);
+  assert.doesNotMatch(generic, /__previewMock/);
+});
+
+test('preview shim injection is idempotent', () => {
+  const html = '<!doctype html><html><head><meta content="z-agent-native-v1" name="app-version"></head><body></body></html>';
+  const once = rewritePreviewHtml(html);
+  const twice = rewritePreviewHtml(once);
+  assert.equal(twice, once);
 });

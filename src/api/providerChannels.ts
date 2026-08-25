@@ -76,7 +76,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let message = text;
-    try { message = JSON.parse(text)?.error || text; } catch {}
+    try {
+      message = JSON.parse(text)?.error || text;
+    } catch {}
     throw new Error(message || `${res.status} ${res.statusText}`);
   }
   if (res.status === 204) return undefined as T;
@@ -90,7 +92,10 @@ function channelPath(id: string, suffix = "") {
 export const providerChannelsApi = {
   list: () => request<{ providers: ProviderChannel[] }>("/provider-channels"),
   save: (input: ProviderChannelSave) =>
-    request<{ provider: ProviderChannel; catalog: ProviderChannelCatalogResult }>("/provider-channels", {
+    request<{
+      provider: ProviderChannel;
+      catalog: ProviderChannelCatalogResult;
+    }>("/provider-channels", {
       method: "POST",
       body: JSON.stringify(input),
     }),
@@ -104,18 +109,26 @@ export const providerChannelsApi = {
       body: "{}",
     }),
   listManualModels: (id: string) =>
-    request<{ models: ProviderChannelManualModel[] }>(channelPath(id, "/manual-models")),
+    request<{ models: ProviderChannelManualModel[] }>(
+      channelPath(id, "/manual-models"),
+    ),
   addManualModel: (id: string, input: ProviderChannelManualModelInput) =>
-    request<{ status: string; available?: boolean | null }>(channelPath(id, "/manual-models"), {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    request<{ status: string; available?: boolean | null }>(
+      channelPath(id, "/manual-models"),
+      {
+        method: "POST",
+        body: JSON.stringify(input),
+      },
+    ),
   /** Проверить Model ID у провайдера, ничего не сохраняя. */
   probeManualModel: (id: string, modelId: string) =>
-    request<ProviderChannelProbeResult>(channelPath(id, "/manual-models/probe"), {
-      method: "POST",
-      body: JSON.stringify({ modelId }),
-    }),
+    request<ProviderChannelProbeResult>(
+      channelPath(id, "/manual-models/probe"),
+      {
+        method: "POST",
+        body: JSON.stringify({ modelId }),
+      },
+    ),
   deleteManualModel: (id: string, modelId: string) =>
     request<{ status: string }>(channelPath(id, "/manual-models"), {
       method: "DELETE",

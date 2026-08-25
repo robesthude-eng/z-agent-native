@@ -60,10 +60,12 @@ function taskOutcomeStatus(message: Message): TaskOutcomeStatus | null {
 
 function strategyChanged(message: Message): boolean {
   return (
-    message.info as
-      | ({ strategy?: { changed?: unknown } } & Record<string, unknown>)
-      | undefined
-  )?.strategy?.changed === true;
+    (
+      message.info as
+        | ({ strategy?: { changed?: unknown } } & Record<string, unknown>)
+        | undefined
+    )?.strategy?.changed === true
+  );
 }
 
 function toolStateStatus(part: ToolPart): string | undefined {
@@ -97,16 +99,20 @@ function formatDuration(ms: number): string {
   if (seconds < 60) return tf("message_item.0_s", [seconds]);
   const minutes = Math.floor(seconds / 60);
   const rest = seconds % 60;
-  if (minutes < 60) return rest ? tf("message_item.0_min_1_s", [minutes, rest]) : tf("message_item.0_min", [minutes]);
+  if (minutes < 60)
+    return rest
+      ? tf("message_item.0_min_1_s", [minutes, rest])
+      : tf("message_item.0_min", [minutes]);
   const hours = Math.floor(minutes / 60);
   const restMinutes = minutes % 60;
-  return restMinutes ? tf("message_item.0_ch_1_min", [hours, restMinutes]) : tf("message_item.0_ch", [hours]);
+  return restMinutes
+    ? tf("message_item.0_ch_1_min", [hours, restMinutes])
+    : tf("message_item.0_ch", [hours]);
 }
 
 function toolInput(part: ToolPart): Record<string, unknown> | null {
   const state = part.state;
-  const input =
-    state && typeof state === "object" ? state.input : part.input;
+  const input = state && typeof state === "object" ? state.input : part.input;
   return input && typeof input === "object"
     ? (input as Record<string, unknown>)
     : null;
@@ -161,7 +167,9 @@ function assistantTurnSummary(messages: Message[]) {
         needsInput = true;
       }
       actions.add(
-        toolPart.callID || toolPart.id || `${message.id}:tool:${anonymousAction++}`,
+        toolPart.callID ||
+          toolPart.id ||
+          `${message.id}:tool:${anonymousAction++}`,
       );
       if (!toolCompleted(toolPart)) continue;
       const input = toolInput(toolPart);
@@ -220,22 +228,27 @@ function answeringModelNote(messages: Message[]): string | null {
       : [];
     const requested = String(candidates[0] || "");
     if (!used || !requested || used === requested) continue;
-    return tf("message_item.otvetila_0", [used.split("/").pop()]);
+    return tf("message_item.otvetila_0", [used.split("/").pop() ?? used]);
   }
   return null;
 }
 
-function turnSummaryLabel(turnMeta: ReturnType<typeof assistantTurnSummary>): string {
+function turnSummaryLabel(
+  turnMeta: ReturnType<typeof assistantTurnSummary>,
+): string {
   if (turnMeta.stopped || turnMeta.outcomeStatus === "cancelled") {
     return t("message_item.ostanovleno_polzovatelem");
   }
   if (turnMeta.needsInput || turnMeta.outcomeStatus === "needs_input") {
     return t("changes_panel.nuzhny_dannye");
   }
-  if (turnMeta.outcomeStatus === "partial") return t("changes_panel.chastichno_vypolneno");
+  if (turnMeta.outcomeStatus === "partial")
+    return t("changes_panel.chastichno_vypolneno");
   if (turnMeta.outcomeStatus === "failed") return t("changes_panel.oshibka");
   if (turnMeta.outcomeStatus === "completed") return t("agent_activity.gotovo");
-  return turnMeta.failed ? t("changes_panel.oshibka") : t("agent_activity.gotovo");
+  return turnMeta.failed
+    ? t("changes_panel.oshibka")
+    : t("agent_activity.gotovo");
 }
 
 /**
@@ -329,7 +342,8 @@ function MessageItem({
     summaryBits.push(turnSummaryLabel(turnMeta));
     const modelNote = answeringModelNote(msgArray);
     if (modelNote) summaryBits.push(modelNote);
-    if (turnMeta.durationMs != null) summaryBits.push(formatDuration(turnMeta.durationMs));
+    if (turnMeta.durationMs != null)
+      summaryBits.push(formatDuration(turnMeta.durationMs));
     if (turnMeta.actionCount > 0) {
       summaryBits.push(
         `${turnMeta.actionCount} ${pluralRu(turnMeta.actionCount, t("message_item.deystvie"), t("message_item.deystviya"), t("message_item.deystviy"))}`,
@@ -437,7 +451,9 @@ function MessageItem({
                 <button
                   type="button"
                   className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-                  title={t("message_item.izmenit_soobschenie_i_perezaprosit_otvet")}
+                  title={t(
+                    "message_item.izmenit_soobschenie_i_perezaprosit_otvet",
+                  )}
                   aria-label={t("message_item.izmenit_soobschenie")}
                   disabled={sessionBusy}
                   onClick={() => {

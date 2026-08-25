@@ -107,6 +107,22 @@ export function shellNetworkPolicy() {
   return ['open', 'guarded', 'tool-only'].includes(value) ? value : 'guarded';
 }
 
+export function sshHostAllowlist() {
+  return String(process.env.Z_AGENT_SSH_ALLOWLIST || '')
+    .split(',')
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+/**
+ * Remote access is a separate trust boundary from read-only web tools.
+ * Empty configuration must never mean "any server": it means disabled.
+ */
+export function sshPolicy() {
+  const value = String(process.env.Z_AGENT_SSH_POLICY || 'off').trim().toLowerCase();
+  return ['off', 'allowlist', 'any'].includes(value) ? value : 'off';
+}
+
 const DIRECT_NETWORK = /(?:^|[;&|\n]\s*|\b)(?:curl|wget|ssh|scp|sftp|ftp|telnet|nc|ncat|socat)\b/i;
 const REMOTE_RSYNC = /\brsync\b[^\n;&|]*(?:\s|^)(?:[^\s:@]+@)?[^\s:]+:/i;
 const INLINE_NETWORK_CODE = /\b(?:python3?|node|ruby|perl)\b[^\n]*(?:https?:\/\/|requests\.|urllib|socket\.|fetch\s*\(|https?\.(?:get|request)\s*\()/i;
@@ -176,7 +192,13 @@ export function assertShellCommandAllowed(command) {
 export function runtimeCapabilityPrompt() {
   const web = agentNetworkPolicy();
   const shell = shellNetworkPolicy();
+  const ssh = sshPolicy();
   const sudo = shellPrivilegePolicy() === 'sudo';
+  const isolatedExecutor = String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') === '1'
+    && String(process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE || '1') !== '0';
+  const installers = web === 'public'
+    && (String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') !== '1'
+      || process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS === '1');
   const lines = ['Runtime capabilities (generated per request; trust this over any general assumption):'];
   if (web === 'public') {
     lines.push('- Internet: enabled. websearch, webfetch and browser reach any public host. Never claim you have no internet access; look things up instead.');
@@ -186,17 +208,29 @@ export function runtimeCapabilityPrompt() {
   } else {
     lines.push('- Internet: disabled for this instance. Do not promise to look anything up online.');
   }
-  if (shell === 'open') {
+  if (isolatedExecutor) {
+    lines.push('- Shell network: autonomous bash/build/test commands run in a networkless executor. Use only enabled structured network tools for external access.');
+  } else if (shell === 'open') {
     lines.push('- Shell network: direct egress is allowed from bash (curl, wget, git clone, package managers).');
   } else if (shell === 'tool-only') {
     lines.push('- Shell network: blocked, including package managers and remote git. Use websearch/webfetch and ensure_environment instead.');
   } else {
     lines.push('- Shell network: direct network clients are blocked, package managers and remote git are allowed. Use websearch/webfetch for public reads.');
   }
+  if (ssh === 'any') {
+    lines.push('- Remote SSH: enabled for any destination through ssh_tool. Use the structured tool instead of bash ssh/scp.');
+  } else if (ssh === 'allowlist') {
+    const hosts = sshHostAllowlist();
+    lines.push(`- Remote SSH: limited to these exact hosts: ${hosts.length ? hosts.join(', ') : '(none configured yet)'}.`);
+  } else {
+    lines.push('- Remote SSH: disabled for this instance.');
+  }
   if (sudo) {
     lines.push('- Elevated shell: sudo is available. Install system packages when the task genuinely needs them, prefer non-destructive commands, and stay out of credentials and files unrelated to the task.');
   } else {
-    lines.push('- Elevated shell: no sudo. Provision missing runtimes with ensure_environment instead of treating them as a blocker.');
+    lines.push(installers
+      ? '- Elevated shell: no sudo. Provision missing runtimes with ensure_environment instead of treating them as a blocker.'
+      : '- Elevated shell: no sudo. Networked installers are disabled; missing system packages must be baked into the image or provisioned by the operator.');
   }
   return lines.join('\n');
 }

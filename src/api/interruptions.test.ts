@@ -277,17 +277,17 @@ describe("ответы на прерывания не создают второ�
 
   it("ни один план ответа не отменяет текущий turn", () => {
     for (const [name, i, a, pid] of all) {
-      expect(`${name}:${planCancelsTurn(replyPlan(i, a, { pendingQuestionId: pid }))}`).toBe(
-        `${name}:false`,
-      );
+      expect(
+        `${name}:${planCancelsTurn(replyPlan(i, a, { pendingQuestionId: pid }))}`,
+      ).toBe(`${name}:false`);
     }
   });
 
   it("ни один план не показывает старое предупреждение об abort", () => {
     for (const [name, i, a, pid] of all) {
-      expect(`${name}:${replyWarning(replyPlan(i, a, { pendingQuestionId: pid }))}`).toBe(
-        `${name}:null`,
-      );
+      expect(
+        `${name}:${replyWarning(replyPlan(i, a, { pendingQuestionId: pid }))}`,
+      ).toBe(`${name}:null`);
     }
   });
 });

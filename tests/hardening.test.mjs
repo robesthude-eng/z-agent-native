@@ -197,6 +197,16 @@ test('production compose isolates autonomous execution in a networkless sibling 
   assert.match(executorBlock, /DAC_OVERRIDE/);
 });
 
+test('the automatically loaded compose override cannot weaken the hardened executor', () => {
+  const override = fs.readFileSync(path.join(repoRoot, 'docker-compose.override.yml'), 'utf8');
+  const trusted = fs.readFileSync(path.join(repoRoot, 'docker-compose.trusted.yml'), 'utf8');
+  assert.doesNotMatch(override, /Z_AGENT_TERMINAL_ENABLED|Z_AGENT_ALLOW_NETWORKED_INSTALLERS|network_mode:\s*!override\s+bridge|Z_AGENT_SSH_POLICY/);
+  assert.match(trusted, /Z_AGENT_TERMINAL_ENABLED:\s*['"]?1['"]?/);
+  assert.match(trusted, /Z_AGENT_ALLOW_NETWORKED_INSTALLERS:\s*['"]?1['"]?/);
+  assert.match(trusted, /network_mode:\s*!override\s+bridge/);
+  assert.match(trusted, /Z_AGENT_SSH_POLICY:\s*any/);
+});
+
 test('production browser has an internal-only network and a separate pinned egress proxy', () => {
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   const browserBlock = compose.match(/^ {2}z-agent-browser:\n([\s\S]*?)(?=^ {2}z-agent-browser-egress:)/m)?.[1] || '';

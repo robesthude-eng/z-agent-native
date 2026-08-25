@@ -134,7 +134,9 @@ export default function FilePreview({
     return (
       <div className="flex flex-1 min-h-0 flex-col">
         <div className="flex shrink-0 items-center justify-between gap-2 border-b border-border bg-muted/40 px-4 py-1.5 text-[11px] text-muted-foreground">
-          <span className="truncate">{t("file_preview.dokument_iz_workspace_etogo_chata")}</span>
+          <span className="truncate">
+            {t("file_preview.dokument_iz_workspace_etogo_chata")}
+          </span>
           <a
             href={url}
             download

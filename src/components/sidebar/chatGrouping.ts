@@ -47,7 +47,12 @@ export function dateGroupLabel(
   return t("chat_grouping.ranshe");
 }
 
-const DATE_ORDER = [t("chat_grouping.segodnya"), t("chat_grouping.vchera"), t("chat_grouping.na_etoy_nedele"), t("chat_grouping.ranshe")];
+const DATE_ORDER = [
+  t("chat_grouping.segodnya"),
+  t("chat_grouping.vchera"),
+  t("chat_grouping.na_etoy_nedele"),
+  t("chat_grouping.ranshe"),
+];
 
 export interface BuildGroupsInput {
   sessions: SessionInfo[];

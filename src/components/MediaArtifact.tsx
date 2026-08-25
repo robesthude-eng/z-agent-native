@@ -40,17 +40,19 @@ export function readMediaArtifact(metadata: unknown): MediaArtifactInfo | null {
   const media = raw as Record<string, unknown>;
   const path = str(media.path);
   if (!path) return null;
+  const mimeType = str(media.mimeType);
+  const engine = str(media.engine);
   const variants = Array.isArray(media.variants)
     ? media.variants.filter((item): item is string => typeof item === "string")
     : undefined;
   return {
     kind: str(media.kind) ?? "file",
     path,
-    mimeType: str(media.mimeType),
-    bytes: typeof media.bytes === "number" ? media.bytes : undefined,
-    engine: str(media.engine),
+    ...(mimeType ? { mimeType } : {}),
+    ...(typeof media.bytes === "number" ? { bytes: media.bytes } : {}),
+    ...(engine ? { engine } : {}),
     degraded: media.degraded === true,
-    variants: variants && variants.length > 1 ? variants : undefined,
+    ...(variants && variants.length > 1 ? { variants } : {}),
   };
 }
 

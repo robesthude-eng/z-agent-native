@@ -28,8 +28,7 @@ import { t, tf } from "@/i18n";
 const SUGGESTIONS = [
   {
     title: t("chat_view.sobrat_proekt"),
-    prompt:
-      t("chat_view.sozday_v_workspace_staticheskuyu_stranicu_le"),
+    prompt: t("chat_view.sozday_v_workspace_staticheskuyu_stranicu_le"),
     icon: FilePlusIcon,
   },
   {
@@ -39,14 +38,12 @@ const SUGGESTIONS = [
   },
   {
     title: t("chat_view.nayti_bag"),
-    prompt:
-      t("chat_view.v_kode_nizhe_est_oshibka_naydi"),
+    prompt: t("chat_view.v_kode_nizhe_est_oshibka_naydi"),
     icon: BugIcon,
   },
   {
     title: t("chat_view.proverit_okruzhenie"),
-    prompt:
-      t("chat_view.pokazhi_v_terminale_versii_node_npm"),
+    prompt: t("chat_view.pokazhi_v_terminale_versii_node_npm"),
     icon: BashIcon,
   },
 ];
@@ -132,12 +129,7 @@ export default function ChatView() {
       document.removeEventListener("visibilitychange", onVisibility);
       window.removeEventListener("online", onOnline);
     };
-  }, [
-    currentID,
-    projectionDisposition,
-    refreshTurnProjection,
-    status,
-  ]);
+  }, [currentID, projectionDisposition, refreshTurnProjection, status]);
 
   const resetNewAnswers = useCallback(() => {
     unreadAssistantIdsRef.current.clear();
@@ -213,7 +205,8 @@ export default function ChatView() {
     if (!streamSignal || atBottomRef.current || !messages?.length) return;
     for (let i = messages.length - 1; i >= 0; i--) {
       const message = messages[i];
-      if (message?.role !== "assistant" || !hasVisibleContent(message)) continue;
+      if (message?.role !== "assistant" || !hasVisibleContent(message))
+        continue;
       if (!unreadAssistantIdsRef.current.has(message.id)) {
         unreadAssistantIdsRef.current.add(message.id);
         setNewAnswerCount(unreadAssistantIdsRef.current.size);
@@ -512,7 +505,9 @@ export default function ChatView() {
           <ChevronDownIcon size={17} />
           {newAnswerCount > 0 && (
             <span>
-              {newAnswerCount === 1 ? t("chat_view.novyy_otvet") : tf("chat_view.0_novyh", [newAnswerCount])}
+              {newAnswerCount === 1
+                ? t("chat_view.novyy_otvet")
+                : tf("chat_view.0_novyh", [newAnswerCount])}
             </span>
           )}
         </button>

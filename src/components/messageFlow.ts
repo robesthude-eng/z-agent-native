@@ -163,7 +163,8 @@ export function groupActivityRuns(items: RenderItem[]): FlowItem[] {
   const out: FlowItem[] = [];
   let run: RenderItem[] = [];
   const flush = () => {
-    if (run.length >= 2 && hasToolCall(run)) out.push({ kind: "activity", items: run });
+    if (run.length >= 2 && hasToolCall(run))
+      out.push({ kind: "activity", items: run });
     else out.push(...run);
     run = [];
   };
@@ -253,7 +254,9 @@ export function runStepCount(items: RenderItem[]): number {
  * ничего, значат только смены рода частей.
  */
 function textContent(part: Part): string {
-  return part.type === "text" ? String((part as { text?: string }).text || "") : "";
+  return part.type === "text"
+    ? String((part as { text?: string }).text || "")
+    : "";
 }
 
 const REPEAT_PREFIX_MIN = 12;
@@ -267,7 +270,13 @@ function collapseDoubledParagraph(part: Part): Part {
     .filter(Boolean);
   const first = blocks[0];
   const second = blocks[1];
-  if (blocks.length === 2 && first && second && first === second && first.length >= REPEAT_PREFIX_MIN) {
+  if (
+    blocks.length === 2 &&
+    first &&
+    second &&
+    first === second &&
+    first.length >= REPEAT_PREFIX_MIN
+  ) {
     const cut = raw.indexOf(second, first.length);
     return {
       ...part,
@@ -296,7 +305,10 @@ export function collapseRepeatedTextParts(parts: Part[]): Part[] {
     if (prev?.type === "text") {
       const prevTrim = textContent(prev).trim();
       if (trimmed && prevTrim === trimmed) continue;
-      if (prevTrim.length >= REPEAT_PREFIX_MIN && trimmed.length >= REPEAT_PREFIX_MIN) {
+      if (
+        prevTrim.length >= REPEAT_PREFIX_MIN &&
+        trimmed.length >= REPEAT_PREFIX_MIN
+      ) {
         if (trimmed.startsWith(prevTrim)) {
           out[out.length - 1] = collapsed;
           continue;

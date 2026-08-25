@@ -4,7 +4,9 @@ import { csrfHeaders, readCsrfCookie } from "./csrfCookie";
 describe("readCsrfCookie", () => {
   it("prefers the __Host- cookie when a leftover unprefixed cookie is present", () => {
     expect(
-      readCsrfCookie("z_agent_csrf=stale-legacy-token-value; __Host-z_agent_csrf=fresh-host-token-value"),
+      readCsrfCookie(
+        "z_agent_csrf=stale-legacy-token-value; __Host-z_agent_csrf=fresh-host-token-value",
+      ),
     ).toBe("fresh-host-token-value");
   });
 
@@ -21,7 +23,9 @@ describe("readCsrfCookie", () => {
 
   it("puts the preferred token on x-csrf-token", () => {
     expect(
-      csrfHeaders("z_agent_csrf=stale-legacy-token-value; __Host-z_agent_csrf=fresh-host-token-value"),
+      csrfHeaders(
+        "z_agent_csrf=stale-legacy-token-value; __Host-z_agent_csrf=fresh-host-token-value",
+      ),
     ).toEqual({ "x-csrf-token": "fresh-host-token-value" });
   });
 });

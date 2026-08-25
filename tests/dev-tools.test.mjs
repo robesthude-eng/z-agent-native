@@ -4,6 +4,10 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
+process.env.Z_AGENT_NETWORK_POLICY = 'public';
+process.env.Z_AGENT_SSH_POLICY = 'any';
+process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS = '1';
+
 import { GIT_ACTIONS, buildGitArgs, executeGitTool, findRepoDir, gitActionMutates, pickInitDir } from '../server/native/git-tool.mjs';
 import { buildTestCommand, formatTestReport, guessFramework, parseTestOutput } from '../server/native/test-runner.mjs';
 import { formatDiagnosticsReport, parseDiagnostics, planDiagnostics } from '../server/native/diagnostics.mjs';

@@ -5,6 +5,8 @@ import os from 'node:os';
 import path from 'node:path';
 
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
+process.env.Z_AGENT_NETWORK_POLICY = 'public';
+process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS = '1';
 const {
   commitEnvironmentRequirement,
   managedShellEnvironment,

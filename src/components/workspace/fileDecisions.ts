@@ -36,7 +36,9 @@ export function editability(
     return {
       editable: false,
       reason: "binary",
-      explanation: t("file_decisions.dvoichnyy_fayl_sohranenie_isportilo_by_soder"),
+      explanation: t(
+        "file_decisions.dvoichnyy_fayl_sohranenie_isportilo_by_soder",
+      ),
     };
   }
   return { editable: true, reason: null, explanation: "" };

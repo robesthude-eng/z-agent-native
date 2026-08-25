@@ -38,7 +38,7 @@ test('assistant replies expose exact turn result action', () => {
   const modal = renderUi(source('src/components/TurnResultModal.tsx'));
   assert.match(item, /TurnResultButton/);
   assert.match(modal, /Откатить весь ход/);
-  assert.match(modal, /более поздняя задача изменила/);
+  assert.match(modal, /более поздняя задача\s+изменила/);
 });
 
 test('CI boots the production compose topology and requires readiness before deploy can succeed', () => {

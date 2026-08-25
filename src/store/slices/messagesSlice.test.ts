@@ -193,7 +193,6 @@ describe("messagesSlice streaming event reducer", () => {
     expect(store.currentID).toBeNull();
   });
 
-
   test("bumps workspace revision on file watcher events", () => {
     expect(store.workspaceRevision[sid] ?? 0).toBe(0);
     store.applyEvent(

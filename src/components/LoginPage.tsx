@@ -59,7 +59,9 @@ export default function LoginPage() {
             &gt;_
           </div>
           <h2 className="text-xl font-semibold tracking-tight">
-            {isRegistering ? t("login_page.registraciya") : t("login_page.vhod")}
+            {isRegistering
+              ? t("login_page.registraciya")
+              : t("login_page.vhod")}
           </h2>
         </CardHeader>
 
@@ -135,7 +137,9 @@ export default function LoginPage() {
 
             {isRegistering && (
               <div className="space-y-2">
-                <Label htmlFor="confirm">{t("login_page.podtverdite_parol")}</Label>
+                <Label htmlFor="confirm">
+                  {t("login_page.podtverdite_parol")}
+                </Label>
                 <Input
                   id="confirm"
                   type="password"

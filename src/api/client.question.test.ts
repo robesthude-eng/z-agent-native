@@ -29,9 +29,9 @@ describe("Question API client", () => {
   it("GET идёт на /question с sessionId только как routing hint", async () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
-      .mockResolvedValue(jsonResponse([
-        { id: "que_1", sessionID: "ses_a", questions: [] },
-      ]));
+      .mockResolvedValue(
+        jsonResponse([{ id: "que_1", sessionID: "ses_a", questions: [] }]),
+      );
 
     const result = await api.listPendingQuestions("ses_a");
 

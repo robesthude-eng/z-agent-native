@@ -19,7 +19,11 @@ import {
 import { log } from "../lib/log";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
-import { QuestionTool, type QuestionConfig, type QuestionAnswer } from "./QuestionTool";
+import {
+  QuestionTool,
+  type QuestionConfig,
+  type QuestionAnswer,
+} from "./QuestionTool";
 import { t, tf } from "@/i18n";
 
 /**
@@ -244,11 +248,15 @@ export default function InterruptionBar() {
             await respondPermission(chosen.id, chosen.response);
             break;
           case "question":
-            if (!currentID) throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
+            if (!currentID)
+              throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
             await api.replyQuestion(currentID, chosen.id, chosen.answers);
             break;
           case "none":
-            log.warn(t("interruption_bar.interruptionbar_otvet_poka_ne_otpravlen"), chosen.reason);
+            log.warn(
+              t("interruption_bar.interruptionbar_otvet_poka_ne_otpravlen"),
+              chosen.reason,
+            );
             toast(
               "error",
               t("interruption_bar.ne_udalos_svyazat_otvet_s_voprosom"),
@@ -263,7 +271,10 @@ export default function InterruptionBar() {
         // месте, кнопки снова активны, и со стороны это неотличимо от «клик не
         // сработал». Ход при этом продолжает ждать.
         log.error(t("interruption_bar.interruptionbar_otvet_ne_otpravlen"), e);
-        toast("error", t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"));
+        toast(
+          "error",
+          t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"),
+        );
       } finally {
         setBusy(false);
       }
@@ -289,12 +300,12 @@ export default function InterruptionBar() {
       id: q.id ?? `q-${idx}`,
       title: q.prompt,
       header: q.title || "Question",
-      description: q.detail || undefined,
+      ...(q.detail ? { description: q.detail } : {}),
       allowCustom: q.allowCustom,
       options: q.options.map((opt, oIdx) => ({
         id: opt.value || `opt-${oIdx}`,
         label: opt.label,
-        description: opt.description,
+        ...(opt.description ? { description: opt.description } : {}),
       })),
     }));
 
@@ -314,7 +325,7 @@ export default function InterruptionBar() {
                 if (ans.text) return [ans.text];
                 return ans.selectedLabels && ans.selectedLabels.length > 0
                   ? ans.selectedLabels
-                  : ans.selectedIds ?? [];
+                  : (ans.selectedIds ?? []);
               });
               setBusy(true);
               try {
@@ -322,7 +333,8 @@ export default function InterruptionBar() {
                 if (currentID && !confirmedQuestionId) {
                   const pending = await api.waitForPendingQuestion(currentID);
                   confirmedQuestionId = pending?.id ?? null;
-                  if (confirmedQuestionId) setPendingQuestionId(confirmedQuestionId);
+                  if (confirmedQuestionId)
+                    setPendingQuestionId(confirmedQuestionId);
                 }
 
                 const chosen = batchReplyPlan(queue, allValues, {
@@ -330,15 +342,30 @@ export default function InterruptionBar() {
                 });
 
                 if (chosen.transport === "question") {
-                  if (!currentID) throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
+                  if (!currentID)
+                    throw new Error(t("interruption_bar.net_aktivnoy_sessii"));
                   await api.replyQuestion(currentID, chosen.id, chosen.answers);
                 } else if (chosen.transport === "none") {
-                  log.warn(t("interruption_bar.interruptionbar_otvet_poka_ne_otpravlen"), chosen.reason);
-                  toast("error", t("interruption_bar.ne_udalos_svyazat_otvet_s_voprosom"));
+                  log.warn(
+                    t(
+                      "interruption_bar.interruptionbar_otvet_poka_ne_otpravlen",
+                    ),
+                    chosen.reason,
+                  );
+                  toast(
+                    "error",
+                    t("interruption_bar.ne_udalos_svyazat_otvet_s_voprosom"),
+                  );
                 }
               } catch (e) {
-                log.error(t("interruption_bar.interruptionbar_otvet_ne_otpravlen"), e);
-                toast("error", t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"));
+                log.error(
+                  t("interruption_bar.interruptionbar_otvet_ne_otpravlen"),
+                  e,
+                );
+                toast(
+                  "error",
+                  t("interruption_bar.otvet_ne_otpravlen_poprobuyte_esche_raz"),
+                );
               } finally {
                 setBusy(false);
               }
@@ -415,7 +442,9 @@ export default function InterruptionBar() {
             >
               {expanded
                 ? t("interruption_bar.svernut")
-                : tf("interruption_bar.pokazat_celikom_svernuto_do_0_strok", [BAR_COLLAPSE_LINES])}
+                : tf("interruption_bar.pokazat_celikom_svernuto_do_0_strok", [
+                    BAR_COLLAPSE_LINES,
+                  ])}
             </button>
           )}
 

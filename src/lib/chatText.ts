@@ -53,7 +53,8 @@ export function buildChatMarkdown(messages: Message[], title: string): string {
   const lines: string[] = [`# ${title}`, ""];
   for (const m of messages) {
     if (m.role === "system") continue;
-    const who = m.role === "user" ? t("chat_text.polzovatel") : t("chat_text.assistent");
+    const who =
+      m.role === "user" ? t("chat_text.polzovatel") : t("chat_text.assistent");
     const when = m.time?.created
       ? new Date(m.time.created).toLocaleString("ru-RU")
       : "";

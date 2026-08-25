@@ -117,7 +117,11 @@ const PERMISSION_LABELS: Record<
   PermissionResponse,
   { label: string; description: string; denial: boolean }
 > = {
-  once: { label: t("interruptions.razreshit"), description: t("interruptions.tolko_etot_vyzov"), denial: false },
+  once: {
+    label: t("interruptions.razreshit"),
+    description: t("interruptions.tolko_etot_vyzov"),
+    denial: false,
+  },
   always: {
     label: t("interruptions.vsegda"),
     description: t("interruptions.do_konca_tekuschey_sessii"),
@@ -294,7 +298,8 @@ export function batchReplyPlan(
   ctx: ReplyContext = {},
 ): ReplyPlan {
   const head = interruptions[0];
-  if (!head) return { transport: "none", reason: t("interruptions.nechego_otpravlyat") };
+  if (!head)
+    return { transport: "none", reason: t("interruptions.nechego_otpravlyat") };
 
   const values = interruptions.map((_, idx) =>
     (answers[idx] ?? []).map((a) => a.trim()).filter(Boolean),
@@ -319,7 +324,10 @@ export function batchReplyPlan(
         // Сервер отвечает 400 на любое другое слово. Отправить и посмотреть —
         // значит оставить ход стоять, а пользователю показать сетевую ошибку
         // вместо причины.
-        return { transport: "none", reason: tf("interruptions.nedopustimyy_otvet_0", [v]) };
+        return {
+          transport: "none",
+          reason: tf("interruptions.nedopustimyy_otvet_0", [v ?? ""]),
+        };
       }
       // Идентификатор проверен внутри `replyTransport`: без него транспорт
       // «permission» не выбирается вовсе.
@@ -348,7 +356,10 @@ export function batchReplyPlan(
             : t("interruptions.net_identifikatora_razresheniya"),
       };
     default:
-      return { transport: "none", reason: t("interruptions.neizvestnyy_transport_otveta") };
+      return {
+        transport: "none",
+        reason: t("interruptions.neizvestnyy_transport_otveta"),
+      };
   }
 }
 

@@ -340,6 +340,9 @@ export const api = {
    */
   capabilities: (id: string) => req<unknown>(`/session/${id}/capabilities`),
 
+  /** Effective runtime policies and tools, with secrets omitted. */
+  runtimeCapabilities: () => req<unknown>("/runtime-capabilities"),
+
   prompt: (id: string, text: string, model?: PromptModel) =>
     req<Message>(
       `/session/${id}/message`,
@@ -466,7 +469,10 @@ export const api = {
       { method: "POST", body: JSON.stringify({ from, to }) },
     ),
 
-  uploadFolder: async (files: { path: string; file: File }[], sessionId: string) => {
+  uploadFolder: async (
+    files: { path: string; file: File }[],
+    sessionId: string,
+  ) => {
     const oversized = files.find(({ file }) => file.size > MAX_UPLOAD_BYTES);
     if (oversized) {
       throw new Error(
@@ -485,13 +491,16 @@ export const api = {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15 * 60_000);
     try {
-      const res = await fetch(`${config.baseUrl}/workspace/upload-folder?sessionId=${encodeURIComponent(sessionId)}`, {
-        method: "POST",
-        credentials: "include",
-        headers: csrfHeaders(),
-        body: form,
-        signal: controller.signal,
-      });
+      const res = await fetch(
+        `${config.baseUrl}/workspace/upload-folder?sessionId=${encodeURIComponent(sessionId)}`,
+        {
+          method: "POST",
+          credentials: "include",
+          headers: csrfHeaders(),
+          body: form,
+          signal: controller.signal,
+        },
+      );
       if (!res.ok) {
         const body = await res.text().catch(() => "");
         throw new Error(`${res.status} ${res.statusText} ${body}`.trim());
@@ -557,7 +566,8 @@ export const api = {
         }
       };
       xhr.onerror = () => reject(new Error("Upload failed — network error"));
-      xhr.ontimeout = () => reject(new Error("Upload timed out after 15 minutes"));
+      xhr.ontimeout = () =>
+        reject(new Error("Upload timed out after 15 minutes"));
       xhr.onabort = () => reject(new Error("Upload cancelled"));
       const form = new FormData();
       form.append("file", file, file.name);
@@ -599,7 +609,8 @@ export const api = {
       body: JSON.stringify({ currentPassword, newPassword }),
     }),
 
-  logout: () => req<{ status: string }>(`/auth/logout`, { method: "POST", body: "{}" }),
+  logout: () =>
+    req<{ status: string }>(`/auth/logout`, { method: "POST", body: "{}" }),
 };
 
 /**

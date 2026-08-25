@@ -106,7 +106,15 @@ npm run prod:env:init
 docker compose up --build -d
 ```
 
-`prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, keeps the interactive terminal off unless opted in, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
+`prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, keeps the interactive terminal, SSH and model-selected Internet off, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
+
+For a trusted single-user machine only, an explicit compatibility overlay enables terminal, public web, SSH, installers and executor network access:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.override.yml -f docker-compose.trusted.yml up --build -d
+```
+
+Listing all three files is intentional: once `-f` is used, Compose no longer discovers the default override automatically. Do not use the trusted overlay on a shared deployment.
 
 ## Models
 
@@ -164,7 +172,7 @@ In Docker each chat also gets a distinct, monotonically allocated Unix UID start
 
 Production treats model-selected code as hostile. The **hard egress boundary for autonomous code is the executor container**, not command-text filtering: `bash`, builds, tests and diagnostics are sent over a Unix-domain socket to `z-agent-executor`, which has `network_mode: none`, no `/data` mount, a per-session UID, per-command RLIMITs and Docker CPU/memory/PID caps. A Python/Node program, `/dev/tcp`, obfuscated shell, or compromised build script therefore still has no container network interface.
 
-The `guarded` / `tool-only` shell policies and sensitive-file filters remain defense in depth. Provider keys never enter tool environments. Model-selected `webfetch`, `websearch` and browser access are **off by default** (`Z_AGENT_NETWORK_POLICY=off`). Operators may opt into a hostname allowlist or `public` compatibility mode. Chromium runs in a separate browser container that receives neither `/data`, provider secrets nor workspace mounts. A minimal root controller owns the private UDS only long enough to launch each chat browser worker through `setpriv --clear-groups --no-new-privs` as that chat's dedicated UID; web content therefore does not share the controller identity or another chat's browser identity. The container is attached only to an internal Docker network; a separate no-secret egress proxy is the only route outward and reapplies destination policy, SSRF validation and DNS pinning at the actual upstream connection. Provider API traffic is separate and remains SSRF-filtered/DNS-pinned in the trusted orchestrator.
+The `guarded` / `tool-only` shell policies and sensitive-file filters remain defense in depth. Provider keys never enter tool environments. Model-selected `webfetch`, `websearch` and browser access are **off by default** (`Z_AGENT_NETWORK_POLICY=off`). Remote SSH is independently fail-closed (`Z_AGENT_SSH_POLICY=off`) and requires either an exact host allowlist or the trusted `any` mode. Operators may opt into a hostname allowlist or `public` compatibility mode. Chromium runs in a separate browser container that receives neither `/data`, provider secrets nor workspace mounts. A minimal root controller owns the private UDS only long enough to launch each chat browser worker through `setpriv --clear-groups --no-new-privs` as that chat's dedicated UID; web content therefore does not share the controller identity or another chat's browser identity. The container is attached only to an internal Docker network; a separate no-secret egress proxy is the only route outward and reapplies destination policy, SSRF validation and DNS pinning at the actual upstream connection. Provider API traffic is separate and remains SSRF-filtered/DNS-pinned in the trusted orchestrator.
 
 For production:
 
@@ -212,6 +220,18 @@ The React/Vitest suite is available through:
 npm test
 npm run typecheck
 ```
+
+Before committing, run the single local quality gate:
+
+```bash
+npm run quality:quick  # types, lint, format, frontend tests, docs and manifests
+npm run quality        # quick gate + native tests + production frontend build
+```
+
+`quality:quick` is the fast inner-loop check. `quality` is the complete local
+gate and should stay green after every architectural refactoring step. The
+quick gate also checks line budgets for the three UI controllers so extracted
+logic cannot silently accumulate back in the top-level components.
 
 ## Runtime data
 
@@ -261,6 +281,8 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_SECURE_COOKIES` | `0` dev / `1` production | Production forces Secure `__Host-` session/CSRF cookies and refuses to start if disabled. |
 | `Z_AGENT_RELAY_URL` | empty | Optional HTTPS relay for provider traffic. Streaming prefers the direct provider URL and only falls back to the relay. The relay sees API keys and prompts. Serverless relays (Cloudflare Workers) typically cut streams after ~30–100s and cannot carry a 30-minute turn. |
 | `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `guarded`, `tool-only`, or `open` application-layer shell egress policy. `tool-only` is the stricter multi-user option; neither mode replaces a network firewall. |
+| `Z_AGENT_SSH_POLICY` | `off` | Remote SSH policy: fail-closed `off`, exact-host `allowlist`, or trusted single-user `any`. |
+| `Z_AGENT_SSH_ALLOWLIST` | empty | Comma-separated exact SSH hosts used only with `Z_AGENT_SSH_POLICY=allowlist`. |
 | `Z_AGENT_SENSITIVE_FILE_POLICY` | `block` | Blocks agent content access to common workspace credential files. `allow` is an explicit compatibility escape hatch. |
 | `Z_AGENT_NETWORK_POLICY` | `off` | Model-selected external network policy: fail-closed `off`, hostname `allowlist`, or trusted compatibility `public`. Provider API traffic is separate. |
 | `Z_AGENT_ALLOW_SUDO` | `0` | `1` allows `sudo`/`su`/`doas` from agent shells and tells the model so in its capability block. Keep `0` on shared hosts: an escalating agent can read other tenants' secrets. |

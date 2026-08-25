@@ -20,7 +20,8 @@ const MARKDOWN_PKGS =
 function manualChunks(id: string): string | undefined {
   const pkg = packageOf(id);
   if (!pkg) return undefined;
-  if (pkg === "react" || pkg === "react-dom" || pkg === "scheduler") return "vendor-react";
+  if (pkg === "react" || pkg === "react-dom" || pkg === "scheduler")
+    return "vendor-react";
   if (pkg.startsWith("@tanstack/")) return "vendor-router";
   if (MARKDOWN_PKGS.test(pkg)) return "vendor-markdown";
   return undefined;
