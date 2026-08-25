@@ -1,6 +1,3 @@
-/** Completion/finalization boundary for agent runtime extraction. */
-export function createCompletionHandler({ finalize }) {
-  return async function complete(context) {
-    return finalize(context);
-  };
+export function createCompletionResult(data = {}) {
+  return { completedAt: Date.now(), ...data };
 }

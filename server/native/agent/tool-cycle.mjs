@@ -1,6 +1,6 @@
-/** Tool execution cycle boundary for agent runtime extraction. */
-export function createToolCycle({ executeToolCall }) {
-  return async function runToolCycle(context) {
-    return executeToolCall(context);
-  };
+// Tool execution boundary extracted for incremental migration.
+export async function executeToolCycle(execute, calls) {
+  const results = [];
+  for (const call of calls ?? []) results.push(await execute(call));
+  return results;
 }
