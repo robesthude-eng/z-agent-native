@@ -86,6 +86,20 @@ test('the most recently rebuilt project wins when several exist', () => {
   assert.equal(previewDocument(root), 'b-proj/dist/index.html');
 });
 
+test('unbuilt vite source index.html is not previewed (would be a white screen)', () => {
+  // Распакованный архив Vite-проекта без сборки: index.html ссылается на
+  // несобранный /src/main.tsx. Превью должно отказаться, а не показать белое.
+  const root = tmp();
+  const project = path.join(root, 'z-agent-native-main');
+  fs.mkdirSync(project, { recursive: true });
+  fs.writeFileSync(path.join(project, 'index.html'), '<!doctype html><html><body><script type="module" src="/src/main.tsx"></script></body></html>');
+  assert.equal(previewDocument(root), null);
+  // После сборки dist/index.html появляется — и превью переключается на него.
+  fs.mkdirSync(path.join(project, 'dist'), { recursive: true });
+  fs.writeFileSync(path.join(project, 'dist', 'index.html'), '<!doctype html><html><body><script type="module" src="assets/index-abc.js"></script></body></html>');
+  assert.equal(previewDocument(root), 'z-agent-native-main/dist/index.html');
+});
+
 test('absolute asset paths in preview html become relative', () => {
   const html = [
     '<!doctype html><html><head>',

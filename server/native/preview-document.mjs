@@ -24,6 +24,25 @@ function mtimeOf(file) {
   try { return fs.statSync(file).mtimeMs; } catch { return 0; }
 }
 
+// Исходный index.html из Vite/CRA-проекта без сборки — не страница, а заглушка:
+// он тянет несобранный /src/main.tsx, который браузер исполнить не может.
+// Превью такой файл открывать не должно — иначе пользователь видит белый экран
+// вместо понятного «проект ещё не собран».
+const DEV_ENTRY_LIMIT = 256 * 1024;
+
+function isRunnableHtml(file) {
+  try {
+    const buf = fs.readFileSync(file);
+    if (buf.length > DEV_ENTRY_LIMIT) return true; // слишком большой — не проверяем, отдаём как есть
+    const html = buf.toString('utf8');
+    if (/@vite\/client/.test(html)) return false;
+    if (/(?:src|href)=["'](?:\/?src\/)[^"']*\.(?:tsx|ts|jsx)(?:["'?])/i.test(html)) return false;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Which workspace HTML the in-product Preview panel should open.
  *
@@ -35,6 +54,9 @@ function mtimeOf(file) {
  * 4. A static project folder one level below the root: project/index.html.
  * 5. The only (or the newest) root-level HTML file — legacy behaviour for
  *    agent-written single-page demos like checkers.html.
+ *
+ * Unbuilt source entries (Vite dev html referencing /src/main.tsx) are skipped:
+ * they cannot render without a build, and previewing them shows a white page.
  */
 export function previewDocument(workspace) {
   const root = String(workspace || '');
@@ -44,14 +66,16 @@ export function previewDocument(workspace) {
   } catch {
     return null;
   }
-  if (isHtmlFile(root, 'index.html')) return 'index.html';
-  if (isHtmlFile(root, 'index.htm')) return 'index.htm';
+  if (isHtmlFile(root, 'index.html') && isRunnableHtml(path.join(root, 'index.html'))) return 'index.html';
+  if (isHtmlFile(root, 'index.htm') && isRunnableHtml(path.join(root, 'index.htm'))) return 'index.htm';
 
   // Собранные приложения и статические проекты.
   const candidates = [];
   const consider = (dir, relDir) => {
     const file = path.join(dir, 'index.html');
-    if (isHtmlFile(dir, 'index.html')) candidates.push({ rel: `${relDir}index.html`, mtime: mtimeOf(file) });
+    if (!isHtmlFile(dir, 'index.html')) return;
+    if (!isRunnableHtml(file)) return;
+    candidates.push({ rel: `${relDir}index.html`, mtime: mtimeOf(file) });
   };
   for (const build of BUILD_DIRS) consider(path.join(root, build), `${build}/`);
   let names;
@@ -76,6 +100,7 @@ export function previewDocument(workspace) {
   const files = [];
   for (const name of names) {
     if (!isHtmlFile(root, name)) continue;
+    if (!isRunnableHtml(path.join(root, name))) continue;
     files.push({ name, mtime: mtimeOf(path.join(root, name)) });
   }
   if (!files.length) return null;

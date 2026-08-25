@@ -71,7 +71,10 @@ export default function TopBar() {
         const raw = await api.capabilities(currentID);
         if (!alive) return;
         setCaps(parseCapabilities(raw));
-        setPreviewPath(parsePreviewPath(raw) || "index.html");
+        // Превью нет (сервер вернул null) — не подставляем дефолтный
+        // index.html: пустой iframe с 404 выглядел как сломанное превью.
+        // Панель покажет заглушку, а когда файл появится — опрос обновит путь.
+        setPreviewPath(parsePreviewPath(raw) || "");
       } catch {
         // Keep the last known state during a short network interruption.
       }
