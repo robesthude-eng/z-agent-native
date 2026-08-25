@@ -50,6 +50,7 @@ export {
 } from './agent/turn-loop.mjs';
 
 export {
+  submitTurn,
   runTurn,
   abortTurn,
   isTurnActive,
