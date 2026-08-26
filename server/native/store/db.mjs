@@ -14,11 +14,6 @@ db.exec(`
   PRAGMA busy_timeout=5000;
   PRAGMA foreign_keys=ON;
 
-  CREATE TABLE IF NOT EXISTS runtime_meta (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-  );
-
   CREATE TABLE IF NOT EXISTS users (
     email TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL,
@@ -58,11 +53,12 @@ db.exec(`
 
   CREATE TABLE IF NOT EXISTS turns (
     session_id TEXT PRIMARY KEY,
+    turn_id TEXT NOT NULL,
     lifecycle TEXT NOT NULL,
     verdict TEXT,
     reason TEXT,
     since INTEGER NOT NULL,
-    turn_id TEXT,
+    updated_at INTEGER NOT NULL,
     FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
   );
 
@@ -71,75 +67,38 @@ db.exec(`
     session_id TEXT NOT NULL,
     questions_json TEXT NOT NULL,
     answers_json TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL,
     created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
     FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
   );
-  CREATE INDEX IF NOT EXISTS idx_questions_session ON questions(session_id);
+  CREATE INDEX IF NOT EXISTS idx_questions_session_status ON questions(session_id, status);
 
   CREATE TABLE IF NOT EXISTS permissions (
     id TEXT PRIMARY KEY,
     session_id TEXT NOT NULL,
     tool TEXT NOT NULL,
-    input_json TEXT NOT NULL,
+    input_json TEXT,
     response TEXT,
-    status TEXT NOT NULL DEFAULT 'pending',
+    status TEXT NOT NULL,
     created_at INTEGER NOT NULL,
+    resolved_at INTEGER,
     FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
   );
-  CREATE INDEX IF NOT EXISTS idx_permissions_session ON permissions(session_id);
-
-  CREATE TABLE IF NOT EXISTS prefs (
-    owner_id TEXT PRIMARY KEY,
-    theme TEXT NOT NULL DEFAULT 'dark',
-    sidebar_collapsed INTEGER NOT NULL DEFAULT 0,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS provider_keys (
-    owner_id TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    key_ciphertext TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    updated_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_id, provider_id),
-    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS provider_models_manual (
-    owner_id TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    name TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_id, provider_id, model_id),
-    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS provider_models_hidden (
-    owner_id TEXT NOT NULL,
-    provider_id TEXT NOT NULL,
-    model_id TEXT NOT NULL,
-    created_at INTEGER NOT NULL,
-    PRIMARY KEY (owner_id, provider_id, model_id),
-    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
-  );
+  CREATE INDEX IF NOT EXISTS idx_permissions_session_status ON permissions(session_id, status);
 
   CREATE TABLE IF NOT EXISTS actions (
     session_id TEXT NOT NULL,
     action_id TEXT NOT NULL,
-    state TEXT NOT NULL DEFAULT 'running',
+    state TEXT NOT NULL,
     result_json TEXT,
-    error_text TEXT,
     created_at INTEGER NOT NULL,
     updated_at INTEGER NOT NULL,
     PRIMARY KEY(session_id, action_id),
     FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS actions_queue (
+  CREATE TABLE IF NOT EXISTS action_queue (
     session_id TEXT NOT NULL,
     action_id TEXT NOT NULL,
     payload_json TEXT NOT NULL,
@@ -148,38 +107,47 @@ db.exec(`
     FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
   );
 
-  CREATE TABLE IF NOT EXISTS auth_failures (
-    bucket TEXT PRIMARY KEY,
-    count INTEGER NOT NULL DEFAULT 0,
-    first_failed_at INTEGER NOT NULL,
-    last_failed_at INTEGER NOT NULL,
-    blocked_until INTEGER NOT NULL DEFAULT 0
+  CREATE TABLE IF NOT EXISTS user_prefs (
+    owner_id TEXT PRIMARY KEY,
+    prefs_json TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
   );
-  CREATE INDEX IF NOT EXISTS idx_auth_failures_blocked ON auth_failures(blocked_until);
 
-  CREATE TABLE IF NOT EXISTS turn_capacity (
-    session_id TEXT PRIMARY KEY,
+  CREATE TABLE IF NOT EXISTS provider_keys (
     owner_id TEXT NOT NULL,
-    leased_at INTEGER NOT NULL,
-    expires_at INTEGER NOT NULL
+    provider_id TEXT NOT NULL,
+    api_key TEXT NOT NULL,
+    updated_at INTEGER NOT NULL,
+    PRIMARY KEY(owner_id, provider_id),
+    FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
   );
-  CREATE INDEX IF NOT EXISTS idx_turn_capacity_owner ON turn_capacity(owner_id);
-  CREATE INDEX IF NOT EXISTS idx_turn_capacity_expires ON turn_capacity(expires_at);
 
-  CREATE TABLE IF NOT EXISTS audit_log (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    event_id TEXT NOT NULL UNIQUE,
-    timestamp INTEGER NOT NULL,
-    category TEXT NOT NULL,
-    action TEXT NOT NULL,
-    outcome TEXT NOT NULL,
-    actor_json TEXT NOT NULL,
-    target_json TEXT NOT NULL,
-    details_json TEXT NOT NULL,
-    signature TEXT NOT NULL
+  CREATE TABLE IF NOT EXISTS provider_models (
+    owner_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    name TEXT,
+    base_url TEXT,
+    is_free INTEGER NOT NULL DEFAULT 0,
+    pattern INTEGER NOT NULL DEFAULT 0,
+    enabled INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(owner_id, provider_id, model_id)
   );
-  CREATE INDEX IF NOT EXISTS idx_audit_log_time ON audit_log(timestamp DESC);
-  CREATE INDEX IF NOT EXISTS idx_audit_log_category ON audit_log(category, timestamp DESC);
+
+  CREATE TABLE IF NOT EXISTS hidden_models (
+    owner_id TEXT NOT NULL,
+    provider_id TEXT NOT NULL,
+    model_id TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY(owner_id, provider_id, model_id)
+  );
+
+  CREATE TABLE IF NOT EXISTS runtime_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
 `);
 
 inspectSchemaCompatibility(db);
@@ -190,6 +158,25 @@ export function closeStore() {
 }
 
 export function storeReadinessCheck() {
-  const result = db.prepare('SELECT 1 as alive').get();
-  return { ok: result?.alive === 1 };
+  const now = Date.now();
+  const row = db.prepare('SELECT 1 AS ok').get();
+  if (row?.ok !== 1) throw new Error('SQLite read probe failed');
+  db.exec('SAVEPOINT readiness_probe');
+  try {
+    db.prepare("INSERT INTO runtime_meta(key,value) VALUES('readiness_probe',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(now));
+    db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe');
+  } catch (error) {
+    try { db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe'); } catch {}
+    throw error;
+  }
+  const schema = inspectSchemaCompatibility(db);
+  if (!schema.compatible) throw new Error(`SQLite schema ${schema.currentVersion} is not compatible with code schema ${LATEST_SCHEMA_VERSION}`);
+  return {
+    ok: true,
+    journalMode: String(db.prepare('PRAGMA journal_mode').get()?.journal_mode || ''),
+    schemaVersion: schema.currentVersion,
+    expectedSchemaVersion: LATEST_SCHEMA_VERSION,
+    newerCompatible: schema.newerCompatible,
+    at: now,
+  };
 }
