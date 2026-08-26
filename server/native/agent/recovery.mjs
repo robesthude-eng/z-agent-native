@@ -7,6 +7,7 @@ import { recordTurnCapacityRejection } from '../metrics.mjs';
 import { toolCallFromPart, toolCallSignature, toolMayHaveSideEffects } from '../agent-parts.mjs';
 import { persistAssistant } from './message-parts.mjs';
 import { activeActions, activeTurns, MAX_ACTIVE_TURNS, MAX_ACTIVE_TURNS_PER_OWNER, TURN_CAPACITY_TTL_MS } from './state.mjs';
+import { executeTurnLifecycle, updateTurn } from './turn-loop.mjs';
 
 export function completedAssistant(message) {
   return Boolean(message?.time?.completed || message?.info?.time?.completed || message?.info?.finish);
@@ -63,7 +64,7 @@ export function interruptedToolParts(assistant) {
   return ambiguous;
 }
 
-export async function resumeDurableJob(job, controller, assistant, executeTurnLifecycle) {
+export async function resumeDurableJob(job, controller, assistant) {
   const refreshed = markDurableJobResuming(job.sessionId) || job;
   return executeTurnLifecycle({
     sessionId: job.sessionId,
@@ -78,7 +79,7 @@ export async function resumeDurableJob(job, controller, assistant, executeTurnLi
   });
 }
 
-export function startDurableRecovery(executeTurnLifecycle, updateTurn) {
+export function startDurableRecovery() {
   let started = 0;
   for (const job of listDurableJobs()) {
     const chat = getChat(job.sessionId, job.ownerId);
@@ -110,7 +111,7 @@ export function startDurableRecovery(executeTurnLifecycle, updateTurn) {
     updateTurn(job.sessionId, { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' }, { allowRuntimeRestartRecovery: true });
     const key = job.actionId ? `${job.sessionId}:${job.actionId}` : '';
     const promise = Promise.resolve()
-      .then(() => resumeDurableJob(job, controller, assistant, executeTurnLifecycle))
+      .then(() => resumeDurableJob(job, controller, assistant))
       .then((result) => {
         if (job.actionId) completeAction(job.sessionId, job.actionId, result);
         clearDurableJob(job.sessionId);

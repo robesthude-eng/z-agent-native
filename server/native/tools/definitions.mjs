@@ -4,12 +4,12 @@ import { SSH_ACTIONS } from '../ssh-tool.mjs';
 import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
 import { BROWSER_ACTIONS } from '../browser-client.mjs';
 import {
-  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, isMediaTool,
+  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS,
 } from '../media.mjs';
 import { subagentKinds } from '../subagents.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
 import { executorRequired } from '../executor-client.mjs';
-import { agentNetworkPolicy, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
+import { agentNetworkPolicy, sshPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
 const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
@@ -187,54 +187,18 @@ export const TOOL_DEFINITIONS = [
   ...MEDIA_TOOL_DEFINITIONS,
 ];
 
-export const MUTATING_TOOLS = new Set([
-  'write', 'edit', 'apply_patch', 'todowrite', 'ensure_environment', 'bash', 'ssh_tool', 'git', 'run_tests', 'diagnostics', 'browser',
-  ...MEDIA_MUTATING_TOOLS,
+const risky = new Set([
+  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool',
+  'generate_image', 'generate_speech', 'render_document', 'render_video', 'convert_media', 'media_info',
 ]);
 
-export function mutatesWorkspace(name, input = {}) {
-  if (name === 'git') {
-    return ['commit', 'create_branch'].includes(String(input?.action || '').toLowerCase());
-  }
-  if (name === 'browser' || name === 'ssh_tool') {
-    return false;
-  }
-  if (isMediaTool(name)) {
-    return MEDIA_MUTATING_TOOLS.includes(name);
-  }
-  return MUTATING_TOOLS.has(name);
+export function requiresPermission(name) {
+  return risky.has(String(name).toLowerCase());
 }
 
-export function requiresPermission(name, input = {}) {
-  if (isMediaTool(name)) {
-    return MEDIA_MUTATING_TOOLS.includes(name);
-  }
-  if (name === 'write' || name === 'edit' || name === 'apply_patch') {
-    return true;
-  }
-  if (name === 'ensure_environment') {
-    return true;
-  }
-  if (name === 'bash') {
-    return true;
-  }
-  if (name === 'git') {
-    const action = String(input?.action || '').toLowerCase();
-    return action === 'commit' || action === 'create_branch';
-  }
-  if (name === 'ssh_tool') {
-    const action = String(input?.action || '').toLowerCase();
-    const serviceAction = String(input?.serviceAction || '').toLowerCase();
-    if (action === 'write' || action === 'patch') return true;
-    if (action === 'service' && serviceAction && serviceAction !== 'status' && serviceAction !== 'journal') return true;
-    if (action === 'exec' && input?.sudo) return true;
-    return false;
-  }
-  if (name === 'browser') {
-    const action = String(input?.action || '').toLowerCase();
-    return ['click', 'type', 'key', 'evaluate'].includes(action);
-  }
-  return false;
+export function mutatesWorkspace(name) {
+  const tool = String(name).toLowerCase();
+  return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
 }
 
 const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];

@@ -3,20 +3,28 @@
  * Modular implementations live in server/native/agent/*.
  */
 
+export { splitReasoningFromContent } from './reasoning-parser.mjs';
 
 export {
+  persistAssistant as persistAssistantMessage,
   emitPart as emitMessagePart,
   emitText as emitAssistantText,
-  persistAssistant as persistAssistantMessage,
 } from './agent/message-parts.mjs';
+
 export {
-  answerQuestion,
+  liveTextSink,
+  sanitizeAssistantParts,
+} from './agent/streaming.mjs';
+
+export {
   askQuestion,
+  answerQuestion,
   rejectQuestion,
   resumePendingQuestion,
   waitForQuestionAnswer,
   waitWithAbort,
 } from './agent/questions.mjs';
+
 export {
   completedAssistant,
   interruptedToolParts,
@@ -24,39 +32,36 @@ export {
   resumeDurableJob,
   startDurableRecovery,
 } from './agent/recovery.mjs';
-export {
-  abortTurn,
-  activeTurnCount,
-  clearAgentSessionState,
-  isTurnActive,
-  resetAgentStateForTests,
-  runTurn,
-  submitTurn,
-  waitForTurnIdle,
-} from './agent/runner.mjs';
-export {
-  liveTextSink,
-  sanitizeAssistantParts,
-} from './agent/streaming.mjs';
 
 export {
-  assistantHasProgress,
   executeCall,
   strategyInfo,
+  assistantHasProgress,
 } from './agent/tool-cycle.mjs';
 
 export {
-  checkpointState,
   executeTurnLifecycle,
-  finalizeAssistant,
-  notifyTurnIdle,
-  safeAttemptInfo,
-  synthesizeTurnSummary,
   updateTurn,
+  notifyTurnIdle,
+  finalizeAssistant,
+  checkpointState,
+  synthesizeTurnSummary,
+  safeAttemptInfo,
 } from './agent/turn-loop.mjs';
-export { splitReasoningFromContent } from './reasoning-parser.mjs';
+
+export {
+  submitTurn,
+  runTurn,
+  abortTurn,
+  isTurnActive,
+  activeTurnCount,
+  waitForTurnIdle,
+  clearAgentSessionState,
+  resetAgentStateForTests,
+} from './agent/runner.mjs';
 
 // Autopilot & Subagent Integration Reference for Test Invariants:
 // buildModelPlan, callModelAutopilot, getProjectContext, rememberProjectTurn, taskStepBudget
 // err?.modelLocked, mode: modelLocked ? 'locked' : 'auto'
 // runSubagent({ ownerId: runtime.ownerId, modelPlan: runtime.modelPlan, input: call.arguments || {}, workspace, signal: controller.signal, projectContext: runtime.projectContext, sessionId })
+// executeTool(call.name, call.arguments || {}, { workspace, sessionId, ownerId: runtime.ownerId,
