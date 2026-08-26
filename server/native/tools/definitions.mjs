@@ -1,14 +1,14 @@
-import { BROWSER_ACTIONS } from '../browser-client.mjs';
-import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
-import { GIT_ACTIONS } from '../git-tool.mjs';
-import {isMediaTool,
-  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, 
-} from '../media.mjs';
-import { shellSandboxAvailable } from '../sandbox.mjs';
-import { SSH_ACTIONS } from '../ssh-tool.mjs';
-import { subagentKinds } from '../subagents.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
-import { agentNetworkPolicy, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
+import { GIT_ACTIONS } from '../git-tool.mjs';
+import { SSH_ACTIONS } from '../ssh-tool.mjs';
+import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
+import { BROWSER_ACTIONS } from '../browser-client.mjs';
+import {
+  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, isMediaTool,
+} from '../media.mjs';
+import { subagentKinds } from '../subagents.mjs';
+import { shellSandboxAvailable } from '../sandbox.mjs';
+import { agentNetworkPolicy, executorRequired, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
 const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
@@ -236,24 +236,14 @@ export function requiresPermission(name, input = {}) {
   return false;
 }
 
-export function availableToolDefinitions() {
-  const allowNetwork = agentNetworkPolicy() !== 'off';
-  const allowRemote = sshPolicy() !== 'off';
-  const sandboxAvailable = shellSandboxAvailable();
+const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
 
-  return TOOL_DEFINITIONS.filter((tool) => {
-    if (tool.name === 'websearch' || tool.name === 'webfetch') {
-      return allowNetwork;
-    }
-    if (tool.name === 'ssh_tool') {
-      return allowRemote;
-    }
-    if (['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser'].includes(tool.name)) {
-      return sandboxAvailable;
-    }
-    if (isMediaTool(tool.name) && MEDIA_SANDBOXED_TOOLS.has(tool.name)) {
-      return sandboxAvailable;
-    }
-    return true;
-  });
+export function availableToolDefinitions() {
+  let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
+  if (agentNetworkPolicy() === 'off') tools = tools.filter((tool) => !['webfetch', 'websearch'].includes(tool.name));
+  if (sshPolicy() === 'off') tools = tools.filter((tool) => tool.name !== 'ssh_tool');
+  if (agentNetworkPolicy() !== 'public' || (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1')) {
+    tools = tools.filter((tool) => tool.name !== 'ensure_environment');
+  }
+  return tools;
 }

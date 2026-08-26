@@ -1,119 +1,114 @@
-import { executeGitTool } from '../git-tool.mjs';
 import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
+import { executeGitTool } from '../git-tool.mjs';
 import { executeSshTool } from '../ssh-tool.mjs';
-import { executeBrowserAction } from './browser.mjs';
-import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
-import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
-import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, executeListFiles, 
-  executeReadFile, executeWriteFile, 
+import { safeWorkspacePath } from '../security.mjs';
+import {
+  executeReadFile, executeListFiles, executeGlobFiles, executeGrepFiles, executeWriteFile, executeEditFile, executeApplyPatch,
 } from './filesystem.mjs';
-import { executeMediaAction, isMediaTool } from './media.mjs';
-import { getTool } from './registry.mjs';
 import {
   execBash, executeBashTool, externalSpawnIdentity, missingCommandHint, sandboxUidHint,
 } from './shell.mjs';
-import { executeWebFetch, executeWebSearch } from './web.mjs';
+import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
+import { executeWebSearch, executeWebFetch } from './web.mjs';
+import { executeRunTests, executeDiagnostics } from './diagnostics.mjs';
+import { executeBrowserAction } from './browser.mjs';
+import { executeMediaAction, isMediaTool } from './media.mjs';
 
 const MAX_TOOL_OUTPUT = 512 * 1024;
+const LIVE_OUTPUT_INTERVAL_MS = 250;
+const LIVE_OUTPUT_TAIL = 4000;
 
-export function truncate(text, max = MAX_TOOL_OUTPUT) {
-  if (!text || text.length <= max) return text;
-  return `${text.slice(0, max)}\n\n(Output truncated at ${(max / 1024).toFixed(0)} KB limit)`;
+function rel(root, full) {
+  return full.startsWith(root) ? full.slice(root.length).replace(/^[/\\]+/, '') : full;
 }
 
-export function textResult(res) {
-  if (typeof res === 'string') return res;
-  if (res && typeof res === 'object') {
-    if (typeof res.text === 'string') return res.text;
-    if (typeof res.output === 'string') return res.output;
-    try {
-      return JSON.stringify(res, null, 2);
-    } catch {
-      return String(res);
-    }
-  }
-  return String(res ?? '');
+export function truncate(text, max = MAX_TOOL_OUTPUT) {
+  const s = String(text ?? '');
+  return s.length <= max ? s : `${s.slice(0, max)}\n\n[output truncated: ${s.length - max} chars omitted]`;
+}
+
+export function textResult(value) {
+  return typeof value === 'string' ? value : JSON.stringify(value, null, 2);
 }
 
 export function toolOutputText(result) {
   return truncate(textResult(result?.output ?? result));
 }
 
-export function createLiveOutput(part, emit) {
-  let timer = null;
-  let pending = '';
-  return {
-    push(chunk) {
-      if (!chunk) return;
-      pending += chunk;
-      if (timer) return;
-      timer = setTimeout(() => {
-        timer = null;
-        if (!pending) return;
-        part.text += pending;
-        pending = '';
-        emit();
-      }, 80);
-    },
-    flush() {
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      if (pending) {
-        part.text += pending;
-        pending = '';
-        emit();
-      }
-    },
-  };
+function liveTail(text) {
+  const s = String(text ?? '');
+  if (s.length <= LIVE_OUTPUT_TAIL) return s;
+  return `[…показан только конец вывода]\n${s.slice(-LIVE_OUTPUT_TAIL)}`;
 }
 
-/**
- * Central tool dispatch boundary.
- * Tool modules should register handlers here instead of growing tools.mjs.
- */
-export async function dispatchTool(name, input, context) {
-  const handler = getTool(name);
-  if (handler && typeof handler === 'function') {
-    return handler(input, context);
-  }
-  return executeTool(name, input, context);
+export function createLiveOutput(onOutput) {
+  if (typeof onOutput !== 'function') return { push() {}, stop() {} };
+  let timer = null;
+  let pending = null;
+  let sent = null;
+  const flush = () => {
+    timer = null;
+    const text = pending;
+    pending = null;
+    if (text == null || text === sent) return;
+    sent = text;
+    try { onOutput(text); } catch {}
+  };
+  return {
+    push(stdout, stderr) {
+      pending = [
+        stdout && `stdout:\n${liveTail(stdout)}`,
+        stderr && `stderr:\n${liveTail(stderr)}`,
+      ].filter(Boolean).join('\n');
+      if (timer) return;
+      timer = setTimeout(flush, LIVE_OUTPUT_INTERVAL_MS);
+      timer.unref?.();
+    },
+    stop() {
+      if (timer) clearTimeout(timer);
+      timer = null;
+      pending = null;
+    },
+  };
 }
 
 export async function executeTool(name, input, ctx = {}) {
   const root = ctx.workspace;
   if (!root) throw new Error('Workspace directory is required for tool execution');
-  const tool = String(name || '').trim();
+  const tool = String(name || '').toLowerCase();
+
+  if (tool === 'question') return { kind: 'question', questions: Array.isArray(input?.questions) ? input.questions : [] };
 
   if (tool === 'read') return await executeReadFile(root, input);
   if (tool === 'list') return executeListFiles(root, input);
   if (tool === 'glob') return executeGlobFiles(root, input);
-  if (tool === 'grep') return await executeGrepFiles(root, input, ctx);
+  if (tool === 'grep') return await executeGrepFiles(root, input);
 
   if (tool === 'repo_map') {
-    const report = await buildRepoMap(root, input || {});
+    const scope = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
+    const map = buildRepoMap(root, scope, {
+      maxFiles: Math.min(Math.max(Number(input?.maxFiles) || 2500, 100), 8000),
+      maxSymbolsPerFile: Math.min(Math.max(Number(input?.maxSymbolsPerFile) || 8, 0), 20),
+    });
     return {
-      output: formatRepoMap(report),
-      title: report.root,
-      metadata: { repoMap: report },
+      output: formatRepoMap(map),
+      title: `Repository map: ${rel(root, scope) || '.'}`,
+      metadata: { repoMap: { scope: map.scope, fileCount: map.fileCount, truncated: map.truncated } },
     };
   }
 
   if (tool === 'write') return executeWriteFile(root, input, ctx.sessionId);
   if (tool === 'edit') return executeEditFile(root, input, ctx.sessionId);
-  if (tool === 'apply_patch') return await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal, execBash);
+  if (tool === 'apply_patch') return await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal);
 
   if (tool === 'todowrite') {
-    return {
-      output: 'Todos updated',
-      title: 'todowrite',
-      metadata: { todos: input?.todos || [] },
-    };
+    const todos = Array.isArray(input?.todos) ? input.todos.slice(0, 30) : [];
+    const lines = todos.map((todo, i) => `${i + 1}. [${todo.status || 'pending'}] ${String(todo.content || '')}`);
+    return { output: lines.join('\n') || 'Todo list cleared', title: 'Updated todos', metadata: { todos } };
   }
 
   if (tool === 'task') {
-    throw new Error('Subagents must be executed by the agent runtime, not the generic tool executor');
+    throw new Error('task is executed by the agent runtime, not the generic tool executor');
   }
 
   if (tool === 'ensure_environment') return await executeEnsureEnvironment(root, input, ctx, execBash);
