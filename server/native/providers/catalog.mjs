@@ -1,6 +1,9 @@
-import { listProviderConfigs } from '../provider-configs.mjs';
 import { getProviderKey, listHiddenModels, listManualModels } from '../store.mjs';
-import { assertSafeProviderUrl, fetchJson, providerAuth, wrapProviderUrl } from './transport.mjs';
+import { listProviderConfigs } from '../provider-configs.mjs';
+import {
+  assertSafeProviderUrl, fetchJson, providerAuth, publicProviderErrorMessage, wrapProviderUrl,
+} from './transport.mjs';
+import { probeModel } from './caller.mjs';
 
 export const FIXTURE_PROVIDER_ID = 'fixture';
 export const FIXTURE_MODEL_ID = 'coding-e2e';
@@ -169,108 +172,203 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
   if (!force && old && Date.now() - old.at < CACHE_MS) return { status: 'cache', models: old.models, fetchedAt: old.at };
 
   try {
-    const raw = await fetchModelList(spec, key);
-    const models = parseModels(spec.kind, raw);
+    const body = await fetchModelList(spec, key);
+    let models = [];
+    if (spec.kind === 'google') {
+      models = (body?.models || []).map((m) => ({ id: String(m.name || '').replace(/^models\//, ''), name: m.displayName || String(m.name || '').replace(/^models\//, '') })).filter((m) => m.id);
+    } else {
+      const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
+      models = rows.map((m) => ({ id: String(m.id || m.name || ''), name: m.display_name || m.name || m.id })).filter((m) => m.id);
+    }
+    models.sort((a, b) => a.name.localeCompare(b.name));
     cache.set(ck, { at: Date.now(), models });
     return { status: 'live', models, fetchedAt: Date.now() };
   } catch (err) {
-    if (err.providerAuthError) return { status: 'unauthorized', models: [], error: err.message };
-    if (old) return { status: 'stale', models: old.models, fetchedAt: old.at, error: err.message };
-    return { status: 'error', models: [], error: err.message };
+    const publicError = publicProviderErrorMessage(err);
+    if (force) {
+      cache.delete(ck);
+      return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: publicError };
+    }
+    if (old) return { status: 'cache', models: old.models, error: publicError, stale: true, fetchedAt: old.at };
+    return { status: err?.providerAuthError ? 'unauthorized' : 'unavailable', models: [], error: publicError };
   }
 }
 
-function parseModels(kind, raw) {
-  const arr = Array.isArray(raw?.data) ? raw.data
-    : Array.isArray(raw?.models) ? raw.models
-    : Array.isArray(raw) ? raw : [];
-  return arr.map((item) => {
-    const id = typeof item === 'string' ? item : item?.id || item?.name || '';
-    if (!id) return null;
-    const cleanId = id.replace(/^models\//, '');
-    const isFree = /:free$/i.test(cleanId) || /free/i.test(cleanId);
-    return {
-      id: cleanId,
-      name: item?.displayName || item?.name || cleanId,
-      description: item?.description || undefined,
-      free: isFree,
-      contextLength: item?.context_length || item?.inputTokenLimit || undefined,
-    };
-  }).filter(Boolean);
+function expandFinitePattern(pattern, limit = 64) {
+  const input = String(pattern || '').trim();
+  if (!input) return [];
+  if (/[*?[]/.test(input)) return [];
+  const values = [input];
+  for (;;) {
+    const idx = values.findIndex((v) => /\{[^{}]+\}/.test(v));
+    if (idx < 0) break;
+    const current = values[idx];
+    const m = /\{([^{}]+)\}/.exec(current);
+    const choices = m[1].split(',').map((x) => x.trim()).filter(Boolean);
+    const next = choices.map((c) => current.slice(0, m.index) + c + current.slice(m.index + m[0].length));
+    values.splice(idx, 1, ...next);
+    if (values.length > limit) throw new Error(`Pattern expands to more than ${limit} models`);
+  }
+  return [...new Set(values)].slice(0, limit);
+}
+
+async function discoveredFromPattern(ownerId, providerId, pattern) {
+  const ck = `${ownerId}:${providerId}:${pattern.model_id}:${pattern.base_url || ''}`;
+  const old = discoveryCache.get(ck);
+  if (old && Date.now() - old.at < 10 * 60 * 1000) return old.models;
+  const candidates = expandFinitePattern(pattern.model_id);
+  const found = [];
+  for (let i = 0; i < candidates.length; i += 4) {
+    const batch = candidates.slice(i, i + 4);
+    const results = await Promise.all(batch.map(async (modelId) => ({ modelId, result: await probeModel(ownerId, providerId, { modelId, baseUrl: pattern.base_url }) })));
+    for (const x of results) if (x.result.available) found.push(x.modelId);
+  }
+  discoveryCache.set(ck, { at: Date.now(), models: found });
+  return found;
+}
+
+function manualProviderId(providerId, model) {
+  return model.base_url ? `custom:${providerId}:${Buffer.from(model.base_url).toString('base64url').slice(0, 20)}` : providerId;
 }
 
 export async function buildCatalog(ownerId, { force = false } = {}) {
+  const models = [];
+  const providers = {};
+  const hiddenByProvider = {};
   const specs = effectiveSpecs(ownerId);
-  const hidden = new Set(listHiddenModels(ownerId));
-  const manual = listManualModels(ownerId);
-  const catalog = {};
-
-  if (fixtureProviderEnabled()) {
-    catalog[FIXTURE_PROVIDER_ID] = {
-      provider: { id: FIXTURE_PROVIDER_ID, name: 'Deterministic Fixture', kind: 'fixture', custom: false },
-      status: 'fixture',
-      models: [{
-        id: FIXTURE_MODEL_ID,
-        name: 'Deterministic coding fixture (offline)',
-        free: true,
-        contextLength: 32_000,
-        manual: false,
-        hidden: false,
-      }],
-      fetchedAt: Date.now(),
-    };
-  }
-
   for (const [providerId, spec] of Object.entries(specs)) {
-    if (spec.enabled === false) continue;
-    const res = await fetchModels(ownerId, providerId, { force });
-    const liveIds = new Set();
-    const models = [];
-    for (const m of res.models) {
-      liveIds.add(m.id);
-      const fullId = `${providerId}/${m.id}`;
-      models.push({ ...m, manual: false, hidden: hidden.has(fullId) });
-    }
-    for (const m of manual.filter((x) => x.providerID === providerId)) {
-      if (!liveIds.has(m.modelID)) {
-        const fullId = `${providerId}/${m.modelID}`;
-        models.push({ id: m.modelID, name: m.name || m.modelID, manual: true, hidden: hidden.has(fullId) });
-      }
-    }
-    catalog[providerId] = {
-      provider: { id: providerId, name: spec.name, kind: spec.kind, custom: Boolean(spec.custom) },
-      status: res.status,
-      error: res.error,
-      models,
-      fetchedAt: res.fetchedAt,
+    const found = await fetchModels(ownerId, providerId, { force });
+    providers[providerId] = {
+      status: found.status,
+      count: found.models.length,
+      ...(found.error ? { error: found.error } : {}),
+      ...(found.stale ? { stale: true } : {}),
+      ...(found.fetchedAt ? { fetchedAt: found.fetchedAt } : {}),
     };
+    const hiddenList = listHiddenModels(ownerId, providerId);
+    if (hiddenList.length) hiddenByProvider[providerId] = hiddenList;
+    const hidden = new Set(hiddenList);
+    for (const model of found.models) {
+      if (hidden.has(model.id)) continue;
+      models.push({ providerID: providerId, sourceProviderID: providerId, providerName: spec.name, modelID: model.id, modelName: model.name, free: false, source: 'catalog', status: found.status });
+    }
+    for (const manual of listManualModels(ownerId, providerId)) {
+      if (!manual.enabled) continue;
+      if (manual.pattern) {
+        let discovered = [];
+        try { discovered = await discoveredFromPattern(ownerId, providerId, manual); } catch { discovered = []; }
+        for (const modelId of discovered) {
+          if (hidden.has(modelId)) continue;
+          models.push({
+            providerID: manualProviderId(providerId, manual), sourceProviderID: providerId,
+            providerName: manual.base_url ? `${spec.name} · Custom` : spec.name,
+            modelID: modelId, modelName: modelId, free: manual.is_free, source: 'discovered',
+            endpoint: manual.base_url, status: 'live',
+          });
+        }
+        continue;
+      }
+      if (hidden.has(manual.model_id)) continue;
+      models.push({
+        providerID: manualProviderId(providerId, manual),
+        sourceProviderID: providerId,
+        providerName: manual.base_url ? `${spec.name} · Custom` : spec.name,
+        modelID: manual.model_id,
+        modelName: manual.name || manual.model_id,
+        free: manual.is_free,
+        source: manual.base_url ? 'custom' : 'manual',
+        endpoint: manual.base_url,
+        status: 'live',
+      });
+    }
   }
-  return catalog;
+  if (fixtureProviderEnabled()) {
+    providers[FIXTURE_PROVIDER_ID] = { status: 'live', count: 1 };
+    models.unshift({
+      providerID: FIXTURE_PROVIDER_ID,
+      sourceProviderID: FIXTURE_PROVIDER_ID,
+      providerName: 'Deterministic Fixture',
+      modelID: FIXTURE_MODEL_ID,
+      modelName: 'Coding E2E Fixture',
+      free: true,
+      source: 'fixture',
+      status: 'live',
+    });
+  }
+  const unique = new Map();
+  for (const m of models) unique.set(`${m.providerID}\0${m.modelID}`, m);
+  const defaults = {};
+  const configured = String(process.env.Z_AGENT_DEFAULT_MODEL || '').trim();
+  if (configured.includes('/')) {
+    const slash = configured.indexOf('/');
+    const providerID = configured.slice(0, slash);
+    const modelID = configured.slice(slash + 1);
+    if (providerID && modelID) defaults[providerID] = modelID;
+  }
+  return { models: [...unique.values()], providers, hidden: hiddenByProvider, default: defaults, generatedAt: Date.now() };
 }
 
 export function resolveModel(ownerId, model) {
-  if (typeof model !== 'string' || !model.trim()) throw Object.assign(new Error('Model is required'), { statusCode: 400 });
-  const trimmed = model.trim();
-  if (fixtureProviderEnabled() && (trimmed === `${FIXTURE_PROVIDER_ID}/${FIXTURE_MODEL_ID}` || trimmed === FIXTURE_MODEL_ID)) {
+  let providerID = '';
+  let modelID = '';
+  if (typeof model === 'string') {
+    const slash = model.indexOf('/');
+    if (slash !== -1) {
+      providerID = model.slice(0, slash);
+      modelID = model.slice(slash + 1);
+    }
+  } else if (model && typeof model === 'object') {
+    providerID = model.providerID || model.providerId || '';
+    modelID = model.modelID || model.modelId || '';
+  }
+  if (!providerID || !modelID) throw Object.assign(new Error('Модель не выбрана'), { statusCode: 400 });
+
+  if (providerID === FIXTURE_PROVIDER_ID) {
+    if (!fixtureProviderEnabled() || modelID !== FIXTURE_MODEL_ID) {
+      throw Object.assign(new Error('Fixture model is unavailable'), { statusCode: 404 });
+    }
     return {
-      providerId: FIXTURE_PROVIDER_ID,
-      displayProviderId: FIXTURE_PROVIDER_ID,
-      modelId: FIXTURE_MODEL_ID,
-      spec: { id: FIXTURE_PROVIDER_ID, name: 'Deterministic Fixture', kind: 'fixture', baseURL: '', enabled: true, custom: false, trustedBaseURL: true },
-      key: 'fixture-key',
+      providerId: providerID,
+      displayProviderId: providerID,
+      modelId: modelID,
+      spec: { id: providerID, name: 'Deterministic Fixture', kind: 'fixture', baseURL: '', enabled: true },
+      key: '',
       trustedBaseURL: true,
     };
   }
 
-  const slash = trimmed.indexOf('/');
-  if (slash === -1) throw Object.assign(new Error(`Model reference "${model}" must be in provider/model format`), { statusCode: 400 });
-  const providerID = trimmed.slice(0, slash);
-  const modelID = trimmed.slice(slash + 1);
   const specs = effectiveSpecs(ownerId);
+  if (providerID.startsWith('custom:')) {
+    for (const [sourceId, spec] of Object.entries(specs)) {
+      const manual = listManualModels(ownerId, sourceId).find((m) => {
+        if (!m.enabled || manualProviderId(sourceId, m) !== providerID) return false;
+        if (!m.pattern) return m.model_id === modelID;
+        try { return expandFinitePattern(m.model_id).includes(modelID); } catch { return false; }
+      });
+      if (manual) {
+        return {
+          providerId: sourceId,
+          displayProviderId: providerID,
+          modelId: modelID,
+          spec: { ...spec, baseURL: manual.base_url },
+          key: getProviderKey(ownerId, sourceId),
+          trustedBaseURL: false,
+        };
+      }
+    }
+  }
+
   const spec = specs[providerID];
-  if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
   const key = getProviderKey(ownerId, providerID);
+  if (!spec) throw Object.assign(new Error(`Неизвестный провайдер: ${providerID}`), { statusCode: 400 });
   if (spec.enabled === false) throw Object.assign(new Error(`Провайдер ${spec.name} выключен`), { statusCode: 400 });
   if (!key) throw Object.assign(new Error(`API key для ${spec.name} не настроен`), { statusCode: 400 });
-  return { providerId: providerID, displayProviderId: providerID, modelId: modelID, spec, key, trustedBaseURL: Boolean(spec.trustedBaseURL) };
+  return {
+    providerId: providerID,
+    displayProviderId: providerID,
+    modelId: modelID,
+    spec,
+    key,
+    trustedBaseURL: Boolean(spec.trustedBaseURL),
+  };
 }
