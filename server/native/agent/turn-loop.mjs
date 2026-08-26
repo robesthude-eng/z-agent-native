@@ -357,17 +357,17 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
         checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
         const loop = observeToolLoop(loopGuard, call, result);
-        if (loop?.stop) {
-          guardedStop = guardStopError(loop.stop);
+        if (loop) {
+          guardedStop = guardStopError(loop);
           break;
         }
       }
     }
 
-    if (guardedStop) {
-      const satisfies = loopStopSatisfiesTask(guardedStop.kind, strategy);
-      const outcome = classifyTaskOutcome({ strategy, kind: 'loop_guard', stopKind: guardedStop.kind, satisfies });
-      const summary = synthesizeTurnSummary({ strategy, outcome, note: guardedStop.message });
+    if (guardedStop && loopStopSatisfiesTask(strategy)) {
+      const outcome = classifyTaskOutcome({ strategy, kind: 'completed', reason: 'verified_repeat_stop' });
+      const hasText = (assistant.parts || []).some((part) => part.type === 'text' && String(part.text || '').trim());
+      if (!hasText) await emitText(assistant, synthesizeTurnSummary({ strategy, outcome }), 'text', { putMessage, emit });
       return await finalizeAssistant({
         sessionId,
         assistant,
@@ -376,16 +376,19 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         outcome,
         telemetry: runtime?.telemetry,
         finish: 'stop',
-        note: summary,
         lifecycle: 'completed',
         verdict: 'completed',
-        reason: guardedStop.kind,
+        reason: outcome.reason,
       });
     }
 
-    const outcome = classifyTaskOutcome({ strategy, kind: 'step_limit' });
-    const limitError = stepLimitError(maxSteps);
-    const summary = synthesizeTurnSummary({ strategy, outcome, error: limitError });
+    const stopError = guardedStop || stepLimitError(maxSteps);
+    const progress = assistantHasProgress(assistant, strategy);
+    const outcome = classifyTaskOutcome({ strategy, kind: 'failed', reason: stopError.code, progress });
+    const failed = outcome.status === 'failed';
+    const note = guardedStop
+      ? `${guardedStop.message} ${failed ? 'Безопасная защита остановила задачу.' : 'Выполненная часть сохранена; задача остановлена, чтобы не продолжать цикл.'}`
+      : `Достигнут безопасный лимит ${maxSteps} шагов автономной работы. ${failed ? 'Задачу не удалось довести до результата.' : 'Выполненная часть сохранена, но задача может быть завершена не полностью.'}`;
     return await finalizeAssistant({
       sessionId,
       assistant,
@@ -393,12 +396,12 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       usage: lastUsage,
       outcome,
       telemetry: runtime?.telemetry,
-      finish: 'length',
-      note: summary,
-      error: limitError,
-      lifecycle: 'failed',
-      verdict: 'failed',
-      reason: 'step_limit',
+      finish: failed ? 'error' : 'stop',
+      note,
+      error: failed ? stopError : null,
+      lifecycle: failed ? 'failed' : 'completed',
+      verdict: failed ? 'failed' : 'completed',
+      reason: stopError.code,
     });
   } catch (err) {
     if (err?.name === 'AbortError' || controller.signal.aborted) {
