@@ -198,10 +198,10 @@ export default function ModelSelector() {
     <div className="relative" ref={ref}>
       <button
         type="button"
-        className="flex max-w-full items-center gap-2 rounded-lg border border-border bg-card px-2 py-1.5 text-[11px] text-foreground shadow-none transition hover:bg-accent md:px-3"
+        className="flex max-w-[190px] sm:max-w-none items-center gap-1.5 rounded-lg border border-border bg-card px-2.5 py-1 text-xs font-medium text-foreground shadow-none transition hover:bg-accent md:px-3 md:py-1.5"
         onClick={() => setOpen((value) => !value)}
       >
-        <span className="flex min-w-0 items-center gap-2">
+        <span className="flex min-w-0 items-center gap-1.5">
           {automatic ? (
             <span
               className="h-2 w-2 shrink-0 rounded-full bg-primary"
@@ -218,7 +218,7 @@ export default function ModelSelector() {
             current && <StatusDot model={current} />
           )}
           <span
-            className="truncate"
+            className="truncate font-medium"
             title={missing ? MISSING_MODEL_TITLE : undefined}
           >
             {automatic
@@ -248,7 +248,7 @@ export default function ModelSelector() {
             </span>
           )}
         </span>
-        <span className="shrink-0">
+        <span className="shrink-0 text-muted-foreground">
           <ChevronDownIcon size={14} />
         </span>
       </button>

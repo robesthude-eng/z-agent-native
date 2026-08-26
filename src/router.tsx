@@ -319,26 +319,23 @@ function AppShell() {
               <button
                 type="button"
                 aria-label={t("router.zakryt_panel_faylov")}
-                className="absolute inset-0 z-40 bg-black/50 md:hidden"
+                className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm md:hidden animate-in fade-in duration-200"
                 onClick={() => setWorkspaceOpen(false)}
               />
             )}
 
-            {/* Правый сайдбар (Workspace): плавная анимация ширины.
-                inert + aria-hidden убирают панель из pointer/focus/accessibility
-                tree когда закрыта, чтобы её DOM не перехватывал клики от
-                sidebar backdrop или чата. */}
+            {/* Правый сайдбар (Workspace): на мобильных плавно выезжает на всю ширину экрана */}
             <div
               inert={!workspaceOpen || undefined}
               aria-hidden={!workspaceOpen}
               className={cn(
-                "absolute right-0 top-0 bottom-0 z-50 md:relative shrink-0 transition-all duration-300 ease-in-out overflow-hidden bg-background md:bg-transparent",
+                "absolute inset-y-0 right-0 z-50 md:relative shrink-0 transition-all duration-300 ease-in-out overflow-hidden bg-background md:bg-transparent",
                 workspaceOpen
-                  ? "w-[85vw] max-w-[320px] md:w-80 opacity-100 border-l border-border md:border-none shadow-lg md:shadow-none"
-                  : "w-0 opacity-0",
+                  ? "w-full sm:w-[380px] md:w-80 opacity-100 border-l border-border md:border-none shadow-2xl md:shadow-none translate-x-0"
+                  : "w-0 opacity-0 translate-x-full md:translate-x-0 pointer-events-none md:pointer-events-auto",
               )}
             >
-              <div className="w-[85vw] max-w-[320px] md:w-80 h-full flex flex-col min-h-0">
+              <div className="w-full sm:w-[380px] md:w-80 h-full flex flex-col min-h-0 bg-card md:bg-transparent">
                 <ErrorBoundary
                   fallback={(m: string) => <PanelCrash message={m} />}
                 >
