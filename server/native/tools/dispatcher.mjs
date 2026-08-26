@@ -99,7 +99,10 @@ export async function executeTool(name, input, ctx = {}) {
 
   if (tool === 'write') return executeWriteFile(root, input, ctx.sessionId);
   if (tool === 'edit') return executeEditFile(root, input, ctx.sessionId);
-  if (tool === 'apply_patch') return await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal);
+  if (tool === 'apply_patch') {
+    const result = await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal);
+    return { ...result, mutatedPaths: ['.'] };
+  }
 
   if (tool === 'todowrite') {
     const todos = Array.isArray(input?.todos) ? input.todos.slice(0, 30) : [];

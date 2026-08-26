@@ -196,18 +196,18 @@ export function mutatesWorkspace(name, input = {}) {
   if (name === 'git') {
     return ['commit', 'create_branch'].includes(String(input?.action || '').toLowerCase());
   }
-  if (name === 'browser') {
+  if (name === 'browser' || name === 'ssh_tool') {
     return false;
   }
-  if (name === 'ssh_tool') {
-    return false;
+  if (isMediaTool(name)) {
+    return MEDIA_MUTATING_TOOLS.includes(name);
   }
   return MUTATING_TOOLS.has(name);
 }
 
 export function requiresPermission(name, input = {}) {
   if (isMediaTool(name)) {
-    return MEDIA_MUTATING_TOOLS.has(name);
+    return MEDIA_MUTATING_TOOLS.includes(name);
   }
   if (name === 'write' || name === 'edit' || name === 'apply_patch') {
     return true;

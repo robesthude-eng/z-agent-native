@@ -22,7 +22,7 @@ import { handleModelRoutes } from './routes/models.mjs';
 import { handleTokenPreview, servePreviewFile } from './routes/preview.mjs';
 
 const STARTED_AT = Date.now();
-let DRAINING = false;
+let DRAINING = false; // status: 'draining'
 let SHUTTING_DOWN = false;
 const SHUTDOWN_GRACE_MS = Math.min(Math.max(Number(process.env.Z_AGENT_SHUTDOWN_GRACE_MS) || 60_000, 5_000), 10 * 60 * 1000);
 pruneExpiredDurableJobs();
