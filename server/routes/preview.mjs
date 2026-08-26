@@ -60,10 +60,28 @@ export function previewSecurityPolicy(req) {
 export function servePreviewFile(req, res, psid, rawRelative) {
   let relative;
   try { relative = rawRelative.split('/').map(decodeURIComponent).join('/'); }
-  catch { return sendJson(res, 400, { error: 'Bad request' }); }
-  const full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
-  const st = fs.statSync(full);
-  if (!st.isFile()) return sendJson(res, 404, { error: 'Not a file' });
+  catch {
+    sendJson(res, 400, { error: 'Bad request' });
+    return;
+  }
+  let full;
+  try {
+    full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
+  } catch (err) {
+    sendJson(res, err?.statusCode || 403, { error: err?.message || 'Forbidden' });
+    return;
+  }
+  let st;
+  try {
+    st = fs.statSync(full);
+  } catch {
+    sendJson(res, 404, { error: 'Not found' });
+    return;
+  }
+  if (!st.isFile()) {
+    sendJson(res, 404, { error: 'Not a file' });
+    return;
+  }
 
   if (/\.html?$/i.test(full) && st.size > 0 && st.size <= PREVIEW_HTML_REWRITE_LIMIT) {
     let rewritten = null;
@@ -78,7 +96,8 @@ export function servePreviewFile(req, res, psid, rawRelative) {
         'referrer-policy': 'no-referrer',
         'cache-control': 'no-store',
       });
-      return res.end(rewritten);
+      res.end(rewritten);
+      return;
     }
   }
 
@@ -91,14 +110,17 @@ export function servePreviewFile(req, res, psid, rawRelative) {
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
   });
-  return fs.createReadStream(full).pipe(res);
+  fs.createReadStream(full).pipe(res);
 }
 
 export function handleTokenPreview(req, res, p) {
   const tokenPreview = /^\/api\/preview\/([a-f0-9]{64})\/~\/(.*)$/.exec(p);
   if (tokenPreview && req.method === 'GET') {
     const grant = resolvePreviewToken(tokenPreview[1]);
-    if (!grant || !ownsChat(grant.sessionId, grant.ownerId)) return sendJson(res, 404, { error: 'Not found' });
+    if (!grant || !ownsChat(grant.sessionId, grant.ownerId)) {
+      sendJson(res, 404, { error: 'Not found' });
+      return true;
+    }
     servePreviewFile(req, res, grant.sessionId, tokenPreview[2]);
     return true;
   }

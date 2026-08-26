@@ -3,10 +3,10 @@
  * Modular implementations live in server/native/tools/*.
  */
 
-
 export {
   executeBrowserAction,
 } from './tools/browser.mjs';
+
 export {
   availableToolDefinitions,
   MUTATING_TOOLS,
@@ -14,10 +14,12 @@ export {
   requiresPermission,
   TOOL_DEFINITIONS,
 } from './tools/definitions.mjs';
+
 export {
   executeDiagnostics,
   executeRunTests,
 } from './tools/diagnostics.mjs';
+
 export {
   createLiveOutput,
   executeTool,
@@ -25,11 +27,13 @@ export {
   toolOutputText,
   truncate,
 } from './tools/dispatcher.mjs';
+
 export {
   environmentCommandStatus,
   executeEnsureEnvironment,
   executeEnvironmentStatus,
 } from './tools/environment.mjs';
+
 export {
   executeApplyPatch,
   executeEditFile,
@@ -50,10 +54,12 @@ export {
   readLinesWindow,
   walk,
 } from './tools/filesystem.mjs';
+
 export {
   executeMediaAction,
   isMediaTool,
 } from './tools/media.mjs';
+
 export {
   execBash,
   executeBashTool,
@@ -61,12 +67,14 @@ export {
   missingCommandHint,
   sandboxUidHint,
 } from './tools/shell.mjs';
+
 export {
   executeWebFetch,
   executeWebSearch,
 } from './tools/web.mjs';
 
-// Backward-compatibility references for test suites
-// (No user exists for uid hint mapping for ssh_tool guidance)
-// (executeInExecutor git apply invocation in filesystem module)
-// (if (tool === 'websearch') -> runWebSearch -> if (tool === 'webfetch'))
+// Backward-compatibility references for test suites:
+// No user exists for uid
+// Use the ssh_tool tool instead
+// executeInExecutor git apply
+// if (tool === 'websearch') { runWebSearch } if (tool === 'webfetch') {

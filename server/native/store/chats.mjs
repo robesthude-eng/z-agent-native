@@ -5,9 +5,15 @@ import { insertAuditEventInCurrentTransaction } from './actions.mjs';
 import { db } from './db.mjs';
 
 function bootstrapSandboxUids() {
-  const minUid = 20_000;
-  const maxExisting = Number(db.prepare('SELECT MAX(sandbox_uid) AS m FROM chats').get()?.m || 0);
-  const wanted = Math.max(minUid, maxExisting + 1);
+  let next = Number(db.prepare('SELECT MAX(sandbox_uid) max_uid FROM chats').get()?.max_uid || 19999) + 1;
+  next = Math.max(20000, next);
+  for (const row of db.prepare('SELECT id FROM chats WHERE sandbox_uid IS NULL ORDER BY created_at,id').all()) {
+    db.prepare('UPDATE chats SET sandbox_uid=? WHERE id=?').run(next, row.id);
+    next += 1;
+  }
+  const current = Number(db.prepare("SELECT value FROM runtime_meta WHERE key='sandbox_uid_next'").get()?.value || 0);
+  const floor = Number(db.prepare('SELECT MAX(sandbox_uid) max_uid FROM chats').get()?.max_uid || 19999) + 1;
+  const wanted = Math.max(20000, floor, current);
   db.prepare("INSERT INTO runtime_meta(key,value) VALUES('sandbox_uid_next',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(wanted));
 }
 
@@ -16,7 +22,9 @@ bootstrapSandboxUids();
 export function allocateSandboxUid() {
   db.prepare("INSERT OR IGNORE INTO runtime_meta(key,value) VALUES('sandbox_uid_next','20000')").run();
   const row = db.prepare("UPDATE runtime_meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='sandbox_uid_next' RETURNING value").get();
-  return Number(row?.value || 20000);
+  const uid = Number(row?.value) - 1;
+  if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error('Sandbox Unix identity space exhausted');
+  return uid;
 }
 
 export function workspaceFor(sessionId) {
