@@ -2,8 +2,9 @@ import { memo, useState } from "react";
 import type { Message } from "../api/types";
 import { messageText as getMessageText } from "../lib/chatText";
 import { useStore } from "../store/useStore";
-import { AssistantMessageBubble } from "./message/AssistantMessageBubble";
 import { UserMessageBubble } from "./message/UserMessageBubble";
+import { AssistantMessageBubble } from "./message/AssistantMessageBubble";
+// TurnResultButton is rendered via MessageActions inside AssistantMessageBubble
 
 interface MessageItemProps {
   messages: Message | Message[];

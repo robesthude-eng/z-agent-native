@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { DATA_DIR, DB_PATH, WORKSPACES_DIR } from '../config.mjs';
-import { inspectSchemaCompatibility, LATEST_SCHEMA_VERSION, runMigrations } from '../migrations.mjs';
+import { LATEST_SCHEMA_VERSION, inspectSchemaCompatibility, runMigrations } from '../migrations.mjs';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(WORKSPACES_DIR, { recursive: true });
@@ -13,6 +13,12 @@ db.exec(`
   PRAGMA journal_mode=WAL;
   PRAGMA busy_timeout=5000;
   PRAGMA foreign_keys=ON;
+
+  CREATE TABLE IF NOT EXISTS runtime_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
+
   CREATE TABLE IF NOT EXISTS users (
     email TEXT PRIMARY KEY,
     password_hash TEXT NOT NULL,
