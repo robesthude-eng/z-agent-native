@@ -187,6 +187,8 @@ export const TOOL_DEFINITIONS = [
   ...MEDIA_TOOL_DEFINITIONS,
 ];
 
+export const MUTATING_TOOLS = ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests', ...MEDIA_MUTATING_TOOLS];
+
 const risky = new Set([
   'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool',
   'generate_image', 'generate_speech', 'render_document', 'render_video', 'convert_media', 'media_info',
