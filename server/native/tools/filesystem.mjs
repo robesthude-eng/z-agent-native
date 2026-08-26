@@ -109,6 +109,8 @@ export async function readUtf8Window(full, offset, limit) {
   return rows.join('\n');
 }
 
+export const readLinesWindow = readUtf8Window;
+
 export async function grepInWorker(files, pattern, max, timeoutMs, regex) {
   const workerUrl = new URL('../grep-worker.mjs', import.meta.url);
   return await new Promise((resolve, reject) => {
@@ -195,6 +197,8 @@ export async function applyGitPatch(root, patchText, signal, ctx) {
   });
 }
 
+export const executeApplyPatch = applyGitPatch;
+
 export async function executeReadFile(root, input) {
   const requestedPath = String(input?.path || '');
   assertAgentReadablePath(requestedPath);
@@ -256,6 +260,8 @@ export function executeWriteFile(root, input, sessionId = null) {
   return { output: `Wrote ${Buffer.byteLength(String(input?.content ?? ''))} bytes to ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
 }
 
+export const performWorkspaceWrite = executeWriteFile;
+
 export function executeEditFile(root, input, sessionId = null) {
   const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
   const before = readUtf8(full);
@@ -268,10 +274,4 @@ export function executeEditFile(root, input, sessionId = null) {
   return { output: `Edited ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
 }
 
-export async function executeApplyPatch(root, patch, sessionId, signal) {
-  const patchText = String(patch || '');
-  if (!patchText.trim()) throw new Error('patch must not be empty');
-  const result = await applyGitPatch(root, patchText, signal, { sessionId });
-  if (sessionId) syncSandboxOwnership(sessionId, root);
-  return { output: result.stderr || result.stdout || 'Patch applied', title: 'Applied patch', mutatedPaths: ['.'] };
-}
+export const performWorkspaceEdit = executeEditFile;
