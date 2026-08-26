@@ -168,16 +168,19 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
   if (typeof onTextDelta !== 'function') {
     const body = await fetchJson(target, { method: 'POST', headers, body: JSON.stringify(request) }, signal, { failFastRateLimit });
     const content = Array.isArray(body?.content) ? body.content : [];
-    const text = content.filter((c) => c.type === 'text').map((c) => c.text).join('');
-    const toolCalls = content.filter((c) => c.type === 'tool_use').map((c) => toolCallFromParsed(c.id, c.name, c.input)).filter((c) => c.name);
-    return { text, toolCalls, usage: body?.usage || null, finish: body?.stop_reason || null, streamed: false };
+    return {
+      text: content.filter((b) => b.type === 'text').map((b) => b.text || '').join(''),
+      toolCalls: content.filter((b) => b.type === 'tool_use').map((b) => ({ id: b.id, name: b.name, arguments: b.input || {} })),
+      usage: body?.usage || null,
+      finish: body?.stop_reason || null,
+      streamed: false,
+    };
   }
 
   const splitter = createReasoningSplitter(({ kind, text: chunk }) => onTextDelta(chunk, kind));
   let usage = null;
   let finish = null;
-  let currentTool = null;
-  const toolCalls = [];
+  const calls = new Map();
   await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
     if (event?.type === 'message_start' && event.message?.usage) usage = event.message.usage;
     if (event?.type === 'message_delta') {
@@ -185,21 +188,21 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
       if (event.usage) usage = { ...(usage || {}), ...event.usage };
     }
     if (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-      currentTool = { id: event.content_block.id, name: event.content_block.name, json: '' };
+      calls.set(event.index, { id: event.content_block.id, name: event.content_block.name, baseInput: event.content_block.input || {}, partial: '' });
     }
     if (event?.type === 'content_block_delta') {
-      if (event.delta?.type === 'text_delta') splitter.push(event.delta.text, 'text');
-      if (event.delta?.type === 'thinking_delta') splitter.push(event.delta.thinking, 'reasoning');
-      if (event.delta?.type === 'input_json_delta' && currentTool) currentTool.json += event.delta.partial_json;
-    }
-    if (event?.type === 'content_block_stop' && currentTool) {
-      toolCalls.push(toolCallFromParsed(currentTool.id || `call_${Date.now()}_${toolCalls.length}`, currentTool.name, currentTool.json));
-      currentTool = null;
+      if (event.delta?.type === 'text_delta' && event.delta.text) splitter.push(event.delta.text, 'text');
+      if (event.delta?.type === 'thinking_delta' && event.delta.thinking) splitter.push(event.delta.thinking, 'reasoning');
+      if (event.delta?.type === 'input_json_delta') {
+        const current = calls.get(event.index) || { id: `call_${Date.now()}_${event.index}`, name: '', baseInput: {}, partial: '' };
+        current.partial += event.delta.partial_json || '';
+        calls.set(event.index, current);
+      }
     }
   }, { failFastRateLimit });
   splitter.flush();
-  const { text: streamedText } = splitter.snapshot();
-  return { text: streamedText, toolCalls: toolCalls.filter((c) => c.name), usage, finish, streamed: true };
+  const toolCalls = [...calls.values()].map((c) => toolCallFromParsed(c.id, c.name, c.partial || c.baseInput || {})).filter((c) => c.name);
+  return { text: splitter.snapshot().text, toolCalls, usage, finish, streamed: true };
 }
 
 export function googleContents(frames) {
@@ -210,7 +213,8 @@ export function googleContents(frames) {
       if (f.content) parts.push({ text: f.content });
       for (const item of f.media || []) {
         const parsed = parseDataUrl(item.dataUrl);
-        if (parsed?.mediaType.startsWith('image/')) {
+        if (!parsed) continue;
+        if (parsed.mediaType.startsWith('image/')) {
           parts.push({ inlineData: { mimeType: parsed.mediaType, data: parsed.data } });
         } else parts.push({ text: `${mediaNote(item)} The file is available in the workspace.` });
       }

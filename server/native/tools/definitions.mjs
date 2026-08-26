@@ -8,7 +8,8 @@ import {
 } from '../media.mjs';
 import { subagentKinds } from '../subagents.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
-import { agentNetworkPolicy, executorRequired, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
+import { executorRequired } from '../executor-client.mjs';
+import { agentNetworkPolicy, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
 const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
