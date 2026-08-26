@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sendJson } from '../native/json.mjs';
-import { rewritePreviewHtml } from '../native/preview-document.mjs';
-import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
 import { safeWorkspacePath } from '../native/security.mjs';
-import { ownsChat, workspaceFor } from '../native/store.mjs';
+import { workspaceFor, ownsChat } from '../native/store.mjs';
+import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
+import { rewritePreviewHtml } from '../native/preview-document.mjs';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',
@@ -25,7 +25,37 @@ const MIME_TYPES = {
   '.md': 'text/markdown; charset=utf-8',
 };
 
+function mimeFor(file) {
+  const ext = path.extname(file).toLowerCase();
+  return MIME_TYPES[ext] || 'application/octet-stream';
+}
+
 const PREVIEW_HTML_REWRITE_LIMIT = 2 * 1024 * 1024;
+
+export function previewSecurityPolicy(req) {
+  const rawHost = String(req?.headers?.host || '').trim();
+  const host = /^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(rawHost) ? rawHost : '';
+  const forwarded = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
+  const scheme = forwarded === 'https' || forwarded === 'http'
+    ? forwarded
+    : (req?.socket?.encrypted ? 'https' : 'http');
+  const own = host ? `${scheme}://${host}` : '';
+  const from = own ? `${own} ` : '';
+  return [
+    "default-src 'none'",
+    `script-src ${from}'unsafe-inline' 'unsafe-eval'`,
+    `style-src ${from}'unsafe-inline'`,
+    `img-src ${from}data: blob:`,
+    `font-src ${from}data:`,
+    `media-src ${from}data: blob:`,
+    `connect-src ${from}data: blob:`,
+    `worker-src ${from}blob:`,
+    `frame-src ${from}data: blob:`,
+    "frame-ancestors 'self'",
+    "base-uri 'none'",
+    `form-action ${own || "'none'"}`,
+  ].join('; ');
+}
 
 export function servePreviewFile(req, res, psid, rawRelative) {
   let relative;
@@ -37,32 +67,29 @@ export function servePreviewFile(req, res, psid, rawRelative) {
 
   if (/\.html?$/i.test(full) && st.size > 0 && st.size <= PREVIEW_HTML_REWRITE_LIMIT) {
     let rewritten = null;
-    try {
-      const raw = fs.readFileSync(full, 'utf8');
-      rewritten = rewritePreviewHtml(raw);
-    } catch {
-      rewritten = null;
-    }
-    if (typeof rewritten === 'string') {
-      const body = Buffer.from(rewritten, 'utf8');
+    try { rewritten = Buffer.from(rewritePreviewHtml(fs.readFileSync(full, 'utf8')), 'utf8'); } catch { rewritten = null; }
+    if (rewritten) {
       res.writeHead(200, {
-        'content-type': 'text/html; charset=utf-8',
-        'content-length': String(body.length),
-        'cache-control': 'no-store, no-cache, must-revalidate',
+        'content-type': mimeFor(full),
+        'content-length': rewritten.length,
         'access-control-allow-origin': '*',
-        'content-security-policy': "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob: *; img-src * data: blob:; media-src * data: blob:; connect-src * data: blob:; font-src * data:; frame-src *; object-src 'none'",
+        'content-security-policy': previewSecurityPolicy(req),
+        'x-content-type-options': 'nosniff',
+        'referrer-policy': 'no-referrer',
+        'cache-control': 'no-store',
       });
-      return res.end(body);
+      return res.end(rewritten);
     }
   }
 
-  const ext = path.extname(full).toLowerCase();
-  const ctype = MIME_TYPES[ext] || 'application/octet-stream';
   res.writeHead(200, {
-    'content-type': ctype,
-    'content-length': String(st.size),
-    'cache-control': 'no-store, no-cache, must-revalidate',
+    'content-type': mimeFor(full),
+    'content-length': st.size,
     'access-control-allow-origin': '*',
+    'content-security-policy': previewSecurityPolicy(req),
+    'x-content-type-options': 'nosniff',
+    'referrer-policy': 'no-referrer',
+    'cache-control': 'no-store',
   });
   return fs.createReadStream(full).pipe(res);
 }

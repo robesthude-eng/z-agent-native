@@ -134,18 +134,14 @@ export function buildConvertArgs({ operation, input, output, outputExt, startMs,
 }
 
 export function buildCropArgs({ input, output, x = 0, y = 0, width, height, outputExt }) {
-  const w = evenDimension(width, 640);
-  const h = evenDimension(height, 360);
-  const startX = Math.max(0, Math.round(Number(x) || 0));
-  const startY = Math.max(0, Math.round(Number(y) || 0));
-  return [
-    '-y',
-    '-i', input,
-    '-vf', `crop=${w}:${h}:${startX}:${startY}`,
-    ...videoEncoderArgs(outputExt),
-    ...audioEncoderArgs(outputExt),
-    output,
-  ];
+  const w = Math.round(clampNumber(width, 1, 16_384, 0));
+  const h = Math.round(clampNumber(height, 1, 16_384, 0));
+  if (!w || !h) throw new Error('crop requires width and height');
+  const args = ['-y', '-i', input, '-vf', `crop=${w}:${h}:${Math.round(clampNumber(x, 0, 16_384, 0))}:${Math.round(clampNumber(y, 0, 16_384, 0))}`];
+  if (MEDIA_TYPES[outputExt]?.kind === 'image') args.push('-frames:v', '1');
+  else args.push(...videoEncoderArgs(outputExt, {}));
+  args.push(output);
+  return args;
 }
 
 export function buildProbeArgs(input) {
