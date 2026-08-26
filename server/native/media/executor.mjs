@@ -33,7 +33,7 @@ import {
   markdownToHtml,
   pdfFromText,
 } from './documents.mjs';
-import { generateImageTool, generateSpeechTool } from '../media-generation.mjs';
+import { generateImageAsset, generateSpeechAsset } from '../media-generation.mjs';
 
 const CHROMIUM_BINARIES = ['chromium', 'chromium-browser', 'google-chrome', 'google-chrome-stable'];
 const DEFAULT_MEDIA_TIMEOUT_MS = 180_000;
@@ -263,10 +263,10 @@ async function renderDocumentTool({ root, input, ctx, run, renderPage }) {
 
 export async function executeMediaTool({ tool, input = {}, ctx = {}, root, run, renderPage, generators = null }) {
   if (tool === 'generate_image') {
-    return (generators?.generateImage || generateImageTool)({ root, input, ctx });
+    return (generators?.generateImage || generateImageAsset)({ root, input, ctx });
   }
   if (tool === 'generate_speech') {
-    return (generators?.generateSpeech || generateSpeechTool)({ root, input, ctx });
+    return (generators?.generateSpeech || generateSpeechAsset)({ root, input, ctx });
   }
   if (tool === 'render_document') {
     return renderDocumentTool({ root, input, ctx, run, renderPage });
