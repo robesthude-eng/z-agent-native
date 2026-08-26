@@ -6,13 +6,13 @@ import {
   Paperclip,
 } from "lucide-react";
 import type { ReactNode } from "react";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { workspaceDownloadUrl } from "../api/client";
 import { formatSize } from "../api/files";
 import type { AttachmentRef } from "../lib/attachments";
 import { toWorkspaceRelPath } from "../lib/workspacePath";
 import { useStore } from "../store/useStore";
-import { t, tf } from "@/i18n";
 
 /**
  * Разбор формата вложений живёт в src/lib/attachments.ts — здесь только

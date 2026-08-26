@@ -1,7 +1,14 @@
-import type { SessionInfo } from "../../api/types";
-import { cn } from "@/lib/utils";
-import { CheckIcon, CloseIcon, FolderIcon, PencilIcon, PinIcon, TrashIcon } from "../icons";
 import { t, tf } from "@/i18n";
+import { cn } from "@/lib/utils";
+import type { SessionInfo } from "../../api/types";
+import {
+  CheckIcon,
+  CloseIcon,
+  FolderIcon,
+  PencilIcon,
+  PinIcon,
+  TrashIcon,
+} from "../icons";
 
 export interface SidebarChatItemProps {
   session: SessionInfo;
@@ -102,9 +109,7 @@ export function SidebarChatItem({
                 style={{ background: "var(--color-info)" }}
               />
             )}
-            <span className="min-w-0 flex-1 truncate">
-              {displayTitle}
-            </span>
+            <span className="min-w-0 flex-1 truncate">{displayTitle}</span>
           </button>
         )}
         {isEditing ? null : (
@@ -121,9 +126,7 @@ export function SidebarChatItem({
                   : t("sidebar.zakrepit_chat")
               }
               aria-label={tf("sidebar.0_chat_1", [
-                isPinned
-                  ? t("sidebar.otkrepit")
-                  : t("sidebar.zakrepit"),
+                isPinned ? t("sidebar.otkrepit") : t("sidebar.zakrepit"),
                 displayTitle,
               ])}
               className={cn(
@@ -140,7 +143,9 @@ export function SidebarChatItem({
                 onToggleFolderMenu();
               }}
               title={t("sidebar.papka_chata")}
-              aria-label={tf("sidebar.vybrat_papku_dlya_chata_0", [displayTitle])}
+              aria-label={tf("sidebar.vybrat_papku_dlya_chata_0", [
+                displayTitle,
+              ])}
               className={cn(
                 "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
                 currentFolderId ? "opacity-90" : "opacity-45 hover:opacity-100",
@@ -216,7 +221,9 @@ export function SidebarChatItem({
             onClick={() => onAssignFolder(null)}
             className={cn(
               "flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-[11px] hover:bg-accent",
-              !currentFolderId ? "font-semibold text-foreground" : "text-muted-foreground",
+              !currentFolderId
+                ? "font-semibold text-foreground"
+                : "text-muted-foreground",
             )}
           >
             <span>{t("sidebar.bez_papki")}</span>
@@ -231,7 +238,9 @@ export function SidebarChatItem({
                 onClick={() => onAssignFolder(f.id)}
                 className={cn(
                   "flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-[11px] hover:bg-accent",
-                  isAssigned ? "font-semibold text-foreground" : "text-muted-foreground",
+                  isAssigned
+                    ? "font-semibold text-foreground"
+                    : "text-muted-foreground",
                 )}
               >
                 <span className="truncate">{f.name}</span>

@@ -1,5 +1,5 @@
-import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 import { resolveSafeExternalTarget } from './security.mjs';
+import { assertAgentNetworkUrl } from './workspace-policy.mjs';
 
 export function parseConnectAuthority(raw) {
   const text = String(raw || '').trim();

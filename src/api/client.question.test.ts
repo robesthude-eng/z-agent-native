@@ -2,8 +2,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   api,
   configure,
-  pendingQuestionForSession,
   type PendingQuestion,
+  pendingQuestionForSession,
 } from "./client";
 
 const jsonResponse = (body: unknown, status = 200) =>

@@ -1,7 +1,7 @@
 import { ChevronRight, Wrench } from "lucide-react";
 import { memo, type ReactNode, useState } from "react";
-import { cn } from "@/lib/utils";
 import { t, tf } from "@/i18n";
+import { cn } from "@/lib/utils";
 
 /**
  * Compact activity disclosure for autonomous turns.

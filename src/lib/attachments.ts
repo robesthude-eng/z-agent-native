@@ -1,6 +1,6 @@
+import { t } from "@/i18n";
 import { formatSize } from "../api/files";
 import { toWorkspaceRelPath } from "./workspacePath";
-import { t } from "@/i18n";
 
 /**
  * Разбор ссылок на вложения в тексте. Новый native protocol передаёт

@@ -1,7 +1,7 @@
 import { RefreshCw } from "lucide-react";
 import { useEffect, useState } from "react";
-import { Button } from "./ui/button";
 import { t } from "@/i18n";
+import { Button } from "./ui/button";
 
 interface PreviewPanelProps {
   url: string;

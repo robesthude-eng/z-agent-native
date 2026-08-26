@@ -1,9 +1,8 @@
 import { emit } from '../events.mjs';
 import { questionId } from '../ids.mjs';
-import { createQuestion, findQuestionForRecovery, getQuestion, resolveQuestion } from '../store.mjs';
-import { questionWaiters } from './state.mjs';
+import { createQuestion, findQuestionForRecovery, getQuestion, putMessage, resolveQuestion } from '../store.mjs';
 import { emitPart } from './message-parts.mjs';
-import { putMessage } from '../store.mjs';
+import { questionWaiters } from './state.mjs';
 
 export function waitWithAbort(map, id, sessionId, signal) {
   return new Promise((resolve, reject) => {

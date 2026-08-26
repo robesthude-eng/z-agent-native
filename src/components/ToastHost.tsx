@@ -1,6 +1,6 @@
+import { t } from "@/i18n";
 import { useToasts } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { t } from "@/i18n";
 
 const KIND_STYLES = {
   success: "border-foreground/40 bg-popover text-foreground",

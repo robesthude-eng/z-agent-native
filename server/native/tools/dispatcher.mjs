@@ -1,18 +1,18 @@
-import { getTool } from './registry.mjs';
-import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { executeGitTool } from '../git-tool.mjs';
+import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { executeSshTool } from '../ssh-tool.mjs';
-import {
-  executeReadFile, executeListFiles, executeGlobFiles, executeGrepFiles, executeWriteFile, executeEditFile, executeApplyPatch,
+import { executeBrowserAction } from './browser.mjs';
+import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
+import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
+import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, executeListFiles, 
+  executeReadFile, executeWriteFile, 
 } from './filesystem.mjs';
+import { executeMediaAction, isMediaTool } from './media.mjs';
+import { getTool } from './registry.mjs';
 import {
   execBash, executeBashTool, externalSpawnIdentity, missingCommandHint, sandboxUidHint,
 } from './shell.mjs';
-import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
-import { executeWebSearch, executeWebFetch } from './web.mjs';
-import { executeRunTests, executeDiagnostics } from './diagnostics.mjs';
-import { executeBrowserAction } from './browser.mjs';
-import { executeMediaAction, isMediaTool } from './media.mjs';
+import { executeWebFetch, executeWebSearch } from './web.mjs';
 
 const MAX_TOOL_OUTPUT = 512 * 1024;
 

@@ -9,6 +9,7 @@ import {
 } from "@tanstack/react-router";
 import { lazy, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { EventStream } from "./api/events";
 import { isInterruptionBarEnabled } from "./api/interruptions";
@@ -33,7 +34,6 @@ import WelcomeTour from "./components/WelcomeTour";
 import { applyTheme } from "./config/theme";
 import { isTmpSession } from "./lib/ids";
 import { useStore } from "./store/useStore";
-import { t } from "@/i18n";
 
 /**
  * Настройки — весь ./components/settings/* (аккаунт, провайдеры и модели)

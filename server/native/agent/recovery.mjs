@@ -1,5 +1,5 @@
 import { emit } from '../events.mjs';
-import { clearTurn, completeAction, failAction, getChat, getTurn, listMessages, putMessage, releaseTurnCapacity, reserveTurnCapacity, setTurn } from '../store.mjs';
+import { clearTurn, completeAction, failAction, getChat, getTurn, listMessages, putMessage, reserveTurnCapacity, setTurn } from '../store.mjs';
 import { clearDurableJob, listDurableJobs, markDurableJobResuming } from '../durable-jobs.mjs';
 import { acquireTurnLock, isClustered, releaseTurnLock } from '../cluster.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';

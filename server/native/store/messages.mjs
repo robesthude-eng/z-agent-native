@@ -1,5 +1,5 @@
-import { db } from './db.mjs';
 import { touchChat } from './chats.mjs';
+import { db } from './db.mjs';
 
 const parse = (value, fallback = null) => {
   if (value == null) return fallback;

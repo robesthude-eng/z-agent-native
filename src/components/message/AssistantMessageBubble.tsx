@@ -1,29 +1,29 @@
 import { useState } from "react";
-import type { Message, Part } from "../../api/types";
-import { visibleMessageText as getVisibleText } from "../../lib/chatText";
+import { t } from "@/i18n";
 import { errorMessage, isAbortedError } from "../../api/eventGuards";
 import { isInterruptedQuestionPart } from "../../api/interruptions";
-import { GeneratedFiles } from "./GeneratedFiles";
-import { MessageActions } from "./MessageActions";
-import { TurnSummaryCard } from "./TurnSummaryCard";
-import { assistantTurnSummary, strategyChanged } from "./turnSummary";
+import type { Message, Part } from "../../api/types";
+import { visibleMessageText as getVisibleText } from "../../lib/chatText";
 import AgentActivity from "../AgentActivity";
-import PartView from "../PartView";
-import ToolGroup from "../ToolGroup";
 import {
+  type ActivityRun,
   flowParts,
   groupActivityRuns,
   groupParts,
   itemKey,
   partKey,
   type RenderItem,
-  type ToolGroupData,
-  type ActivityRun,
   runStepCount,
   runToolParts,
+  type ToolGroupData,
   toolStatus,
 } from "../messageFlow";
-import { t } from "@/i18n";
+import PartView from "../PartView";
+import ToolGroup from "../ToolGroup";
+import { GeneratedFiles } from "./GeneratedFiles";
+import { MessageActions } from "./MessageActions";
+import { TurnSummaryCard } from "./TurnSummaryCard";
+import { assistantTurnSummary, strategyChanged } from "./turnSummary";
 
 interface AssistantMessageBubbleProps {
   messages: Message[];
@@ -52,31 +52,24 @@ export function AssistantMessageBubble({
   const hasWorkspaceResultHint =
     !isWorking &&
     Boolean(firstMsg?.id && firstMsg?.sessionID) &&
-    ((turnMeta?.changedFiles.length ?? 0) > 0 || messages.some(strategyChanged));
+    ((turnMeta?.changedFiles.length ?? 0) > 0 ||
+      messages.some(strategyChanged));
 
   const items = groupParts(flowParts(messages));
   const attParts = items.filter(
     (item) =>
-      "type" in item &&
-      (item.type === "attachment" || item.type === "file"),
+      "type" in item && (item.type === "attachment" || item.type === "file"),
   );
   const otherParts = items.filter(
     (item) =>
-      !("type" in item) ||
-      (item.type !== "attachment" && item.type !== "file"),
+      !("type" in item) || (item.type !== "attachment" && item.type !== "file"),
   );
   const flow = groupActivityRuns(otherParts);
 
   const renderFlowPart = (item: RenderItem, streaming: boolean) => {
     const g = item as ToolGroupData;
     if ("kind" in g && g.kind === "group") {
-      return (
-        <ToolGroup
-          key={itemKey(item)}
-          tool={g.tool}
-          parts={g.parts}
-        />
-      );
+      return <ToolGroup key={itemKey(item)} tool={g.tool} parts={g.parts} />;
     }
     return (
       <PartView
@@ -93,10 +86,7 @@ export function AssistantMessageBubble({
         {attParts.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
             {attParts.map((item) => (
-              <PartView
-                key={partKey(item as Part)}
-                part={item as Part}
-              />
+              <PartView key={partKey(item as Part)} part={item as Part} />
             ))}
           </div>
         )}
@@ -125,10 +115,7 @@ export function AssistantMessageBubble({
                   hasError={hasError}
                 >
                   {run.items.map((it, j) =>
-                    renderFlowPart(
-                      it,
-                      isTail && j === run.items.length - 1,
-                    ),
+                    renderFlowPart(it, isTail && j === run.items.length - 1),
                   )}
                 </AgentActivity>
               );
@@ -153,9 +140,7 @@ export function AssistantMessageBubble({
                 {typeof err === "object" && (
                   <button
                     type="button"
-                    onClick={() =>
-                      setErrorDetailsId(isExpanded ? null : m.id)
-                    }
+                    onClick={() => setErrorDetailsId(isExpanded ? null : m.id)}
                     className="text-[11px] underline opacity-80 hover:opacity-100"
                   >
                     {isExpanded ? "Скрыть детали" : "Детали"}

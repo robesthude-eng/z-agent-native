@@ -1,5 +1,5 @@
-import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
 import { executeBrowserTool } from '../browser-client.mjs';
+import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
 import { executeMediaTool, isMediaTool } from '../media.mjs';
 import { sandboxIdentity, shellSandboxAvailable } from '../sandbox.mjs';
 import { assertShellCommandAllowed } from '../workspace-policy.mjs';

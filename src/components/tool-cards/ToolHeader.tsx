@@ -1,11 +1,11 @@
 import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
+import { useState } from "react";
+import { t } from "@/i18n";
 import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { toolIcon } from "../../utils/toolUtils";
 import { friendlyToolLabel } from "./toolCardUtils";
-import { t } from "@/i18n";
-import { useState } from "react";
 
 interface ToolHeaderProps {
   toolName: string;

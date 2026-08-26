@@ -1,12 +1,12 @@
+import { toolCallSignature, toolPart, waitForRetry } from '../agent-parts.mjs';
 import { emit } from '../events.mjs';
-import { putMessage, workspaceFor } from '../store.mjs';
-import { executeTool, toolOutputText } from '../tools.mjs';
 import { isIncompleteToolCall } from '../providers.mjs';
+import { putMessage, workspaceFor } from '../store.mjs';
 import { runSubagent } from '../subagent-runner.mjs';
+import { executeTool, toolOutputText } from '../tools.mjs';
+import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
 import { emitPart } from './message-parts.mjs';
 import { askQuestion } from './questions.mjs';
-import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
-import { toolCallSignature, toolPart, waitForRetry } from '../agent-parts.mjs';
 
 export function strategyInfo(strategy) {
   return {

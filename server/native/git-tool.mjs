@@ -1,8 +1,8 @@
-import fs from 'node:fs';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
-import { ensureManagedHome, sandboxCommand } from './sandbox.mjs';
 import { executeInExecutor } from './executor-client.mjs';
+import { ensureManagedHome, sandboxCommand } from './sandbox.mjs';
 import { safeWorkspacePath } from './security.mjs';
 
 const MAX_GIT_OUTPUT = 256 * 1024;

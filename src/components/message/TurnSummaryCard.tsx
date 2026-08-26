@@ -1,6 +1,10 @@
-import { WorkspaceFileChip } from "../AttachmentChip";
-import { formatDuration, pluralRu, type TaskOutcomeStatus } from "./turnSummary";
 import { t } from "@/i18n";
+import { WorkspaceFileChip } from "../AttachmentChip";
+import {
+  formatDuration,
+  pluralRu,
+  type TaskOutcomeStatus,
+} from "./turnSummary";
 
 interface TurnSummaryCardProps {
   summary: {
@@ -69,9 +73,7 @@ export function TurnSummaryCard({
         </span>
         <div className="flex flex-wrap items-center gap-3 text-[11px]">
           {summary.durationMs != null && (
-            <span>
-              {formatDuration(summary.durationMs)}
-            </span>
+            <span>{formatDuration(summary.durationMs)}</span>
           )}
           {summary.actionsCount > 0 && (
             <span>

@@ -1,15 +1,15 @@
+import { t } from "@/i18n";
+import { normalizeQuestion } from "./normalization";
 import {
-  type Interruption,
   type BarPresentation,
+  type FeedLine,
+  type Interruption,
+  type MessageLike,
   QUESTION_TOOL,
   type QuestionPartLike,
-  type MessageLike,
-  type FeedLine,
-  type ReplyPlan,
   type ReplyContext,
+  type ReplyPlan,
 } from "./types";
-import { normalizeQuestion } from "./normalization";
-import { t } from "@/i18n";
 
 export const BAR_COLLAPSE_LINES = 3;
 const BAR_CHARS_PER_LINE = 64;

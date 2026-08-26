@@ -1,8 +1,8 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
 
 const SOCKET_PATH = process.env.Z_AGENT_EXECUTOR_SOCKET || '/run/z-agent-executor/executor.sock';
 const WORKSPACES_DIR = path.resolve(process.env.Z_AGENT_WORKSPACES_DIR || '/workspaces');

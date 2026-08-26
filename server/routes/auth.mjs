@@ -1,9 +1,9 @@
-import { readJson, sendJson } from '../native/json.mjs';
 import {
   authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
   loginUser, logoutToken, registerUser, requireAuth,
 } from '../native/auth.mjs';
 import { TRUST_PROXY } from '../native/config.mjs';
+import { readJson, sendJson } from '../native/json.mjs';
 import { authRateLimitExceeded, recordAuthFailures } from '../native/store.mjs';
 
 const AUTH_WINDOW_MS = 10 * 60 * 1000;

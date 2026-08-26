@@ -1,10 +1,16 @@
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
+import { t, tf } from "@/i18n";
 import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
-import { LogoutIcon, MoonIcon, SettingsIcon, SunIcon, UserIcon } from "../icons";
-import { t, tf } from "@/i18n";
+import {
+  LogoutIcon,
+  MoonIcon,
+  SettingsIcon,
+  SunIcon,
+  UserIcon,
+} from "../icons";
 
 function SidebarUserEmail({ email }: { email: string }) {
   const handleClick = () => {
@@ -63,9 +69,7 @@ export function SidebarFooter({
             className="h-8 w-8 rounded-lg"
             onClick={onToggleTheme}
             title={
-              theme === "dark"
-                ? t("sidebar.svetlaya")
-                : t("sidebar.temnaya")
+              theme === "dark" ? t("sidebar.svetlaya") : t("sidebar.temnaya")
             }
           >
             {theme === "dark" ? <SunIcon size={15} /> : <MoonIcon size={15} />}

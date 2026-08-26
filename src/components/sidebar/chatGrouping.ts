@@ -7,8 +7,8 @@
  * проверяться тестами, а не глазами.
  */
 
-import type { SessionInfo } from "../../api/types";
 import { t } from "@/i18n";
+import type { SessionInfo } from "../../api/types";
 
 export interface ChatFolder {
   id: string;

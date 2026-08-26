@@ -1,10 +1,10 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { AUTO_MODEL, isAutoModel } from "../lib/autopilotModel";
 import { clampPopoverShift } from "../lib/popoverBounds";
 import { type ModelEntry, useStore } from "../store/useStore";
 import { CheckIcon, ChevronDownIcon } from "./icons";
-import { t } from "@/i18n";
 
 function availabilityLabel(model: ModelEntry) {
   return model.status === "cache"

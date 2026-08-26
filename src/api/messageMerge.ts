@@ -1,9 +1,11 @@
 import { log } from "../lib/log";
+
 /**
  * Deterministic source-aware message reconciliation helpers.
  * The live SSE transport is implemented by EventStream in events.ts.
  */
 
+import { t } from "@/i18n";
 /**
  * Pure deterministic merge: source-aware, never shortens streaming text unless server says final.
  *
@@ -16,7 +18,6 @@ import { log } from "../lib/log";
  */
 import { isLocalMessage } from "../lib/ids";
 import type { Message as MergeMessage } from "./types";
-import { t } from "@/i18n";
 
 // export interface MergeMessage {
 //   id: string;

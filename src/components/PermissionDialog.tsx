@@ -1,9 +1,9 @@
 import { useEffect, useRef } from "react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { t, tf } from "@/i18n";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
-import { t, tf } from "@/i18n";
 
 // Native permission protocol uses "once" | "always" | "reject".
 // (older versions used "allow" | "deny"). We send the new enum; the server

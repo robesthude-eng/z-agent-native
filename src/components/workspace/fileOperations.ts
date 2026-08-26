@@ -23,9 +23,9 @@
  *    правило всё равно закреплено здесь.
  */
 
+import { t } from "@/i18n";
 import { isTmpSession } from "../../lib/ids";
 import { parentDir } from "./fileDecisions";
-import { t } from "@/i18n";
 
 /** Почему операция над файлами недоступна. `null` — доступна. */
 export type OperationBlock = "no_chat" | "draft_chat" | null;

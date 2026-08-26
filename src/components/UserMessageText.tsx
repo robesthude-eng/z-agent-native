@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import CopyButton from "./CopyButton";
-import { t, tf } from "@/i18n";
 
 /**
  * Классический рендер текста пользовательского сообщения.

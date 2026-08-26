@@ -1,7 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { useState } from "react";
-import TurnResultModal from "./TurnResultModal";
 import { t } from "@/i18n";
+import TurnResultModal from "./TurnResultModal";
 
 export default function TurnResultButton({
   sessionId,

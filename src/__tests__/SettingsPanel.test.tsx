@@ -1,7 +1,7 @@
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { assert, beforeEach, describe, expect, test, vi } from "vitest";
-import SettingsPanel from "../components/SettingsPanel";
 import { ConfirmProvider } from "../components/ConfirmDialog";
+import SettingsPanel from "../components/SettingsPanel";
 import { useStore } from "../store/useStore";
 
 vi.mock("../store/useStore");

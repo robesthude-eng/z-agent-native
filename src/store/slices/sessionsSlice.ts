@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { abortSessionRequests } from "../../api/abortRegistry";
 import {
   api,
@@ -12,7 +13,6 @@ import { log } from "../../lib/log";
 import { normalizeMessages } from "../helpers";
 import type { SessionsSlice, Slice } from "../types";
 import { byUpdated } from "../types";
-import { t } from "@/i18n";
 
 // Prevent concurrent optimistic session creation from rapid "New chat" clicks.
 let creatingSession = false;

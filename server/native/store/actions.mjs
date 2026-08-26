@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { db } from './db.mjs';
 import { auditIdentity, auditTarget, signAuditEvent, verifyAuditRows } from '../audit.mjs';
+import { db } from './db.mjs';
 
 const parse = (value, fallback = null) => {
   if (value == null) return fallback;

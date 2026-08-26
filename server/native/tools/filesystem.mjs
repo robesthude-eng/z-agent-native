@@ -3,9 +3,9 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { Worker } from 'node:worker_threads';
 import { GREP_TIMEOUT_MS } from '../config.mjs';
-import { safeWorkspacePath } from '../security.mjs';
-import { syncSandboxOwnership } from '../sandbox.mjs';
 import { executeInExecutor, executorRequired } from '../executor-client.mjs';
+import { syncSandboxOwnership } from '../sandbox.mjs';
+import { safeWorkspacePath } from '../security.mjs';
 import { assertAgentReadablePath, isSensitiveWorkspacePath } from '../workspace-policy.mjs';
 
 export const FILESYSTEM_TOOL_NAMES = [

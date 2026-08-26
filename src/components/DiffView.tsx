@@ -1,7 +1,7 @@
 import { useMemo } from "react";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { type DiffOptions, diffLines, diffStatLabel } from "../lib/diff";
-import { t } from "@/i18n";
 
 /**
  * Добавленное больше не зелёное. Различие строк держится на знаке `+`/`−` в

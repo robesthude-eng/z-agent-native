@@ -1,5 +1,6 @@
 import { ChevronDown, ExternalLink, GitBranch, RotateCcw } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { t, tf } from "@/i18n";
 import {
   changesApi,
   type ProjectChange,
@@ -9,7 +10,6 @@ import {
 import { toast } from "../lib/toast";
 import { useStore } from "../store/useStore";
 import PanelModal from "./PanelModal";
-import { t, tf } from "@/i18n";
 
 type ChangeKind = "added" | "deleted" | "modified";
 

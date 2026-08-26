@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { auditKeyReadinessCheck } from './audit.mjs';
+import { probeBrowserService } from './browser-client.mjs';
 import { DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { executorRequired, probeExecutor } from './executor-client.mjs';
-import { probeBrowserService } from './browser-client.mjs';
 import { secretStoreReadinessCheck } from './secrets.mjs';
-import { auditKeyReadinessCheck } from './audit.mjs';
 import { storeReadinessCheck } from './store.mjs';
 
 let cached = null;

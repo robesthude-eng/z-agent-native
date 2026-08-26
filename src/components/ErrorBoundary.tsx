@@ -2,8 +2,8 @@ import { AlertTriangle } from "lucide-react";
 import { Component, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { captureException } from "@/lib/sentry";
 import { t } from "@/i18n";
+import { captureException } from "@/lib/sentry";
 
 interface Props {
   children: ReactNode;

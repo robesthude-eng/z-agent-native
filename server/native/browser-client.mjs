@@ -3,6 +3,7 @@ import http from 'node:http';
 import { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, executeBrowserTool as executeBrowserToolLocal } from './browser.mjs';
 
 export { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS };
+
 // Снимок страницы и текстовый ответ — разные порядки величин. Общий потолок
 // пришлось бы ставить по самому большому, и тогда обычный snapshot потерял бы
 // защиту от ответа на десятки мегабайт.

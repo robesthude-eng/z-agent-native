@@ -10,6 +10,7 @@
  *   — порядок показа совпадает с порядком отправки, а не обещает другой.
  */
 import { describe, expect, it } from "vitest";
+import type { ProcessedFile } from "@/api/files";
 import {
   enqueuePlan,
   fallbackToLocal,
@@ -19,7 +20,6 @@ import {
   type QueueEntry,
   removalPlan,
 } from "@/api/sendQueue";
-import type { ProcessedFile } from "@/api/files";
 
 const SID = "ses_real";
 const srv = (actionId: string, text: string, position: number): QueueEntry => ({

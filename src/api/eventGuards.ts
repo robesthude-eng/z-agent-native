@@ -1,8 +1,9 @@
 // Релиз 5: рукописные type guards для SSE-пейлоадов — без zod и новых
 // зависимостей. Заменяют небезопасные `as unknown as` касты: каждое
 // обращение к динамическому полю проходит через рантайм-проверку.
-import type { AppEvent } from "./types";
+
 import { t } from "@/i18n";
+import type { AppEvent } from "./types";
 
 /** Значение — объект (record)? */
 export function isRecord(v: unknown): v is Record<string, unknown> {

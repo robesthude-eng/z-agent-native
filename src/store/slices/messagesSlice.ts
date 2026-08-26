@@ -1,3 +1,4 @@
+import { t, tf } from "@/i18n";
 import { sessionSignal } from "../../api/abortRegistry";
 import { api, SessionGoneError } from "../../api/client";
 import { eventSessionId } from "../../api/eventGuards";
@@ -22,7 +23,6 @@ import { awaitTurnCompletion } from "../turnCompletion";
 import { turnSettle } from "../turnSettle";
 import type { MessagesSlice, Slice } from "../types";
 import { EVENT_HANDLERS } from "./eventHandlers";
-import { t, tf } from "@/i18n";
 
 const SEND_HARD_TIMEOUT_MS = 15 * 60 * 1000;
 

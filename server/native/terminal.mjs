@@ -1,10 +1,10 @@
 import { spawn } from 'node:child_process';
 import { authFromRequest } from './auth.mjs';
 import { ALLOWED_ORIGINS } from './config.mjs';
-import { isSessionId } from './security.mjs';
 import { managedShellEnvironment } from './environment.mjs';
-import { ownsChat, workspaceFor } from './store.mjs';
 import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable } from './sandbox.mjs';
+import { isSessionId } from './security.mjs';
+import { ownsChat, workspaceFor } from './store.mjs';
 import { ensureWorkspaceWatcher } from './watcher.mjs';
 
 let ptySpawn = null;

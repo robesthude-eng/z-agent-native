@@ -1,6 +1,6 @@
-import { db } from './db.mjs';
 import { decryptSecret, encryptSecret, rewrapSecret } from '../secrets.mjs';
 import { insertAuditEventInCurrentTransaction } from './actions.mjs';
+import { db } from './db.mjs';
 
 const parse = (value, fallback = null) => {
   if (value == null) return fallback;

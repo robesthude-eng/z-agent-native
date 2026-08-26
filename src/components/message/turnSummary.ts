@@ -1,8 +1,8 @@
-import type { Message, ToolPart } from "../../api/types";
+import { t, tf } from "@/i18n";
 import { isAbortedError } from "../../api/eventGuards";
+import type { Message, ToolPart } from "../../api/types";
 import { wasStoppedByUser } from "../../lib/stopUx";
 import { toWorkspaceRelPath } from "../../lib/workspacePath";
-import { t, tf } from "@/i18n";
 
 export type TaskOutcomeStatus =
   | "completed"
@@ -54,7 +54,12 @@ export function toolCompleted(part: ToolPart): boolean {
   );
 }
 
-export function pluralRu(n: number, one: string, few: string, many: string): string {
+export function pluralRu(
+  n: number,
+  one: string,
+  few: string,
+  many: string,
+): string {
   const mod10 = n % 10;
   const mod100 = n % 100;
   if (mod10 === 1 && mod100 !== 11) return one;

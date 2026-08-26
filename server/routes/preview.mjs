@@ -1,10 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sendJson } from '../native/json.mjs';
-import { safeWorkspacePath } from '../native/security.mjs';
-import { workspaceFor, ownsChat } from '../native/store.mjs';
-import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
 import { rewritePreviewHtml } from '../native/preview-document.mjs';
+import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
+import { safeWorkspacePath } from '../native/security.mjs';
+import { ownsChat, workspaceFor } from '../native/store.mjs';
 
 const MIME_TYPES = {
   '.html': 'text/html; charset=utf-8',

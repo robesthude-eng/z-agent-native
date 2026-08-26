@@ -2,10 +2,10 @@ import { Check, Copy } from "lucide-react";
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
-import { t } from "@/i18n";
 
 export default function CopyButton({
   text,

@@ -1,13 +1,13 @@
 import { spawn } from 'node:child_process';
 import path from 'node:path';
 import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
-import { managedShellEnvironment } from '../environment.mjs';
-import { EXTENDED_TOOLCHAIN_KINDS, suggestToolchainForCommand } from '../toolchains.mjs';
 import { classifyBash } from '../context.mjs';
+import { managedShellEnvironment } from '../environment.mjs';
+import { executeInExecutor, executorRequired } from '../executor-client.mjs';
 import {
   prepareWorkspaceSandbox, sandboxCommand, sandboxIdentity, shellSandboxAvailable, syncSandboxOwnership,
 } from '../sandbox.mjs';
-import { executeInExecutor, executorRequired } from '../executor-client.mjs';
+import { EXTENDED_TOOLCHAIN_KINDS, suggestToolchainForCommand } from '../toolchains.mjs';
 import { assertShellCommandAllowed, shellNetworkPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];

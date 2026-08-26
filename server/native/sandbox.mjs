@@ -1,6 +1,6 @@
+import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { ALLOW_UNISOLATED_SHELL, DATA_DIR, WORKSPACES_DIR } from './config.mjs';
 import { getSandboxUid } from './store.mjs';
 

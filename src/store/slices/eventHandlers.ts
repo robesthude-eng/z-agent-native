@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import { api } from "../../api/client";
 import { eventMessageId, eventPartId, statusText } from "../../api/eventGuards";
 import { mergeMessages as mergeMessagesDeterministic } from "../../api/messageMerge";
@@ -21,7 +22,6 @@ import { sessionFsm } from "../sessionFsm";
 import { turnSettle } from "../turnSettle";
 import type { MessagesSlice, Slice, State } from "../types";
 import { byUpdated } from "../types";
-import { t } from "@/i18n";
 
 /**
  * Обработчики SSE-событий — по одному на тип.

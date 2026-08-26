@@ -1,6 +1,7 @@
 import { GitBranch } from "lucide-react";
 import { lazy, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { toast } from "@/lib/toast";
 import {
   CAPABILITY_POLL_MS,
@@ -30,7 +31,6 @@ import {
 import { LazyPanel, PanelBodySkeleton } from "./LazyPanel";
 import ModelSelector from "./ModelSelector";
 import PanelModal from "./PanelModal";
-import { t } from "@/i18n";
 
 /** Heavy/secondary panels are loaded only when the user asks for them. */
 const Terminal = lazy(() =>

@@ -2,11 +2,11 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { t, tf } from "@/i18n";
 import { toast } from "@/lib/toast";
 import { api } from "../../api/client";
 import { useStore } from "../../store/useStore";
 import { SettingsCard, SettingsRow, SettingsSection } from "./primitives";
-import { t, tf } from "@/i18n";
 
 /** Та же нижняя граница, что и на сервере (routes/auth.mjs). */
 const MIN_PASSWORD_LENGTH = 12;

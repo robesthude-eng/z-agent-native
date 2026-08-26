@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useStore } from "../store/useStore";
 import { CloseIcon } from "./icons";
-import { t } from "@/i18n";
 
 interface TourStep {
   emoji: string;

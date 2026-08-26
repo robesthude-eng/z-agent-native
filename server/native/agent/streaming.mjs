@@ -1,7 +1,7 @@
 import { emit } from '../events.mjs';
 import { partId } from '../ids.mjs';
-import { putMessage } from '../store.mjs';
 import { createReasoningSplitter } from '../reasoning-stream.mjs';
+import { putMessage } from '../store.mjs';
 
 export function sanitizeAssistantParts(assistant) {
   if (!assistant || !Array.isArray(assistant.parts)) return;

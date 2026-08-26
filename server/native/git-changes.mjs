@@ -1,7 +1,7 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
-import { safeWorkspacePath } from './security.mjs';
 import { executeInExecutorSync } from './executor-client.mjs';
+import { safeWorkspacePath } from './security.mjs';
 
 const MAX_DIFF_CHARS = 240_000;
 const MAX_UNTRACKED_PREVIEW_BYTES = 256 * 1024;

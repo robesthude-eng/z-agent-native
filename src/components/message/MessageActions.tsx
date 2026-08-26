@@ -1,8 +1,8 @@
 import { Button } from "@/components/ui/button";
-import CopyButton from "../CopyButton";
-import TurnResultButton from "../TurnResultButton";
-import { NewChatIcon, RefreshIcon } from "../icons";
 import { t } from "@/i18n";
+import CopyButton from "../CopyButton";
+import { NewChatIcon, RefreshIcon } from "../icons";
+import TurnResultButton from "../TurnResultButton";
 
 export interface MessageActionsProps {
   role: string;

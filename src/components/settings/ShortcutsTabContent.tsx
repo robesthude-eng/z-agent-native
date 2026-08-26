@@ -1,6 +1,6 @@
+import { t } from "@/i18n";
 import { ShortcutsList } from "../ShortcutsOverlay";
 import { SettingsSection } from "./primitives";
-import { t } from "@/i18n";
 
 /**
  * Раздел настроек с горячими клавишами. Список берётся из того же места, что и

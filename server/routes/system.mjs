@@ -1,8 +1,8 @@
 import crypto from 'node:crypto';
-import { sendJson } from '../native/json.mjs';
 import { activeTurnCount } from '../native/agent.mjs';
-import { readinessCheck } from '../native/readiness.mjs';
+import { sendJson } from '../native/json.mjs';
 import { prometheusMetrics } from '../native/metrics.mjs';
+import { readinessCheck } from '../native/readiness.mjs';
 import { runtimeCapabilities } from '../native/runtime-capabilities.mjs';
 
 export async function handleSystemRoutes(req, res, p, { draining, startedAt, isDraining }) {

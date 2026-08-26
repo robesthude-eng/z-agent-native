@@ -17,7 +17,7 @@ export function splitReasoningFromContent(rawText) {
   }
 
   // 2. English internal monologue transitioning into Russian user response
-  const m = new RegExp('([.?!]\\s*|\\n\\s*)([А-ЯЁ][а-яё]+(?:!|\\?|\\.|\\s*👋|\\s*[,\\s]))').exec(text);
+  const m = /([.?!]\s*|\n\s*)([А-ЯЁ][а-яё]+(?:!|\?|\.|\s*👋|\s*[,\s]))/.exec(text);
   if (m) {
     const boundary = m.index + m[1].length;
     const prefix = text.slice(0, boundary).trim();

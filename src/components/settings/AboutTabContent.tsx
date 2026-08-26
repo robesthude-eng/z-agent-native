@@ -1,5 +1,5 @@
-import { SettingsCard, SettingsSection } from "./primitives";
 import { t } from "@/i18n";
+import { SettingsCard, SettingsSection } from "./primitives";
 
 const ABOUT_ROWS: Array<[string, string]> = [
   [t("about_tab_content.versiya"), "Z Agent Native v1"],

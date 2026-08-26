@@ -1,8 +1,8 @@
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { Theme } from "../../config/theme";
 import { useStore } from "../../store/useStore";
 import { SettingsSection } from "./primitives";
-import { t } from "@/i18n";
 
 const THEMES: Array<{ id: Theme; label: string; preview: string }> = [
   {

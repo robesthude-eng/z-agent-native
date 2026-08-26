@@ -12,6 +12,7 @@ import rehypeHighlight from "rehype-highlight";
 import rehypeSanitize from "rehype-sanitize";
 import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { publicErrorText } from "../api/eventGuards";
 import { isVisible, presentationFor } from "../api/partPresentation";
@@ -27,7 +28,6 @@ import { AttachmentChip, AttachmentPartChip } from "./AttachmentChip";
 import CopyButton from "./CopyButton";
 import { ThinkIcon } from "./icons";
 import ToolCard from "./ToolCard";
-import { t, tf } from "@/i18n";
 
 /** Рекурсивно собирает текст из React-узлов (подсвеченный код и т.п.). */
 function nodeToText(node: unknown): string {

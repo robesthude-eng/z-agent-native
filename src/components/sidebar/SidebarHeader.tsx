@@ -1,7 +1,7 @@
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { CloseIcon, NewChatIcon, SearchIcon } from "../icons";
 import { t } from "@/i18n";
+import { CloseIcon, NewChatIcon, SearchIcon } from "../icons";
 
 export type DeepHit = { id: string; title: string; snippet: string };
 

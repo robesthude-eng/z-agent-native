@@ -1,6 +1,6 @@
+import { t, tf } from "@/i18n";
 import { isRecord, strField } from "../../api/eventGuards";
 import type { ToolPart, ToolState } from "../../api/types";
-import { t, tf } from "@/i18n";
 
 export function fmt(value: unknown): string {
   if (value == null) return "";

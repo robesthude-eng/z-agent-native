@@ -1,6 +1,6 @@
+import { t } from "@/i18n";
 import type { Message, ToolOutput, ToolPart } from "../api/types";
 import { stripAttachmentMarkup } from "./attachments";
-import { t } from "@/i18n";
 
 /**
  * Извлекает читаемый текст сообщения: текстовые части, рассуждения и

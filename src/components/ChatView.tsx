@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
+import { t, tf } from "@/i18n";
 import { isAbortedError, statusText } from "../api/eventGuards";
 import {
   dispositionOf,
@@ -23,7 +24,6 @@ import {
   FilePlusIcon,
 } from "./icons";
 import MessageItem from "./MessageItem";
-import { t, tf } from "@/i18n";
 
 const SUGGESTIONS = [
   {

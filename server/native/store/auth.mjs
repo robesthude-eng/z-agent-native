@@ -1,6 +1,6 @@
 import crypto from 'node:crypto';
-import { db } from './db.mjs';
 import { insertAuditEventInCurrentTransaction } from './actions.mjs';
+import { db } from './db.mjs';
 
 export function authSessionKey(token) {
   const value = String(token || '');

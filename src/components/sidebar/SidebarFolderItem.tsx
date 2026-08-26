@@ -1,5 +1,5 @@
-import { CheckIcon, CloseIcon, PencilIcon, TrashIcon } from "../icons";
 import { t, tf } from "@/i18n";
+import { CheckIcon, CloseIcon, PencilIcon, TrashIcon } from "../icons";
 
 interface SidebarFolderItemProps {
   folderId: string;

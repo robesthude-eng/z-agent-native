@@ -1,10 +1,9 @@
-import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { activeTurnCount, startDurableRecovery } from './native/agent.mjs';
 import { checkCsrf, requireAuth } from './native/auth.mjs';
-import { DIST_DIR, MAX_JSON_BYTES, PORT, SECURE_COOKIES } from './native/config.mjs';
+import { DIST_DIR, MAX_JSON_BYTES, PORT } from './native/config.mjs';
 import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.mjs';
 import { readJson, sendJson } from './native/json.mjs';
 import { assertRuntimeSecretsPrivate } from './native/sandbox.mjs';
@@ -130,7 +129,6 @@ async function route(req, res) {
   if (await handleSessionRoutes(req, res, p, url, ownerId)) return;
   if (await handleModelRoutes(req, res, p, url, ownerId)) return;
 
-  // Workspace file operations
   if (p.startsWith('/api/workspace/') || p === '/api/file' || p.startsWith('/api/file/')) {
     const wsSid = url.searchParams.get('sessionId') || '';
     if (!wsSid || !ownsChat(wsSid, ownerId)) return sendJson(res, 404, { error: 'Session not found' });
@@ -141,7 +139,6 @@ async function route(req, res) {
     if (handled !== false) return;
   }
 
-  // Workspace preview token
   if (p === '/api/workspace/preview-token' && req.method === 'GET') {
     const psid = url.searchParams.get('sessionId') || '';
     if (!psid || !ownsChat(psid, ownerId)) return sendJson(res, 404, { error: 'Session not found' });
@@ -150,7 +147,6 @@ async function route(req, res) {
     return sendJson(res, 200, { base: `/api/preview/${token}/~/` });
   }
 
-  // Sandbox proxy
   const preview = /^\/api\/sandbox-proxy\/(ses_[A-Za-z0-9]+)\/~\/(.*)$/.exec(p);
   if (preview && req.method === 'GET') {
     const psid = preview[1];

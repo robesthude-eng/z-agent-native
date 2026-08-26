@@ -1,13 +1,13 @@
-import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
-import { GIT_ACTIONS } from '../git-tool.mjs';
-import { SSH_ACTIONS } from '../ssh-tool.mjs';
-import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
 import { BROWSER_ACTIONS } from '../browser-client.mjs';
-import {
-  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, isMediaTool,
+import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
+import { GIT_ACTIONS } from '../git-tool.mjs';
+import {isMediaTool,
+  MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS, 
 } from '../media.mjs';
-import { subagentKinds } from '../subagents.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
+import { SSH_ACTIONS } from '../ssh-tool.mjs';
+import { subagentKinds } from '../subagents.mjs';
+import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
 import { agentNetworkPolicy, shellPrivilegePolicy, sshPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];

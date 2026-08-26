@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { useStore } from "../store/useStore";
 import { CloseIcon, SearchIcon } from "./icons";
@@ -10,7 +11,6 @@ import { AppearanceTabContent } from "./settings/AppearanceTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
 import { RuntimeTabContent } from "./settings/RuntimeTabContent";
 import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
-import { t } from "@/i18n";
 
 type SettingsTab =
   | "account"

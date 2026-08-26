@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { safeWorkspacePath } from '../security.mjs';
 import { syncSandboxOwnership } from '../sandbox.mjs';
+import { safeWorkspacePath } from '../security.mjs';
 
 export const IMAGE_FORMATS = ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff', 'avif'];
 export const VIDEO_FORMATS = ['mp4', 'webm', 'mkv', 'mov', 'gif'];

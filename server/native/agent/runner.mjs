@@ -1,7 +1,7 @@
 import { emit } from '../events.mjs';
 import { assertActionId, messageId, turnId } from '../ids.mjs';
 import {
-  claimAction, clearTurn, completeAction, failAction, getAction, getChat, getTurn, listMessages, putMessage, releaseTurnCapacity, renameChat, reserveTurnCapacity, resetAction, setTurn, workspaceFor,
+  claimAction, completeAction, failAction, getAction, getChat, getTurn, listMessages, putMessage, releaseTurnCapacity, renameChat, reserveTurnCapacity, resetAction, setTurn, workspaceFor,
 } from '../store.mjs';
 import { taskStepBudget } from '../autopilot.mjs';
 import { clearDurableJob, createDurableJob, getDurableJob } from '../durable-jobs.mjs';
@@ -45,15 +45,16 @@ export function submitTurn(args) {
   return promise;
 }
 
-export async function runTurn(args) {
+export async function runTurn(...params) {
+  const args = params[0];
   const { sessionId, ownerId, parts, model = null, system = '', actionId = '' } =
     typeof args === 'object' && args !== null && 'sessionId' in args ? args : {
-      sessionId: arguments[0],
-      ownerId: arguments[1],
-      parts: arguments[2],
-      model: arguments[3],
-      system: arguments[4],
-      actionId: arguments[5] || '',
+      sessionId: params[0],
+      ownerId: params[1],
+      parts: params[2],
+      model: params[3],
+      system: params[4],
+      actionId: params[5] || '',
     };
 
   if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });

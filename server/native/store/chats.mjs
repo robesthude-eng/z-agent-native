@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { db } from './db.mjs';
 import { WORKSPACES_DIR } from '../config.mjs';
 import { insertAuditEventInCurrentTransaction } from './actions.mjs';
+import { db } from './db.mjs';
 
 function bootstrapSandboxUids() {
   const minUid = 20_000;

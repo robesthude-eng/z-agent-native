@@ -1,9 +1,9 @@
+import { spawn } from 'node:child_process';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import readline from 'node:readline';
-import { spawn } from 'node:child_process';
 
 const SOCKET_PATH = process.env.Z_AGENT_BROWSER_SOCKET || '/run/z-agent-browser/browser.sock';
 // Запрос на рендер несёт всю страницу целиком: HTML с вклеенными data:-картинками

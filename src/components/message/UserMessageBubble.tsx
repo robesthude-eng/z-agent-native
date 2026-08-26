@@ -1,13 +1,13 @@
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import type { Message } from "../../api/types";
 import { extractAttachments } from "../../lib/attachments";
 import { messageText as getMessageText } from "../../lib/chatText";
 import { AttachmentChip } from "../AttachmentChip";
-import { MessageActions } from "./MessageActions";
+import { partKey } from "../messageFlow";
 import PartView from "../PartView";
 import UserMessageText from "../UserMessageText";
-import { partKey } from "../messageFlow";
-import { t } from "@/i18n";
+import { MessageActions } from "./MessageActions";
 
 interface UserMessageBubbleProps {
   message: Message;

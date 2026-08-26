@@ -2,9 +2,9 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
-import { decryptSecret } from './native/secrets.mjs';
 import { verifyAuditRows, verifyIntegrityPayload } from './native/audit.mjs';
 import { LATEST_SCHEMA_VERSION } from './native/migrations.mjs';
+import { decryptSecret } from './native/secrets.mjs';
 
 function sha256File(file) {
   const hash = crypto.createHash('sha256');

@@ -8,16 +8,16 @@ import {
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t, tf } from "@/i18n";
 import { toast } from "@/lib/toast";
-import { api } from "../api/client";
 import {
   changesApi,
   type ProjectChange,
   type ProjectChangeDiff,
 } from "../api/changes";
+import { api } from "../api/client";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
-import { t, tf } from "@/i18n";
 
 type ChangeKind = "added" | "deleted" | "renamed" | "modified";
 

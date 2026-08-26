@@ -1,5 +1,7 @@
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
+import { t } from "@/i18n";
+import { cn } from "@/lib/utils";
 import { api } from "../../api/client";
 import { isRecord, strField } from "../../api/eventGuards";
 import {
@@ -11,13 +13,11 @@ import {
 } from "../../api/interruptions";
 import type { ToolPart } from "../../api/types";
 import { visibleMessageText } from "../../lib/chatText";
-import { QuestionTool, type QuestionConfig } from "../QuestionTool";
-import { useStore } from "../../store/useStore";
 import { log } from "../../lib/log";
 import { toast } from "../../lib/toast";
-import { cn } from "@/lib/utils";
+import { useStore } from "../../store/useStore";
+import { type QuestionConfig, QuestionTool } from "../QuestionTool";
 import { getInput, getState } from "./toolCardUtils";
-import { t } from "@/i18n";
 
 const NO_MESSAGES: never[] = [];
 

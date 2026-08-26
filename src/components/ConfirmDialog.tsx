@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
-import { t } from "@/i18n";
 import {
   Dialog,
   DialogContent,
@@ -15,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { t } from "@/i18n";
 
 export interface ConfirmOptions {
   title: string;

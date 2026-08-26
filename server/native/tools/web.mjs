@@ -1,5 +1,5 @@
-import { runWebSearch } from '../websearch.mjs';
 import { safeExternalRequest } from '../security.mjs';
+import { runWebSearch } from '../websearch.mjs';
 import { assertAgentNetworkHost, assertAgentNetworkUrl } from '../workspace-policy.mjs';
 
 export async function executeWebSearch(input, signal) {

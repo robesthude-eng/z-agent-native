@@ -1,8 +1,8 @@
+import { t } from "@/i18n";
 import type { Message, ToolPart } from "../../api/types";
 import { toWorkspaceRelPath } from "../../lib/workspacePath";
 import { WorkspaceFileChip } from "../AttachmentChip";
 import { toolCompleted } from "./turnSummary";
-import { t } from "@/i18n";
 
 export function GeneratedFiles({ message }: { message: Message }) {
   const pathsInText = new Set<string>();

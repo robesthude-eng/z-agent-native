@@ -1,5 +1,6 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "../api/client";
 import type { SessionInfo } from "../api/types";
@@ -7,11 +8,10 @@ import { messageText } from "../lib/chatText";
 import { useStore } from "../store/useStore";
 import { FolderIcon } from "./icons";
 import { buildSidebarGroups } from "./sidebar/chatGrouping";
-import { SidebarHeader, type DeepHit } from "./sidebar/SidebarHeader";
-import { SidebarFolderItem } from "./sidebar/SidebarFolderItem";
 import { SidebarChatItem } from "./sidebar/SidebarChatItem";
+import { SidebarFolderItem } from "./sidebar/SidebarFolderItem";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
-import { t } from "@/i18n";
+import { type DeepHit, SidebarHeader } from "./sidebar/SidebarHeader";
 
 export default function Sidebar() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -37,12 +37,16 @@ export default function Sidebar() {
   const deleteChatFolder = useStore((s) => s.deleteChatFolder);
   const assignChatFolder = useStore((s) => s.assignChatFolder);
   const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null);
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(new Set());
+  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
+    new Set(),
+  );
   const [newFolderOpen, setNewFolderOpen] = useState(false);
   const [newFolderName, setNewFolderName] = useState("");
   const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
   const [folderNameDraft, setFolderNameDraft] = useState("");
-  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<string | null>(null);
+  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<
+    string | null
+  >(null);
 
   const normalizedFilter = filter.trim().toLowerCase();
 
@@ -175,7 +179,10 @@ export default function Sidebar() {
         />
 
         <ScrollArea className="flex-1 w-full" style={{ width: "100%" }}>
-          <nav className="space-y-1 p-2" style={{ width: "100%", overflowX: "hidden" }}>
+          <nav
+            className="space-y-1 p-2"
+            style={{ width: "100%", overflowX: "hidden" }}
+          >
             {totalVisible === 0 && chatFolders.length === 0 && (
               <p className="px-3 py-8 text-sm text-muted-foreground text-center">
                 {normalizedFilter
@@ -246,11 +253,14 @@ export default function Sidebar() {
                     }}
                     onDraftChange={setFolderNameDraft}
                     onCommitRename={() => {
-                      if (g.folderId) renameChatFolder(g.folderId, folderNameDraft);
+                      if (g.folderId)
+                        renameChatFolder(g.folderId, folderNameDraft);
                       setEditingFolderId(null);
                     }}
                     onCancelEditing={() => setEditingFolderId(null)}
-                    onStartDelete={() => setConfirmDeleteFolderId(g.folderId ?? null)}
+                    onStartDelete={() =>
+                      setConfirmDeleteFolderId(g.folderId ?? null)
+                    }
                     onConfirmDelete={() => {
                       if (g.folderId) deleteChatFolder(g.folderId);
                       setConfirmDeleteFolderId(null);
@@ -272,7 +282,9 @@ export default function Sidebar() {
                     </p>
                   )}
 
-                {(g.kind !== "folder" || !g.folderId || !collapsedFolders.has(g.folderId)) &&
+                {(g.kind !== "folder" ||
+                  !g.folderId ||
+                  !collapsedFolders.has(g.folderId)) &&
                   g.items.map((s) => {
                     const isActive = s.id === currentID;
                     const displayTitle =
@@ -313,7 +325,9 @@ export default function Sidebar() {
                         onCancelEditing={() => setEditingId(null)}
                         onTogglePin={() => togglePinnedSession(s.id)}
                         onToggleFolderMenu={() =>
-                          setFolderMenuFor((prev) => (prev === s.id ? null : s.id))
+                          setFolderMenuFor((prev) =>
+                            prev === s.id ? null : s.id,
+                          )
                         }
                         onAssignFolder={(folderId) => {
                           assignChatFolder(s.id, folderId);

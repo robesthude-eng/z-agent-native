@@ -277,12 +277,12 @@ export function pdfFromText(text, { title = '', fontSize = 11, pageSize = 'a4', 
     ];
     if (title && i === 0) {
       streamContent.push(`/F1 ${fontSize + 4} Tf`);
-      streamContent.push(`(${title.replace(/[\(\)\\]/g, '\\$&')}) Tj`);
+      streamContent.push(`(${title.replace(/[()\\]/g, '\\$&')}) Tj`);
       streamContent.push('T*');
       streamContent.push(`/F1 ${fontSize} Tf`);
     }
     for (const line of pageLines) {
-      const escaped = line.replace(/[\(\)\\]/g, '\\$&');
+      const escaped = line.replace(/[()\\]/g, '\\$&');
       streamContent.push(`(${escaped}) Tj`);
       streamContent.push('T*');
     }

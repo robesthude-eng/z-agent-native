@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
+import { t } from "@/i18n";
 import type { AgentActivity } from "@/lib/agentActivity";
 import { cn } from "@/lib/utils";
-import { t } from "@/i18n";
 
 /**
  * Индикатор работы агента внизу ленты.

@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { CloseIcon } from "./icons";
 import { t } from "@/i18n";
+import { CloseIcon } from "./icons";
 
 /**
  * Шпаргалка по горячим клавишам (Ctrl/Cmd + /).

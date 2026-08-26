@@ -1,11 +1,20 @@
 import { memo, useState } from "react";
+import {
+  isBarQuestionPart,
+  isInterruptedQuestionPart,
+  isInterruptionBarEnabled,
+} from "../api/interruptions";
 import type { ToolPart } from "../api/types";
-import { isBarQuestionPart, isInterruptedQuestionPart, isInterruptionBarEnabled } from "../api/interruptions";
 import MediaArtifact, { readMediaArtifact } from "./MediaArtifact";
 import { QuestionCard, QuestionTrace } from "./tool-cards/QuestionCard";
 import { ToolHeader } from "./tool-cards/ToolHeader";
 import { ToolOutputView } from "./tool-cards/ToolOutputView";
-import { getMetadata, getOutput, getState, getSummary } from "./tool-cards/toolCardUtils";
+import {
+  getMetadata,
+  getOutput,
+  getState,
+  getSummary,
+} from "./tool-cards/toolCardUtils";
 
 export { friendlyToolLabel } from "./tool-cards/toolCardUtils";
 

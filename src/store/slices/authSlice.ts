@@ -1,7 +1,7 @@
+import { t } from "@/i18n";
 import { api, jsonOrNull } from "../../api/client";
 import { log } from "../../lib/log";
 import type { AuthSlice, Slice, State } from "../types";
-import { t } from "@/i18n";
 
 /**
  * Тело ответа auth-эндпоинтов. Разбираем через jsonOrNull, чтобы HTML-ответ

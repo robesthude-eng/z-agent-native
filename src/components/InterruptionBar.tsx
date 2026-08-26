@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { t, tf } from "@/i18n";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { api, pendingQuestionForSession } from "../api/client";
@@ -20,11 +21,10 @@ import { log } from "../lib/log";
 import { useStore } from "../store/useStore";
 import { KeyIcon } from "./icons";
 import {
-  QuestionTool,
-  type QuestionConfig,
   type QuestionAnswer,
+  type QuestionConfig,
+  QuestionTool,
 } from "./QuestionTool";
-import { t, tf } from "@/i18n";
 
 /**
  * Плавающая полоса прерываний — этап 2.1.

@@ -35,11 +35,7 @@ export function ToolOutputView({ part }: ToolOutputViewProps) {
           </div>
         )}
         {edits.map((e, idx) => (
-          <DiffView
-            key={idx}
-            oldText={e.oldText}
-            newText={e.newText}
-          />
+          <DiffView key={idx} oldText={e.oldText} newText={e.newText} />
         ))}
       </div>
     );

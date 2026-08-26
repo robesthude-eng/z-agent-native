@@ -1,7 +1,7 @@
+import { resolveModel } from './catalog.mjs';
 import {
   fetchJson, isTransientProviderError, providerAuth, providerError, providerFetch, routedProviderTarget, timeoutSignal,
 } from './transport.mjs';
-import { resolveModel } from './catalog.mjs';
 
 export const MEDIA_UNSUPPORTED_KINDS = new Set(['anthropic', 'fixture']);
 export const MEDIA_MAX_RESPONSE_BYTES = 64 * 1024 * 1024;

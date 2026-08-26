@@ -1,6 +1,6 @@
 import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
-import { buildTestCommand, formatTestReport } from '../test-runner.mjs';
 import { formatDiagnosticsReport, planDiagnostics } from '../diagnostics.mjs';
+import { buildTestCommand, formatTestReport } from '../test-runner.mjs';
 
 export async function executeRunTests(root, input, ctx = {}, execBash) {
   const plan = buildTestCommand(root, input || {});

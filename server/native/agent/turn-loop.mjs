@@ -1,28 +1,28 @@
-import { emit } from '../events.mjs';
-import { getTurn, listMessages, putMessage, releaseTurnCapacity, renewTurnCapacity, setTurn, workspaceFor } from '../store.mjs';
-import { splitReasoningFromContent } from '../reasoning-parser.mjs';
+import { framesFromMessages, systemPrompt, textParts } from '../agent-frames.mjs';
+import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, waitForRetry } from '../agent-parts.mjs';
 import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
-import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
-import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
-import { availableToolDefinitions } from '../tools.mjs';
-import { isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
+import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
 import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
+import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
+import { emit } from '../events.mjs';
+import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
+import { isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
+import { splitReasoningFromContent } from '../reasoning-parser.mjs';
+import { getTurn, listMessages, putMessage, releaseTurnCapacity, renewTurnCapacity, setTurn, workspaceFor } from '../store.mjs';
+import { availableToolDefinitions } from '../tools.mjs';
+import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from '../turn-telemetry.mjs';
-import { persistAssistant, emitText } from './message-parts.mjs';
 import {
   classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, retryDelayMs, stepLimitError,
 } from '../turn-trust.mjs';
-import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
-import { framesFromMessages, systemPrompt, textParts } from '../agent-frames.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
-import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, waitForRetry } from '../agent-parts.mjs';
-import { assertTurnTransition } from '../turn-lifecycle.mjs';
-import { activeTurns, idleWaiters, TURN_CAPACITY_TTL_MS } from './state.mjs';
-import { liveTextSink, sanitizeAssistantParts } from './streaming.mjs';
+import { emitText, persistAssistant } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
+import { activeTurns, idleWaiters, TURN_CAPACITY_TTL_MS } from './state.mjs';
+import { liveTextSink } from './streaming.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
 
 export function notifyTurnIdle(sessionId) {
@@ -419,7 +419,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       });
     }
     const modelLocked = Boolean(runtime?.modelPlan?.locked);
-    const errorText = modelLocked && err?.modelLocked
+    const _errorText = modelLocked && err?.modelLocked
       ? (err?.publicMessage || err?.message || String(err))
       : assistantHasProgress(assistant, strategy)
         ? `Работа остановилась: ${publicProviderErrorMessage(err)}`

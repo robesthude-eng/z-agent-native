@@ -1,8 +1,8 @@
 import React, { type ReactNode, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { CloseIcon, ExitFullscreenIcon, FullscreenIcon } from "./icons";
-import { t } from "@/i18n";
 
 /**
  * Ghost-модалка поверх чата для Terminal / Preview.
