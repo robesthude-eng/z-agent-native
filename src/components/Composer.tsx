@@ -420,7 +420,7 @@ export default function Composer() {
   });
 
   return (
-    <div className="w-full max-w-3xl shrink-0 mx-auto px-3 md:px-6 pb-2 md:pb-6 pointer-events-none">
+    <div className="w-full max-w-3xl shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
       <div className="relative pointer-events-auto w-full">
         <ComposerSuggestions
           commands={suggestions.commands}
