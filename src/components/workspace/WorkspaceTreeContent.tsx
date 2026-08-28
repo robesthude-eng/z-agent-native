@@ -66,19 +66,9 @@ export function WorkspaceTreeContent({
     <ScrollArea className="min-h-0 w-full flex-1">
       <div className="px-2 py-2 pb-8">
         {!sessionId ? (
-          <div className="flex flex-col items-center justify-center gap-3 px-4 py-12 text-center">
-            <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-muted/60 text-muted-foreground">
-              <FolderPlusIcon size={22} />
-            </span>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">
-                Воркспейс не выбран
-              </p>
-              <p className="max-w-[240px] text-xs leading-relaxed text-muted-foreground">
-                {t("workspace.vyberite_ili_sozdayte_chat")}
-              </p>
-            </div>
-          </div>
+          <p className="px-3 py-6 text-center text-xs leading-relaxed text-muted-foreground">
+            {t("workspace.vyberite_ili_sozdayte_chat")}
+          </p>
         ) : (
           <>
             {loading && tree.length === 0 && (

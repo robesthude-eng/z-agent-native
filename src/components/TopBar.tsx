@@ -143,11 +143,11 @@ export default function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-1 border-b border-border bg-background/95 px-2 backdrop-blur supports-[backdrop-filter]:bg-background/85 sm:gap-2 sm:px-3 md:px-4">
+      <header className="sticky top-0 z-30 flex h-12 shrink-0 items-center gap-1.5 border-b border-border bg-background/95 px-3 backdrop-blur supports-[backdrop-filter]:bg-background/85 md:gap-2 md:px-4">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
+          className="h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground md:hidden"
           onClick={() => setSidebarOpen(true)}
           data-testid="mobile-menu-btn"
           title={t("top_bar.menyu")}
@@ -179,90 +179,88 @@ export default function TopBar() {
           )}
         </Button>
 
-        <div className="flex min-w-0 flex-1 items-center justify-center px-1">
-          <div className="min-w-0 max-w-full">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <div className="mx-auto min-w-0 max-w-full">
             <ModelSelector />
           </div>
         </div>
 
-        <div className="flex items-center gap-0.5 sm:gap-1 shrink-0">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
-            onClick={handleExportChat}
-            disabled={!sessionReady}
-            title={t("top_bar.skachat_chat_v_markdown")}
-            aria-label={t("top_bar.skachat_chat_v_markdown")}
-          >
-            <DownloadIcon size={16} />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
+          onClick={handleExportChat}
+          disabled={!sessionReady}
+          title={t("top_bar.skachat_chat_v_markdown")}
+          aria-label={t("top_bar.skachat_chat_v_markdown")}
+        >
+          <DownloadIcon size={16} />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
-            onClick={() => {
-              window.dispatchEvent(new Event("z-agent:chat-search"));
-            }}
-            disabled={!sessionReady}
-            title={t("top_bar.poisk_po_chatu_ctrl_f")}
-            aria-label={t("chat_view.poisk_po_soobscheniyam_chata")}
-          >
-            <SearchIcon size={16} />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
+          onClick={() => {
+            window.dispatchEvent(new Event("z-agent:chat-search"));
+          }}
+          disabled={!sessionReady}
+          title={t("top_bar.poisk_po_chatu_ctrl_f")}
+          aria-label={t("chat_view.poisk_po_soobscheniyam_chata")}
+        >
+          <SearchIcon size={16} />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-            onClick={() => setShowTerminal(true)}
-            {...gate("terminal", t("top_bar.terminal"))}
-            aria-label={t("top_bar.otkryt_terminal")}
-          >
-            <BashIcon size={16} />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          onClick={() => setShowTerminal(true)}
+          {...gate("terminal", t("top_bar.terminal"))}
+          aria-label={t("top_bar.otkryt_terminal")}
+        >
+          <BashIcon size={16} />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-            onClick={() => setShowPreview(true)}
-            {...gate("preview", t("preview_panel.predprosmotr"))}
-            aria-label={t("top_bar.otkryt_predprosmotr")}
-          >
-            <PreviewIcon size={16} />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          onClick={() => setShowPreview(true)}
+          {...gate("preview", t("preview_panel.predprosmotr"))}
+          aria-label={t("top_bar.otkryt_predprosmotr")}
+        >
+          <PreviewIcon size={16} />
+        </Button>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-            onClick={() => setShowChanges(true)}
-            disabled={!sessionReady}
-            title={t("top_bar.rezultat_i_izmeneniya_proekta")}
-            aria-label={t("top_bar.pokazat_rezultat_i_izmeneniya_proekta")}
-          >
-            <GitBranch className="h-4 w-4" />
-          </Button>
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          onClick={() => setShowChanges(true)}
+          disabled={!sessionReady}
+          title={t("top_bar.rezultat_i_izmeneniya_proekta")}
+          aria-label={t("top_bar.pokazat_rezultat_i_izmeneniya_proekta")}
+        >
+          <GitBranch className="h-4 w-4" />
+        </Button>
 
-          <Button
-            variant={workspaceOpen ? "secondary" : "ghost"}
-            size="icon"
-            className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
-            onClick={() => setWorkspaceOpen(!workspaceOpen)}
-            title={t("top_bar.fayly_proekta")}
-            aria-label={t("top_bar.pokazat_ili_skryt_fayly_proekta")}
-            aria-pressed={workspaceOpen}
-            data-testid="workspace-toggle"
-          >
-            {workspaceOpen ? (
-              <WorkspaceOpenIcon size={16} />
-            ) : (
-              <WorkspaceClosedIcon size={16} />
-            )}
-          </Button>
-        </div>
+        <Button
+          variant={workspaceOpen ? "secondary" : "ghost"}
+          size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground"
+          onClick={() => setWorkspaceOpen(!workspaceOpen)}
+          title={t("top_bar.fayly_proekta")}
+          aria-label={t("top_bar.pokazat_ili_skryt_fayly_proekta")}
+          aria-pressed={workspaceOpen}
+          data-testid="workspace-toggle"
+        >
+          {workspaceOpen ? (
+            <WorkspaceOpenIcon size={16} />
+          ) : (
+            <WorkspaceClosedIcon size={16} />
+          )}
+        </Button>
       </header>
 
       <PanelModal
