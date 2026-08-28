@@ -13,6 +13,7 @@ import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { EventStream } from "./api/events";
 import { isInterruptionBarEnabled } from "./api/interruptions";
+import { BottomNav } from "./components/BottomNav";
 import ChatView from "./components/ChatView";
 import Composer from "./components/Composer";
 import { ConfirmProvider } from "./components/ConfirmDialog";
@@ -311,6 +312,7 @@ function AppShell() {
               </main>
 
               <Composer />
+              <BottomNav />
             </div>
 
             {/* Мобильный overlay для Workspace — кнопка, а не div:

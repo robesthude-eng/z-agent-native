@@ -99,6 +99,14 @@ export default function TopBar() {
   // Горячие клавиши: Ctrl/Cmd+K — поиск по списку чатов,
   // Ctrl/Cmd+Shift+O — новый чат.
   useEffect(() => {
+    const onOpenModal = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (detail === "terminal") setShowTerminal(true);
+      if (detail === "preview") setShowPreview(true);
+      if (detail === "changes") setShowChanges(true);
+    };
+    window.addEventListener("z-agent:open-modal", onOpenModal);
+
     const onKey = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return;
       if (e.code === "KeyK" && !e.shiftKey) {
@@ -118,7 +126,10 @@ export default function TopBar() {
       }
     };
     window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("z-agent:open-modal", onOpenModal);
+      window.removeEventListener("keydown", onKey);
+    };
   }, []);
 
   const handleExportChat = () => {
