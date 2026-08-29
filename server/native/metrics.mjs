@@ -1,3 +1,13 @@
+import { TOOL_DEFINITIONS } from './tools/definitions.mjs';
+
+// The tool name in this label comes from the model's tool call, so it is
+// untrusted input. Validating only the shape of the string let any invented
+// name that looked like an identifier become a permanent new Prometheus
+// series: an unknown tool does not abort the turn, the dispatcher turns it into
+// a failed tool result that is still recorded. Bucket anything outside the real
+// tool surface so label cardinality stays bounded by the tool set.
+const KNOWN_TOOL_NAMES = new Set(TOOL_DEFINITIONS.map((definition) => definition.name));
+
 const counters = new Map();
 const startedAt = Date.now();
 
@@ -61,7 +71,7 @@ export function observeTurnSummary(summary) {
   inc('z_agent_verification_attempts_total', summary.verificationAttempts);
   inc('z_agent_completion_gate_reminders_total', summary.gateReminders);
   for (const [tool, data] of Object.entries(summary.tools || {})) {
-    const safeTool = /^[a-z0-9_]{1,40}$/i.test(tool) ? tool : 'other';
+    const safeTool = KNOWN_TOOL_NAMES.has(tool) ? tool : 'other';
     inc('z_agent_tool_calls_by_tool_total', data?.calls, { tool: safeTool });
     inc('z_agent_tool_errors_by_tool_total', data?.errors, { tool: safeTool });
   }

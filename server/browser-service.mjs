@@ -209,3 +209,31 @@ for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 3000).unref?.();
 });
+
+// Without this a crash leaves no structured trace and, worse, abandons the
+// per-session worker processes this controller spawned. The shape matches the
+// API server's fatal record so one log query covers every process.
+function fatal(kind, cause) {
+  try {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      service: 'browser-service',
+      event: kind,
+      at: new Date().toISOString(),
+      activeWorkers: workers.size,
+      message: String(cause?.message || cause),
+      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+    }));
+  } catch {
+    console.error('[browser-service]', kind, cause);
+  }
+  // Exiting non-zero has to survive the event loop draining on its own, so the
+  // code is set up front and the timer only forces the issue if a handle hangs.
+  process.exitCode = 1;
+  try { clearInterval(sweepTimer); } catch {}
+  try { for (const state of workers.values()) stopWorker(state, 'SIGKILL'); } catch {}
+  try { server.close(); } catch {}
+  setTimeout(() => process.exit(1), 250).unref?.();
+}
+process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
+process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });

@@ -24,13 +24,20 @@ export async function emitText(assistant, text, type = 'text', { putMessage, emi
   if (type === 'text' && last?.type === 'text' && String(last.text || '').trim() === trimmed) return;
   const part = { id: partId(), type, text: '' };
   assistant.parts.push(part);
-  await appendStreamedPart(assistant, part, trimmed, { putMessage, emit });
+  appendStreamedPart(assistant, part, trimmed, { putMessage, emit });
 }
 
-async function appendStreamedPart(assistant, part, text, { putMessage, emit }) {
-  for (const ch of text) {
-    part.text += ch;
-    putMessage(assistant);
-  }
+/**
+ * Persist a finished text part exactly once.
+ *
+ * Tokens already reach the client over SSE while the provider streams, so the
+ * database only needs the completed part. The previous implementation wrote the
+ * whole assistant message back to SQLite after every single character, which
+ * turned a 4 KB answer into ~4000 synchronous writes and blocked the event loop
+ * for seconds on long replies.
+ */
+function appendStreamedPart(assistant, part, text, { putMessage, emit }) {
+  part.text = text;
+  putMessage(assistant);
   emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
 }

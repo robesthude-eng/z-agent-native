@@ -1,5 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+
+// These modules read configuration when they load, and cluster.mjs now shares
+// the store's single SQLite handle, so point the data directory at a scratch
+// location before importing anything.
+process.env.Z_AGENT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'z-config-'));
 
 const {
   DEFAULT_TOOL_TIMEOUT_MS,

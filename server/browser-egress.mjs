@@ -123,3 +123,30 @@ for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => {
   server.close(() => process.exit(0));
   setTimeout(() => process.exit(1), 3000).unref?.();
 });
+
+// This proxy is the only egress path for the browser sandbox, so an
+// undiagnosed crash reads downstream as unexplained network failures. The shape
+// matches the API server's fatal record so one log query covers every process.
+function fatal(kind, cause) {
+  try {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      service: 'browser-egress',
+      event: kind,
+      at: new Date().toISOString(),
+      connections: sockets.size,
+      message: String(cause?.message || cause),
+      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+    }));
+  } catch {
+    console.error('[browser-egress]', kind, cause);
+  }
+  // Exiting non-zero has to survive the event loop draining on its own, so the
+  // code is set up front and the timer only forces the issue if a handle hangs.
+  process.exitCode = 1;
+  try { for (const socket of sockets) socket.destroy(); } catch {}
+  try { server.close(); } catch {}
+  setTimeout(() => process.exit(1), 250).unref?.();
+}
+process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
+process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });

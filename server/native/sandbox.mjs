@@ -68,14 +68,26 @@ export function sandboxIdentity(sessionId) {
   throw new Error('Shell sandbox is unavailable. Run Z Agent in Docker, or explicitly set Z_AGENT_ALLOW_UNISOLATED_SHELL=1 for an unsafe single-user development fallback.');
 }
 
-function chownTree(full, uid, gid) {
-  let st;
-  try { st = fs.lstatSync(full); } catch { return; }
-  if (st.uid !== uid || st.gid !== gid) { try { fs.lchownSync(full, uid, gid); } catch {} }
-  if (!st.isDirectory() || st.isSymbolicLink()) return;
-  let names;
-  try { names = fs.readdirSync(full); } catch { return; }
-  for (const name of names) chownTree(path.join(full, name), uid, gid);
+/**
+ * Re-own a workspace subtree, iteratively.
+ *
+ * Recursion here was one stack frame per directory level, so a deep tree
+ * (node_modules, .git objects, nested build output) could overflow the stack
+ * and abort sandbox preparation half-owned. An explicit stack keeps memory on
+ * the heap and makes the walk depth-independent.
+ */
+function chownTree(root, uid, gid) {
+  const stack = [root];
+  while (stack.length > 0) {
+    const full = stack.pop();
+    let st;
+    try { st = fs.lstatSync(full); } catch { continue; }
+    if (st.uid !== uid || st.gid !== gid) { try { fs.lchownSync(full, uid, gid); } catch {} }
+    if (!st.isDirectory() || st.isSymbolicLink()) continue;
+    let names;
+    try { names = fs.readdirSync(full); } catch { continue; }
+    for (const name of names) stack.push(path.join(full, name));
+  }
 }
 
 /**
@@ -110,6 +122,16 @@ export function prepareWorkspaceSandbox(sessionId, workspace) {
   }
   try { fs.chmodSync(root, 0o700); } catch {}
   return identity;
+}
+
+// Deleting a session removes its workspace directory, so the memoised ownership
+// pass for that session has to go with it. Without this the set grows by one
+// entry per session for the lifetime of the process, and a workspace recreated
+// under the same id would skip the full ownership walk and keep whatever
+// ownership the recreated files happen to have.
+export function forgetPreparedSandbox(sessionId) {
+  const prefix = `${sessionId}:`;
+  for (const key of preparedSandboxes) if (key.startsWith(prefix)) preparedSandboxes.delete(key);
 }
 
 export function resetSandboxCacheForTests() {

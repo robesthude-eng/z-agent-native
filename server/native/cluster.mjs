@@ -1,6 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DatabaseSync } from 'node:sqlite';
-import { DB_PATH } from './config.mjs';
+import { db } from './store/db.mjs';
 
 // Cross-instance coordination.
 //
@@ -34,20 +33,21 @@ const HEARTBEAT_MS = Math.max(1_000, Math.floor(LOCK_TTL_MS / 3));
 // in events.mjs stays the source of truth for reconnecting clients.
 const EVENT_RETENTION_MS = 120_000;
 
-let db = null;
+let schemaReady = false;
 let cursor = 0;
 let poller = null;
 let heartbeat = null;
 let ingestFrame = null;
 
 function connect() {
-  if (db) return db;
-  // A separate connection to the same WAL database: store.mjs keeps its own and
-  // SQLite serialises the writers for us.
-  db = new DatabaseSync(DB_PATH);
+  if (schemaReady) return db;
+  // Coordination shares the store's single connection to the database file.
+  // A second DatabaseSync on the same path was a second connection with its own
+  // lock and transaction state, so a cluster write could block or fail the
+  // store's writer with SQLITE_BUSY instead of being serialised in-process.
+  // Journal mode and busy_timeout are properties of that shared handle and are
+  // already configured by the store.
   db.exec(`
-    PRAGMA journal_mode=WAL;
-    PRAGMA busy_timeout=5000;
     CREATE TABLE IF NOT EXISTS cluster_instances (
       id TEXT PRIMARY KEY,
       started_at INTEGER NOT NULL,
@@ -69,6 +69,7 @@ function connect() {
     );
     CREATE INDEX IF NOT EXISTS cluster_events_created ON cluster_events (created_at);
   `);
+  schemaReady = true;
   return db;
 }
 
@@ -111,10 +112,8 @@ export function stopCluster() {
   heartbeat = null;
   ingestFrame = null;
   cursor = 0;
-  if (db) {
-    try { db.close(); } catch { /* already closed */ }
-    db = null;
-  }
+  // The handle belongs to the store and stays open for the rest of the process;
+  // stopping coordination must not close the database out from under it.
 }
 
 export function touchInstance(at = Date.now()) {

@@ -38,3 +38,28 @@ async function shutdown(code = 0) {
 }
 for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { shutdown(0).catch(() => process.exit(1)); });
 process.stdin.on('end', () => { chain.finally(() => shutdown(process.exitCode || 0)).catch(() => process.exit(1)); });
+
+// Crashing straight out of this process would skip closeAllBrowserSessions and
+// orphan the Chromium processes it spawned, which then survive as untracked
+// children holding memory and profile directories. Route a fatal through the
+// same shutdown the signals use. Diagnostics go to stderr, never stdout, which
+// carries the framed response protocol the controller parses.
+function fatal(kind, cause) {
+  try {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      service: 'browser-worker',
+      event: kind,
+      at: new Date().toISOString(),
+      sessionId,
+      message: String(cause?.message || cause),
+      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+    }));
+  } catch {
+    console.error('[browser-worker]', kind, cause);
+  }
+  process.exitCode = 1;
+  shutdown(1).catch(() => process.exit(1));
+}
+process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
+process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });

@@ -1,21 +1,15 @@
 import crypto from 'node:crypto';
-import fs from 'node:fs';
-import path from 'node:path';
-import { DatabaseSync } from 'node:sqlite';
-import { DB_PATH } from './config.mjs';
+import { db } from './store/db.mjs';
 
 export const PROVIDER_PROTOCOLS = ['openai', 'anthropic', 'google'];
 
-fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
-const db = new DatabaseSync(DB_PATH);
+// One process must hold exactly one handle per SQLite file. A second
+// DatabaseSync on the same path was a separate connection with its own lock
+// and transaction state: `BEGIN IMMEDIATE` below could collide with the store's
+// writer and surface as SQLITE_BUSY under concurrent turns, and the two handles
+// raced on first-boot journal-mode setup. Reusing the store handle also
+// guarantees migrations and the `users` table (referenced below) already exist.
 db.exec(`
-  -- Same database file as store.mjs. Journal mode is a property of the file, so
-  -- opening this handle in the default rollback mode fought with the WAL writer
-  -- instead of joining it; busy_timeout matches store.mjs so BEGIN IMMEDIATE
-  -- below waits its turn rather than failing with SQLITE_BUSY.
-  PRAGMA journal_mode=WAL;
-  PRAGMA busy_timeout=5000;
-  PRAGMA foreign_keys=ON;
   CREATE TABLE IF NOT EXISTS provider_configs (
     owner_id TEXT NOT NULL,
     provider_id TEXT NOT NULL,

@@ -343,6 +343,28 @@ test('an uncaught fault is recorded and turned into a clean restart, not a silen
   assert.match(server, /setTimeout\(\(\) => process\.exit\(1\), FATAL_GRACE_MS/);
 });
 
+test('every long-lived sidecar records a fault instead of dying silently', () => {
+  // The API server has always done this; the processes it depends on did not,
+  // so a fault in any of them surfaced only as an unexplained restart. Each one
+  // must also release what it owns on the way out, or the restart leaves
+  // untracked children behind.
+  const releases = {
+    'server/executor.mjs': /killChild\(child, 'SIGKILL'\)/,
+    'server/browser-service.mjs': /stopWorker\(state, 'SIGKILL'\)/,
+    'server/browser-egress.mjs': /for \(const socket of sockets\) socket\.destroy\(\)/,
+    // Skipping this orphans the Chromium processes the worker spawned.
+    'server/browser-worker.mjs': /shutdown\(1\)/,
+  };
+  for (const [file, releasesOwned] of Object.entries(releases)) {
+    const source = fs.readFileSync(path.join(repoRoot, file), 'utf8');
+    assert.match(source, /process\.on\('unhandledRejection'/, `${file} must record an unhandled rejection`);
+    assert.match(source, /process\.on\('uncaughtException'/, `${file} must record an uncaught exception`);
+    assert.match(source, /level: 'fatal'/, `${file} must log the fault in the shared fatal shape`);
+    assert.match(source, /process\.exitCode = 1/, `${file} must exit non-zero so the supervisor restarts it`);
+    assert.match(source, releasesOwned, `${file} must release what it owns before exiting`);
+  }
+});
+
 test('the API image carries its own readiness probe, not only the Compose one', () => {
   const dockerfile = fs.readFileSync(path.join(repoRoot, 'Dockerfile'), 'utf8');
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');

@@ -76,6 +76,31 @@ export const TOOL_DEFINITIONS = [
     }, ['todos']),
   },
   {
+    // The runtime has always implemented this tool end to end (dispatcher,
+    // turn suspension, SSE `question.asked`, durable recovery and the UI card),
+    // and the system prompt instructs the model to use it -- but it was missing
+    // from this list, so its schema never reached the provider and no real
+    // model could ever call it. Only the in-repo fixture provider, which names
+    // tools directly, exercised the path.
+    name: 'question',
+    description: 'Ask the user a blocking question when a decision genuinely requires them. The current turn suspends and resumes with the answer, so never ask the user to send a separate chat message instead.',
+    inputSchema: object({
+      questions: {
+        type: 'array', minItems: 1, maxItems: 5,
+        items: object({
+          question: { type: 'string', description: 'The question to put to the user' },
+          header: { type: 'string', description: 'Short label shown as the question heading' },
+          options: {
+            type: 'array', maxItems: 8,
+            items: object({ label: { type: 'string' }, description: { type: 'string' } }, ['label']),
+            description: 'Suggested answers the user can pick in one click',
+          },
+          allowCustomResponse: { type: 'boolean', description: 'Allow a free-form answer alongside the options. Defaults to true.' },
+        }, ['question']),
+      },
+    }, ['questions']),
+  },
+  {
     name: 'task',
     description: 'Delegate focused work to a specialized subagent using the same model. Choose planner for a phased architecture plan before implementation, explore for architecture/navigation, debug for root-cause tracing, review for defect-focused code review, security for vulnerability and hardening audits, tester for coverage and verification plans, or implement to carry out and verify a scoped change. Every role except implement is read-only; only implement may modify files.',
     inputSchema: object({

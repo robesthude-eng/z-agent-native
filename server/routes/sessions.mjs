@@ -9,7 +9,7 @@ import { assertActionId, sessionId } from '../native/ids.mjs';
 import { readJson, sendJson } from '../native/json.mjs';
 import { previewDocument } from '../native/preview-document.mjs';
 import { revokePreviewTokens } from '../native/preview-tokens.mjs';
-import { killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
+import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
 import {
   createChat, deleteChat, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
   listChats, listMessages, listPendingQuestions, listQueue, ownsChat, renameChat, setPrefs, workspaceFor, 
@@ -97,6 +97,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       revokePreviewTokens(sid);
       clearAgentSessionState(sid);
       clearSessionEvents(sid);
+      forgetPreparedSandbox(sid);
       sendJson(res, 204, null);
       return true;
     }

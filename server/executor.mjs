@@ -240,3 +240,31 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
     setTimeout(() => process.exit(1), 3000).unref?.();
   });
 }
+
+// The container restarts this process, but a crash that leaves no structured
+// trace is undiagnosable afterwards, and the sandboxed children would outlive
+// the parent that is supposed to reap them. The shape matches the API server's
+// fatal record so one log query covers every process in the deployment.
+function fatal(kind, cause) {
+  try {
+    console.error(JSON.stringify({
+      level: 'fatal',
+      service: 'executor',
+      event: kind,
+      at: new Date().toISOString(),
+      activeUids: activeByUid.size,
+      message: String(cause?.message || cause),
+      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+    }));
+  } catch {
+    console.error('[executor]', kind, cause);
+  }
+  // Exiting non-zero has to survive the event loop draining on its own, so the
+  // code is set up front and the timer only forces the issue if a handle hangs.
+  process.exitCode = 1;
+  try { for (const set of activeByUid.values()) for (const child of set) killChild(child, 'SIGKILL'); } catch {}
+  try { server.close(); } catch {}
+  setTimeout(() => process.exit(1), 250).unref?.();
+}
+process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
+process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });
