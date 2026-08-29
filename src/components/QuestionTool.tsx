@@ -5,7 +5,7 @@ import {
   Send as SendIcon,
 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { t } from "@/i18n";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export type QuestionOption = {
@@ -131,8 +131,8 @@ export function QuestionTool({
   const isLastQuestion = clampedIndex >= total;
 
   const resolvedSubmitLabel = submitLabel ?? t("composer.otpravit");
-  const resolvedNextLabel = nextLabel ?? "Next";
-  const resolvedSkipLabel = skipLabel ?? "Skip";
+  const resolvedNextLabel = nextLabel ?? t("question_tool.dalee");
+  const resolvedSkipLabel = skipLabel ?? t("question_tool.ne_otvechat");
   const primaryLabel = isLastQuestion ? resolvedSubmitLabel : resolvedNextLabel;
 
   const canSubmit = useMemo(() => {
@@ -224,7 +224,17 @@ export function QuestionTool({
       if (onNextQuestion) onNextQuestion();
       else setInternalIndex((prev) => Math.min(total, prev + 1));
     } else {
-      // Все вопросы пройдены — отправляем итоговый массив
+      // Раньше за каждый незаполненный вопрос подставлялось «skip», и агент
+      // получал уверенный отказ там, где пользователь просто листал стрелками.
+      // Отправка теперь возвращает к первому незаполненному вопросу.
+      const missing = Array.from({ length: total }, (_, idx) => idx + 1).find(
+        (position) => !nextLocal[position],
+      );
+      if (missing !== undefined) {
+        if (isControlled) onNextQuestion?.();
+        else setInternalIndex(missing);
+        return;
+      }
       const allAnswers: QuestionAnswer[] = Array.from(
         { length: total },
         (_, idx) => nextLocal[idx + 1] ?? { kind: "skip" },
@@ -237,6 +247,7 @@ export function QuestionTool({
     busy,
     canSubmit,
     clampedIndex,
+    isControlled,
     localAnswers,
     onNextQuestion,
     onSubmitAnswer,
@@ -246,7 +257,12 @@ export function QuestionTool({
 
   const handleSkip = useCallback(() => {
     if (busy) return;
-    onSkip?.();
+    // Когда хост берёт отказ на себя (штатный reject вопроса), компонент
+    // не должен дополнительно подставлять фиктивный ответ и листать дальше.
+    if (onSkip) {
+      onSkip();
+      return;
+    }
     const skipAnswer: QuestionAnswer = { kind: "skip" };
     const nextLocal = { ...localAnswers, [clampedIndex]: skipAnswer };
     setLocalAnswers(nextLocal);
@@ -273,17 +289,27 @@ export function QuestionTool({
     total,
   ]);
 
+  // Листание стрелками раньше не сохраняло текущий выбор, и готовый ответ
+  // терялся при переходе на соседний вопрос.
+  const persistDraft = useCallback(() => {
+    if (!activeQuestion || !canSubmit) return;
+    const answer = buildCurrentAnswer();
+    setLocalAnswers((prev) => ({ ...prev, [clampedIndex]: answer }));
+  }, [activeQuestion, buildCurrentAnswer, canSubmit, clampedIndex]);
+
   const goPrev = useCallback(() => {
     if (!canGoPrev || busy) return;
+    persistDraft();
     if (onPreviousQuestion) onPreviousQuestion();
     else setInternalIndex((prev) => Math.max(1, prev - 1));
-  }, [busy, canGoPrev, onPreviousQuestion]);
+  }, [busy, canGoPrev, onPreviousQuestion, persistDraft]);
 
   const goNext = useCallback(() => {
     if (!canGoNext || busy) return;
+    persistDraft();
     if (onNextQuestion) onNextQuestion();
     else setInternalIndex((prev) => Math.min(total, prev + 1));
-  }, [busy, canGoNext, onNextQuestion]);
+  }, [busy, canGoNext, onNextQuestion, persistDraft, total]);
 
   if (!activeQuestion) return null;
 
@@ -298,7 +324,7 @@ export function QuestionTool({
       <div className="h-9 border-b border-white/[0.08] px-3.5 flex items-center justify-between text-xs text-muted-foreground bg-white/[0.02]">
         <div className="inline-flex items-center gap-1.5 font-medium tracking-wide">
           <CircleHelpIcon className="w-3.5 h-3.5 text-primary/90" />
-          <span>{activeQuestion.header || "Question"}</span>
+          <span>{activeQuestion.header || t("question_tool.vopros")}</span>
         </div>
 
         {total > 1 && (
@@ -308,19 +334,19 @@ export function QuestionTool({
               onClick={goPrev}
               disabled={!canGoPrev || busy}
               className="size-5 inline-flex items-center justify-center rounded hover:bg-white/[0.08] disabled:opacity-30 transition"
-              aria-label="Previous question"
+              aria-label={t("question_tool.predyduschiy_vopros")}
             >
               <ChevronUpIcon className="w-3.5 h-3.5" />
             </button>
             <span className="tabular-nums px-1 font-mono text-[11.5px]">
-              {clampedIndex} of {total}
+              {tf("question_tool.0_iz_1", [clampedIndex, total])}
             </span>
             <button
               type="button"
               onClick={goNext}
               disabled={!canGoNext || busy}
               className="size-5 inline-flex items-center justify-center rounded hover:bg-white/[0.08] disabled:opacity-30 transition"
-              aria-label="Next question"
+              aria-label={t("question_tool.sleduyuschiy_vopros")}
             >
               <ChevronDownIcon className="w-3.5 h-3.5" />
             </button>
@@ -332,7 +358,10 @@ export function QuestionTool({
       <div className="p-4 space-y-3.5">
         {/* Номер и формулировка вопроса */}
         <div className="flex items-start gap-2.5">
-          <span className="size-5.5 rounded-md flex items-center justify-center text-xs font-semibold bg-white/[0.07] text-foreground/80 shrink-0 mt-0.5 font-mono">
+          <span
+            aria-hidden="true"
+            className="size-5.5 rounded-md flex items-center justify-center text-xs font-semibold bg-white/[0.07] text-foreground/80 shrink-0 mt-0.5 font-mono"
+          >
             {clampedIndex}
           </span>
           <div className="flex-1">
@@ -351,7 +380,11 @@ export function QuestionTool({
         {kind !== "text" &&
           activeQuestion.options &&
           activeQuestion.options.length > 0 && (
-            <div className="space-y-1.5 pt-0.5">
+            <div
+              className="space-y-1.5 pt-0.5"
+              role={kind === "multi" ? "group" : "radiogroup"}
+              aria-label={activeQuestion.title}
+            >
               {activeQuestion.options.map((opt, idx) => {
                 const checked = selectedIds.includes(opt.id);
                 const badgeLetter = optionBadge(idx);
@@ -360,6 +393,8 @@ export function QuestionTool({
                   <button
                     key={opt.id || `${opt.label}-${idx}`}
                     type="button"
+                    role={kind === "multi" ? "checkbox" : "radio"}
+                    aria-checked={checked}
                     disabled={busy}
                     onClick={() => handleSelectOption(opt.id)}
                     className={cn(
@@ -370,6 +405,7 @@ export function QuestionTool({
                     )}
                   >
                     <span
+                      aria-hidden="true"
                       className={cn(
                         "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
                         checked
@@ -405,6 +441,7 @@ export function QuestionTool({
                   )}
                 >
                   <span
+                    aria-hidden="true"
                     className={cn(
                       "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
                       selectedIds.includes(CUSTOM_ID)
@@ -426,8 +463,10 @@ export function QuestionTool({
                         handleNextOrSubmit();
                       }
                     }}
+                    aria-label={t("tool_card.ili_svoy_otvet")}
                     placeholder={
-                      activeQuestion.customPlaceholder ?? "Type your answer"
+                      activeQuestion.customPlaceholder ??
+                      t("question_tool.vvedite_otvet")
                     }
                     className="w-full h-8 bg-transparent text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none border-none focus:outline-none focus:ring-0"
                   />
@@ -449,7 +488,10 @@ export function QuestionTool({
               }
             }}
             rows={3}
-            placeholder={activeQuestion.placeholder ?? "Type your answer"}
+            aria-label={activeQuestion.title}
+            placeholder={
+              activeQuestion.placeholder ?? t("question_tool.vvedite_otvet")
+            }
             className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] p-3 text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary/60 focus:bg-white/[0.05] transition-all resize-y"
           />
         )}

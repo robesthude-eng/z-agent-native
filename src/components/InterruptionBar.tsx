@@ -299,7 +299,7 @@ export default function InterruptionBar() {
     const questionConfigs: QuestionConfig[] = queue.map((q, idx) => ({
       id: q.id ?? `q-${idx}`,
       title: q.prompt,
-      header: q.title || "Question",
+      header: q.title || t("question_tool.vopros"),
       ...(q.detail ? { description: q.detail } : {}),
       allowCustom: q.allowCustom,
       options: q.options.map((opt, oIdx) => ({

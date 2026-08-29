@@ -92,6 +92,26 @@ makes an existing guarantee enforceable.
   command ends. A test drives a real `git` process and asserts output arrives
   while the command is still running.
 
+- **The question card answered on the user's behalf.** The card shown when the
+  agent asks a blocking question paged between questions without recording the
+  current selection, and the final submit filled every gap with a confident
+  `skip`. Answering only the last of three questions sent two fabricated
+  refusals, and the agent could not tell them from deliberate ones. Navigation
+  now stores the draft answer, and submitting with a gap returns to the first
+  unanswered question instead of inventing a reply. The skip button had the
+  same problem from the other side: it sent the literal string `skip` as a
+  normal answer, indistinguishable from a user who typed that word. It now
+  calls the reject path the runtime already implemented, which marks the
+  question rejected and releases the suspended turn. Option identity was
+  derived from the option's own label, so two options sharing a label
+  highlighted together and collided as React keys, while an option with no
+  label rendered as a blank clickable row, because the `??` guards could never
+  fire against the empty string the parser returns. Identity is now positional
+  and a missing label falls back to a numbered placeholder. The card's
+  remaining English strings now come from the message catalogue like the rest
+  of the interface, and the option list exposes radiogroup and radio roles with
+  `aria-checked` rather than signalling selection by colour alone.
+
 ### Added
 
 - `tests/tool-surface.test.mjs`, which fails if a tool the dispatcher can

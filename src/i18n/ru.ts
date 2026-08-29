@@ -142,7 +142,7 @@ export const messages = {
   "chat_view.nayti_bag": "Найти баг",
   "chat_view.novyy_otvet": "Новый ответ",
   "chat_view.obyasni_chto_delaet_etot_kod_i":
-    "Объясни, что делает этот код, и предложи, как его упростить:\\n\\n",
+    "Объясни, что делает этот код, и предложи, как его упрост��ть:\\n\\n",
   "chat_view.poisk_po_chatu": "Поиск по чату…",
   "chat_view.poisk_po_soobscheniyam_chata": "Поиск по сообщениям чата",
   "chat_view.pokazhi_v_terminale_versii_node_npm":
@@ -211,7 +211,7 @@ export const messages = {
   "event_handlers.strim_prervan_poluchen_povrezhdennyy_fragmen":
     "Стрим прерван: получен повреждённый фрагмент данных. ",
   "file_decisions.dvoichnyy_fayl_sohranenie_isportilo_by_soder":
-    "Двоичный файл: сохранение испортило бы содержимое",
+    "Дв��ичный файл: сохранение испортило бы содержимое",
   "file_editor.chernovik_sovpadaet_s_sohranennym_faylom":
     "Черновик совпадает с сохранённым файлом",
   "file_editor.est_nesohranennye_pravki": "Есть несохранённые правки",
@@ -464,6 +464,15 @@ export const messages = {
   "provider_channel_manager.vyklyuchen": "выключен",
   "provider_channel_manager.zagruzhaem": "Загружаем…",
   "provider_channel_manager.zagruzka": "Загрузка…",
+  "question_tool.0_iz_1": "{0} из {1}",
+  "question_tool.dalee": "Далее",
+  "question_tool.ne_otvechat": "Не отвечать",
+  "question_tool.predyduschiy_vopros": "Предыдущий вопрос",
+  "question_tool.sleduyuschiy_vopros": "Следующий вопрос",
+  "question_tool.variant_0": "Вариант {0}",
+  "question_tool.vopros": "Вопрос",
+  "question_tool.vopros_0": "Вопрос {0}",
+  "question_tool.vvedite_otvet": "Введите ответ",
   "router.chat_prodolzhaet_rabotat":
     "Остальное приложение работает. Перезагрузите страницу и пришлите текст ошибки.",
   "router.ekran_ne_otrisovalsya": "Экран не отрисовался",

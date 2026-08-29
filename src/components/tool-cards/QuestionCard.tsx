@@ -1,6 +1,6 @@
 import { Check, ChevronDown, ChevronRight } from "lucide-react";
 import { useCallback, useMemo, useState } from "react";
-import { t } from "@/i18n";
+import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "../../api/client";
 import { isRecord, strField } from "../../api/eventGuards";
@@ -135,7 +135,7 @@ export function QuestionTrace({ part }: { part: ToolPart }) {
             const chosen = answers[i];
             const line = lines[i];
             return (
-              <div key={q.prompt} className="space-y-1.5">
+              <div key={`${i}-${q.prompt}`} className="space-y-1.5">
                 {q.prompt && (
                   <div className="text-[13px] text-foreground/90">
                     {q.prompt}
@@ -143,11 +143,11 @@ export function QuestionTrace({ part }: { part: ToolPart }) {
                 )}
                 {q.options.length > 0 && (
                   <ul className="space-y-1">
-                    {q.options.map((o) => {
+                    {q.options.map((o, oi) => {
                       const picked = !!chosen?.includes(o.label);
                       return (
                         <li
-                          key={o.value}
+                          key={`${oi}-${o.value}`}
                           className={cn(
                             "flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-[12.5px]",
                             picked
@@ -224,16 +224,46 @@ export function QuestionCard({ part }: { part: ToolPart }) {
     [currentID],
   );
 
+  // Кнопка отказа раньше отправляла строку "skip" как обычный ответ, и модель
+  // не могла отличить его от пользователя, напечатавшего «skip». У runtime есть
+  // штатный reject: он ставит вопросу статус rejected и разблокирует ход.
+  const declineQuestion = useCallback(async () => {
+    const sid = currentID;
+    if (!sid) return;
+    setSubmitting(true);
+    try {
+      const pending = await api.waitForPendingQuestion(sid);
+      if (!pending) {
+        throw new Error(
+          t("tool_card.question_api_esche_ne_zaregistriroval_vopros"),
+        );
+      }
+      await api.rejectQuestion(sid, pending.id);
+      setSubmitted(true);
+    } catch (err) {
+      log.error("[QuestionCard] rejectQuestion failed:", err);
+      toast("error", err instanceof Error ? err.message : String(err));
+    } finally {
+      setSubmitting(false);
+    }
+  }, [currentID]);
+
   const questionConfigs: QuestionConfig[] = useMemo(
     () =>
       questions.map((q, idx) => ({
         id: `q-${idx}`,
-        title: q.question || q.header || `Question ${idx + 1}`,
+        title:
+          q.question || q.header || tf("question_tool.vopros_0", [idx + 1]),
         ...(q.header ? { header: q.header } : {}),
         allowCustom: q.allowCustomResponse !== false,
         options: (q.options ?? []).map((opt, oIdx) => ({
-          id: opt.id ?? opt.label ?? `opt-${oIdx}`,
-          label: opt.label ?? opt.id ?? `Option ${oIdx + 1}`,
+          // Идентификатор раньше брался из подписи, поэтому два варианта с
+          // одинаковым текстом подсвечивались вместе и делили React-ключ.
+          id: `opt-${oIdx}`,
+          // parseOption возвращает пустую строку, а не undefined, поэтому ?? здесь
+          // никогда не срабатывал и вариант без подписи рисовался пустой строкой.
+          label:
+            opt.label || opt.id || tf("question_tool.variant_0", [oIdx + 1]),
           ...(opt.description ? { description: opt.description } : {}),
         })),
       })),
@@ -247,6 +277,7 @@ export function QuestionCard({ part }: { part: ToolPart }) {
       <QuestionTool
         questions={questionConfigs}
         busy={submitting || !isWaiting || submitted}
+        onSkip={declineQuestion}
         onSubmitAnswer={async (answers) => {
           const allValues = answers.map((ans) => {
             if (ans.kind === "skip") return ["skip"];
