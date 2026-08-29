@@ -133,7 +133,7 @@ export function buildGitArgs(root, action, input = {}) {
   throw new Error(`Unsupported git action "${action}". Use one of: ${GIT_ACTIONS.join(', ')}`);
 }
 
-async function runGit(root, identity, args, signal, timeoutMs) {
+async function runGit(root, identity, args, signal, timeoutMs, onOutput = null) {
   const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_GIT_TIMEOUT_MS, 1000), MAX_GIT_TIMEOUT_MS);
   if (identity?.isolated) {
     const remote = await executeInExecutor({
@@ -151,8 +151,14 @@ async function runGit(root, identity, args, signal, timeoutMs) {
     });
     let stdout = '';
     let stderr = '';
-    child.stdout.on('data', (chunk) => { stdout = truncateGit(stdout + chunk.toString('utf8')); });
-    child.stderr.on('data', (chunk) => { stderr = truncateGit(stderr + chunk.toString('utf8')); });
+    child.stdout.on('data', (chunk) => {
+      stdout = truncateGit(stdout + chunk.toString('utf8'));
+      if (typeof onOutput === 'function') onOutput(stdout, stderr);
+    });
+    child.stderr.on('data', (chunk) => {
+      stderr = truncateGit(stderr + chunk.toString('utf8'));
+      if (typeof onOutput === 'function') onOutput(stdout, stderr);
+    });
     const kill = () => { try { child.kill('SIGTERM'); } catch { /* already gone */ } };
     const timer = setTimeout(kill, budget);
     timer.unref?.();
@@ -230,7 +236,7 @@ export function pickInitDir(root, input = {}) {
   return root;
 }
 
-export async function executeGitTool({ root, identity, input = {}, signal, sessionId = null }) {
+export async function executeGitTool({ root, identity, input = {}, signal, sessionId = null, onOutput = null }) {
   ensureManagedHome(sessionId, root);
   const action = String(input.action || '').trim().toLowerCase();
   if (!GIT_ACTIONS.includes(action)) {
@@ -246,20 +252,20 @@ export async function executeGitTool({ root, identity, input = {}, signal, sessi
   };
 
   let plan = buildGitArgs(repoDir, action, input);
-  let result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs);
+  let result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs, onOutput);
 
   // Распакованный проект без .git — обычная ситуация, а не ошибка модели:
   // инициализируем репозиторий в каталоге проекта и повторяем команду. Первый
   // commit агент сделает сам, когда решит зафиксировать историю.
   if (result.code !== 0 && /not a git repository/i.test((result.stderr || result.stdout || ''))) {
     const initDir = repoDir !== root ? repoDir : pickInitDir(root, input);
-    const init = await runGit(root, identity, gitArgsFor(initDir, ['init']), signal, input.timeoutMs);
+    const init = await runGit(root, identity, gitArgsFor(initDir, ['init']), signal, input.timeoutMs, onOutput);
     if (init.code !== 0) {
       throw new Error(`Could not initialize a git repository in ${relOf(initDir) || '.'}: ${(init.stderr || init.stdout || '').trim()}`);
     }
     repoDir = initDir;
     plan = buildGitArgs(repoDir, action, input);
-    result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs);
+    result = await runGit(root, identity, gitArgsFor(repoDir, plan.args), signal, input.timeoutMs, onOutput);
   }
 
   if (result.code !== 0) {

@@ -121,25 +121,44 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'webfetch') return await executeWebFetch(input, ctx.signal);
 
   if (tool === 'git') {
-    const result = await executeGitTool({
-      root,
-      identity: externalSpawnIdentity(ctx, root),
-      input: input || {},
-      signal: ctx.signal,
-      sessionId: ctx.sessionId,
-    });
+    // clone/fetch/pull идут десятками секунд и раньше не показывали ничего до самого
+    // завершения. Прогресс git пишет в stderr, поэтому важно отдавать оба потока.
+    const live = createLiveOutput(ctx?.onOutput);
+    let result;
+    try {
+      result = await executeGitTool({
+        root,
+        identity: externalSpawnIdentity(ctx, root),
+        input: input || {},
+        signal: ctx.signal,
+        sessionId: ctx.sessionId,
+        onOutput: (stdout, stderr) => live.push(stdout, stderr),
+      });
+    } finally {
+      live.stop();
+    }
     const writes = ['commit', 'create_branch'].includes(String(input?.action || '').toLowerCase());
     return writes ? { ...result, mutatedPaths: ['.'] } : result;
   }
 
   if (tool === 'ssh_tool') {
-    return await executeSshTool({
-      root,
-      identity: externalSpawnIdentity(ctx, root),
-      input: input || {},
-      signal: ctx.signal,
-      sessionId: ctx.sessionId,
-    });
+    // executeSshTool уже отдаёт stdout/stderr по мере поступления, но раньше
+    // callback никто не передавал, и карточка оставалась пустой до конца сессии.
+    // Пропускаем через тот же буфер, что и bash: иначе каждый чанк порождал бы
+    // отдельное SSE-событие.
+    const live = createLiveOutput(ctx?.onOutput);
+    try {
+      return await executeSshTool({
+        root,
+        identity: externalSpawnIdentity(ctx, root),
+        input: input || {},
+        signal: ctx.signal,
+        sessionId: ctx.sessionId,
+        onOutput: (stdout, stderr) => live.push(stdout, stderr),
+      });
+    } finally {
+      live.stop();
+    }
   }
 
   if (tool === 'run_tests') return await executeRunTests(root, input, ctx, execBash);

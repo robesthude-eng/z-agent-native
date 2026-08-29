@@ -158,3 +158,59 @@ test('deleting a session releases every per-session cache', () => {
     assert.ok(branch.includes(`${call}(`), `deleting a session must call ${call}`);
   }
 });
+
+/* ----------------------- live progress for slow tools ---------------------- */
+
+test('git reports progress while it runs, not only after it finishes', async () => {
+  const { executeGitTool } = await import('../server/native/git-tool.mjs');
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-git-live-'));
+  fs.writeFileSync(path.join(root, 'tracked.txt'), 'one\n');
+
+  const chunks = [];
+  const result = await executeGitTool({
+    root,
+    identity: { isolated: false },
+    input: { action: 'status' },
+    onOutput: (stdout, stderr) => {
+      chunks.push(`${stdout ?? ''}${stderr ?? ''}`);
+    },
+  });
+
+  // ssh_tool carried this exact callback for a long time and nothing ever
+  // passed it, so the tool card stayed empty until the command ended. Assert
+  // the callback is actually reached, not merely accepted by the signature.
+  assert.ok(chunks.length > 0, 'git must report output while the command is still running');
+  assert.match(chunks.join(''), /tracked\.txt/);
+  assert.ok(result.output, 'streaming must not replace the final tool result');
+});
+
+test('every tool that can report progress is wired to the live output channel', () => {
+  const dispatcher = read('server/native/tools/dispatcher.mjs');
+
+  // These two spawn long-running children directly instead of going through
+  // execBash, so each one needs the wiring done by hand.
+  for (const tool of ['git', 'ssh_tool']) {
+    const start = dispatcher.indexOf(`tool === '${tool}'`);
+    assert.ok(start > 0, `dispatch branch for ${tool} is stale`);
+    const branch = dispatcher.slice(start, start + 1200);
+    assert.ok(
+      branch.includes('createLiveOutput(ctx?.onOutput)'),
+      `${tool} must coalesce progress instead of emitting one SSE event per chunk`,
+    );
+    assert.ok(branch.includes('onOutput:'), `${tool} must pass onOutput down to its executor`);
+    assert.ok(branch.includes('live.stop()'), `${tool} must stop the live buffer when it finishes`);
+  }
+
+  // Everything else that streams inherits it by forwarding ctx into execBash.
+  // Dropping ctx there silently costs the tool its live output.
+  for (const [file, label] of [
+    ['server/native/tools/diagnostics.mjs', 'run_tests and diagnostics'],
+    ['server/native/tools/environment.mjs', 'ensure_environment'],
+    ['server/native/tools/media.mjs', 'media tools'],
+  ]) {
+    assert.ok(
+      read(file).includes('ctx.signal, ctx)'),
+      `${label} must forward ctx to execBash or the card shows nothing until the end`,
+    );
+  }
+});

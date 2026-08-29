@@ -79,6 +79,18 @@ makes an existing guarantee enforceable.
   sandboxed children, per-session workers, tunnelled sockets, browser sessions —
   and exit non-zero so the supervisor restarts them. A test holds every one of
   them to that contract.
+- **The two slowest tools showed nothing at all until they finished.** Tool
+  cards render live output from `state.metadata.output`, and the runtime hands
+  every tool an `onOutput` callback for exactly that purpose, but only the shell
+  family ever used it. `ssh_tool` was the sharper case: it already reported
+  stdout and stderr chunk by chunk and accepted an `onOutput` parameter, yet
+  nothing was ever passed to it, so the callback was dead code and a remote
+  session stayed blank until it ended. `git` had no callback at all, which hid
+  the progress that `clone`, `fetch`, and `pull` write to stderr. Both now feed
+  the same coalescing buffer `bash` uses, so a card updates about four times a
+  second instead of once per output chunk, and the buffer is stopped when the
+  command ends. A test drives a real `git` process and asserts output arrives
+  while the command is still running.
 
 ### Added
 
