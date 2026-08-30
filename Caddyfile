@@ -1,7 +1,4 @@
-agentwill.online {
-	# Browser hardening at the public TLS boundary. Application HTML also
-	# carries its own CSP from the Node runtime; these headers cover API and
-	# preview responses without granting additional browser capabilities.
+(common_proxy) {
 	header {
 		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
 		X-Content-Type-Options "nosniff"
@@ -61,6 +58,14 @@ agentwill.online {
 			flush_interval -1
 		}
 	}
+}
+
+agentwill.online {
+	import common_proxy
+}
+
+:80 {
+	import common_proxy
 }
 
 www.agentwill.online {
