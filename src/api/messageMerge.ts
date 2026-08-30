@@ -17,6 +17,7 @@ import { t } from "@/i18n";
  * 5. Never use JSON.stringify length — use actual text length and part-level comparison.
  */
 import { isLocalMessage } from "../lib/ids";
+import { rawToolStatus } from "../lib/toolStatus";
 import type { Message as MergeMessage } from "./types";
 
 // export interface MergeMessage {
@@ -35,12 +36,6 @@ const TOOL_STATUS_RANK: Record<string, number> = {
   completed: 2,
   error: 2,
 };
-
-function toolStatus(p: unknown): string | undefined {
-  const state = (p as { state?: { status?: string } | string }).state;
-  if (typeof state === "string") return state;
-  return state?.status;
-}
 
 /**
  * Collect the trimmed contents of a message's text parts.
@@ -240,8 +235,11 @@ export function mergeMessages(
       // Tool parts: never downgrade a local state that is further along
       // (completed/error via SSE) to an older server snapshot (pending/running).
       if (sPart.type === "tool" && lPart.type === "tool" && !isFinal) {
-        const sRank = TOOL_STATUS_RANK[toolStatus(sPart) ?? ""] ?? -1;
-        const lRank = TOOL_STATUS_RANK[toolStatus(lPart) ?? ""] ?? -1;
+        // Сырой статус из общего разбора (`lib/toolStatus`): ранг сравнивает
+        // именно значения движка, поэтому нормализация здесь была бы вредна:
+        // она стёрла бы разницу между `pending` и `running`.
+        const sRank = TOOL_STATUS_RANK[rawToolStatus(sPart) ?? ""] ?? -1;
+        const lRank = TOOL_STATUS_RANK[rawToolStatus(lPart) ?? ""] ?? -1;
         if (lRank > sRank) return lPart;
       }
       return sPart;

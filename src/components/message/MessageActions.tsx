@@ -12,8 +12,10 @@ export interface MessageActionsProps {
   isLatestTurn: boolean;
   isStreaming: boolean;
   onRetry: () => void;
-  onEditAndResend: () => void;
-  onFork: () => void;
+  /** Нет у ответа агента: редактируются только свои сообщения. */
+  onEditAndResend?: (() => void) | undefined;
+  /** Нет у ответа агента: ответвляют от своего запроса. */
+  onFork?: (() => void) | undefined;
   showEditButton: boolean;
 }
 
@@ -30,7 +32,10 @@ export function MessageActions({
   showEditButton,
 }: MessageActionsProps) {
   return (
-    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+    // На таче hover не существует, а вместе с ним не существовало «Повторить»,
+    // копирования и итога хода: кнопки были нарисованы, но прозрачны. Поэтому
+    // прячем их только там, где есть мышь, и показываем при фокусе с клавиатуры.
+    <div className="flex items-center gap-1 transition-opacity opacity-100 group-focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
       {visibleText && <CopyButton text={visibleText} />}
 
       {role === "assistant" && sessionId && messageId && (
@@ -46,31 +51,32 @@ export function MessageActions({
           title={t("message_item.peregenerirovat_otvet")}
         >
           <RefreshIcon size={13} />
-          <span className="ml-1">Повторить</span>
+          <span className="ml-1">{t("message_item.povtorit")}</span>
         </Button>
       )}
 
-      {role === "user" && showEditButton && (
+      {role === "user" && showEditButton && onEditAndResend && (
         <Button
           variant="ghost"
           size="sm"
           onClick={onEditAndResend}
           className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+          title={t("message_item.izmenit_soobschenie")}
         >
-          Изменить
+          {t("message_item.izmenit")}
         </Button>
       )}
 
-      {role === "user" && (
+      {role === "user" && onFork && (
         <Button
           variant="ghost"
           size="sm"
           onClick={onFork}
           className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
-          title={t("shortcuts_overlay.novyy_chat")}
+          title={t("message_item.otvetvit_ot_etogo_soobscheniya")}
         >
           <NewChatIcon size={13} />
-          <span className="ml-1">Ответвление</span>
+          <span className="ml-1">{t("message_item.otvetvlenie")}</span>
         </Button>
       )}
     </div>

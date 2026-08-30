@@ -11,7 +11,7 @@ import type { SessionInfo, SessionStatus } from "../../api/types";
 import { isTmpSession } from "../../lib/ids";
 import { log } from "../../lib/log";
 import { normalizeMessages } from "../helpers";
-import type { SessionsSlice, Slice } from "../types";
+import type { ForkOutcome, SessionsSlice, Slice } from "../types";
 import { byUpdated } from "../types";
 
 // Prevent concurrent optimistic session creation from rapid "New chat" clicks.
@@ -143,6 +143,35 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       messages: { ...s.messages, [tempId]: [] },
       status: { ...s.status, [tempId]: "idle" as SessionStatus },
     }));
+  },
+
+  // Ответвление чата от сообщения.
+  //
+  // Сервер делает новый чат с копией истории до этого сообщения. Если
+  // маршрута нет (старый бэкенд) или сессия ещё не материализована —
+  // открываем обычный новый чат и честно сообщаем об этом вызывающей стороне,
+  // а не делаем вид, что контекст переехал.
+  forkSession: async (messageId) => {
+    const sid = get().currentID;
+    const fallback = async (): Promise<ForkOutcome> => {
+      await get().newSession();
+      return { ok: false, copied: 0, sessionId: get().currentID };
+    };
+    if (!sid || isTmpSession(sid)) return fallback();
+    try {
+      const { session, copied } = await api.forkSession(sid, messageId);
+      set((s) => ({
+        sessions: [
+          session,
+          ...s.sessions.filter((x) => x.id !== session.id),
+        ].sort(byUpdated),
+      }));
+      await get().select(session.id);
+      return { ok: true, copied, sessionId: session.id };
+    } catch (e) {
+      log.warn("[fork] серверный форк недоступен:", (e as Error).message);
+      return fallback();
+    }
   },
 
   materializeSession: async () => {

@@ -5,14 +5,14 @@ import { closeBrowserSessionRemote } from '../native/browser-client.mjs';
 import { MAX_JSON_BYTES } from '../native/config.mjs';
 import { clearSessionEvents, emit, openSse } from '../native/events.mjs';
 import { killExecutorIdentity } from '../native/executor-client.mjs';
-import { assertActionId, sessionId } from '../native/ids.mjs';
+import { assertActionId, messageId, sessionId } from '../native/ids.mjs';
 import { readJson, sendJson } from '../native/json.mjs';
 import { previewDocument } from '../native/preview-document.mjs';
 import { revokePreviewTokens } from '../native/preview-tokens.mjs';
 import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
 import {
   createChat, deleteChat, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
-  listChats, listMessages, listPendingQuestions, listQueue, ownsChat, renameChat, setPrefs, workspaceFor, 
+  listChats, listMessages, listPendingQuestions, listQueue, ownsChat, putMessage, renameChat, setPrefs, workspaceFor, 
 } from '../native/store.mjs';
 import { terminalEnabled } from '../native/terminal.mjs';
 import { closeWorkspaceWatcher, ensureWorkspaceWatcher } from '../native/watcher.mjs';
@@ -134,6 +134,51 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       const removed = deleteMessagesFrom(sid, body.messageID);
       emit(sid, 'stream.reconnected', { reason: 'history_reverted' });
       sendJson(res, 200, { ok: true, removed });
+      return true;
+    }
+    /*
+      Ответвление чата: новая сессия с копией истории ДО указанного
+      сообщения. Раньше кнопка «Ответвление» в UI открывала пустой чат и
+      перекладывала туда текст запроса: агент начинал с нуля и не видел
+      ничего из разговора, от которого ответвлялись.
+
+      Копируются только сообщения. Файлы воркспейса остаются в исходном чате:
+      их владелец — uid песочницы той сессии, и перенос без смены владельца
+      дал бы чат с файлами, в которые агент не может писать. Ответ честно
+      говорит об этом полем `workspaceCopied`.
+    */
+    if (p === `/api/session/${sid}/fork` && req.method === 'POST') {
+      const body = await readJson(req, 64 * 1024);
+      const cutoff = typeof body.messageID === 'string' ? body.messageID : '';
+      const history = listMessages(sid);
+      const cutIndex = cutoff ? history.findIndex((m) => m.id === cutoff) : -1;
+      if (cutoff && cutIndex < 0) {
+        sendJson(res, 404, { error: 'Message not found' });
+        return true;
+      }
+      const carried = cutIndex >= 0 ? history.slice(0, cutIndex) : history;
+      const source = getChat(sid, ownerId);
+      const chat = createChat(
+        sessionId(),
+        ownerId,
+        sanitizeTitle(body.title || `${source?.title || 'Чат'} — ветка`),
+      );
+      for (const message of carried) {
+        const copyId = messageId();
+        putMessage({
+          ...message,
+          id: copyId,
+          sessionID: chat.id,
+          info: { ...(message.info || {}), id: copyId, sessionID: chat.id },
+        });
+      }
+      ensureWorkspaceWatcher(chat.id, workspaceFor(chat.id));
+      emit(chat.id, 'session.created', { session: chat });
+      sendJson(res, 200, {
+        session: getChat(chat.id, ownerId) || chat,
+        copied: carried.length,
+        workspaceCopied: false,
+      });
       return true;
     }
     if (p === `/api/session/${sid}/turn` && req.method === 'GET') {

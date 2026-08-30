@@ -56,10 +56,12 @@ export const messages = {
   "agent_activity.nachinaet": "Начинает",
   "agent_activity.patch": "патч",
   "agent_activity.pishet_otvet": "Пишет ответ",
+  "agent_activity.podrobnosti": "подробности",
   "agent_activity.rabotaet": "Работает",
   "agent_activity.razmyshlyaet": "Размышляет",
   "agent_activity.zaversheno_s_oshibkoy": "Завершено с ошибкой",
-  "agent_indicator.poslednie_deystviya": "Последние действия",
+  "agent_indicator.poka_bez_vneshnih_deystviy": "пока без внешних действий",
+  "agent_indicator.shag_0": "шаг {0}",
   "ai_loader.agent_rabotaet": "Агент работает",
   "appearance_tab_content.primenyaetsya_srazu_i_sohranyaetsya_na_etom":
     "Применяется сразу и сохраняется на этом устройстве.",
@@ -136,15 +138,20 @@ export const messages = {
   "chat_text.bez_teksta": "_(без текста)_",
   "chat_text.polzovatel": "🧑 Пользователь",
   "chat_view.0_novyh": "{0} новых",
+  "chat_view.chem_mogu_pomoch": "Чем могу помочь?",
   "chat_view.k_novomu_otvetu": "К новому ответу",
   "chat_view.k_novym_otvetam_0": "К новым ответам: {0}",
   "chat_view.k_poslednemu_soobscheniyu": "К последнему сообщению",
+  "chat_view.nachni_dialog_napishi_soobschenie_nizhe":
+    "Начни диалог — напиши сообщение ниже",
   "chat_view.nayti_bag": "Найти баг",
   "chat_view.novyy_otvet": "Новый ответ",
   "chat_view.obyasni_chto_delaet_etot_kod_i":
-    "Объясни, что делает этот код, и предложи, как его упрост��ть:\\n\\n",
+    "Объясни, что делает этот код, и предложи, как его упростить:\\n\\n",
   "chat_view.poisk_po_chatu": "Поиск по чату…",
   "chat_view.poisk_po_soobscheniyam_chata": "Поиск по сообщениям чата",
+  "chat_view.pokazat_predyduschie_soobscheniya_0":
+    "Показать предыдущие сообщения ({0})",
   "chat_view.pokazhi_v_terminale_versii_node_npm":
     "Покажи в терминале версии node, npm и python, которые доступны в этом workspace.",
   "chat_view.predyduschee_sovpadenie": "Предыдущее совпадение",
@@ -154,6 +161,8 @@ export const messages = {
   "chat_view.sobrat_proekt": "Собрать проект",
   "chat_view.sozday_v_workspace_staticheskuyu_stranicu_le":
     "Создай в workspace статическую страницу-лендинг: index.html, style.css и небольшой script.js. Покажи структуру файлов, когда закончишь.",
+  "chat_view.tvoy_personalnyy_ai_assistent_dlya_koda":
+    "Твой персональный AI-ассистент для кода. Напиши свой запрос — или начни с одной из подсказок.",
   "chat_view.v_kode_nizhe_est_oshibka_naydi":
     "В коде ниже есть ошибка. Найди её, объясни причину и исправь файл в workspace:\\n\\n",
   "chat_view.zakryt_poisk": "Закрыть поиск",
@@ -211,7 +220,7 @@ export const messages = {
   "event_handlers.strim_prervan_poluchen_povrezhdennyy_fragmen":
     "Стрим прерван: получен повреждённый фрагмент данных. ",
   "file_decisions.dvoichnyy_fayl_sohranenie_isportilo_by_soder":
-    "Дв��ичный файл: сохранение испортило бы содержимое",
+    "Двоичный файл: сохранение испортило бы содержимое",
   "file_editor.chernovik_sovpadaet_s_sohranennym_faylom":
     "Черновик совпадает с сохранённым файлом",
   "file_editor.est_nesohranennye_pravki": "Есть несохранённые правки",
@@ -290,25 +299,28 @@ export const messages = {
   "message_item.0_min": "{0} мин",
   "message_item.0_min_1_s": "{0} мин {1} с",
   "message_item.0_s": "{0} с",
+  "message_item.detali": "Детали",
   "message_item.deystvie": "действие",
   "message_item.deystviy": "действий",
   "message_item.deystviya": "действия",
   "message_item.fayl": "файл",
   "message_item.fayla": "файла",
   "message_item.faylov": "файлов",
+  "message_item.izmenit": "Изменить",
   "message_item.izmenit_soobschenie": "Изменить сообщение",
-  "message_item.izmenit_soobschenie_i_perezaprosit_otvet":
-    "Изменить сообщение и перезапросить ответ",
-  "message_item.kopirovat_soobschenie": "Копировать сообщение",
   "message_item.ostanovleno_polzovatelem": "Остановлено пользователем",
-  "message_item.otvetila_0": "ответила {0}",
+  "message_item.otvetvit_ot_etogo_soobscheniya":
+    "Ответвить новый чат с историей до этого сообщения",
+  "message_item.otvetvlenie": "Ответвление",
+  "message_item.otvetvlenie_bez_istorii":
+    "Форк недоступен — открыт новый чат без истории",
+  "message_item.otvetvlenie_sozdano_0":
+    "Ответвление создано · перенесено сообщений: {0}",
   "message_item.peregenerirovat_otvet": "Перегенерировать ответ",
-  "message_item.provayder_ne_smog_zavershit_etot_otvet":
-    "Провайдер не смог завершить этот ответ.",
+  "message_item.povtorit": "Повторить",
+  "message_item.skryt_detali": "Скрыть детали",
   "message_item.sozdano_assistentom_v_workspace":
     "Создано ассистентом · в workspace",
-  "message_item.staryy_hod_byl_prervan_pri_otvete":
-    "Старый ход был прерван при ответе на вопрос",
   "message_merge.merge_invariant_dublikat_id_chasti":
     "[merge-invariant] дубликат id части:",
   "message_merge.merge_invariant_dublikat_id_soobscheniya":
@@ -365,22 +377,6 @@ export const messages = {
   "part_view.n_1_sekundu": "1 секунду",
   "part_view.rassuzhdeniya": "Рассуждения",
   "part_view.razmyshlyaet": "Размышляет…",
-  "permission_dialog.izmenit_fayl_v_pesochnice": "Изменить файл в песочнице:",
-  "permission_dialog.otklonit_etot_zapros": "Отклонить этот запрос",
-  "permission_dialog.prochitat_fayly_proekta": "Прочитать файлы проекта:",
-  "permission_dialog.razreshat_takie_vyzovy_do_konca_tekuschey":
-    "Разрешать такие вызовы до конца текущей сессии",
-  "permission_dialog.razreshit_tolko_etot_vyzov": "Разрешить только этот вызов",
-  "permission_dialog.sozdat_ili_perezapisat_fayl_v_pesochnice":
-    "Создать или перезаписать файл в песочнице:",
-  "permission_dialog.vypolnit_komandu_v_terminale_pesochnicy_etoy":
-    "Выполнить команду в терминале песочницы этой сессии:",
-  "permission_dialog.vypolnit_zapros_v_internet":
-    "Выполнить запрос в интернет:",
-  "permission_dialog.zapros_razresheniya_0": "Запрос разрешения: {0}",
-  "permission_dialog.zapustit_fonovuyu_podzadachu":
-    "Запустить фоновую подзадачу:",
-  "permission_dialog.zapustit_instrument_0": "Запустить инструмент «{0}»",
   "preview_panel.obnovit": "Обновить",
   "preview_panel.predprosmotr": "Предпросмотр",
   "provider_channel_manager.api_klyuch_ne_daet_dostup_k":
@@ -452,7 +448,7 @@ export const messages = {
   "provider_channel_manager.snachala_podklyuchite_provaydera_odin_raz_z":
     "Сначала подключите провайдера один раз — Z Agent сам загрузит его модели. Если endpoint не умеет отдавать список моделей, нужный Model ID можно добавить вручную.",
   "provider_channel_manager.sohranite_api_key_chtoby_avtomaticheski_polu":
-    "Сохраните API key, ч��обы автоматически получить модели.",
+    "Сохраните API key, чтобы автоматически получить модели.",
   "provider_channel_manager.sohranyaem": "Сохраняем…",
   "provider_channel_manager.udalit_0": "Удалить {0}",
   "provider_channel_manager.udalit_provaydera": "Удалить провайдера",
@@ -551,7 +547,7 @@ export const messages = {
   "sidebar.papka_chata": "Папка чата",
   "sidebar.pereimenovat_chat": "Переименовать чат",
   "sidebar.pereimenovat_chat_0": "Переименовать чат {0}",
-  "sidebar.pereimenovat_papku": "Переименовать пап��у",
+  "sidebar.pereimenovat_papku": "Переименовать папку",
   "sidebar.pereimenovat_papku_0": "Переименовать папку {0}",
   "sidebar.pereklyuchit_temu": "Переключить тему",
   "sidebar.podtverdit_udalenie": "Подтвердить удаление",
@@ -705,7 +701,7 @@ export const messages = {
   "welcome_tour.na_kompyutere_navedite_na_ikonku_chtoby":
     "На компьютере наведите на иконку, чтобы увидеть подсказку. На телефоне назначение показано в этом туре.",
   "welcome_tour.nastroyki_modeli_i_api_klyuchi_parol":
-    "На��тройки → Модели и API-ключи. Пароль меняется в разделе «Аккаунт и пароль».",
+    "Настройки → Модели и API-ключи. Пароль меняется в разделе «Аккаунт и пароль».",
   "welcome_tour.podklyuchayte_nuzhnyh_provayderov_i_modeli_s":
     "Подключайте нужных провайдеров и модели своими API-ключами. В переключателе модели видно имя провайдера и источник модели.",
   "welcome_tour.postavte_zadachu_obychnym_yazykom_agent_sam":

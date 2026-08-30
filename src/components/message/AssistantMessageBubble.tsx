@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { t } from "@/i18n";
+import { toolPhase } from "@/lib/toolStatus";
 import { errorMessage, isAbortedError } from "../../api/eventGuards";
 import { isInterruptedQuestionPart } from "../../api/interruptions";
 import type { Message, Part } from "../../api/types";
@@ -16,7 +17,6 @@ import {
   runStepCount,
   runToolParts,
   type ToolGroupData,
-  toolStatus,
 } from "../messageFlow";
 import PartView from "../PartView";
 import ToolGroup from "../ToolGroup";
@@ -28,17 +28,22 @@ import { assistantTurnSummary, strategyChanged } from "./turnSummary";
 interface AssistantMessageBubbleProps {
   messages: Message[];
   isWorking?: boolean | undefined;
-  onSelectFile: (path: string) => void;
+  /**
+   * Последняя группа ленты.
+   *
+   * «Повторить» было у каждого ответа в истории (`isLatestTurn={true}`
+   * жёстко), а перегенерация старого ответа перезапускает последний ход
+   * и теряет всё, что было после него.
+   */
+  isLatestTurn?: boolean | undefined;
   onRetry: () => void;
-  onFork: () => void;
 }
 
 export function AssistantMessageBubble({
   messages,
   isWorking,
-  onSelectFile,
+  isLatestTurn,
   onRetry,
-  onFork,
 }: AssistantMessageBubbleProps) {
   const [errorDetailsId, setErrorDetailsId] = useState<string | null>(null);
 
@@ -97,14 +102,18 @@ export function AssistantMessageBubble({
             if ((fi as ActivityRun).kind === "activity") {
               const run = fi as ActivityRun;
               const first = run.items[0];
+              // Один шаг — не цепочка действий. Шапка «Готово · 1 шаг» ничего
+              // не сообщала сверх самого шага, но добавляла уровень раскрытия.
+              if (run.items.length === 1 && first) {
+                return renderFlowPart(first, isTail);
+              }
               const tools = runToolParts(run.items);
-              const anyRunning = tools.some((toolPart) => {
-                const s = toolStatus(toolPart);
-                return s === "running" || s === "pending";
-              });
+              const anyRunning = tools.some(
+                (toolPart) => toolPhase(toolPart) === "running",
+              );
               const hasError = tools.some(
                 (toolPart) =>
-                  toolStatus(toolPart) === "error" &&
+                  toolPhase(toolPart) === "error" &&
                   !isInterruptedQuestionPart(toolPart),
               );
               return (
@@ -141,9 +150,12 @@ export function AssistantMessageBubble({
                   <button
                     type="button"
                     onClick={() => setErrorDetailsId(isExpanded ? null : m.id)}
+                    aria-expanded={isExpanded}
                     className="text-[11px] underline opacity-80 hover:opacity-100"
                   >
-                    {isExpanded ? "Скрыть детали" : "Детали"}
+                    {isExpanded
+                      ? t("message_item.skryt_detali")
+                      : t("message_item.detali")}
                   </button>
                 )}
               </div>
@@ -164,7 +176,6 @@ export function AssistantMessageBubble({
           <TurnSummaryCard
             summary={turnMeta}
             strategyMutated={messages.some(strategyChanged)}
-            onSelectFile={onSelectFile}
           />
         )}
 
@@ -174,11 +185,9 @@ export function AssistantMessageBubble({
             visibleText={combinedText}
             sessionId={firstMsg?.sessionID}
             messageId={firstMsg?.id}
-            isLatestTurn={true}
+            isLatestTurn={Boolean(isLatestTurn)}
             isStreaming={Boolean(isWorking)}
             onRetry={onRetry}
-            onEditAndResend={() => {}}
-            onFork={onFork}
             showEditButton={false}
           />
         </div>

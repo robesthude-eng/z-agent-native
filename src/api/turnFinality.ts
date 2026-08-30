@@ -21,6 +21,7 @@
  * В файле нет ни React, ни сети: только решения, и их можно проверить тестом.
  */
 
+import { rawToolStatus } from "../lib/toolStatus";
 import type { Message } from "./types";
 
 /**
@@ -55,17 +56,6 @@ export function isStepFinish(finish?: unknown): boolean {
   );
 }
 
-/** Статус tool-части в том виде, в каком его отдаёт движок. */
-function toolStatus(part: unknown): string | undefined {
-  const state = (part as { state?: unknown })?.state;
-  if (typeof state === "string") return state;
-  if (state && typeof state === "object") {
-    const st = (state as { status?: unknown }).status;
-    return typeof st === "string" ? st : undefined;
-  }
-  return undefined;
-}
-
 /**
  * Есть ли в сообщении инструмент, который прямо сейчас работает.
  *
@@ -77,7 +67,7 @@ function toolStatus(part: unknown): string | undefined {
 export function hasRunningTool(msg?: Message | null): boolean {
   for (const p of msg?.parts ?? []) {
     if ((p as { type?: string }).type !== "tool") continue;
-    const st = toolStatus(p);
+    const st = rawToolStatus(p);
     if (st === "running" || st === "pending") return true;
   }
   return false;
@@ -129,7 +119,7 @@ export function assistantFinishState(msgs: Message[]) {
   const marker = finalMarkerOf(lastAsst);
   const toolSig = (lastAsst?.parts ?? [])
     .filter((p) => (p as { type?: string }).type === "tool")
-    .map((p) => toolStatus(p) ?? "?")
+    .map((p) => rawToolStatus(p) ?? "?")
     .join(",");
   const sig = `${lastAsst?.id || ""}|${completedAt || 0}|${lastAsst?.parts?.length || 0}|${finish || ""}|${toolSig}`;
   return { isDone: marker === "final", sig, completedAt };

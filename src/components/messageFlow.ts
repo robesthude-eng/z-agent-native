@@ -1,5 +1,6 @@
 import { isVisible, presentationFor } from "../api/partPresentation";
 import type { Message, Part, ToolPart } from "../api/types";
+import { rawToolStatus } from "@/lib/toolStatus";
 
 /**
  * Как лента собирает ответ агента: что склеить в цепочку, что показать
@@ -190,13 +191,15 @@ export function groupActivityRuns(items: RenderItem[]): FlowItem[] {
   return out;
 }
 
-/** Статус вызова инструмента: строка или объект `{status}` — как в ToolGroup. */
+/**
+ * Статус вызова инструмента в сыром виде.
+ *
+ * Разбор — общий (`lib/toolStatus`): почти одинаковые копии этой функции
+ * жили в семи файлах и незаметно расходились в трактовке `pending`
+ * и отсутствующего статуса.
+ */
 export function toolStatus(part: ToolPart): string {
-  const s = part.state;
-  if (typeof s === "string") return s;
-  if (s && typeof s === "object")
-    return (s as { status?: string }).status ?? "";
-  return "";
+  return rawToolStatus(part) ?? "";
 }
 
 /** Все вызовы инструментов внутри цепочки (группы разворачиваются). */

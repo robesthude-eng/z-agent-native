@@ -1,6 +1,7 @@
 import type { Message } from "@/api/types";
-import { friendlyToolLabel } from "@/components/ToolCard";
 import { t, tf } from "@/i18n";
+import { friendlyToolLabel } from "@/lib/toolLabels";
+import { toolPhase } from "@/lib/toolStatus";
 
 /**
  * Реальное текущее действие агента для нижнего индикатора.
@@ -30,6 +31,8 @@ export interface AgentActivity {
   step: number;
   /** След последних реальных действий. */
   steps: ActivityStep[];
+  /** Начало текущего хода в мс. `null` — если время неизвестно. */
+  startedAt: number | null;
 }
 
 interface LoosePart {
@@ -45,22 +48,16 @@ interface LoosePart {
 const TRAIL_LIMIT = 3;
 const DETAIL_LIMIT = 44;
 
-/** Статус вызова: state приходит и строкой, и объектом `{ status }`. */
+/**
+ * Состояние шага для индикатора.
+ *
+ * Разбор статуса — общий (`lib/toolStatus`), чтобы «работает» в индикаторе
+ * и «работает» в карточке инструмента означали одно и то же.
+ */
 export function partActivityState(part: LoosePart): ActivityState {
-  const st = part.state;
-  const raw =
-    typeof st === "string"
-      ? st
-      : st && typeof st === "object"
-        ? String(
-            (st as { status?: string }).status ??
-              (part.output != null ? "completed" : "running"),
-          )
-        : part.output != null
-          ? "completed"
-          : "running";
-  if (raw === "error" || raw === "failed") return "error";
-  if (raw === "completed" || raw === "done" || raw === "success") return "done";
+  const phase = toolPhase(part);
+  if (phase === "error") return "error";
+  if (phase === "completed") return "done";
   return "running";
 }
 
@@ -125,6 +122,22 @@ export function activityDetail(tool: string, part: LoosePart): string {
   return shorten(typeof part.title === "string" ? part.title : "");
 }
 
+/**
+ * Когда начался текущий ход.
+ *
+ * Индикатор считал время от собственного монтирования, поэтому переключение
+ * вкладки или возврат в чат обнуляли секундомер посреди работы. Время
+ * старта есть у самого сообщения — берём его.
+ */
+function turnStartedAt(msg?: Message): number | null {
+  const direct = (msg as { time?: { created?: unknown } } | undefined)?.time
+    ?.created;
+  if (typeof direct === "number") return direct;
+  const info = (msg as { info?: { time?: { created?: unknown } } } | undefined)
+    ?.info?.time?.created;
+  return typeof info === "number" ? info : null;
+}
+
 /** Реальное состояние работы из частей последнего ответа агента. */
 export function describeAgentActivity(
   messages: Message[] | undefined,
@@ -187,6 +200,7 @@ export function describeAgentActivity(
     detail,
     step: steps.length,
     steps: steps.slice(-TRAIL_LIMIT),
+    startedAt: turnStartedAt(last),
   };
 }
 

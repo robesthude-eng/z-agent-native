@@ -1,6 +1,10 @@
-import { t, tf } from "@/i18n";
+import { toolPhase } from "@/lib/toolStatus";
 import { isRecord, strField } from "../../api/eventGuards";
 import type { ToolPart, ToolState } from "../../api/types";
+
+// Подпись переехала в lib: её просят и нижний индикатор, и шапка группы, а
+// тянуть ради строки модуль карточки со всем деревом его импортов не нужно.
+export { friendlyToolLabel } from "@/lib/toolLabels";
 
 export function fmt(value: unknown): string {
   if (value == null) return "";
@@ -12,17 +16,9 @@ export function fmt(value: unknown): string {
   }
 }
 
+/** Фаза вызова для карточки: тот же разбор, что у шапки группы и индикатора. */
 export function getState(part: ToolPart): string {
-  const s = part.state;
-  if (typeof s === "string") return s === "pending" ? "running" : s;
-  if (s && typeof s === "object") {
-    const status = (s as ToolState).status ?? "running";
-    return status === "pending" ? "running" : status;
-  }
-  if (part.output !== undefined && part.output !== null) {
-    return "completed";
-  }
-  return "running";
+  return toolPhase(part);
 }
 
 export function getMetadata(part: ToolPart): unknown {
@@ -91,40 +87,4 @@ export function getSummary(part: ToolPart): string {
     if (typeof v === "string" && v) return clip(v);
   }
   return "";
-}
-
-export function friendlyToolLabel(tool?: string): string {
-  const kind = (tool || "").toLowerCase();
-  if (kind === "bash" || kind === "shell" || kind === "cmd")
-    return t("tool_card.komanda");
-  if (kind === "read") return t("tool_card.chitaet_fayl");
-  if (kind === "write") return t("tool_card.pishet_fayl");
-  if (kind === "edit" || kind === "applypatch" || kind === "apply_patch")
-    return t("tool_card.pravit_fayl");
-  if (kind === "patch") return t("tool_card.primenyaet_patch");
-  if (kind === "glob") return t("tool_card.ischet_fayly");
-  if (kind === "grep") return t("tool_card.ischet_po_tekstu");
-  if (kind === "ls" || kind === "list") return t("tool_card.smotrit_papku");
-  if (kind === "webfetch" || kind === "fetch")
-    return t("tool_card.zagruzhaet_stranicu");
-  if (kind === "websearch" || kind === "search")
-    return t("tool_card.ischet_v_internete");
-  if (kind === "ssh_tool" || kind === "ssh")
-    return t("tool_card.rabotaet_s_udalennym_serverom");
-  if (kind === "task") return t("tool_card.podzadacha");
-  if (kind === "todowrite" || kind === "todo")
-    return t("tool_card.obnovlyaet_plan");
-  if (kind === "question") return t("tool_card.vopros");
-  if (kind === "ensure_environment") return t("tool_card.gotovit_okruzhenie");
-  if (kind === "environment_status")
-    return t("tool_card.proveryaet_okruzhenie");
-  if (kind === "repo_map") return t("tool_card.smotrit_strukturu_proekta");
-  if (kind === "generate_image") return t("tool_card.risuet_izobrazhenie");
-  if (kind === "generate_speech") return t("tool_card.ozvuchivaet_tekst");
-  if (kind === "render_document") return t("tool_card.sobiraet_dokument");
-  if (kind === "render_video") return t("tool_card.sobiraet_video");
-  if (kind === "convert_media") return t("tool_card.konvertiruet_fayl");
-  if (kind === "media_info") return t("tool_card.smotrit_svedeniya_o_fayle");
-  if (!tool) return t("tool_card.instrument");
-  return tf("tool_card.instrument_0", [tool]);
 }

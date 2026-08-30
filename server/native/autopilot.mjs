@@ -225,7 +225,7 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       ...(typeof originalDelta === 'function'
         // Второй аргумент — род куска ('reasoning' | 'text'). Раньше обёртка
         // его теряла, и всё, что присылал провайдер, доезжало до ленты
-        // без рода — карто��ка рассуждений появлялась только в конце хода.
+        // без рода — карточка рассуждений появлялась только в конце хода.
         ? { onTextDelta(delta, type) { emitted = true; originalDelta(delta, type); } }
         : {}),
     };

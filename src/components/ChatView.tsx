@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { t, tf } from "@/i18n";
@@ -92,6 +99,8 @@ export default function ChatView() {
   const unreadAssistantIdsRef = useRef<Set<string>>(new Set());
   const [newAnswerCount, setNewAnswerCount] = useState(0);
   const [windowSize, setWindowSize] = useState(40);
+  const loadMoreRef = useRef<HTMLDivElement>(null);
+  const pendingAnchorRef = useRef<{ top: number; height: number } | null>(null);
   const [isScrolledUp, setIsScrolledUp] = useState(false);
 
   // Release A / Trust: a browser reload must not erase a server-side running
@@ -255,6 +264,60 @@ export default function ChatView() {
     [groupedMessages, isWindowed, windowSize],
   );
 
+  /**
+   * Рост окна истории с сохранением места чтения.
+   *
+   * Группы добавляются СВЕРХУ, и без поправки лента уезжала бы вниз на
+   * их суммарную высоту — прочитанное место теряется, а автодогрузка ниже
+   * сразу же срабатывала бы снова. Замер снимается до отрисовки,
+   * восстановление — в useLayoutEffect ниже, до кадра, чтобы прыжок не был
+   * виден. На браузерное scroll anchoring не полагаемся: оно отключается
+   * тем самым `content-visibility`, ради которого всё затевалось.
+   */
+  const growWindow = useCallback(() => {
+    const root = scrollRef.current;
+    if (root) {
+      pendingAnchorRef.current = {
+        top: root.scrollTop,
+        height: root.scrollHeight,
+      };
+    }
+    setWindowSize((s) => s + 40);
+  }, []);
+
+  useLayoutEffect(() => {
+    const root = scrollRef.current;
+    const anchor = pendingAnchorRef.current;
+    pendingAnchorRef.current = null;
+    if (!root || !anchor) return;
+    root.scrollTop = anchor.top + (root.scrollHeight - anchor.height);
+  }, [windowSize]);
+
+  /**
+   * Автодогрузка истории при прокрутке вверх.
+   *
+   * Кнопка «Показать предыдущие» остаётся: она и явное управление, и
+   * единственный путь там, где IntersectionObserver нет (jsdom в тестах,
+   * старые браузеры). Наблюдатель лишь избавляет от клика: сентинел
+   * висит над первой группой, и окно растёт за 600px до края — пока
+   * старые сообщения ещё не нужны глазу.
+   */
+  useEffect(() => {
+    if (!isWindowed) return;
+    if (typeof IntersectionObserver === "undefined") return;
+    const node = loadMoreRef.current;
+    const root = scrollRef.current;
+    if (!node || !root) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) growWindow();
+      },
+      { root, rootMargin: "600px 0px 0px 0px" },
+    );
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [isWindowed, windowSize, growWindow]);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [searchIdx, setSearchIdx] = useState(0);
@@ -267,15 +330,41 @@ export default function ChatView() {
       .map((m) => m.id);
   }, [messages, searchQuery]);
 
+  /**
+   * Прыжок к найденному сообщению.
+   *
+   * `[data-mids~="..."]` — селектор по слову в атрибуте, а id сообщений
+   * содержат точки и двоеточия: любой такой id ломал селектор, и поиск
+   * молча не находил собственную цель. Сравниваем строки перебором.
+   *
+   * Окно раскрывается ровно до нужной группы, а не до 100000: раскрытие всей
+   * истории разом рисует тысячи сообщений и вешает вкладку на секунды.
+   */
   const jumpToMessage = (mid: string) => {
-    const find = () =>
-      scrollRef.current?.querySelector(`[data-mids~="${mid}"]`);
+    const find = () => {
+      const root = scrollRef.current;
+      if (!root) return null;
+      const nodes = Array.from(
+        root.querySelectorAll<HTMLElement>("[data-mids]"),
+      );
+      for (const node of nodes) {
+        const mids = node.dataset.mids;
+        if (mids && mids.split(" ").includes(mid)) return node;
+      }
+      return null;
+    };
     const el = find();
     if (el) {
       el.scrollIntoView({ behavior: "smooth", block: "center" });
       return;
     }
-    setWindowSize(100000);
+    const index = groupedMessages.findIndex((group) =>
+      group.messages.some((m) => m.id === mid),
+    );
+    if (index >= 0) {
+      const needed = groupedMessages.length - index;
+      setWindowSize((size) => (size >= needed ? size : needed + 5));
+    }
     setTimeout(() => {
       find()?.scrollIntoView({ behavior: "smooth", block: "center" });
     }, 80);
@@ -322,11 +411,10 @@ export default function ChatView() {
       <div className="flex-1 flex items-center justify-center p-4 md:p-6 min-h-0 overflow-y-auto">
         <div className="max-w-3xl w-full text-center px-3 md:px-6">
           <h1 className="text-xl md:text-3xl font-semibold mb-2">
-            Чем могу помочь?
+            {t("chat_view.chem_mogu_pomoch")}
           </h1>
           <p className="text-sm md:text-base text-muted-foreground">
-            Твой персональный AI-ассистент для кода. Напиши свой запрос — или
-            начни с одной из подсказок.
+            {t("chat_view.tvoy_personalnyy_ai_assistent_dlya_koda")}
           </p>
           <div className="mt-6 grid grid-cols-1 gap-2 text-left sm:grid-cols-2">
             {SUGGESTIONS.map((s) => (
@@ -374,7 +462,7 @@ export default function ChatView() {
         <div className="mx-auto max-w-3xl">
           {(!messages || messages.length === 0) && status !== "busy" && (
             <p className="text-center text-muted-foreground py-12">
-              Начни диалог — напиши сообщение ниже
+              {t("chat_view.nachni_dialog_napishi_soobschenie_nizhe")}
             </p>
           )}
           {isWindowed && (
@@ -383,12 +471,20 @@ export default function ChatView() {
                 variant="ghost"
                 size="sm"
                 className="rounded-full text-muted-foreground hover:text-foreground"
-                onClick={() => setWindowSize((s) => s + 40)}
+                onClick={growWindow}
               >
-                Показать предыдущие сообщения (
-                {visibleMessages.length - windowSize})
+                {/*
+                  Окно режется по ГРУППАМ, а счётчик считался по сообщениям:
+                  кнопка обещала «ещё 120», хотя скрыто было 30 групп.
+                */}
+                {tf("chat_view.pokazat_predyduschie_soobscheniya_0", [
+                  groupedMessages.length - windowSize,
+                ])}
               </Button>
             </div>
+          )}
+          {isWindowed && (
+            <div ref={loadMoreRef} aria-hidden="true" className="h-px" />
           )}
           <div>
             {renderedGroups.map((group, i) => {
@@ -399,10 +495,15 @@ export default function ChatView() {
               const firstId = group.messages[0]?.id ?? `group-${i}`;
               const mids = group.messages.map((m) => m.id).join(" ");
               return (
-                <div key={`${group.role}:${firstId}`} data-mids={mids}>
+                <div
+                  key={`${group.role}:${firstId}`}
+                  data-mids={mids}
+                  className="oc-msg-group"
+                >
                   <MessageItem
                     messages={group.messages}
                     isWorking={isWorking}
+                    isLatest={i === renderedGroups.length - 1}
                   />
                 </div>
               );

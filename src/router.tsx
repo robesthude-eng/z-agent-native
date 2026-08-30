@@ -12,7 +12,6 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { EventStream } from "./api/events";
-import { isInterruptionBarEnabled } from "./api/interruptions";
 import ChatView from "./components/ChatView";
 import Composer from "./components/Composer";
 import { ConfirmProvider } from "./components/ConfirmDialog";
@@ -24,7 +23,6 @@ import {
   SettingsPanelSkeleton,
 } from "./components/LazyPanel";
 import LoginPage from "./components/LoginPage";
-import PermissionDialog from "./components/PermissionDialog";
 import ShortcutsOverlay from "./components/ShortcutsOverlay";
 import Sidebar from "./components/Sidebar";
 import ToastHost from "./components/ToastHost";
@@ -273,7 +271,7 @@ function AppShell() {
       <TopBar />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Левый сайдбар: плавная анимация ширины на десктопе.
-            260px должно совпадать с шириной �� Sidebar.tsx — иначе панель либо
+            260px должно совпадать с шириной в Sidebar.tsx — иначе панель либо
             обрежется, либо оставит пустую полосу. */}
         <div
           className={cn(
@@ -357,11 +355,15 @@ function AppShell() {
         </div>
       </div>
       {/*
-        Этап 2.1: полоса прерываний за флагом `VITE_INTERRUPTION_BAR`.
-        Ровно один показ за раз — два одновременно спорили бы за место над
-        композером и предлагали бы ответить дважды на одно прерывание.
+        Полоса прерываний — единственный показ разрешений и вопросов.
+        Прежний `PermissionDialog` стоял здесь веткой выключенного флага
+        `VITE_INTERRUPTION_BAR` и выглядел запасным путём, но его кнопки
+        ни к чему не вели: нативный сервер решает разрешения сам и не
+        имеет маршрута для ответа из браузера (см. `respondPermission`).
+        Запасной путь, который делает вид, что спрашивает, хуже, чем его
+        отсутствие.
       */}
-      {isInterruptionBarEnabled() ? <InterruptionBar /> : <PermissionDialog />}
+      <InterruptionBar />
       <SettingsPanelHost />
       <ShortcutsOverlay />
       <WelcomeTour />

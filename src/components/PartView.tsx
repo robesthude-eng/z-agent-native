@@ -244,13 +244,24 @@ function formatRussianSeconds(secs: number): string {
   return tf("part_view.0_sekund", [secs]);
 }
 
-function useThinkingDuration(streaming?: boolean): string {
+/**
+ * Сколько агент думал над этой вспышкой рассуждений.
+ *
+ * Отсчёт идёт от монтирования карточки: измерить можно только то, что
+ * видели своими глазами — времени в самой части `reasoning` нет. Поэтому
+ * готовая карточка из истории (или та, что вышла из окна рендера и вернулась)
+ * показывала «0 секунд» — цифру, которая выглядит как факт, но им не является.
+ * Если самого размышления мы не видели — подписи длительности просто нет.
+ */
+function useThinkingDuration(streaming?: boolean): string | null {
   const [startedAt] = useState(() => Date.now());
+  const measuredRef = useRef(Boolean(streaming));
   const frozenEndRef = useRef<number | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
     if (streaming) {
+      measuredRef.current = true;
       frozenEndRef.current = null;
       const id = setInterval(() => setTick((t) => t + 1), 500);
       return () => clearInterval(id);
@@ -260,6 +271,7 @@ function useThinkingDuration(streaming?: boolean): string {
     }
   }, [streaming]);
 
+  if (!measuredRef.current) return null;
   const end =
     streaming || frozenEndRef.current === null
       ? Date.now()

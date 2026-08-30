@@ -1,42 +1,75 @@
 import type { ReactNode } from "react";
 import {
+  AudioIcon,
   BashIcon,
+  ConvertIcon,
   DefaultToolIcon,
+  DocumentIcon,
   EditIcon,
   FileIcon,
+  FolderIcon,
   GlobIcon,
   GrepIcon,
+  ImageGenIcon,
   ListFilesIcon,
+  MediaInfoIcon,
   QuestionIcon,
   TaskIcon,
+  VideoIcon,
   WebFetchIcon,
   WebSearchIcon,
   WriteIcon,
 } from "../components/icons";
 
+type IconComponent = (p: { size?: number }) => ReactNode;
+
+/**
+ * Значки инструментов.
+ *
+ * Держится в паре с `TOOL_LABEL_KEYS` из `lib/toolLabels`: таблицы расходились
+ * молча — медиа-инструменты и `patch`/`todowrite`/`repo_map` давно получили
+ * человеческие подписи, а значок у них оставался дефолтной шестерёнкой.
+ * Парность проверяет `toolUtils.test.ts`.
+ */
+export const TOOL_ICONS: Record<string, IconComponent> = {
+  read: FileIcon,
+  edit: EditIcon,
+  applypatch: EditIcon,
+  apply_patch: EditIcon,
+  patch: EditIcon,
+  write: WriteIcon,
+  bash: BashIcon,
+  cmd: BashIcon,
+  shell: BashIcon,
+  ensure_environment: BashIcon,
+  environment_status: BashIcon,
+  ssh_tool: BashIcon,
+  ssh: BashIcon,
+  glob: GlobIcon,
+  grep: GrepIcon,
+  list: ListFilesIcon,
+  ls: ListFilesIcon,
+  todowrite: ListFilesIcon,
+  todo: ListFilesIcon,
+  task: TaskIcon,
+  webfetch: WebFetchIcon,
+  fetch: WebFetchIcon,
+  websearch: WebSearchIcon,
+  search: WebSearchIcon,
+  question: QuestionIcon,
+  repo_map: FolderIcon,
+  generate_image: ImageGenIcon,
+  generate_speech: AudioIcon,
+  render_document: DocumentIcon,
+  render_video: VideoIcon,
+  convert_media: ConvertIcon,
+  media_info: MediaInfoIcon,
+};
+
 export function toolIcon(name?: string | null): ReactNode {
   // Defensive: callers can accidentally pass an object (e.g. a streamed tool
   // reference {messageID, callID} during streaming); fall back to default.
   if (typeof name !== "string" || !name) return <DefaultToolIcon size={13} />;
-  const n = name.toLowerCase();
-  if (n === "read") return <FileIcon size={13} />;
-  if (n === "edit" || n === "applypatch" || n === "apply_patch")
-    return <EditIcon size={13} />;
-  if (n === "write") return <WriteIcon size={13} />;
-  if (
-    n === "bash" ||
-    n === "cmd" ||
-    n === "shell" ||
-    n === "ensure_environment" ||
-    n === "ssh_tool"
-  )
-    return <BashIcon size={13} />;
-  if (n === "glob") return <GlobIcon size={13} />;
-  if (n === "grep") return <GrepIcon size={13} />;
-  if (n === "list" || n === "ls") return <ListFilesIcon size={13} />;
-  if (n === "task") return <TaskIcon size={13} />;
-  if (n === "webfetch" || n === "fetch") return <WebFetchIcon size={13} />;
-  if (n === "websearch" || n === "search") return <WebSearchIcon size={13} />;
-  if (n === "question") return <QuestionIcon size={13} />;
-  return <DefaultToolIcon size={13} />;
+  const Icon = TOOL_ICONS[name.toLowerCase()];
+  return Icon ? <Icon size={13} /> : <DefaultToolIcon size={13} />;
 }

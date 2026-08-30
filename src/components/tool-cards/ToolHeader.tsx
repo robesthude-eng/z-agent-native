@@ -2,10 +2,10 @@ import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import { t } from "@/i18n";
 import { copyText } from "@/lib/clipboard";
+import { friendlyToolLabel } from "@/lib/toolLabels";
 import { toast } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { toolIcon } from "../../utils/toolUtils";
-import { friendlyToolLabel } from "./toolCardUtils";
 
 interface ToolHeaderProps {
   toolName: string;
@@ -40,27 +40,39 @@ export function ToolHeader({
 
   return (
     <div
-      onClick={onToggle}
       className={cn(
-        "flex items-center gap-2 px-3 py-2 text-left cursor-pointer transition select-none",
+        "flex items-center gap-2 pr-2 transition select-none",
         open ? "bg-muted/40 border-b border-border/50" : "hover:bg-muted/30",
       )}
     >
-      <span className="shrink-0 text-muted-foreground">
-        {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-      </span>
-      <span className="shrink-0 text-muted-foreground">
-        {toolIcon(toolName)}
-      </span>
-      <span className="font-medium text-[12px] text-foreground shrink-0">
-        {friendlyToolLabel(toolName)}
-      </span>
-      {summary && (
-        <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground font-mono">
-          {summary}
+      {/*
+        Шапка — кнопка, а не div с onClick. Соседние уровни раскрытия (цепочка
+        и группа) — кнопки с aria-expanded, а самая внутренняя карточка была
+        недоступна с клавиатуры и не объявляла своё состояние. Кнопка
+        копирования вынесена наружу: кнопка внутри кнопки — невалидный HTML.
+      */}
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={open}
+        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left cursor-pointer"
+      >
+        <span className="shrink-0 text-muted-foreground">
+          {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
         </span>
-      )}
-      {!summary && <span className="flex-1" />}
+        <span className="shrink-0 text-muted-foreground">
+          {toolIcon(toolName)}
+        </span>
+        <span className="font-medium text-[12px] text-foreground shrink-0">
+          {friendlyToolLabel(toolName)}
+        </span>
+        {summary && (
+          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground font-mono">
+            {summary}
+          </span>
+        )}
+        {!summary && <span className="flex-1" />}
+      </button>
 
       <div className="flex items-center gap-1.5 shrink-0">
         {state === "running" && (
@@ -81,11 +93,13 @@ export function ToolHeader({
         )}
 
         {output && (
+          // На таче hover не существует: скрываем только там, где есть мышь.
           <button
             type="button"
             onClick={handleCopy}
-            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition opacity-0 group-hover:opacity-100"
+            className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition opacity-100 md:opacity-0 md:group-hover:opacity-100 md:group-focus-within:opacity-100"
             title={t("copy_button.kopirovat")}
+            aria-label={t("copy_button.kopirovat")}
           >
             {copied ? <Check size={12} /> : <Copy size={12} />}
           </button>

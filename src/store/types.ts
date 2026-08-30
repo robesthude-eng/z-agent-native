@@ -109,6 +109,14 @@ export interface UiSlice {
   syncUserPrefsFromServer: () => Promise<void>;
 }
 
+/** Чем закончилось ответвление: сервер скопировал историю или мы упали
+ * в пустой чат. UI должен говорить разное в этих двух случаях. */
+export interface ForkOutcome {
+  ok: boolean;
+  copied: number;
+  sessionId: string | null;
+}
+
 export interface SessionsSlice {
   sessions: SessionInfo[];
   currentID: string | null;
@@ -131,6 +139,13 @@ export interface SessionsSlice {
    * сессии ничего не делает.
    */
   materializeSession: () => Promise<void>;
+  /**
+   * Ответвление от своего сообщения: новый чат с историей до него.
+   *
+   * Без истории это было не ответвление, а просто пустой чат с тем же
+   * текстом в поле ввода: весь контекст разговора терялся.
+   */
+  forkSession: (messageId?: string) => Promise<ForkOutcome>;
   removeSession: (id: string) => Promise<void>;
   abort: () => Promise<void>;
   // Compatibility handler for stale permission events from older runtimes.

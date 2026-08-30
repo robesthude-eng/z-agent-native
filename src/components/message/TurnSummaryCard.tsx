@@ -17,13 +17,15 @@ interface TurnSummaryCardProps {
     outcomeStatus: TaskOutcomeStatus | null;
   };
   strategyMutated: boolean;
-  onSelectFile: (path: string) => void;
 }
 
+/**
+ * Файлы открывает сам `WorkspaceFileChip`. Проп `onSelectFile` карточка
+ * получала, но никуда не передавала — цепочка обрывалась молча.
+ */
 export function TurnSummaryCard({
   summary,
   strategyMutated,
-  onSelectFile,
 }: TurnSummaryCardProps) {
   const explicit = summary.outcomeStatus;
   const statusLabel =

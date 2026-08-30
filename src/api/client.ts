@@ -250,6 +250,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify(title ? { title } : {}),
     }),
+  /**
+   * Ответвление чата: новый чат с копией истории до указанного сообщения.
+   *
+   * Старый сервер такого маршрута не знает и ответит 404 — вызывающая
+   * сторона в этом случае открывает обычный новый чат.
+   */
+  forkSession: (id: string, messageID?: string) =>
+    req<{ session: SessionInfo; copied: number; workspaceCopied: boolean }>(
+      `/session/${id}/fork`,
+      {
+        method: "POST",
+        body: JSON.stringify(messageID ? { messageID } : {}),
+      },
+    ),
   getSession: (id: string) => req<SessionInfo>(`/session/${id}`),
   deleteSession: (id: string) =>
     req<void>(`/session/${id}`, { method: "DELETE" }),

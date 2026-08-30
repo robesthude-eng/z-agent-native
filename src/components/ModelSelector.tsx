@@ -316,7 +316,7 @@ export default function ModelSelector() {
               className="w-full rounded-lg px-3 py-2 text-left text-xs font-medium text-muted-foreground transition hover:bg-muted/70 hover:text-foreground"
               onClick={openModelSettings}
             >
-              Упр��вление моделями…
+              Управление моделями…
             </button>
           </div>
         </div>

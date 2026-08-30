@@ -1,5 +1,5 @@
 import { ChevronRight, Wrench } from "lucide-react";
-import { memo, type ReactNode, useState } from "react";
+import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 
@@ -40,7 +40,24 @@ const AgentActivity = ({
 }) => {
   // null — пользователь ещё не вмешивался: решает статус хода.
   const [choice, setChoice] = useState<boolean | null>(null);
-  const expanded = choice ?? running;
+  /*
+    Автосворачивание по концу хода хорошо читается в архиве, но бьёт по
+    рукам в живом ходе: человек читает вывод команды, агент заканчивает —
+    и текст исчезает из-под курсора. Если блок читают в этот момент,
+    оставляем его открытым до явного клика.
+  */
+  const [keptOpen, setKeptOpen] = useState(false);
+  const pointerInside = useRef(false);
+  const wasRunning = useRef(running);
+
+  useEffect(() => {
+    if (wasRunning.current && !running && pointerInside.current) {
+      setKeptOpen(true);
+    }
+    wasRunning.current = running;
+  }, [running]);
+
+  const expanded = choice ?? (running || keptOpen);
 
   const status = running
     ? t("agent_activity.rabotaet")
@@ -49,7 +66,15 @@ const AgentActivity = ({
       : t("agent_activity.gotovo");
 
   return (
-    <div className="not-prose my-1">
+    <div
+      className="not-prose my-1"
+      onPointerEnter={() => {
+        pointerInside.current = true;
+      }}
+      onPointerLeave={() => {
+        pointerInside.current = false;
+      }}
+    >
       <button
         type="button"
         aria-expanded={expanded}
@@ -61,7 +86,10 @@ const AgentActivity = ({
           "group/activity flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-accent/30",
           hasError && !running && "text-red-400",
         )}
-        onClick={() => setChoice(!expanded)}
+        onClick={() => {
+          setKeptOpen(false);
+          setChoice(!expanded);
+        }}
       >
         <span className="shrink-0 text-muted-foreground/50">
           <ChevronRight
@@ -91,7 +119,7 @@ const AgentActivity = ({
         )}
         <span className="flex-1" />
         <span className="hidden text-[10.5px] text-muted-foreground/55 sm:inline">
-          подробности
+          {t("agent_activity.podrobnosti")}
         </span>
       </button>
       {expanded && (

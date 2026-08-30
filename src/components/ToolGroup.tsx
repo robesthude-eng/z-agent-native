@@ -1,20 +1,12 @@
 import { ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
+import { friendlyToolLabel } from "@/lib/toolLabels";
+import { toolPhase } from "@/lib/toolStatus";
 import { cn } from "@/lib/utils";
 import { isInterruptedQuestionPart } from "../api/interruptions";
 import type { ToolPart } from "../api/types";
 import { toolIcon } from "../utils/toolUtils";
-import ToolCard, { friendlyToolLabel } from "./ToolCard";
-
-function getState(part: ToolPart): string {
-  const s = part.state;
-  if (typeof s === "string") return s === "pending" ? "running" : s;
-  if (s && typeof s === "object") {
-    const status = (s as { status?: string }).status ?? "running";
-    return status === "pending" ? "running" : status;
-  }
-  return "running";
-}
+import ToolCard from "./ToolCard";
 
 /**
  * Идентичность вызова инструмента. Индекс как ключ здесь опасен: группа
@@ -42,15 +34,24 @@ function groupLabel(tool: string | undefined, count: number): string {
 
 const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
   const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
-  const anyRunning = parts.some((p) => getState(p) === "running");
+  const anyRunning = parts.some((p) => toolPhase(p) === "running");
   // Условие то же, что в шапке цепочки (`MessageItem`), и берётся из одной
   // функции: оборванный вопрос — не ошибка группы, а способ доставить ответ.
   const anyError = parts.some(
-    (p) => getState(p) === "error" && !isInterruptedQuestionPart(p),
+    (p) => toolPhase(p) === "error" && !isInterruptedQuestionPart(p),
   );
   // Reference behavior: group stays open in real time while any item is running.
   const expanded = manuallyToggled ?? anyRunning;
   const toolName = typeof tool === "string" ? tool : "tool";
+
+  /*
+    Одна карточка — не группа. Шапка «Команда» над единственным вызовом
+    повторяла подпись самой карточки и стоила лишнего клика: до вывода
+    команды надо было раскрыть цепочку, потом группу, потом карточку.
+    Состояние группы здесь не теряется: раскрывать было нечего.
+  */
+  const onlyPart = parts.length === 1 ? parts[0] : undefined;
+  if (onlyPart) return <ToolCard part={onlyPart} />;
 
   return (
     <div className="not-prose my-1">
