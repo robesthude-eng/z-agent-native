@@ -24,11 +24,24 @@ export function useSmoothStreamingText(
   const targetRef = useRef(text);
   const lenRef = useRef(text.length);
   const rafRef = useRef<number>(0);
-
-  targetRef.current = text;
+  /*
+    «Печатающий» вывод — это анимация. При prefers-reduced-motion её быть не
+    должно: текст появляется сразу и целиком.
+  */
+  const [reducedMotion] = useState(
+    () =>
+      typeof window !== "undefined" &&
+      typeof window.matchMedia === "function" &&
+      window.matchMedia("(prefers-reduced-motion: reduce)").matches,
+  );
 
   useEffect(() => {
-    if (!streaming) {
+    // Цель обновляем в эффекте, а не в теле рендера: присваивание при
+    // рендере — побочный эффект, и в конкурентном режиме оно может
+    // произойти для кадра, который так и не покажут.
+    targetRef.current = text;
+
+    if (!streaming || reducedMotion) {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
       rafRef.current = 0;
       lenRef.current = targetRef.current.length;
@@ -46,10 +59,17 @@ export function useSmoothStreamingText(
 
     let last = performance.now();
     const tick = (now: number) => {
-      if (now - last >= frameMs) {
+      const target = targetRef.current;
+      /*
+        Каждый шаг перерисовывает Markdown целиком. На коротком ответе это
+        дёшево, и 30 шагов в секунду выглядят как печать; на длинном разбор
+        занимает почти весь кадр — лента дёргается вместо плавного хода.
+        Поэтому чем длиннее текст, тем реже шаг.
+      */
+      const interval = target.length > 8000 ? Math.max(frameMs, 66) : frameMs;
+      if (now - last >= interval) {
         const dt = now - last;
         last = now;
-        const target = targetRef.current;
 
         if (target.length > hardLimit || lenRef.current > target.length) {
           lenRef.current = target.length;
@@ -77,7 +97,7 @@ export function useSmoothStreamingText(
     return () => {
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
-  }, [streaming, text, catchUpMs, minStep, frameMs, hardLimit]);
+  }, [streaming, text, catchUpMs, minStep, frameMs, hardLimit, reducedMotion]);
 
-  return streaming ? shown : text;
+  return streaming && !reducedMotion ? shown : text;
 }

@@ -110,9 +110,17 @@ export default function ChatView() {
   const error = useStore((s) => s.error);
   const refreshTurnProjection = useStore((s) => s.refreshTurnProjection);
   const prefillComposer = useStore((s) => s.prefillComposer);
-  const bottomRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
+  /*
+    Прокрутка, которую сделали мы сами: её нельзя принимать за жест
+    пользователя, иначе лента отцеплялась бы от низа на собственных
+    подскроллах во время стрима.
+  */
+  const programmaticRef = useRef(false);
+  const lastTopRef = useRef(0);
+  const smoothUntilRef = useRef(0);
   const unreadAssistantIdsRef = useRef<Set<string>>(new Set());
   const [newAnswerCount, setNewAnswerCount] = useState(0);
   const [windowSize, setWindowSize] = useState(40);
@@ -162,8 +170,23 @@ export default function ChatView() {
     setNewAnswerCount(0);
   }, []);
 
+  /*
+    scrollIntoView прокручивает всех предков сразу — на мобильных вместе с
+    лентой уезжала вся страница. Двигаем только сам контейнер.
+    smoothUntilRef держит окно анимации: прилипание к низу не должно рвать
+    её мгновенным прыжком.
+  */
   const scrollToBottom = useCallback(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollRef.current;
+    if (el) {
+      programmaticRef.current = true;
+      smoothUntilRef.current = Date.now() + 600;
+      if (typeof el.scrollTo === "function") {
+        el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+      } else {
+        el.scrollTop = el.scrollHeight;
+      }
+    }
     atBottomRef.current = true;
     setIsScrolledUp(false);
     resetNewAnswers();
@@ -171,6 +194,9 @@ export default function ChatView() {
 
   useEffect(() => {
     atBottomRef.current = true;
+    lastTopRef.current = 0;
+    programmaticRef.current = false;
+    smoothUntilRef.current = 0;
     setIsScrolledUp(false);
     resetNewAnswers();
   }, [currentID, resetNewAnswers]);
@@ -178,14 +204,28 @@ export default function ChatView() {
   const scrollRafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
     null,
   );
+  /*
+    «Внизу ли мы» раньше решалось только расстоянием до дна (80px). Во время
+    стрима это значило, что подкрутить ленту на 20-30px вверх невозможно:
+    следующий же чанк утягивал обратно. Теперь любое движение вверх сразу
+    отцепляет автопрокрутку, а прилипание возвращается, когда пользователь
+    сам довёл ленту до дна. Собственные подскроллы помечены programmaticRef
+    и за жест не считаются.
+  */
   const onScroll = () => {
     if (scrollRafRef.current) return;
     scrollRafRef.current = requestAnimationFrame(() => {
       scrollRafRef.current = null;
       const el = scrollRef.current;
       if (!el) return;
-      const isUp = el.scrollHeight - el.scrollTop - el.clientHeight >= 80;
-      atBottomRef.current = !isUp;
+      const top = el.scrollTop;
+      const distance = el.scrollHeight - top - el.clientHeight;
+      const movedUp = top < lastTopRef.current - 1;
+      lastTopRef.current = top;
+      if (programmaticRef.current) programmaticRef.current = false;
+      else if (movedUp) atBottomRef.current = false;
+      if (distance <= 8) atBottomRef.current = true;
+      const isUp = distance >= 80;
       if (!isUp && unreadAssistantIdsRef.current.size > 0) resetNewAnswers();
       if (isScrolledUp !== isUp) setIsScrolledUp(isUp);
     });
@@ -213,19 +253,48 @@ export default function ChatView() {
     return `${messages.length}:${last?.id ?? ""}:${last?.parts?.length ?? 0}:${textLen}`;
   }, [messages]);
 
-  const autoScrollRafRef = useRef<ReturnType<
-    typeof requestAnimationFrame
-  > | null>(null);
-  useEffect(() => {
-    if (!streamSignal || !atBottomRef.current) return;
-    if (autoScrollRafRef.current !== null) return;
-    autoScrollRafRef.current = requestAnimationFrame(() => {
-      autoScrollRafRef.current = null;
-      if (atBottomRef.current) {
-        bottomRef.current?.scrollIntoView({ behavior: "auto" });
-      }
+  const pinRafRef = useRef<ReturnType<typeof requestAnimationFrame> | null>(
+    null,
+  );
+  /*
+    Одно прилипание к низу на кадр — и на приход чанка, и на рост высоты.
+  */
+  const pinToBottom = useCallback(() => {
+    if (!atBottomRef.current) return;
+    if (pinRafRef.current !== null) return;
+    pinRafRef.current = requestAnimationFrame(() => {
+      pinRafRef.current = null;
+      const el = scrollRef.current;
+      if (!el || !atBottomRef.current) return;
+      // Плавная прокрутка кнопкой «вниз» ещё идёт — не рвать её прыжком.
+      if (Date.now() < smoothUntilRef.current) return;
+      programmaticRef.current = true;
+      el.scrollTop = el.scrollHeight;
     });
-  }, [streamSignal]);
+  }, []);
+
+  useEffect(() => {
+    if (!streamSignal) return;
+    pinToBottom();
+  }, [streamSignal, pinToBottom]);
+
+  /*
+    Высота ленты растёт не только от новых чанков: typewriter открывает текст
+    по кускам между ними, раскрываются карточки инструментов, догружаются
+    картинки и подсветка кода. Подписка на сам стрим всего этого не видит —
+    поэтому раньше текст уползал под нижний край, а следующий чанк рывком
+    возвращал его на место. ResizeObserver ловит любой рост высоты.
+    rAF внутри обязателен: правка scrollTop прямо в колбэке даёт
+    «ResizeObserver loop completed with undelivered notifications».
+  */
+  useEffect(() => {
+    if (typeof ResizeObserver === "undefined") return;
+    const node = contentRef.current;
+    if (!node) return;
+    const observer = new ResizeObserver(() => pinToBottom());
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [currentID, pinToBottom]);
 
   useEffect(() => {
     if (!streamSignal || atBottomRef.current || !messages?.length) return;
@@ -244,8 +313,8 @@ export default function ChatView() {
   useEffect(() => {
     return () => {
       if (scrollRafRef.current) cancelAnimationFrame(scrollRafRef.current);
-      if (autoScrollRafRef.current !== null) {
-        cancelAnimationFrame(autoScrollRafRef.current);
+      if (pinRafRef.current !== null) {
+        cancelAnimationFrame(pinRafRef.current);
       }
     };
   }, []);
@@ -287,7 +356,7 @@ export default function ChatView() {
    * Группы добавляются СВЕРХУ, и без поправки лента уезжала бы вниз на
    * их суммарную высоту — прочитанное место теряется, а автодогрузка ниже
    * сразу же срабатывала бы снова. Замер снимается до отрисовки,
-   * восстановление — в useLayoutEffect ниже, до кадра, чтобы прыжок не был
+   * восстановление — в useLayoutEffect ниже, до кадра, чтобы прыжок не ��ыл
    * виден. На браузерное scroll anchoring не полагаемся: оно отключается
    * тем самым `content-visibility`, ради которого всё затевалось.
    */
@@ -522,7 +591,7 @@ export default function ChatView() {
             </div>
           </div>
         )}
-        <div className="mx-auto max-w-3xl">
+        <div ref={contentRef} className="mx-auto max-w-3xl">
           {(!messages || messages.length === 0) && status !== "busy" && (
             <p className="text-center text-muted-foreground py-12">
               {t("chat_view.nachni_dialog_napishi_soobschenie_nizhe")}
@@ -593,8 +662,6 @@ export default function ChatView() {
                 </Button>
               </div>
             )}
-
-            <div ref={bottomRef} />
           </div>
         </div>
       </div>
