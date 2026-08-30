@@ -64,6 +64,9 @@ export function openAiMessages(frames) {
       }
     } else if (f.role === 'assistant') {
       const msg = { role: 'assistant', content: f.content || null };
+      if (f.reasoning) {
+        msg.reasoning_content = f.reasoning;
+      }
       if (f.toolCalls?.length) msg.tool_calls = f.toolCalls.map((c) => ({ id: c.id, type: 'function', function: { name: c.name, arguments: JSON.stringify(c.arguments || {}) } }));
       out.push(msg);
     } else if (f.role === 'tool') out.push({ role: 'tool', tool_call_id: f.callId, content: f.content });

@@ -35,7 +35,7 @@ export function MessageActions({
     // На таче hover не существует, а вместе с ним не существовало «Повторить»,
     // копирования и итога хода: кнопки были нарисованы, но прозрачны. Поэтому
     // прячем их только там, где есть мышь, и показываем при фокусе с клавиатуры.
-    <div className="flex items-center gap-1 transition-opacity opacity-100 group-focus-within:opacity-100 md:opacity-0 md:group-hover:opacity-100">
+    <div className="flex items-center gap-1 transition-opacity opacity-100 group-focus-within:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
       {visibleText && <CopyButton text={visibleText} />}
 
       {role === "assistant" && sessionId && messageId && (

@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import type { ProcessedFile } from "@/api/files";
 import { formatSize } from "@/api/files";
-import { tf } from "@/i18n";
+import { t, tf } from "@/i18n";
 import { CloseIcon, PaperclipIcon } from "../icons";
 
 interface ComposerAttachmentsProps {
@@ -95,7 +95,9 @@ export function ComposerAttachments({
           </span>
           <div className="min-w-0 flex-1">
             <div className="truncate font-medium text-foreground">{name}</div>
-            <div className="text-[11px] text-muted-foreground">Загрузка…</div>
+            <div className="text-[11px] text-muted-foreground">
+              {t("composer.zagruzka")}
+            </div>
           </div>
         </div>
       ))}

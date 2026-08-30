@@ -226,8 +226,9 @@ const LimitedMarkdown = ({
           onClick={() => setShowAll(true)}
           className="mt-1 rounded-md border border-border px-2 py-1 text-xs text-muted-foreground hover:bg-accent/40 transition"
         >
-          Показать полностью (ещё{" "}
-          {(text.length - RENDER_TEXT_LIMIT).toLocaleString("ru-RU")} символов)
+          {tf("part_view.pokazat_polnostyu_esche_0_simvolov", [
+            (text.length - RENDER_TEXT_LIMIT).toLocaleString("ru-RU"),
+          ])}
         </button>
       )}
     </>

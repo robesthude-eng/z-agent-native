@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { memo, useState } from "react";
+import { t } from "@/i18n";
 import { friendlyToolLabel } from "@/lib/toolLabels";
 import { toolPhase } from "@/lib/toolStatus";
 import { cn } from "@/lib/utils";
@@ -57,6 +58,9 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
     <div className="not-prose my-1">
       <button
         type="button"
+        // Состояние раскрытия видно глазами по стрелке, но не скринридеру:
+        // без aria-expanded кнопка звучала как обычная кнопка без последствий.
+        aria-expanded={expanded}
         className="group/toolgrp flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
         // Один клик переключает относительно видимого состояния (фикс двойного клика).
         onClick={() => setManuallyToggled(!expanded)}
@@ -79,7 +83,9 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
           <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-amber-400 animate-pulse" />
         )}
         {!anyRunning && anyError && (
-          <span className="text-[11px] font-medium text-red-400">error</span>
+          <span className="text-[11px] font-medium text-red-400">
+            {t("changes_panel.oshibka")}
+          </span>
         )}
         <span className="flex-1" />
       </button>

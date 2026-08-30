@@ -29,7 +29,16 @@ function ToolCardComponent({ part }: ToolCardProps) {
   const output = getOutput(part);
   const summary = getSummary(part);
 
-  const [open, setOpen] = useState(state === "running" || state === "error");
+  /*
+    Раскрытие — производное от живого состояния, а не снимок на момент
+    монтирования. Карточка почти всегда монтируется в состоянии pending:
+    к моменту, когда вызов упал или пошёл вывод, useState уже зафиксировал
+    false, и ошибку приходилось раскрывать руками. Явный клик сильнее
+    автоматики — поэтому manuallyToggled побеждает (та же схема, что в
+    ToolGroup).
+  */
+  const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
+  const open = manuallyToggled ?? (state === "running" || state === "error");
 
   // 1. Question Tool Card or Interruption Trace
   if (toolName === "question") {
@@ -60,7 +69,7 @@ function ToolCardComponent({ part }: ToolCardProps) {
         summary={summary}
         state={state}
         open={open}
-        onToggle={() => setOpen((prev) => !prev)}
+        onToggle={() => setManuallyToggled(!open)}
         output={output}
       />
       {open && (

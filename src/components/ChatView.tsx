@@ -9,7 +9,7 @@ import {
 import { useShallow } from "zustand/react/shallow";
 import { Button } from "@/components/ui/button";
 import { t, tf } from "@/i18n";
-import { isAbortedError, statusText } from "../api/eventGuards";
+import { errorMessage, isAbortedError, statusText } from "../api/eventGuards";
 import {
   dispositionOf,
   indicatorFor,
@@ -32,7 +32,12 @@ import {
 } from "./icons";
 import MessageItem from "./MessageItem";
 
-const SUGGESTIONS = [
+/*
+  Карточки-подсказки собираются на рендере, а не при импорте модуля: t()
+  на верхнем уровне выполняется до того, как приложение выберет язык, и
+  подписи застывали в том языке, который успел загрузиться первым.
+*/
+const suggestionCards = () => [
   {
     title: t("chat_view.sobrat_proekt"),
     prompt: t("chat_view.sozday_v_workspace_staticheskuyu_stranicu_le"),
@@ -54,6 +59,18 @@ const SUGGESTIONS = [
     icon: BashIcon,
   },
 ];
+
+/**
+ * Курсор в поле ввода? Тогда Ctrl/⌘+F — это поиск внутри самого поля
+ * (терминал, редактор файла, поиск по списку чатов), и перехватывать его
+ * нельзя: приложение выглядело сломанным именно из-за этого.
+ */
+const isTextEntry = (el: EventTarget | null): boolean => {
+  if (!(el instanceof HTMLElement)) return false;
+  if (el.isContentEditable) return true;
+  const tag = el.tagName;
+  return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+};
 
 const hasVisibleContent = (m: Message) =>
   m.role === "assistant" &&
@@ -379,13 +396,22 @@ export default function ChatView() {
     if (mid) jumpToMessage(mid);
   };
 
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [announcement, setAnnouncement] = useState("");
+  const wasWorkingRef = useRef(false);
+
   useEffect(() => {
     const openSearch = () => setSearchOpen(true);
     const onKey = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.code === "KeyF") {
-        e.preventDefault();
-        openSearch();
-      }
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.code !== "KeyF") return;
+      /*
+        Без открытого чата искать нечего, а в поле ввода Ctrl/⌘+F должен
+        искать по самому полю: раньше мы отбирали его у терминала,
+        редактора файлов и поиска по списку чатов.
+      */
+      if (!currentID || isTextEntry(e.target)) return;
+      e.preventDefault();
+      openSearch();
     };
     window.addEventListener("keydown", onKey);
     window.addEventListener("z-agent:chat-search", openSearch);
@@ -393,7 +419,36 @@ export default function ChatView() {
       window.removeEventListener("keydown", onKey);
       window.removeEventListener("z-agent:chat-search", openSearch);
     };
-  }, []);
+  }, [currentID]);
+
+  /*
+    Фокус в поле поиска ставится один раз — при открытии. Прежний
+    `ref={(el) => el?.focus()}` вызывался на каждом рендере, то есть на
+    каждом токене стрима: курсор возвращался в поле и сбрасывал выделение.
+  */
+  useEffect(() => {
+    if (searchOpen) searchInputRef.current?.focus();
+  }, [searchOpen]);
+
+  /*
+    Лента объявлена как role="log" с aria-live="off": читать вслух каждый
+    токен нельзя. Вместо этого — ровно одна короткая фраза на завершение
+    хода и на ошибку, в отдельной невидимой области ниже.
+  */
+  useEffect(() => {
+    if (showTyping) {
+      wasWorkingRef.current = true;
+      return;
+    }
+    if (!wasWorkingRef.current) return;
+    wasWorkingRef.current = false;
+    setAnnouncement(t("chat_view.otvet_agenta_gotov"));
+  }, [showTyping]);
+
+  useEffect(() => {
+    const text = errorMessage(error);
+    if (text) setAnnouncement(tf("chat_view.oshibka_0", [text]));
+  }, [error]);
 
   const hasLocalAssistantError = useMemo(
     () =>
@@ -417,7 +472,7 @@ export default function ChatView() {
             {t("chat_view.tvoy_personalnyy_ai_assistent_dlya_koda")}
           </p>
           <div className="mt-6 grid grid-cols-1 gap-2 text-left sm:grid-cols-2">
-            {SUGGESTIONS.map((s) => (
+            {suggestionCards().map((s) => (
               <button
                 key={s.title}
                 type="button"
@@ -446,16 +501,24 @@ export default function ChatView() {
 
   return (
     <div className="flex-1 relative min-h-0 overflow-hidden bg-transparent">
+      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: длинную историю нужно листать с клавиатуры, а не только колесом мыши */}
       <div
         key={currentID}
-        className="oc-chat-in scrollbar-none h-full overflow-y-auto pb-6"
+        role="log"
+        aria-live="off"
+        aria-label={t("chat_view.lenta_soobscheniy_chata")}
+        tabIndex={0}
+        className="oc-chat-in oc-scroll-subtle h-full overflow-y-auto pb-6 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/40"
         ref={scrollRef}
         onScroll={onScroll}
       >
         {error && !hasLocalAssistantError && (
           <div className="mx-auto max-w-3xl px-3 md:px-6 pt-3">
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-              {typeof error === "string" ? error : JSON.stringify(error)}
+              {/* JSON.stringify(Error) возвращает "{}": плашка ошибки
+                  оказывалась пустой. errorMessage() достаёт текст из любой
+                  формы ошибки, которую отдают сервер и SDK. */}
+              {errorMessage(error) ?? t("changes_panel.oshibka")}
             </div>
           </div>
         )}
@@ -535,10 +598,17 @@ export default function ChatView() {
           </div>
         </div>
       </div>
+      {/*
+        Единственное объявление на весь ход: сама лента молчит, иначе
+        скринридер зачитывал бы каждый токен стрима.
+      */}
+      <p aria-live="polite" className="sr-only">
+        {announcement}
+      </p>
       {searchOpen && (
         <div className="absolute right-3 top-2 z-20 flex items-center gap-1 rounded-lg border border-border bg-card px-2 py-1 shadow-e2">
           <input
-            ref={(el) => el?.focus()}
+            ref={searchInputRef}
             value={searchQuery}
             onChange={(e) => {
               setSearchQuery(e.target.value);

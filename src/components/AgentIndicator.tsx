@@ -23,9 +23,27 @@ export function AgentIndicator({ activity }: { activity: AgentActivity }) {
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    setNow(Date.now());
-    const timer = setInterval(() => setNow(Date.now()), 1000);
-    return () => clearInterval(timer);
+    /*
+      В фоновой вкладке секундомер никто не видит, а интервал продолжал
+      перерисовывать ленту раз в секунду весь длинный ход — это заметный
+      расход батареи на ноутбуке. Интервал живёт только пока вкладка
+      видима; при возврате время пересчитывается от startedAt, поэтому
+      "догонять" пропущенные тики не нужно.
+    */
+    let timer: ReturnType<typeof setInterval> | undefined;
+    const sync = () => {
+      if (timer) clearInterval(timer);
+      timer = undefined;
+      if (document.visibilityState === "hidden") return;
+      setNow(Date.now());
+      timer = setInterval(() => setNow(Date.now()), 1000);
+    };
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => {
+      if (timer) clearInterval(timer);
+      document.removeEventListener("visibilitychange", sync);
+    };
   }, []);
 
   const startedAt = activity.startedAt ?? mountedAt.current;

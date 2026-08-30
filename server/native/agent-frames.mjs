@@ -70,14 +70,22 @@ export function framesFromMessages(messages, workspace) {
       continue;
     }
     if (msg.role !== 'assistant') continue;
-    const content = textParts(msg);
+    const content = (msg.parts || []).filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
+    const reasoning = (msg.parts || []).filter((part) => part?.type === 'reasoning' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
     const tools = (msg.parts || []).filter((part) => part?.type === 'tool' && part.callID && part.tool);
     const toolCalls = tools.map((part) => ({
       id: String(part.callID),
       name: String(part.tool),
       arguments: part.state?.input && typeof part.state.input === 'object' ? part.state.input : {},
     }));
-    if (content || toolCalls.length) frames.push({ role: 'assistant', content, toolCalls });
+    if (content || reasoning || toolCalls.length) {
+      frames.push({
+        role: 'assistant',
+        content: content || null,
+        ...(reasoning ? { reasoning } : {}),
+        toolCalls,
+      });
+    }
     for (const part of tools) {
       const state = part.state && typeof part.state === 'object' ? part.state : {};
       if (!['completed', 'error'].includes(state.status)) continue;

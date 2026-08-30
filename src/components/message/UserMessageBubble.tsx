@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import type { Message } from "../../api/types";
@@ -32,6 +33,16 @@ export function UserMessageBubble({
   onFork,
   isLatest,
 }: UserMessageBubbleProps) {
+  /*
+    Фокус в поле правки ставится один раз за сеанс редактирования.
+    Прежний `ref={(el) => el?.focus()}` вызывался на каждом рендере и уводил
+    курсор в конец текста, пока человек правил середину сообщения.
+  */
+  const focusedRef = useRef(false);
+  useEffect(() => {
+    if (!isEditing) focusedRef.current = false;
+  }, [isEditing]);
+
   const msgText = getMessageText(message);
   const { refs, rest } = extractAttachments(msgText);
   const realAttParts = (message.parts || []).filter(
@@ -64,9 +75,31 @@ export function UserMessageBubble({
       {isEditing ? (
         <div className="flex w-full flex-col gap-2 rounded-2xl border border-border bg-card p-3 shadow-sm">
           <textarea
-            ref={(el) => el?.focus()}
+            ref={(el) => {
+              if (!el || focusedRef.current) return;
+              focusedRef.current = true;
+              el.focus();
+              const end = el.value.length;
+              el.setSelectionRange(end, end);
+            }}
             value={editText}
             onChange={(e) => onEditTextChange(e.target.value)}
+            onKeyDown={(e) => {
+              /*
+                Шпаргалка обещала ⌘/Ctrl+Enter для повторной отправки, а Esc
+                здесь ожидается сам собой — но обработчика не было, и правку
+                можно было завершить только мышью.
+              */
+              if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
+                e.preventDefault();
+                if (editText.trim()) onSaveAndResend();
+                return;
+              }
+              if (e.key === "Escape") {
+                e.preventDefault();
+                onCancelEditing();
+              }
+            }}
             className="w-full resize-y rounded-lg border border-border bg-background p-2 text-sm text-foreground outline-none focus:border-ring"
             rows={Math.min(10, Math.max(2, editText.split("\n").length))}
           />
@@ -85,7 +118,7 @@ export function UserMessageBubble({
               disabled={!editText.trim()}
               className="text-xs"
             >
-              Отправить
+              {t("composer.otpravit")}
             </Button>
           </div>
         </div>

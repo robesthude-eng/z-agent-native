@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { t } from "@/i18n";
+import { type MessageKey, t } from "@/i18n";
 import { CloseIcon } from "./icons";
 
 /**
@@ -11,8 +11,14 @@ import { CloseIcon } from "./icons";
  * приложение сломано. Добавляя новый шорткат, добавляйте строку сюда же.
  */
 interface ShortcutGroup {
-  title: string;
-  items: { keys: string[]; description: string }[];
+  /*
+    Здесь лежат ключи каталога, а не готовые строки: модуль вычисляется
+    один раз при импорте — до того, как приложение выберет язык, — и
+    переведённые на этом этапе строки застывали навсегда. Перевод
+    происходит на рендере, в ShortcutsList.
+  */
+  title: MessageKey;
+  items: { keys: string[]; description: MessageKey }[];
 }
 
 /** На Mac принято писать ⌘; определяем платформу один раз при загрузке. */
@@ -23,57 +29,71 @@ const MOD = IS_MAC ? "⌘" : "Ctrl";
 
 const GROUPS: ShortcutGroup[] = [
   {
-    title: t("shortcuts_overlay.navigaciya"),
+    title: "shortcuts_overlay.navigaciya",
     items: [
       {
         keys: [MOD, "K"],
-        description: t("shortcuts_overlay.poisk_po_spisku_chatov"),
+        description: "shortcuts_overlay.poisk_po_spisku_chatov",
       },
       {
         keys: [MOD, "Shift", "O"],
-        description: t("shortcuts_overlay.novyy_chat"),
+        description: "shortcuts_overlay.novyy_chat",
       },
-      { keys: [MOD, "/"], description: t("shortcuts_overlay.eta_shpargalka") },
+      {
+        keys: [MOD, "/"],
+        description: "shortcuts_overlay.eta_shpargalka",
+      },
       {
         keys: ["Esc"],
-        description: t("shortcuts_overlay.zakryt_okno_poisk_ili_otmenit_vvod"),
+        description: "shortcuts_overlay.zakryt_okno_poisk_ili_otmenit_vvod",
       },
     ],
   },
   {
-    title: t("settings_panel.chat"),
+    title: "settings_panel.chat",
     items: [
-      { keys: ["Enter"], description: t("composer.otpravit_soobschenie") },
+      {
+        keys: ["Enter"],
+        description: "composer.otpravit_soobschenie",
+      },
       {
         keys: ["Shift", "Enter"],
-        description: t("shortcuts_overlay.perenos_stroki"),
+        description: "shortcuts_overlay.perenos_stroki",
       },
       {
         keys: [MOD, "F"],
-        description: t("shortcuts_overlay.poisk_po_tekuschemu_chatu"),
+        description: "shortcuts_overlay.poisk_po_tekuschemu_chatu",
       },
       {
         keys: [MOD, "Enter"],
-        description: t(
+        description:
           "shortcuts_overlay.otpravit_otredaktirovannoe_soobschenie_zanov",
-        ),
+      },
+      {
+        keys: ["Esc"],
+        description: "shortcuts_overlay.ostanovit_generaciyu",
+      },
+      {
+        keys: ["↑"],
+        description:
+          "shortcuts_overlay.vernut_poslednee_soobschenie_v_pole_vvoda",
       },
       {
         keys: ["↑", "↓", "Enter"],
-        description: t("shortcuts_overlay.vybor_v_podskazkah_komand_i_faylov"),
+        description: "shortcuts_overlay.vybor_v_podskazkah_komand_i_faylov",
       },
     ],
   },
   {
-    title: t("workspace.files"),
+    title: "workspace.files",
     items: [
       {
         keys: [MOD, "S"],
-        description: t("shortcuts_overlay.sohranit_otkrytyy_fayl"),
+        description: "shortcuts_overlay.sohranit_otkrytyy_fayl",
       },
       {
         keys: ["Enter"],
-        description: t("shortcuts_overlay.podtverdit_imya_fayla_ili_papki"),
+        description: "shortcuts_overlay.podtverdit_imya_fayla_ili_papki",
       },
     ],
   },
@@ -106,7 +126,7 @@ export function ShortcutsList() {
       {GROUPS.map((group) => (
         <section key={group.title} className="space-y-1.5">
           <h3 className="font-mono text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            {group.title}
+            {t(group.title)}
           </h3>
           {group.items.map((item) => (
             <div
@@ -114,7 +134,7 @@ export function ShortcutsList() {
               className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 text-[12.5px] hover:bg-accent/40"
             >
               <span className="min-w-0 text-muted-foreground">
-                {item.description}
+                {t(item.description)}
               </span>
               <Keys keys={item.keys} />
             </div>

@@ -17,6 +17,7 @@ import {
   serverQueueEnabled,
 } from "../api/sendQueue";
 import { dispositionOf, sendBlockReason } from "../api/turnVerdict";
+import { messageText } from "../lib/chatText";
 import { sessionActionPrep } from "../lib/ids";
 import { useStore } from "../store/useStore";
 import { ComposerAttachments } from "./composer/ComposerAttachments";
@@ -96,6 +97,12 @@ export default function Composer() {
     {},
   );
   const [uploadError, setUploadError] = useState<string | null>(null);
+  /*
+    Отказ отправки — не ошибка загрузки файла. Причина («агент ждёт
+    ответа») печаталась красным в том же канале, что и сбой вложения,
+    и читалась как поломка приложения.
+  */
+  const [blockedNotice, setBlockedNotice] = useState<string | null>(null);
   const [caret, setCaret] = useState(0);
 
   const busy =
@@ -222,8 +229,8 @@ export default function Composer() {
     // напрямую, и неактивная кнопка его не останавливает. Показываем причину —
     // молчаливый отказ на Enter выглядел бы поломкой ввода.
     if (blockedReason) {
-      setUploadError(blockedReason);
-      setTimeout(() => setUploadError(null), 6000);
+      setBlockedNotice(blockedReason);
+      setTimeout(() => setBlockedNotice(null), 6000);
       return;
     }
     // P2-fix: во время генерации Enter не теряет сообщение,
@@ -407,6 +414,22 @@ export default function Composer() {
     () => setDragOver(false),
   );
 
+  /*
+    Остановка хода вынесена из onClick: тот же сценарий нужен по Esc, а
+    два независимых места со снятием очереди неизбежно разошлись бы:
+    кнопка чистит очередь, клавиша — нет.
+  */
+  const stopTurn = useCallback(() => {
+    for (const q of queued) {
+      const plan = removalPlan(q, currentID);
+      if (plan.kind === "server") {
+        api.dequeueAction(plan.sessionId, plan.actionId).catch(() => {});
+      }
+    }
+    setQueued([]);
+    abort();
+  }, [queued, currentID, abort]);
+
   const canSend =
     (text.trim().length > 0 || attachments.length > 0) && !blockedReason;
 
@@ -431,9 +454,23 @@ export default function Composer() {
           onFile={suggestions.chooseFile}
         />
 
+        {/* role="alert" — иначе причина неудачной отправки видна только
+            глазами, а сообщение живёт всего шесть секунд. */}
         {uploadError && (
-          <div className="absolute -top-8 left-0 right-0 text-center text-xs text-red-400 animate-in fade-in slide-in-from-bottom-1">
+          <div
+            role="alert"
+            className="absolute -top-8 left-0 right-0 text-center text-xs text-red-400 animate-in fade-in slide-in-from-bottom-1"
+          >
             {uploadError}
+          </div>
+        )}
+
+        {blockedNotice && !uploadError && (
+          <div
+            role="alert"
+            className="absolute -top-8 left-0 right-0 text-center text-xs text-amber-400 animate-in fade-in slide-in-from-bottom-1"
+          >
+            {blockedNotice}
           </div>
         )}
 
@@ -548,6 +585,43 @@ export default function Composer() {
                         return;
                       }
                     }
+                    /*
+                      Esc — это «стоп». До этого прервать ход можно было только
+                      кнопкой: с клавиатуры её приходилось искать табом, хотя рука
+                      уже лежит на Esc.
+                    */
+                    if (e.key === "Escape" && busy) {
+                      e.preventDefault();
+                      stopTurn();
+                      return;
+                    }
+                    /*
+                      ↑ в пустом поле возвращает последнее отправленное
+                      сообщение — привычка из терминала. Раньше опечатку в
+                      длинном запросе приходилось набирать заново. Проверка стоит
+                      ниже подсказок: пока открыт список команд или файлов,
+                      ↑ принадлежит ему.
+                    */
+                    if (e.key === "ArrowUp" && !text) {
+                      const all = currentID
+                        ? useStore.getState().messages[currentID]
+                        : null;
+                      const last = [...(all ?? [])]
+                        .reverse()
+                        .find((m) => m.role === "user");
+                      const restored = last ? messageText(last).trim() : "";
+                      if (!restored) return;
+                      e.preventDefault();
+                      setText(restored);
+                      requestAnimationFrame(() => {
+                        const el = textareaRef.current;
+                        if (!el) return;
+                        const end = restored.length;
+                        el.setSelectionRange(end, end);
+                        grow(el);
+                      });
+                      return;
+                    }
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
                       submit();
@@ -573,18 +647,7 @@ export default function Composer() {
                       variant="ghost"
                       size="icon"
                       className="oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-red-500/50 bg-red-500/15 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25),inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:bg-red-500/25 hover:border-red-500/70 hover:scale-105 active:scale-95"
-                      onClick={() => {
-                        for (const q of queued) {
-                          const plan = removalPlan(q, currentID);
-                          if (plan.kind === "server") {
-                            api
-                              .dequeueAction(plan.sessionId, plan.actionId)
-                              .catch(() => {});
-                          }
-                        }
-                        setQueued([]);
-                        abort();
-                      }}
+                      onClick={stopTurn}
                       title={t("stop.action")}
                       aria-label={t("stop.action")}
                     >

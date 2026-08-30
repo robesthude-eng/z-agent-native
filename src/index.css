@@ -294,6 +294,29 @@
   height: 0;
 }
 
+/*
+  Лента чата: полностью скрытая полоса прокрутки убирала единственный
+  признак того, что выше есть история, и лишала возможности таскать
+  ползунок мышью. Тонкая полупрозрачная полоса не спорит с макетом, но
+  возвращает и подсказку о положении, и обычное перетаскивание.
+*/
+.oc-scroll-subtle {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--color-border) 100%, transparent)
+    transparent;
+}
+.oc-scroll-subtle::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+.oc-scroll-subtle::-webkit-scrollbar-track {
+  background: transparent;
+}
+.oc-scroll-subtle::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--color-border) 100%, transparent);
+  border-radius: 999px;
+}
+
 @keyframes blink-caret {
   0%,
   49% {

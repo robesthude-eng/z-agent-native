@@ -142,12 +142,15 @@ export const messages = {
   "chat_view.k_novomu_otvetu": "К новому ответу",
   "chat_view.k_novym_otvetam_0": "К новым ответам: {0}",
   "chat_view.k_poslednemu_soobscheniyu": "К последнему сообщению",
+  "chat_view.lenta_soobscheniy_chata": "Лента сообщений чата",
   "chat_view.nachni_dialog_napishi_soobschenie_nizhe":
-    "Начни диалог — напиши сообщение ниже",
+    "Начни диалог — напиши сообщение ��иже",
   "chat_view.nayti_bag": "Найти баг",
   "chat_view.novyy_otvet": "Новый ответ",
   "chat_view.obyasni_chto_delaet_etot_kod_i":
     "Объясни, что делает этот код, и предложи, как его упростить:\\n\\n",
+  "chat_view.oshibka_0": "Ошибка: {0}",
+  "chat_view.otvet_agenta_gotov": "Ответ агента готов",
   "chat_view.poisk_po_chatu": "Поиск по чату…",
   "chat_view.poisk_po_soobscheniyam_chata": "Поиск по сообщениям чата",
   "chat_view.pokazat_predyduschie_soobscheniya_0":
@@ -197,6 +200,7 @@ export const messages = {
   "composer.ubrat_fayl_0": "Убрать файл {0}",
   "composer.ubrat_soobschenie_iz_ocheredi": "Убрать сообщение из очереди",
   "composer.vlozhenie": "Вложение",
+  "composer.zagruzka": "Загрузка…",
   "composer.zapusti_testy_i_pokazhi_rezultat_esli":
     "Запусти тесты и покажи результат. Если есть падения — объясни причину и предложи фикс.",
   "composer.zapustit_testy": "Запустить тесты",
@@ -211,7 +215,7 @@ export const messages = {
   "copy_button.skopirovano_2": "Скопировано!",
   "diff_view.izmeneniy_net": "Изменений нет",
   "diff_view.izmenennyy_fragment_slishkom_bolshoy_pokazan":
-    "Изменённый фрагмент слишком большой — показан целыми блоками",
+    "Изменённый фрагмент слишком боль��ой — показан целыми блоками",
   "error_boundary.prilozhenie_ostanovilos": "Приложение остановилось",
   "event_guards.eta_model_seychas_nedostupna_u_provaydera":
     "Эта модель сейчас недоступна у провайдера.",
@@ -375,6 +379,8 @@ export const messages = {
   "part_view.0_sekundy": "{0} секунды",
   "part_view.kopirovat_kod": "Копировать код",
   "part_view.n_1_sekundu": "1 секунду",
+  "part_view.pokazat_polnostyu_esche_0_simvolov":
+    "Показать полностью (ещё {0} символов)",
   "part_view.rassuzhdeniya": "Рассуждения",
   "part_view.razmyshlyaet": "Размышляет…",
   "preview_panel.obnovit": "Обновить",
@@ -512,6 +518,7 @@ export const messages = {
   "shortcuts_overlay.eta_shpargalka": "Эта шпаргалка",
   "shortcuts_overlay.navigaciya": "Навигация",
   "shortcuts_overlay.novyy_chat": "Новый чат",
+  "shortcuts_overlay.ostanovit_generaciyu": "Остановить генерацию",
   "shortcuts_overlay.otpravit_otredaktirovannoe_soobschenie_zanov":
     "Отправить отредактированное сообщение заново",
   "shortcuts_overlay.perenos_stroki": "Перенос строки",
@@ -520,6 +527,8 @@ export const messages = {
   "shortcuts_overlay.poisk_po_spisku_chatov": "Поиск по списку чатов",
   "shortcuts_overlay.poisk_po_tekuschemu_chatu": "Поиск по текущему чату",
   "shortcuts_overlay.sohranit_otkrytyy_fayl": "Сохранить открытый файл",
+  "shortcuts_overlay.vernut_poslednee_soobschenie_v_pole_vvoda":
+    "Вернуть последнее сообщение в поле ввода",
   "shortcuts_overlay.vybor_v_podskazkah_komand_i_faylov":
     "Выбор в подсказках /команд и @файлов",
   "shortcuts_overlay.zakryt_okno_poisk_ili_otmenit_vvod":
@@ -630,6 +639,8 @@ export const messages = {
   "tool_card.soderzhimoe": "СОДЕРЖИМОЕ",
   "tool_card.vopros": "Вопрос",
   "tool_card.zagruzhaet_stranicu": "Загружает страницу",
+  "tool_group.pokazat_vyzovy_0": "{0}. Показать вызовы инструмента",
+  "tool_output_view.net_vyvoda": "(нет вывода)",
   "top_bar.chat_sohranen_v_markdown_fayl": "Чат сохранён в Markdown-файл",
   "top_bar.chat_z_agent": "Чат Z Agent",
   "top_bar.fayly_proekta": "Файлы проекта",

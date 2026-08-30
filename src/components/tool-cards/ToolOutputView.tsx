@@ -1,3 +1,4 @@
+import { t } from "@/i18n";
 import type { ToolPart } from "../../api/types";
 import {
   extractToolEdits,
@@ -71,7 +72,7 @@ export function ToolOutputView({ part }: ToolOutputViewProps) {
         </pre>
       ) : (
         <span className="text-[11px] text-muted-foreground italic">
-          (No output)
+          {t("tool_output_view.net_vyvoda")}
         </span>
       )}
     </div>
