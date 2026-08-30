@@ -66,3 +66,7 @@ agentwill.online {
 www.agentwill.online {
 	redir https://agentwill.online{uri} permanent
 }
+
+:80 {
+	redir https://agentwill.online{uri} permanent
+}
