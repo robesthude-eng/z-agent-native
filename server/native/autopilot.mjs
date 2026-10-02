@@ -347,9 +347,13 @@ export function taskStepBudget(goal, configured = MAX_AGENT_STEPS) {
   const explicit = Number(configured);
   if (Number.isFinite(explicit) && explicit > 0) return Math.min(MAX_AGENT_STEPS_CEILING, Math.max(1, Math.floor(explicit)));
   const complexity = complexityHint(goal);
-  if (complexity >= 4) return Math.min(MAX_AGENT_STEPS_CEILING, 72);
-  if (complexity >= 2) return Math.min(MAX_AGENT_STEPS_CEILING, 52);
-  return Math.min(MAX_AGENT_STEPS_CEILING, 36);
+  // Шаг — это один вызов модели. Обычная задача «изучи → исправь → проверь»
+  // легко занимает несколько десятков шагов, а прежние 36 обрывали её на
+  // середине с «достигнут лимит шагов». От настоящих циклов защищает
+  // loop guard, а не маленький бюджет.
+  if (complexity >= 4) return Math.min(MAX_AGENT_STEPS_CEILING, 128);
+  if (complexity >= 2) return Math.min(MAX_AGENT_STEPS_CEILING, 96);
+  return Math.min(MAX_AGENT_STEPS_CEILING, 64);
 }
 
 export function subagentStepBudget(profile, goal, configured = process.env.Z_AGENT_SUBAGENT_STEPS) {

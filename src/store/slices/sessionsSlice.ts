@@ -88,6 +88,13 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
 
     set({ currentID: id });
     if (!id) return;
+    // Временный чат («Новый чат» до первого сообщения) ещё не существует на
+    // сервере. Запрос его истории отвечал 404, и обработчик «мёртвой сессии»
+    // удалял только что созданный чат при клике по нему в боковой панели.
+    if (isTmpSession(id)) {
+      __pendingSelect.delete(id);
+      return;
+    }
     try {
       const msgs = normalizeMessages(await api.listMessages(id));
       set((s) => ({ messages: { ...s.messages, [id]: msgs } }));

@@ -108,8 +108,8 @@ test('fallback switches away from an ended free-model SKU before visible output'
 });
 
 test('long tasks receive a larger bounded autonomous step budget', () => {
-  assert.equal(taskStepBudget('Поменяй один текст', ''), 36);
-  assert.ok(taskStepBudget('Полностью проведи архитектурную миграцию во всём репозитории и проверь production build', '') >= 52);
+  assert.equal(taskStepBudget('Поменяй один текст', ''), 64);
+  assert.ok(taskStepBudget('Полностью проведи архитектурную миграцию во всём репозитории и проверь production build', '') >= 96);
   assert.equal(taskStepBudget('anything', '17'), 17);
   assert.equal(taskStepBudget('anything', '999'), 128);
 });

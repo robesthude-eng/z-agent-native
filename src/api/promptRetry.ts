@@ -27,8 +27,16 @@ export const PROMPT_RETRY_PAUSE_MS = 800;
 export function isNetworkishError(message: string): boolean {
   const msg = (message || "").toLowerCase();
   return (
+    msg.includes("502") ||
     msg.includes("503") ||
+    msg.includes("504") ||
+    // Cloudflare: 520–524 (524 — «origin timeout» на долгом POST /message).
+    /\b52[0-4]\b/.test(msg) ||
+    msg.includes("bad gateway") ||
+    msg.includes("gateway timeout") ||
     msg.includes("unavailable") ||
+    // Прокси вернул HTML-страницу ошибки вместо JSON ответа сервера.
+    msg.includes("non-json") ||
     msg.includes("timed out") ||
     msg.includes("failed to fetch") ||
     msg.includes("networkerror") ||

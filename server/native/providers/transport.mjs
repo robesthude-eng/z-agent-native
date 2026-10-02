@@ -349,10 +349,17 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
       }
       if (buffer.trim().startsWith('data:')) eventData.push(buffer.trim().slice(5).trimStart());
       flush();
-      return;
+      return { interrupted: false };
     } catch (err) {
       lastError = classifyWatchdogAbort(err, t, outerSignal);
-      if (received > 0 && isTransientProviderError(lastError, outerSignal)) return;
+      // Часть ответа уже доставлена (и, возможно, показана пользователю):
+      // повтор запроса склеил бы два ответа. Возвращаем частичный результат,
+      // но явно помечаем его оборванным — иначе агентный цикл принимал
+      // обрезанный текст без tool-call за финальный ответ и закрывал ход
+      // посреди задачи.
+      if (received > 0 && isTransientProviderError(lastError, outerSignal)) {
+        return { interrupted: true, error: lastError?.message || String(lastError) };
+      }
       if (!isTransientProviderError(lastError, outerSignal)) throw lastError;
       if (state.failFastRateLimit && isRateLimitProviderError(lastError)) throw lastError;
       if (fallback) {

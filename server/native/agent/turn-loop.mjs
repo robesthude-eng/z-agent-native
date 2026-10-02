@@ -4,24 +4,75 @@ import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
-import { compactFrames, completionGate, createTurnStrategy, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
+import { compactFrames, completionGate, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
-import { isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
+import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
+import { isTransientProviderError } from '../providers/transport.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
 import { getTurn, listMessages, putMessage, releaseTurnCapacity, renewTurnCapacity, setTurn, workspaceFor } from '../store.mjs';
 import { availableToolDefinitions } from '../tools.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from '../turn-telemetry.mjs';
 import {
-  classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, retryDelayMs, stepLimitError,
+  classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, stepLimitError,
 } from '../turn-trust.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { emitText, persistAssistant } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { activeTurns, idleWaiters, TURN_CAPACITY_TTL_MS } from './state.mjs';
+
+// Сколько раз подряд шаг модели повторяется после временного сбоя провайдера
+// (сеть, 429, 5xx, таймаут стрима). Счётчик сбрасывается после каждого
+// успешного вызова: раньше он копился на весь ход, и третий за длинную задачу
+// сетевой «моргок» убивал её целиком.
+const MAX_MODEL_STEP_RETRIES = 4;
+const MODEL_STEP_RETRY_DELAYS_MS = [1_000, 3_000, 8_000, 15_000];
+// Сколько раз продолжать ответ, оборванный обрывом стрима или лимитом токенов.
+const MAX_CONTINUATIONS = 3;
+// Сколько предупреждений получает модель от защиты от зацикливания, прежде
+// чем ход будет остановлен. Первое срабатывание — подсказка сменить подход,
+// а не мгновенная остановка посреди задачи.
+const MAX_LOOP_WARNINGS = 1;
+const LENGTH_FINISH_RE = /^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/i;
+
+function resetLoopGuardCounters(guard) {
+  if (!guard) return;
+  guard.last = null;
+  guard.consecutive = 0;
+  guard.recent = [];
+  guard.calls = [];
+  guard.callCounts = Object.create(null);
+  guard.callLastSeen = Object.create(null);
+  guard.lastMutationAt = -1;
+}
+
+function retryableModelError(err, signal) {
+  if (err?.name === 'AbortError' || signal?.aborted) return false;
+  if (isModelUnavailableError(err)) return false;
+  return isNetworkTransportError(err) || isTransientProviderError(err, signal);
+}
+
+function remainingPlanItems(strategy) {
+  const plan = Array.isArray(strategy?.plan) ? strategy.plan : [];
+  return plan.filter((item) => {
+    const status = String(item?.status || 'pending');
+    return status !== 'completed' && status !== 'cancelled';
+  });
+}
+
+function planContinuationGate(strategy) {
+  const remaining = remainingPlanItems(strategy);
+  if (!remaining.length) return null;
+  return [
+    '[Runtime plan gate]',
+    `Your todo plan still has ${remaining.length} unfinished item(s):`,
+    ...remaining.slice(0, 10).map((item) => `- [${item.status}] ${item.content}`),
+    'Do not stop yet. Continue working on the remaining items with tools. If an item is already done or no longer needed, update the plan with todowrite (mark it completed or cancelled) and then give the final answer. If you are blocked and need the user, use the question tool.',
+  ].join('\n');
+}
 import { liveTextSink } from './streaming.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
 
@@ -237,7 +288,9 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     const rebuilt = resume ? rebuildLoopGuard(assistant) : { guard: createLoopGuard(), stop: null };
     const loopGuard = rebuilt.guard;
     let guardedStop = rebuilt.stop ? guardStopError(rebuilt.stop) : null;
-    let networkModelRetries = 0;
+    let modelStepRetries = 0;
+    let continuations = 0;
+    let loopWarnings = 0;
 
     for (let step = runtime.stepsUsed; step < maxSteps && !guardedStop; step++) {
       if (controller.signal.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
@@ -257,15 +310,18 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         });
       } catch (err) {
         if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
-        if (isNetworkTransportError(err) && networkModelRetries < 2) {
-          networkModelRetries += 1;
+        if (retryableModelError(err, controller.signal) && modelStepRetries < MAX_MODEL_STEP_RETRIES) {
+          const hinted = Number(err?.retryAfterMs);
+          const base = MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)];
+          modelStepRetries += 1;
           live.finish();
-          await waitForRetry(retryDelayMs(networkModelRetries - 1), controller.signal);
+          await waitForRetry(Number.isFinite(hinted) && hinted > 0 ? Math.min(60_000, Math.max(base, hinted)) : base, controller.signal);
           step -= 1;
           continue;
         }
         throw err;
       }
+      modelStepRetries = 0;
       recordModelCall(runtime.telemetry, { response, latencyMs: Date.now() - modelStartedAt, contextChars: JSON.stringify(providerFrames).length });
       const streamed = live.finish();
       runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
@@ -283,7 +339,35 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       runtime.stepsUsed = step + 1;
       checkpointState(sessionId, runtime, strategy, { phase: 'after_model', stepsUsed: step + 1, lastUsage });
       const calls = response.toolCalls || [];
+      // Ответ оборван (обрыв стрима или лимит токенов) и не содержит вызовов
+      // инструментов: это не финал. Сохраняем полученную часть в контексте и
+      // просим модель продолжить с места обрыва, а не закрываем ход.
+      const cutOff = Boolean(response.interrupted) || LENGTH_FINISH_RE.test(String(response.finish || ''));
+      if (calls.length === 0 && cutOff && continuations < MAX_CONTINUATIONS) {
+        continuations += 1;
+        frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+        frames.push({
+          role: 'user',
+          content: response.interrupted
+            ? '[Runtime] Your previous response was cut off by a dropped provider connection. Continue the task exactly from where you stopped. Do not repeat text you already wrote; call tools if the work is not finished.'
+            : '[Runtime] Your previous response hit the output token limit and was cut off. Continue exactly from where you stopped without repeating earlier text. Prefer smaller steps (for example, several smaller edits instead of one huge write).',
+        });
+        checkpointState(sessionId, runtime, strategy, { phase: 'continuation' });
+        continue;
+      }
+      if (calls.length > 0 || !cutOff) continuations = 0;
       if (calls.length === 0) {
+        const planGate = !completionGate(strategy) && runtime.gateReminders < MAX_COMPLETION_GATE_REMINDERS
+          ? planContinuationGate(strategy)
+          : null;
+        if (planGate) {
+          runtime.gateReminders += 1;
+          recordCompletionGate(runtime.telemetry);
+          frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+          frames.push({ role: 'user', content: `${planGate}\nReminder attempt: ${runtime.gateReminders}.` });
+          checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
+          continue;
+        }
         if (shouldEnforceCompletionGate(strategy, runtime.gateReminders)) {
           const gate = completionGate(strategy);
           runtime.gateReminders += 1;
@@ -354,12 +438,22 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         recordToolCall(runtime.telemetry, { call, result, latencyMs: Date.now() - toolStartedAt });
         observeTool(strategy, call, result);
         if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError });
+        const toolFrame = { role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError };
+        frames.push(toolFrame);
         checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
         const loop = observeToolLoop(loopGuard, call, result);
         if (loop) {
-          guardedStop = guardStopError(loop);
-          break;
+          // Уже проверенный результат — остановка штатная (ниже он завершится
+          // как completed). Иначе сначала предупреждаем модель и даём сменить
+          // подход: ложное срабатывание (тот же `npm test` или `git status`
+          // несколько раз за длинную задачу) не должно обрывать работу.
+          if (loopStopSatisfiesTask(strategy) || loopWarnings >= MAX_LOOP_WARNINGS) {
+            guardedStop = guardStopError(loop);
+            break;
+          }
+          loopWarnings += 1;
+          resetLoopGuardCounters(loopGuard);
+          toolFrame.content = `${String(toolFrame.content || '')}\n\n[Runtime loop warning] ${loop.message} Repeating it will not produce new information. Change the approach: use the result you already have, inspect something else, edit the code, or finish with a final answer. If the same pattern repeats, the turn will be stopped.`;
         }
       }
     }

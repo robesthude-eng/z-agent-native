@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+
+## Full-access default (single-user administrator)
+
+- `.env.example` / `prod:env:init` now default to the trusted unrestricted profile via `COMPOSE_FILE` (Internet, websearch, browser, SSH, installers, terminal, sudo, credential files).
+- New `docker-compose.unrestricted.yml`: executor without `no-new-privileges`/read-only rootfs/capability drop, larger CPU/RAM/PID/file caps.
+- `server/executor.mjs`: with `Z_AGENT_ALLOW_SUDO=1` session UIDs are registered in passwd/group/shadow and launched without `--no-new-privs`, so passwordless `sudo` actually works.
+- Image ships `sudo` with a NOPASSWD rule (inert under the hardened profile).
+- `Caddyfile` hostname comes from `Z_AGENT_DOMAIN`.
+
 ## [Unreleased]
 
 A stability pass. No capability was added to or removed from the product
@@ -14,6 +23,30 @@ surface; every change below either fixes a defect, removes unreachable code, or
 makes an existing guarantee enforceable.
 
 ### Fixed
+
+- **The agent closed a turn in the middle of a task.** A provider stream that
+  dropped after the first tokens was returned as a complete answer; a response
+  cut by the output-token limit was treated as final; the turn-level retry
+  covered only network errors and its counter accumulated over the whole turn;
+  the first loop-guard hit stopped the turn immediately; the default step budget
+  (36) ended ordinary tasks with "step limit reached". Now an interrupted or
+  truncated answer is continued in the same turn, transient provider errors
+  (network, 429, 5xx, stream timeout) are retried per step, the loop guard warns
+  the model once before stopping, the model is reminded when its own todo plan
+  still has unfinished items, and the default budget is 64/96/128 steps. A
+  subagent that hits its step limit now returns a summary of its findings.
+- **The UI marked a long turn as "state not confirmed" after 15 minutes** even
+  while the server reported it running; the watchdog is now re-armed by every
+  running/waiting verdict. A completed verdict of the previous turn can no
+  longer close the new one, and proxy errors (502/504/52x, HTML error pages) on
+  the long `POST /message` no longer remove the user's message while the turn
+  keeps running on the server.
+- **The agent's question card was unreadable in the light theme** (hard-coded
+  dark background with theme-coloured text; option labels were invisible).
+- **Clicking a fresh "New chat" in the sidebar deleted it** (its history request
+  returned 404 and was treated as a dead session).
+- `/api/ui-config` is served only after authentication, as the e2e contract
+  requires.
 
 - **The hardened executor could be silently un-hardened by a file Docker loads
   on its own.** `docker-compose.override.yml` is applied automatically by every
