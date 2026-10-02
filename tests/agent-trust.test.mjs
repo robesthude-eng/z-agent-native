@@ -66,8 +66,9 @@ test('repeated identical tool observations stop the turn before the global step 
     });
 
     const reads = assistant.parts.filter((part) => part.type === 'tool' && part.tool === 'read');
-    assert.equal(reads.length, 3);
-    assert.equal(providerCalls, 3);
+    // Первое срабатывание защиты — предупреждение модели, второе — остановка.
+    assert.equal(reads.length, 6);
+    assert.equal(providerCalls, 6);
     assert.equal(assistant.info?.outcome?.status, 'partial');
     assert.equal(assistant.info?.outcome?.label, 'Частично выполнено');
     assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /повторил одно и то же действие/i);
@@ -81,7 +82,7 @@ test('repeated identical tool observations stop the turn before the global step 
       system: '',
     });
     assert.equal(repeated.id, assistant.id);
-    assert.equal(providerCalls, 3, 'same action id must not restart a guarded turn');
+    assert.equal(providerCalls, 6, 'same action id must not restart a guarded turn');
   } finally {
     globalThis.fetch = original;
     agent.resetAgentStateForTests();
@@ -189,3 +190,117 @@ test('a transient webfetch failure is retried once inside the same tool call', a
 });
 
 test.after(() => providers.setProviderTransportForTests(null));
+
+function textStream(text, finish = 'stop') {
+  return sse([
+    { choices: [{ delta: { content: text } }] },
+    { choices: [{ delta: {}, finish_reason: finish }] },
+    '[DONE]',
+  ]);
+}
+
+function interruptedTextStream(text) {
+  const encoder = new TextEncoder();
+  const body = new ReadableStream({
+    start(controller) {
+      controller.enqueue(encoder.encode(`data: ${JSON.stringify({ choices: [{ delta: { content: text } }] })}\n\n`));
+      setTimeout(() => controller.error(Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' })), 5);
+    },
+  });
+  return new Response(body, { status: 200, headers: { 'content-type': 'text/event-stream' } });
+}
+
+async function runTrustTurn(sid, actionId) {
+  store.createChat(sid, ownerId, 'Новый чат');
+  return agent.submitTurn({
+    sessionId: sid,
+    ownerId,
+    actionId,
+    parts: [{ type: 'text', text: 'Сделай задачу' }],
+    model: { providerID: providerId, modelID: 'gpt-test' },
+    system: '',
+  });
+}
+
+test('a provider stream cut mid-answer continues the same turn instead of closing it', async () => {
+  agent.resetAgentStateForTests();
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    if (providerCalls === 1) return interruptedTextStream('Начинаю работу');
+    return textStream('Задача выполнена.');
+  };
+  try {
+    const assistant = await runTrustTurn('ses_trustcut1', 'act_stream_cut');
+    assert.equal(providerCalls, 2, 'interrupted stream must be continued, not treated as final');
+    const text = assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+    assert.match(text, /Задача выполнена/);
+    assert.equal(assistant.info?.finish, 'stop');
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});
+
+test('a response cut by the output token limit is continued', async () => {
+  agent.resetAgentStateForTests();
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    if (providerCalls === 1) return textStream('Часть ответа', 'length');
+    return textStream('Конец ответа.');
+  };
+  try {
+    const assistant = await runTrustTurn('ses_trustlen1', 'act_length_cut');
+    assert.equal(providerCalls, 2);
+    assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /Конец ответа/);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});
+
+test('a transient provider 5xx between steps is retried inside the turn', async () => {
+  agent.resetAgentStateForTests();
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    // Транспорт сам повторяет 5xx; здесь сбой длиннее его бюджета повторов.
+    if (providerCalls <= 4) return new Response(JSON.stringify({ error: { message: 'upstream internal error' } }), { status: 503, headers: { 'content-type': 'application/json' } });
+    return textStream('Готово после сбоя.');
+  };
+  try {
+    const assistant = await runTrustTurn('ses_trust5xx1', 'act_transient_5xx');
+    assert.ok(providerCalls >= 5);
+    assert.equal(assistant.info?.finish, 'stop');
+    assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /Готово после сбоя/);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});
+
+test('the model cannot stop while its own todo plan still has unfinished items', async () => {
+  agent.resetAgentStateForTests();
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  const todos = (status) => ({ todos: [{ content: 'Шаг 1', status: 'completed', priority: 'high' }, { content: 'Шаг 2', status, priority: 'high' }] });
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    if (providerCalls === 1) return toolStream(1, 'todowrite', todos('pending'));
+    if (providerCalls === 2) return textStream('Сейчас продолжу.');
+    if (providerCalls === 3) return toolStream(3, 'todowrite', todos('completed'));
+    return textStream('Все пункты выполнены.');
+  };
+  try {
+    const assistant = await runTrustTurn('ses_trustplan1', 'act_plan_gate');
+    assert.equal(providerCalls, 4, 'plan gate must push the model to continue once');
+    assert.equal(assistant.info?.outcome?.status, 'completed');
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});

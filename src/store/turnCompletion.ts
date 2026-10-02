@@ -65,6 +65,12 @@ export interface TurnCompletionOptions {
   onSnapshot: (msgs: Message[]) => void;
   /** Страховочный таймаут, мс. */
   hardTimeoutMs: number;
+  /**
+   * turnId хода, который был известен ДО отправки (прошлый ход). Его
+   * завершённая проекция — это старый вердикт, а не финал нового хода: опрос
+   * мог прийти раньше, чем сервер принял промпт.
+   */
+  staleTurnId?: string | null;
 }
 
 /**
@@ -83,6 +89,7 @@ export function awaitTurnCompletion(
     onWatchdogTimeout = onFailed,
     onSnapshot,
     hardTimeoutMs,
+    staleTurnId = null,
   } = opts;
 
   return new Promise<void>((resolve, reject) => {
@@ -106,13 +113,16 @@ export function awaitTurnCompletion(
     // Объявлено через let: обработчик снимает собственный интервал, и в const
     // пришлось бы ссылаться на переменную из её же инициализатора.
     let verdictPoller: ReturnType<typeof setInterval> | null = null;
+    let verdictInFlight = false;
+    let promptSettled = false;
     if (fromServer) {
       verdictPoller = setInterval(async () => {
-        if (settled) {
+        if (settled || verdictInFlight) {
           if (verdictPoller) clearInterval(verdictPoller);
           return;
         }
         let state: unknown;
+        verdictInFlight = true;
         try {
           state = await api.turnState(sidStr);
         } catch (e) {
@@ -127,9 +137,22 @@ export function awaitTurnCompletion(
             }
           }
           return;
+        } finally {
+          verdictInFlight = false;
         }
+        if (settled) return;
         const parsed = parseTurnState(state);
         if (!parsed) return;
+        // Завершённая проекция ПРОШЛОГО хода: сервер ещё не принял новый
+        // промпт. Это не финал — ждём проекцию нового хода.
+        if (
+          staleTurnId &&
+          parsed.turn?.turnId === staleTurnId &&
+          isSettled(parsed.turn) &&
+          !promptSettled
+        ) {
+          return;
+        }
         // Проекция кладётся в стор до всякого решения о завершении:
         // интерфейсу она нужна и в состоянии `stuck`, где ход как раз НЕ
         // завершается и ветки ниже не срабатывают.
@@ -154,7 +177,14 @@ export function awaitTurnCompletion(
           clearTimeout(timeoutId);
           if (dispositionOf(parsed.turn) === "failed") onFailed();
           done("server:verdict");
+          return;
         }
+        // Сервер подтвердил, что ход жив (работает или ждёт ответа
+        // пользователя). Страховочный таймаут — это «сервер молчит», а не
+        // «ход идёт долго»: длинная автономная задача не должна через 15
+        // минут превращаться в «состояние не подтверждено».
+        const disposition = dispositionOf(parsed.turn);
+        if (disposition === "busy" || disposition === "waiting") armWatchdog();
         // `stuck` завершением НЕ считается: «мы не знаем» и «всё готово» —
         // разные исходы. Сверка на сервере продолжается и может его разрешить;
         // если не разрешит, интерфейс отпустит страховочный таймаут — но уже
@@ -263,7 +293,7 @@ export function awaitTurnCompletion(
     // Release A / Trust: timeout больше не притворяется успешным финалом.
     // Авторитетного состояния нет — значит UI должен показать неопределённость
     // и дать пользователю перечитать серверный вердикт.
-    const timeoutId = setTimeout(() => {
+    const onWatchdog = () => {
       if (settled) return;
       log.warn(
         fromServer
@@ -279,10 +309,27 @@ export function awaitTurnCompletion(
       onTurnProjection(null);
       onWatchdogTimeout();
       done("hard-timeout");
-    }, hardTimeoutMs);
+    };
+    let timeoutId: ReturnType<typeof setTimeout> = setTimeout(
+      onWatchdog,
+      hardTimeoutMs,
+    );
+    function armWatchdog() {
+      if (settled) return;
+      clearTimeout(timeoutId);
+      timeoutId = setTimeout(onWatchdog, hardTimeoutMs);
+    }
 
     // --- Prompt response handling — if server returns final message directly,
     // complete immediately (fixes Stop hanging)
+    promptPromise.then(
+      () => {
+        promptSettled = true;
+      },
+      () => {
+        promptSettled = true;
+      },
+    );
     promptPromise
       .then((responseMsg) => {
         // null — соединение оборвалось уже ПОСЛЕ доставки промпта (см.

@@ -126,6 +126,11 @@ async function route(req, res) {
   if (!checkCsrf(req, res, auth)) return;
   const ownerId = auth.user.email;
 
+  // Конфигурация UI отдаётся только вошедшему пользователю (контракт e2e).
+  if (p === '/api/ui-config' && req.method === 'GET') {
+    return sendJson(res, 200, { systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
+  }
+
   if (await handleSessionRoutes(req, res, p, url, ownerId)) return;
   if (await handleModelRoutes(req, res, p, url, ownerId)) return;
 

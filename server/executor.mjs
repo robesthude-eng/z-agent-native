@@ -19,6 +19,33 @@ const EXPECT_NETWORK_NONE = process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE ===
 const MAX_ACTIVE_GLOBAL = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE) || 8, 1), 64);
 const MAX_ACTIVE_PER_UID = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE_PER_UID) || 2, 1), 8);
 const activeByUid = new Map();
+// Trusted single-user opt-in (Z_AGENT_ALLOW_SUDO=1 on the executor): keep the
+// per-session UID but let it escalate through a passwordless sudo. Requires an
+// image with sudo installed and a container without no-new-privileges.
+const ALLOW_SUDO = process.env.Z_AGENT_ALLOW_SUDO === '1';
+const knownSudoUids = new Set();
+
+function ensureSudoIdentity(uid, gid) {
+  if (!ALLOW_SUDO || knownSudoUids.has(uid)) return;
+  try {
+    const passwd = fs.readFileSync('/etc/passwd', 'utf8');
+    if (!passwd.split('\n').some((line) => line.split(':')[2] === String(uid))) {
+      const group = fs.readFileSync('/etc/group', 'utf8');
+      if (!group.split('\n').some((line) => line.split(':')[2] === String(gid))) {
+        fs.appendFileSync('/etc/group', `agent${gid}:x:${gid}:\n`);
+      }
+      fs.appendFileSync('/etc/passwd', `agent${uid}:x:${uid}:${gid}:agent:/tmp:/bin/bash\n`);
+    }
+    // PAM account validation for sudo also needs a shadow entry.
+    const shadow = fs.readFileSync('/etc/shadow', 'utf8');
+    if (!shadow.split('\n').some((line) => line.startsWith(`agent${uid}:`))) {
+      fs.appendFileSync('/etc/shadow', `agent${uid}:*:20000:0:99999:7:::\n`);
+    }
+    knownSudoUids.add(uid);
+  } catch (error) {
+    console.warn(`[executor] sudo identity for ${uid} unavailable: ${error.message}`);
+  }
+}
 
 
 function trustedLauncherEnvironment() {
@@ -150,8 +177,9 @@ async function execRequest(req, res, input) {
   // executor socket or other privileged group-owned resources. prlimit then
   // applies resource caps after privileges have been irreversibly dropped.
   const launchFile = SETPRIV;
+  ensureSudoIdentity(uid, gid);
   const launchArgs = [
-    '--clear-groups', '--no-new-privs', `--reuid=${uid}`, `--regid=${gid}`,
+    '--clear-groups', ...(ALLOW_SUDO ? [] : ['--no-new-privs']), `--reuid=${uid}`, `--regid=${gid}`,
     PRLIMIT,
     `--nproc=${LIMIT_NPROC}:${LIMIT_NPROC}`,
     `--nofile=${LIMIT_NOFILE}:${LIMIT_NOFILE}`,

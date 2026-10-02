@@ -269,6 +269,8 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
       clearStopMarker(sidStr);
 
       const currentAttachments = attachmentsOverride ?? get().attachments;
+      // Проекция прошлого хода: её «completed» не должен закрыть новый ход.
+      const staleTurnId = get().turnProjection[sidStr]?.turnId ?? null;
       const userMsg = buildUserMessage(text, currentAttachments);
       const requestGen = sessionFsm.beginRequest(sidStr);
       set((s) => ({
@@ -358,6 +360,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
           requestGen,
           promptPromise,
           hardTimeoutMs: SEND_HARD_TIMEOUT_MS,
+          staleTurnId,
           onTurnProjection: (turn) =>
             set((s) => ({
               turnProjection: { ...s.turnProjection, [sidStr]: turn },

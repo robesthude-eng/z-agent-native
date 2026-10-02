@@ -1,4 +1,4 @@
-agentwill.online {
+{$Z_AGENT_DOMAIN} {
 	# Browser hardening at the public TLS boundary. Application HTML also
 	# carries its own CSP from the Node runtime; these headers cover API and
 	# preview responses without granting additional browser capabilities.
@@ -63,10 +63,10 @@ agentwill.online {
 	}
 }
 
-www.agentwill.online {
-	redir https://agentwill.online{uri} permanent
+www.{$Z_AGENT_DOMAIN} {
+	redir https://{$Z_AGENT_DOMAIN}{uri} permanent
 }
 
 :80 {
-	redir https://agentwill.online{uri} permanent
+	redir https://{$Z_AGENT_DOMAIN}{uri} permanent
 }

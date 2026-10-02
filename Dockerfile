@@ -26,7 +26,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     sqlite3 \
     ffmpeg \
     fonts-dejavu-core fonts-noto-core \
-    && rm -rf /var/lib/apt/lists/*
+    sudo \
+    && rm -rf /var/lib/apt/lists/* \
+    # Passwordless sudo only takes effect where Compose drops no-new-privileges
+    # (docker-compose.unrestricted.yml); the hardened profile keeps it inert.
+    && echo 'ALL ALL=(ALL:ALL) NOPASSWD: ALL' > /etc/sudoers.d/z-agent \
+    && echo 'Defaults !requiretty, !use_pty' >> /etc/sudoers.d/z-agent \
+    && chmod 0440 /etc/sudoers.d/z-agent
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/server ./server

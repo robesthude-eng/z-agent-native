@@ -56,11 +56,6 @@ export async function handleSystemRoutes(req, res, p, { draining, startedAt, isD
     return true;
   }
 
-  if (p === '/api/ui-config' && req.method === 'GET') {
-    sendJson(res, 200, { systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
-    return true;
-  }
-
   if (p === '/api/runtime-capabilities' && req.method === 'GET') {
     sendJson(res, 200, runtimeCapabilities());
     return true;

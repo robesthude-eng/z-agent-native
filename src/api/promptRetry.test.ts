@@ -31,6 +31,10 @@ describe("isNetworkishError", () => {
     ["read ECONNRESET", "Node"],
     ["503 Service Unavailable", "сервер"],
     ["upstream timed out", "прокси"],
+    ["502 Bad Gateway", "прокси"],
+    ["504 Gateway Timeout", "прокси"],
+    ["524 A timeout occurred", "Cloudflare"],
+    ["Request to /session/x/message → non-JSON (text/html): <html>", "прокси"],
   ])("%s — %s", (message) => {
     expect(isNetworkishError(message)).toBe(true);
   });

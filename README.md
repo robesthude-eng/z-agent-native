@@ -102,9 +102,11 @@ For a production-style local host, generate the required external cryptographic 
 
 ```bash
 npm run prod:env:init
-# review .env, especially registration and model-selected web policy
+# set Z_AGENT_DOMAIN (e.g. 193-124-92-71.sslip.io) and Z_AGENT_INVITE_CODE in .env
 docker compose up --build -d
 ```
+
+**Default profile: trusted single-user administrator.** The generated `.env` sets `COMPOSE_FILE` to `docker-compose.yml` + `override` + `trusted` + `unrestricted`, so a plain `docker compose up` gives the agent full Internet and websearch, browser, SSH, networked installers, the terminal, passwordless `sudo` inside the executor and credential-file access, with larger resource caps. Registration still requires `Z_AGENT_INVITE_CODE` (also for the first account). For a hardened multi-user host set `COMPOSE_FILE=docker-compose.yml:docker-compose.override.yml` and restore the restrictive policy values in `.env`.
 
 `prod:env:init` creates `.env` with mode 0600, a random 256-bit provider-encryption key, a separate random 256-bit audit/backup-integrity key and a metrics bearer token; it refuses to overwrite an existing file. Compose starts four services: the trusted API/model orchestrator, a `network_mode: none` executor for autonomous shell/build/test code, an isolated browser controller that launches one unprivileged Chromium worker per chat UID, and a no-secret browser egress proxy. Runtime state is stored in `z-agent-data`; agent files are stored separately in `z-agent-workspaces`. Compose pins `/data` and `/workspaces`, forces the isolation services, keeps the interactive terminal, SSH and model-selected Internet off, requires external keys and secure `__Host-` cookies, and fails startup if a production invariant is weakened through `.env`.
 

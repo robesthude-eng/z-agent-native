@@ -1,0 +1,30 @@
+# Trusted single-user host ONLY, on top of docker-compose.trusted.yml.
+# Removes the remaining agent restrictions: sudo/root inside the executor,
+# writable executor filesystem, credential-file access, larger resource caps.
+services:
+  z-agent:
+    environment:
+      Z_AGENT_ALLOW_SUDO: '1'
+      Z_AGENT_SENSITIVE_FILE_POLICY: allow
+    mem_limit: 1536m
+    memswap_limit: 3g
+    cpus: 1.5
+
+  z-agent-executor:
+    read_only: false
+    security_opt: !reset []
+    cap_drop: !reset []
+    cap_add: !reset []
+    pids_limit: 4096
+    mem_limit: 2560m
+    memswap_limit: 6g
+    cpus: 1.9
+    tmpfs: !override
+      - /tmp:size=1g
+    environment:
+      Z_AGENT_ALLOW_SUDO: '1'
+      Z_AGENT_EXECUTOR_NPROC: '1024'
+      Z_AGENT_EXECUTOR_NOFILE: '8192'
+      Z_AGENT_EXECUTOR_FILE_BYTES: '2147483648'
+      Z_AGENT_EXECUTOR_MAX_ACTIVE: '16'
+      Z_AGENT_EXECUTOR_MAX_ACTIVE_PER_UID: '8'

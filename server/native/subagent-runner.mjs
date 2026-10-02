@@ -38,6 +38,7 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   const maxSteps = subagentStepBudget(profile, prompt);
   let plan = modelPlan;
   let selectedModel = plan?.candidates?.[0] || null;
+  let continuations = 0;
 
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
@@ -50,6 +51,14 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     selectedModel = response.model || selectedModel;
     plan = promoteModelPlan(plan, selectedModel);
     const calls = response.toolCalls || [];
+    // Обрыв стрима или лимит токенов — не готовый отчёт: просим продолжить.
+    const cutOff = Boolean(response.interrupted) || /^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/i.test(String(response.finish || ''));
+    if (calls.length === 0 && cutOff && continuations < 2) {
+      continuations += 1;
+      frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+      frames.push({ role: 'user', content: '[Runtime] Your previous response was cut off. Continue exactly from where you stopped without repeating earlier text.' });
+      continue;
+    }
     if (calls.length === 0) {
       return {
         report: response.text || `${profile.name} subagent completed without a written report.`,
@@ -77,8 +86,28 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     }
   }
 
+  // Лимит шагов исчерпан. Без итогового отчёта родительский ход терял всё,
+  // что субагент успел выяснить, и повторял работу заново.
+  let finalReport = '';
+  try {
+    if (!signal?.aborted) {
+      frames.push({ role: 'user', content: '[Runtime] Step limit reached. Do not call tools. Write your report now: what you found or changed (with file paths), what is verified, and what remains unfinished.' });
+      const summary = await callModelAutopilot(ownerId, plan, {
+        system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
+        frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
+        tools: [],
+        signal,
+      });
+      finalReport = String(summary?.text || '').trim();
+    }
+  } catch (err) {
+    if (err?.name === 'AbortError' || signal?.aborted) throw err;
+  }
+
   return {
-    report: `${profile.name} subagent reached its ${maxSteps}-step investigation limit.`,
+    report: finalReport
+      ? `${finalReport}\n\n(${profile.name} subagent reached its ${maxSteps}-step limit; the report may be incomplete.)`
+      : `${profile.name} subagent reached its ${maxSteps}-step investigation limit.`,
     kind: profile.name,
     steps: maxSteps,
     repositorySnapshot: Boolean(repositorySnapshot || projectContext),

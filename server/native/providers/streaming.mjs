@@ -104,7 +104,7 @@ export async function callOpenAI(resolved, { system, frames, tools, signal, onTe
   let usage = null;
   let finish = null;
   const calls = new Map();
-  await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+  const sse = await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
     if (event?.usage) usage = event.usage;
     const choice = event?.choices?.[0];
     if (!choice) return;
@@ -127,9 +127,9 @@ export async function callOpenAI(resolved, { system, frames, tools, signal, onTe
   const { text: streamedText, reasoning } = splitter.snapshot();
   const toolCalls = [...calls.values()].map((c, i) => toolCallFromParsed(c.id || `call_${Date.now()}_${i}`, c.name, c.arguments)).filter((c) => c.name);
   if (!streamedText && reasoning && toolCalls.length === 0) {
-    return { text: reasoning, toolCalls, usage, finish, streamed: true, textFromReasoning: true };
+    return { text: reasoning, toolCalls, usage, finish, streamed: true, textFromReasoning: true, interrupted: Boolean(sse?.interrupted) };
   }
-  return { text: streamedText, toolCalls, usage, finish, streamed: true };
+  return { text: streamedText, toolCalls, usage, finish, streamed: true, interrupted: Boolean(sse?.interrupted) };
 }
 
 export function anthropicMessages(frames) {
@@ -184,7 +184,7 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
   let usage = null;
   let finish = null;
   const calls = new Map();
-  await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+  const sse = await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
     if (event?.type === 'message_start' && event.message?.usage) usage = event.message.usage;
     if (event?.type === 'message_delta') {
       if (event.delta?.stop_reason) finish = event.delta.stop_reason;
@@ -205,7 +205,7 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
   }, { failFastRateLimit });
   splitter.flush();
   const toolCalls = [...calls.values()].map((c) => toolCallFromParsed(c.id, c.name, c.partial || c.baseInput || {})).filter((c) => c.name);
-  return { text: splitter.snapshot().text, toolCalls, usage, finish, streamed: true };
+  return { text: splitter.snapshot().text, toolCalls, usage, finish, streamed: true, interrupted: Boolean(sse?.interrupted) };
 }
 
 export function googleContents(frames) {
@@ -260,7 +260,7 @@ export async function callGoogle(resolved, { system, frames, tools, signal, onTe
   const toolCalls = [];
   const sseUrl = `${target.url}${target.url.includes('?') ? '&' : '?'}alt=sse`;
   const sseTarget = { ...target, url: sseUrl, fallback: target.fallback ? { ...target.fallback, url: `${target.fallback.url}${target.fallback.url.includes('?') ? '&' : '?'}alt=sse` } : null };
-  await fetchSse(sseTarget, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify(request) }, signal, (event) => {
+  const sse = await fetchSse(sseTarget, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify(request) }, signal, (event) => {
     if (event?.usageMetadata) usage = event.usageMetadata;
     const candidate = event?.candidates?.[0];
     if (candidate?.finishReason) finish = candidate.finishReason;
@@ -271,7 +271,7 @@ export async function callGoogle(resolved, { system, frames, tools, signal, onTe
   }, { failFastRateLimit });
   splitter.flush();
   const { text: streamedText } = splitter.snapshot();
-  return { text: streamedText, toolCalls: toolCalls.filter((c) => c.name), usage, finish, streamed: true };
+  return { text: streamedText, toolCalls: toolCalls.filter((c) => c.name), usage, finish, streamed: true, interrupted: Boolean(sse?.interrupted) };
 }
 
 export async function callOllama(resolved, { system, frames, signal, onTextDelta, failFastRateLimit = false }) {
@@ -288,11 +288,11 @@ export async function callOllama(resolved, { system, frames, signal, onTextDelta
 
   const splitter = createReasoningSplitter(({ kind, text: chunk }) => onTextDelta(chunk, kind));
   let finish = null;
-  await fetchSse(target, { method: 'POST', headers, body: JSON.stringify({ model: resolved.modelId, messages, stream: true }) }, signal, (event) => {
+  const sse = await fetchSse(target, { method: 'POST', headers, body: JSON.stringify({ model: resolved.modelId, messages, stream: true }) }, signal, (event) => {
     if (event?.message?.content) splitter.push(event.message.content, 'text');
     if (event?.done) finish = 'stop';
   }, { failFastRateLimit });
   splitter.flush();
   const { text: streamedText } = splitter.snapshot();
-  return { text: streamedText, toolCalls: [], usage: null, finish, streamed: true };
+  return { text: streamedText, toolCalls: [], usage: null, finish, streamed: true, interrupted: Boolean(sse?.interrupted) };
 }

@@ -316,12 +316,12 @@ export function QuestionTool({
   return (
     <div
       className={cn(
-        "w-full rounded-2xl border border-white/[0.12] bg-[#141416]/95 backdrop-blur-md shadow-2xl overflow-hidden font-sans text-foreground transition-all",
+        "w-full rounded-2xl border border-border bg-card/95 backdrop-blur-md shadow-2xl overflow-hidden font-sans text-foreground transition-all",
         className,
       )}
     >
       {/* Шапка карточки */}
-      <div className="h-9 border-b border-white/[0.08] px-3.5 flex items-center justify-between text-xs text-muted-foreground bg-white/[0.02]">
+      <div className="h-9 border-b border-foreground/[0.08] px-3.5 flex items-center justify-between text-xs text-muted-foreground bg-foreground/[0.02]">
         <div className="inline-flex items-center gap-1.5 font-medium tracking-wide">
           <CircleHelpIcon className="w-3.5 h-3.5 text-primary/90" />
           <span>{activeQuestion.header || t("question_tool.vopros")}</span>
@@ -333,7 +333,7 @@ export function QuestionTool({
               type="button"
               onClick={goPrev}
               disabled={!canGoPrev || busy}
-              className="size-5 inline-flex items-center justify-center rounded hover:bg-white/[0.08] disabled:opacity-30 transition"
+              className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/[0.08] disabled:opacity-30 transition"
               aria-label={t("question_tool.predyduschiy_vopros")}
             >
               <ChevronUpIcon className="w-3.5 h-3.5" />
@@ -345,7 +345,7 @@ export function QuestionTool({
               type="button"
               onClick={goNext}
               disabled={!canGoNext || busy}
-              className="size-5 inline-flex items-center justify-center rounded hover:bg-white/[0.08] disabled:opacity-30 transition"
+              className="size-5 inline-flex items-center justify-center rounded hover:bg-foreground/[0.08] disabled:opacity-30 transition"
               aria-label={t("question_tool.sleduyuschiy_vopros")}
             >
               <ChevronDownIcon className="w-3.5 h-3.5" />
@@ -360,7 +360,7 @@ export function QuestionTool({
         <div className="flex items-start gap-2.5">
           <span
             aria-hidden="true"
-            className="size-5.5 rounded-md flex items-center justify-center text-xs font-semibold bg-white/[0.07] text-foreground/80 shrink-0 mt-0.5 font-mono"
+            className="size-5.5 rounded-md flex items-center justify-center text-xs font-semibold bg-foreground/[0.07] text-foreground/80 shrink-0 mt-0.5 font-mono"
           >
             {clampedIndex}
           </span>
@@ -401,7 +401,7 @@ export function QuestionTool({
                       "w-full text-left rounded-xl border px-3 py-2 flex items-center gap-2.5 transition-all duration-150 group",
                       checked
                         ? "border-primary/60 bg-primary/10 text-foreground shadow-[0_0_12px_rgba(var(--primary),0.12)]"
-                        : "border-white/[0.08] bg-white/[0.03] text-foreground/90 hover:bg-white/[0.06] hover:border-white/20 active:scale-[0.995]",
+                        : "border-foreground/[0.08] bg-foreground/[0.03] text-foreground/90 hover:bg-foreground/[0.06] hover:border-foreground/20 active:scale-[0.995]",
                     )}
                   >
                     <span
@@ -410,7 +410,7 @@ export function QuestionTool({
                         "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
                         checked
                           ? "bg-primary text-primary-foreground shadow-sm"
-                          : "border border-white/10 bg-white/[0.05] text-muted-foreground group-hover:text-foreground",
+                          : "border border-foreground/10 bg-foreground/[0.05] text-muted-foreground group-hover:text-foreground",
                       )}
                     >
                       {badgeLetter}
@@ -437,7 +437,7 @@ export function QuestionTool({
                     "w-full rounded-xl border px-3 py-1.5 flex items-center gap-2.5 transition-all duration-150",
                     selectedIds.includes(CUSTOM_ID)
                       ? "border-primary/60 bg-primary/10 shadow-[0_0_12px_rgba(var(--primary),0.12)]"
-                      : "border-white/[0.08] bg-white/[0.03] hover:border-white/20 hover:bg-white/[0.05]",
+                      : "border-foreground/[0.08] bg-foreground/[0.03] hover:border-foreground/20 hover:bg-foreground/[0.05]",
                   )}
                 >
                   <span
@@ -446,7 +446,7 @@ export function QuestionTool({
                       "size-5.5 rounded-md flex items-center justify-center text-[11px] font-bold uppercase tracking-wider font-mono shrink-0 transition-colors",
                       selectedIds.includes(CUSTOM_ID)
                         ? "bg-primary text-primary-foreground shadow-sm"
-                        : "border border-white/10 bg-white/[0.05] text-muted-foreground",
+                        : "border border-foreground/10 bg-foreground/[0.05] text-muted-foreground",
                     )}
                   >
                     {optionBadge(activeQuestion.options.length)}
@@ -492,18 +492,18 @@ export function QuestionTool({
             placeholder={
               activeQuestion.placeholder ?? t("question_tool.vvedite_otvet")
             }
-            className="w-full rounded-xl border border-white/[0.1] bg-white/[0.03] p-3 text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary/60 focus:bg-white/[0.05] transition-all resize-y"
+            className="w-full rounded-xl border border-foreground/[0.1] bg-foreground/[0.03] p-3 text-[13.5px] text-foreground placeholder:text-muted-foreground/60 outline-none focus:border-primary/60 focus:bg-foreground/[0.05] transition-all resize-y"
           />
         )}
 
         {/* Нижняя панель действий */}
-        <div className="flex items-center justify-end gap-2 pt-1 border-t border-white/[0.06]">
+        <div className="flex items-center justify-end gap-2 pt-1 border-t border-foreground/[0.06]">
           {allowSkip && (
             <button
               type="button"
               disabled={busy}
               onClick={handleSkip}
-              className="text-xs font-medium text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-white/[0.06] transition"
+              className="text-xs font-medium text-muted-foreground hover:text-foreground px-3 py-1.5 rounded-lg hover:bg-foreground/[0.06] transition"
             >
               {resolvedSkipLabel}
             </button>
@@ -517,7 +517,7 @@ export function QuestionTool({
               "text-xs font-semibold px-4 py-1.5 rounded-lg transition-all flex items-center gap-1.5 shadow-sm",
               canSubmit && !busy
                 ? "border border-primary/40 bg-primary text-primary-foreground shadow-[0_0_10px_rgba(var(--primary),0.3)] hover:scale-105 hover:bg-primary/90 active:scale-95 cursor-pointer"
-                : "border border-white/5 bg-white/[0.05] text-muted-foreground/40 cursor-not-allowed",
+                : "border border-foreground/5 bg-foreground/[0.05] text-muted-foreground/40 cursor-not-allowed",
             )}
           >
             <span>{primaryLabel}</span>
