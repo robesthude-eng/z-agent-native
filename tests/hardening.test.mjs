@@ -258,16 +258,6 @@ test('readiness includes a persistent-volume free-space floor', () => {
   assert.match(readiness, /free space is below the readiness floor/);
 });
 
-test('automatic deploy refuses schema-breaking rollback contracts and has no bypass flag', () => {
-  const deploy = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
-  const migrations = fs.readFileSync(path.join(repoRoot, 'server/native/migrations.mjs'), 'utf8');
-  assert.match(migrations, /SCHEMA_MIN_READER_VERSION/);
-  assert.match(deploy, /CURRENT_SCHEMA_READER/);
-  assert.match(deploy, /CANDIDATE_MIN_READER/);
-  assert.doesNotMatch(deploy, /Z_AGENT_ALLOW_BREAKING_MIGRATION/);
-  assert.match(deploy, /image rollback would not be schema-safe/);
-});
-
 test('12-character password policy does not lock out legacy-login passwords in the UI', () => {
   const login = fs.readFileSync(path.join(repoRoot, 'src/components/LoginPage.tsx'), 'utf8');
   assert.match(login, /if \(isRegistering && password\.length < 12\)/);
@@ -293,20 +283,12 @@ test('public reverse proxy refuses the operator metrics endpoint', () => {
   assert.match(caddy, /@metrics path \/metrics[\s\S]*respond @metrics 404/);
 });
 
-test('release pipeline deploys exactly the images tested by CI', () => {
+test('CI pushes and re-pulls exactly the images it tested', () => {
   const ci = fs.readFileSync(path.join(repoRoot, '.github/workflows/ci.yml'), 'utf8');
-  const deploy = fs.readFileSync(path.join(repoRoot, '.github/workflows/deploy.yml'), 'utf8');
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
   assert.match(ci, /docker compose up -d --no-build/);
   assert.match(ci, /docker push "\$API_TAG"[\s\S]*docker pull "\$API_TAG"[\s\S]*RepoDigests/);
   assert.match(ci, /production-images\.env\.sha256/);
-  assert.match(deploy, /gh run download[\s\S]*production-images/);
-  assert.match(deploy, /sha256sum -c production-images\.env\.sha256/);
-  assert.match(deploy, /docker pull "\$Z_AGENT_API_IMAGE"/);
-  assert.match(deploy, /docker compose run --rm --no-deps --entrypoint node z-agent[\s\S]*server\/backup\.mjs/);
-  assert.doesNotMatch(deploy, /docker compose exec -T z-agent node \/tmp\/z-agent-backup\.mjs/);
-  assert.match(deploy, /docker compose up -d --no-build/);
-  assert.doesNotMatch(deploy, /docker compose build/);
   assert.match(compose, /image: \$\{Z_AGENT_API_IMAGE:-z-agent-native:local\}/);
   assert.match(compose, /image: \$\{Z_AGENT_BROWSER_IMAGE:-z-agent-browser:local\}/);
 });

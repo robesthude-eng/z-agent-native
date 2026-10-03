@@ -14,7 +14,8 @@ made on top of it.
 - New `docker-compose.unrestricted.yml`: executor without `no-new-privileges`/read-only rootfs/capability drop, larger CPU/RAM/PID/file caps.
 - `server/executor.mjs`: with `Z_AGENT_ALLOW_SUDO=1` session UIDs are registered in passwd/group/shadow and launched without `--no-new-privs`, so passwordless `sudo` actually works.
 - Image ships `sudo` with a NOPASSWD rule (inert under the hardened profile).
-- `Caddyfile` hostname comes from `Z_AGENT_DOMAIN`.
+- `Caddyfile` hostname comes from `Z_AGENT_DOMAIN` (default `localhost`).
+- Removed the agentwill.online production `Deploy` and `Server Terminal` workflows (that host no longer exists).
 - Browser: public sites no longer fail with `ERR_BLOCKED_BY_CLIENT` (DNS is resolved by browser-egress).
 - UI: Stop button restyled to match the composer (neutral circle + spinning progress ring instead of red glow); assistant text uses a calmer `oc-prose` typography (softer contrast, 1.72 line height, quieter headings, styled tables/quotes/links).
 - Browser `screenshot`/`pdf` without `url` capture the already-open page instead of failing with "requires html or url".

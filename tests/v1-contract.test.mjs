@@ -53,20 +53,3 @@ test('CI boots the production compose topology and requires readiness before dep
   assert.match(ci, /docker compose down -v --remove-orphans/);
 });
 
-test('production deploy is gated by successful CI and pins the verified SHA', () => {
-  const deploy = source('.github/workflows/deploy.yml');
-  assert.match(deploy, /workflow_run:/);
-  assert.match(deploy, /workflows:\s*\n\s*- CI/);
-  assert.match(deploy, /workflow_run\.conclusion == 'success'/);
-  assert.match(deploy, /workflow_run\.head_branch == 'main'/);
-  assert.match(deploy, /ref:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(deploy, /DEPLOY_SHA:\s*\$\{\{ github\.event\.workflow_run\.head_sha \}\}/);
-  assert.match(deploy, /RUNNING_SHA=.*Z_AGENT_RELEASE_SHA/);
-  assert.match(deploy, /production-images\.env/);
-  assert.match(deploy, /Z_AGENT_API_IMAGE/);
-  assert.match(deploy, /@sha256:\[0-9a-f\]\{64\}/);
-  assert.match(deploy, /trap rollback ERR[\s\S]*git reset --hard "\$DEPLOY_SHA"[\s\S]*docker pull "\$Z_AGENT_API_IMAGE"[\s\S]*docker compose up -d --no-build/);
-  assert.doesNotMatch(deploy, /docker compose build/);
-  assert.match(deploy, /ACTUAL_SHA=.*Z_AGENT_RELEASE_SHA/);
-  assert.doesNotMatch(deploy, /\n\s*push:\s*\n/);
-});
