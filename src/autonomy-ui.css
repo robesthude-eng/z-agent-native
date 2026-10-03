@@ -22,19 +22,11 @@ section[aria-label='Поле ввода сообщения'] textarea {
 }
 
 /* Stop acknowledges the tap immediately while the server is confirming
-   cancellation. The actual abort remains owned by React/store/runtime. */
+   cancellation: same 32px circle, no text label, only a dimmed state.
+   The actual abort remains owned by React/store/runtime. */
 button[data-z-stopping='true'] {
-  width: auto !important;
-  min-width: 44px !important;
-  padding-inline: 0.8rem !important;
-  gap: 0.45rem !important;
-}
-
-button[data-z-stopping='true']::after {
-  content: 'Останавливаю…';
-  font-size: 12px;
-  font-weight: 500;
-  white-space: nowrap;
+  opacity: 0.6;
+  cursor: progress;
 }
 
 /* Conversation turns should read as one continuous exchange rather than

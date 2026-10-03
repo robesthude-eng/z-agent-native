@@ -526,17 +526,21 @@ export default function Composer() {
 
               {/* Input area */}
               <div className="flex items-end gap-2 px-2 py-1 mt-1">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon"
-                  className="oc-tap h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
-                  onClick={() => fileInputRef.current?.click()}
-                  title={t("composer.prikrepit_fayl")}
-                  aria-label={t("composer.prikrepit_fayl")}
-                >
-                  <PaperclipIcon size={16} />
-                </Button>
+                {/* Скрепка и отправка/стоп — одинаковые круги 32px в одинаковых
+                    обёртках, поэтому стоят на одной линии и симметрично по краям. */}
+                <div className="flex items-center pb-1">
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="oc-tap h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-foreground/15 bg-foreground/[0.04] hover:border-foreground/25 hover:bg-foreground/[0.08] transition-all"
+                    onClick={() => fileInputRef.current?.click()}
+                    title={t("composer.prikrepit_fayl")}
+                    aria-label={t("composer.prikrepit_fayl")}
+                  >
+                    <PaperclipIcon size={16} />
+                  </Button>
+                </div>
                 <input
                   type="file"
                   multiple
@@ -646,7 +650,7 @@ export default function Composer() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="oc-tap relative h-7 w-7 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95"
+                      className="oc-tap relative h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95 disabled:opacity-70"
                       onClick={stopTurn}
                       title={t("stop.action")}
                       aria-label={t("stop.action")}
@@ -661,8 +665,8 @@ export default function Composer() {
                       className={cn(
                         "oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200",
                         canSend
-                          ? "border border-white/20 bg-primary text-primary-foreground shadow-[0_0_12px_rgba(var(--primary),0.35),inset_0_1px_0_0_rgba(255,255,255,0.2)] hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
-                          : "border border-white/10 bg-white/[0.05] text-muted-foreground/60 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.06),0_1px_2px_rgba(0,0,0,0.3)] cursor-not-allowed opacity-80",
+                          ? "border border-primary bg-primary text-primary-foreground shadow-sm hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
+                          : "border border-foreground/15 bg-foreground/[0.04] text-muted-foreground cursor-not-allowed",
                       )}
                       onClick={submit}
                       disabled={!canSend}
