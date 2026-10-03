@@ -183,7 +183,14 @@ export async function ensureBrowserSession(playwright, sessionId) {
         // Keep an in-process validation layer for fast failure. Production also
         // forces Chromium through browser-egress, which resolves/validates again
         // and pins the actual upstream address at CONNECT/request time.
-        await assertSafeExternalUrl(target);
+        try {
+          await assertSafeExternalUrl(target);
+        } catch (error) {
+          // The isolated browser container has no DNS of its own: name
+          // resolution happens only in browser-egress, which re-validates and
+          // pins the upstream address. Literal/private targets still fail here.
+          if (!(proxyServer && ['EAI_AGAIN', 'ENOTFOUND'].includes(error?.code))) throw error;
+        }
       }
       await route.continue();
     } catch (error) {
