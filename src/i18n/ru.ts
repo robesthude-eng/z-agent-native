@@ -634,6 +634,7 @@ export const messages = {
   "tool_card.smotrit_papku": "Смотрит папку",
   "tool_card.smotrit_strukturu_proekta": "Смотрит структуру проекта",
   "tool_card.smotrit_svedeniya_o_fayle": "Смотрит сведения о файле",
+  "tool_card.rassmatrivaet_media": "Рассматривает изображение",
   "tool_card.sobiraet_dokument": "Собирает документ",
   "tool_card.sobiraet_video": "Собирает видео",
   "tool_card.soderzhimoe": "СОДЕРЖИМОЕ",

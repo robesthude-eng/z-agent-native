@@ -179,7 +179,7 @@ test('variant paths only get a suffix after the first file', () => {
 });
 
 test('media tools are registered with the same rules as the rest of the surface', () => {
-  assert.equal(MEDIA_TOOL_DEFINITIONS.length, 6);
+  assert.equal(MEDIA_TOOL_DEFINITIONS.length, 7);
   assert.deepEqual([...MEDIA_TOOL_NAMES].sort(), [
     'convert_media',
     'generate_image',
@@ -187,6 +187,7 @@ test('media tools are registered with the same rules as the rest of the surface'
     'media_info',
     'render_document',
     'render_video',
+    'view_media',
   ]);
   for (const tool of MEDIA_TOOL_DEFINITIONS) {
     assert.equal(typeof tool.description, 'string');

@@ -153,7 +153,9 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     };
     emitPart(assistant, part, { putMessage, emit });
     if (result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result.mutatedPaths });
-    return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [] };
+    // Картинки для модели (view_media) идут отдельно от текста и в БД не пишутся.
+    const visualMedia = Array.isArray(result?.visualMedia) ? result.visualMedia.filter((m) => m && typeof m.dataUrl === 'string') : [];
+    return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [], visualMedia };
   } catch (err) {
     part.state = {
       ...part.state,

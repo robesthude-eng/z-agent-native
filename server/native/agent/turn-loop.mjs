@@ -4,7 +4,7 @@ import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
-import { compactFrames, completionGate, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
+import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
@@ -47,6 +47,31 @@ function resetLoopGuardCounters(guard) {
   guard.callCounts = Object.create(null);
   guard.callLastSeen = Object.create(null);
   guard.lastMutationAt = -1;
+}
+
+// Провайдер отказал из-за длины запроса («Prompt exceeds max length»,
+// context_length_exceeded и т.п.). Это не повод заканчивать ход: история
+// сжимается сильнее и шаг повторяется.
+const CONTEXT_OVERFLOW_RE = /prompt (?:exceeds|is too long)|exceeds (?:the )?max(?:imum)? (?:length|context|tokens?)|context[_ ](?:length|window)(?:[_ ]exceeded)?|maximum context length|too many (?:input )?tokens|input (?:is )?too long|request too large|reduce the length/i;
+const MIN_CONTEXT_BUDGET = 24_000;
+const MAX_OVERFLOW_RETRIES = 4;
+// Запоминаем сработавший бюджет для модели, чтобы следующие ходы не
+// упирались в тот же лимит заново.
+const learnedContextBudget = new Map();
+
+export function isContextOverflowError(err) {
+  const status = Number(err?.statusCode || err?.status) || 0;
+  const text = `${err?.message || ''} ${err?.body ? JSON.stringify(err.body) : ''}`;
+  if (status === 413) return true;
+  return CONTEXT_OVERFLOW_RE.test(text);
+}
+
+function overflowError(err) {
+  if (isContextOverflowError(err)) return err;
+  for (const attempt of [...(err?.attempts || []), ...(err?.autopilotAttempts || [])]) {
+    if (attempt?.error && isContextOverflowError({ message: String(attempt.error), statusCode: attempt.status })) return err;
+  }
+  return null;
 }
 
 function retryableModelError(err, signal) {
@@ -311,7 +336,9 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       runtime.stepsUsed = step;
       checkpointState(sessionId, runtime, strategy, { phase: 'before_model', stepsUsed: step });
       const live = liveTextSink(assistant);
-      const providerFrames = compactFrames(frames);
+      const budgetKey = (runtime.modelPlan?.candidates || []).map(modelKey).join('|');
+      if (!runtime.contextBudget && learnedContextBudget.has(budgetKey)) runtime.contextBudget = learnedContextBudget.get(budgetKey);
+      const providerFrames = compactFrames(frames, runtime.contextBudget ? { maxChars: runtime.contextBudget } : {});
       const modelStartedAt = Date.now();
       let response;
       try {
@@ -324,6 +351,18 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         });
       } catch (err) {
         if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
+        if (overflowError(err) && (runtime.overflowRetries || 0) < MAX_OVERFLOW_RETRIES) {
+          const sent = contextWeight(providerFrames);
+          const next = Math.max(MIN_CONTEXT_BUDGET, Math.floor(Math.min(sent, runtime.contextBudget || sent) * 0.55));
+          if (next < (runtime.contextBudget || Number.POSITIVE_INFINITY) || sent > next) {
+            runtime.overflowRetries = (runtime.overflowRetries || 0) + 1;
+            runtime.contextBudget = next;
+            learnedContextBudget.set(budgetKey, next);
+            live.finish();
+            step -= 1;
+            continue;
+          }
+        }
         if (retryableModelError(err, controller.signal) && modelStepRetries < MAX_MODEL_STEP_RETRIES) {
           const hinted = Number(err?.retryAfterMs);
           const base = MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)];
@@ -457,6 +496,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         }
       }
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
+      const stepMedia = [];
       for (const call of calls) {
         const toolStartedAt = Date.now();
         const result = await executeCall(sessionId, assistant, call, controller, runtime, updateTurn);
@@ -465,6 +505,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;
         const toolFrame = { role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError };
         frames.push(toolFrame);
+        if (result.visualMedia?.length) stepMedia.push(...result.visualMedia);
         checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
         const loop = observeToolLoop(loopGuard, call, result);
         if (loop) {
@@ -480,6 +521,16 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           resetLoopGuardCounters(loopGuard);
           toolFrame.content = `${String(toolFrame.content || '')}\n\n[Runtime loop warning] ${loop.message} Repeating it will not produce new information. Change the approach: use the result you already have, inspect something else, edit the code, or finish with a final answer. If the same pattern repeats, the turn will be stopped.`;
         }
+      }
+      // Тексты результатов инструментов не умеют нести картинки, поэтому всё,
+      // что агент открыл через view_media, приходит следующим сообщением.
+      if (stepMedia.length) {
+        frames.push({
+          role: 'user',
+          content: `[Runtime] Visual content returned by view_media (${stepMedia.length} image${stepMedia.length > 1 ? 's' : ''}): ${stepMedia.map((m) => m.name).filter(Boolean).join('; ')}. This is not a new user request; continue the task using what you see.`,
+          media: stepMedia.slice(0, 12),
+          runtimeMedia: true,
+        });
       }
     }
 

@@ -58,7 +58,7 @@ export function openAiMessages(frames) {
         for (const item of media) {
           const parsed = parseDataUrl(item.dataUrl);
           if (parsed?.mediaType.startsWith('image/')) content.push({ type: 'image_url', image_url: { url: parsed.dataUrl } });
-          else content.push({ type: 'text', text: `${mediaNote(item)} The file is available in the workspace; inspect it with tools if needed.` });
+          else content.push({ type: 'text', text: `${mediaNote(item)} The file is available in the workspace; inspect it with tools if needed (view_media shows images and video frames).` });
         }
         out.push({ role: 'user', content });
       }

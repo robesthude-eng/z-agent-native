@@ -1,3 +1,4 @@
+import { VIEW_MEDIA_DEFINITION } from './view.mjs';
 const object = (properties, required = []) => ({ type: 'object', properties, required, additionalProperties: false });
 
 export const MEDIA_TOOL_DEFINITIONS = [
@@ -93,6 +94,7 @@ export const MEDIA_TOOL_DEFINITIONS = [
       timeoutMs: { type: 'integer' },
     }, ['path']),
   },
+  VIEW_MEDIA_DEFINITION,
 ];
 
 export const MEDIA_TOOL_NAMES = MEDIA_TOOL_DEFINITIONS.map((tool) => tool.name);

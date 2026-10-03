@@ -13,6 +13,7 @@ import {
   ImageGenIcon,
   ListFilesIcon,
   MediaInfoIcon,
+  PreviewIcon,
   QuestionIcon,
   TaskIcon,
   VideoIcon,
@@ -64,6 +65,7 @@ export const TOOL_ICONS: Record<string, IconComponent> = {
   render_video: VideoIcon,
   convert_media: ConvertIcon,
   media_info: MediaInfoIcon,
+  view_media: PreviewIcon,
 };
 
 export function toolIcon(name?: string | null): ReactNode {

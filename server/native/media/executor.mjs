@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { generateImageAsset, generateSpeechAsset } from '../media-generation.mjs';
+import { executeViewMedia } from './view.mjs';
 import { syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
 import {
@@ -352,6 +353,8 @@ export async function executeMediaTool({ tool, input = {}, ctx = {}, root, run, 
     const bytes = fs.existsSync(target.abs) ? fs.statSync(target.abs).size : 0;
     return mediaResult({ target, kind: mediaKindForPath(target.rel), bytes, engine: 'ffmpeg', output: `Transformed ${source.rel} -> ${target.rel} (${bytes} bytes)` });
   }
+
+  if (tool === 'view_media') return await executeViewMedia({ root, input, run, ctx });
 
   if (tool === 'media_info') {
     requireRunner(run, 'ffprobe');

@@ -4,11 +4,24 @@ const DEFAULT_CONTEXT_CHARS = 360_000;
 const DEFAULT_TOOL_OBSERVATION_CHARS = 32_000;
 const MIN_CONTEXT_CHARS = 24_000;
 
+// Картинка стоит модели порядка тысячи-двух токенов независимо от размера
+// base64, поэтому считаем её фиксированной ценой, а не длиной data URL:
+// иначе один скриншот вытеснял из контекста почти всю историю.
+const MEDIA_WEIGHT = 6_000;
+const KEEP_RUNTIME_MEDIA_FRAMES = 2;
+
 function frameWeight(frame) {
   let n = String(frame?.content || '').length;
-  for (const media of frame?.media || []) n += Math.min(String(media?.dataUrl || '').length, 250_000);
+  for (const media of frame?.media || []) {
+    const raw = String(media?.dataUrl || '');
+    n += raw.startsWith('data:image/') ? MEDIA_WEIGHT : Math.min(raw.length, 250_000);
+  }
   for (const call of frame?.toolCalls || []) n += JSON.stringify(call?.arguments || {}).length + 256;
   return n;
+}
+
+export function contextWeight(frames) {
+  return (Array.isArray(frames) ? frames : []).reduce((sum, frame) => sum + frameWeight(frame), 0);
 }
 
 function clipMiddle(value, maxChars) {
@@ -58,6 +71,16 @@ export function compactFrames(input, options = {}) {
   const maxChars = Math.max(MIN_CONTEXT_CHARS, Number(options.maxChars || process.env.Z_AGENT_CONTEXT_CHARS) || DEFAULT_CONTEXT_CHARS);
   const maxObservationChars = Math.max(4_000, Number(options.maxObservationChars || process.env.Z_AGENT_TOOL_OBSERVATION_CHARS) || DEFAULT_TOOL_OBSERVATION_CHARS);
   const frames = (Array.isArray(input) ? input : []).map((frame) => compactObservation(frame, maxObservationChars));
+  // Картинки из view_media нужны модели на ближайших шагах; старые
+  // просмотры оставляем только текстом, чтобы не пересылать их каждый шаг.
+  let runtimeMediaSeen = 0;
+  for (let i = frames.length - 1; i >= 0; i--) {
+    if (!frames[i]?.runtimeMedia || !frames[i]?.media?.length) continue;
+    runtimeMediaSeen += 1;
+    if (runtimeMediaSeen > KEEP_RUNTIME_MEDIA_FRAMES) {
+      frames[i] = { ...frames[i], media: [], content: `${frames[i].content} [images no longer attached; call view_media again if you need to look]` };
+    }
+  }
   const weight = frames.reduce((sum, frame) => sum + frameWeight(frame), 0);
   if (weight <= maxChars) return makeToolPairsCoherent(frames);
 
