@@ -62,7 +62,7 @@ export function UserMessageBubble({
   return (
     <div className="flex w-full flex-col gap-1 max-w-[min(100%,700px)] self-end items-end">
       {(uniqueRefs.length > 0 || realAttParts.length > 0) && (
-        <div className="flex flex-wrap gap-2 justify-end">
+        <div className="flex max-w-full flex-wrap justify-end gap-1.5">
           {uniqueRefs.map((r) => (
             <AttachmentChip key={r.path || r.name} file={r} />
           ))}
@@ -123,10 +123,8 @@ export function UserMessageBubble({
           </div>
         </div>
       ) : (
-        <div className="group/bubble relative flex flex-col items-end">
-          <div className="rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-secondary-foreground text-sm leading-relaxed shadow-sm max-w-full">
-            <UserMessageText text={rest || "…"} />
-          </div>
+        <div className="group/bubble relative flex w-full flex-col items-end">
+          <UserMessageText text={rest || "…"} />
           <div className="mt-1 flex items-center justify-end">
             <MessageActions
               role="user"

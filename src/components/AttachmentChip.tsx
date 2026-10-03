@@ -5,7 +5,7 @@ import {
   Image as ImageIcon,
   Paperclip,
 } from "lucide-react";
-import type { ReactNode } from "react";
+import { type ReactNode, useState } from "react";
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { workspaceDownloadUrl } from "../api/client";
@@ -40,7 +40,7 @@ function ChipShell({
   children: ReactNode;
 }) {
   const cls =
-    "group/att flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card/60 px-2 py-1 text-[13px] not-prose";
+    "group/att flex min-w-0 max-w-full items-center gap-1.5 rounded-md border border-border bg-card/60 px-2 py-1 text-[13px] not-prose";
   if (!href) return <div className={cls}>{children}</div>;
   return (
     <a
@@ -133,13 +133,70 @@ export function WorkspaceFileChip({
   );
 }
 
+const IMAGE_NAME = /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+
+function workspaceImageUrl(path: string | undefined, sessionId: string | null) {
+  const rel = path ? toWorkspaceRelPath(path) : null;
+  if (!rel || !sessionId) return undefined;
+  return `/api/sandbox-proxy/${encodeURIComponent(sessionId)}/~/${rel
+    .split("/")
+    .map(encodeURIComponent)
+    .join("/")}`;
+}
+
+/**
+ * Картинка в сообщении — как в Telegram: само изображение, а не карточка
+ * файла с длинным именем. Нажатие открывает оригинал. Если картинка не
+ * загрузилась, показывается обычный чип файла (`fallback`).
+ */
+function ImageAttachment({
+  src,
+  fullSrc,
+  name,
+  fallback,
+}: {
+  src: string;
+  fullSrc?: string | undefined;
+  name: string;
+  fallback: ReactNode;
+}) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return <>{fallback}</>;
+  return (
+    <a
+      href={fullSrc || src}
+      target="_blank"
+      rel="noopener noreferrer"
+      title={name}
+      className="not-prose block max-w-[min(72vw,320px)] overflow-hidden rounded-2xl rounded-br-md border border-border/60 bg-muted/40 transition hover:opacity-90"
+    >
+      <img
+        src={src}
+        alt={name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        className="block max-h-[22rem] w-auto max-w-full object-contain"
+      />
+    </a>
+  );
+}
+
 /** Чип по разобранной ссылке на файл (см. src/lib/attachments.ts). */
 export function AttachmentChip({ file }: { file: AttachmentRef }) {
+  const currentID = useStore((s) => s.currentID);
   const meta =
     [file.note, typeof file.size === "number" ? formatSize(file.size) : ""]
       .filter(Boolean)
       .join(" · ") || file.path;
-  return <WorkspaceFileChip name={file.name} path={file.path} meta={meta} />;
+  const chip = (
+    <WorkspaceFileChip name={file.name} path={file.path} meta={meta} />
+  );
+  const imageSrc = IMAGE_NAME.test(file.name || file.path || "")
+    ? workspaceImageUrl(file.path, currentID)
+    : undefined;
+  if (imageSrc)
+    return <ImageAttachment src={imageSrc} name={file.name} fallback={chip} />;
+  return chip;
 }
 
 /** Чип для attachment-части сообщения (вложения из Composer). */
@@ -161,15 +218,12 @@ export function AttachmentPartChip({
     att.path && currentID
       ? workspaceDownloadUrl(att.path, currentID)
       : undefined;
-  const workspacePreview =
-    att.kind === "image" && att.path && currentID
-      ? `/api/sandbox-proxy/${encodeURIComponent(currentID)}/~/${att.path
-          .split("/")
-          .map(encodeURIComponent)
-          .join("/")}`
-      : undefined;
-  const imageSrc = att.dataUrl || workspacePreview;
-  return (
+  const isImage = att.kind === "image" || IMAGE_NAME.test(name);
+  const workspacePreview = isImage
+    ? workspaceImageUrl(att.path, currentID)
+    : undefined;
+  const imageSrc = isImage ? att.dataUrl || workspacePreview : undefined;
+  const chip = (
     <ChipShell href={href} name={name}>
       {att.kind === "image" && imageSrc ? (
         <img
@@ -190,4 +244,14 @@ export function AttachmentPartChip({
       </div>
     </ChipShell>
   );
+  if (imageSrc)
+    return (
+      <ImageAttachment
+        src={imageSrc}
+        fullSrc={workspacePreview}
+        name={name}
+        fallback={chip}
+      />
+    );
+  return chip;
 }
