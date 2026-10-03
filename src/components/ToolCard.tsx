@@ -63,7 +63,9 @@ function ToolCardComponent({ part }: ToolCardProps) {
 
   // 3. Generic Tool Card (Bash, Read, Write, Edit, Patch, Grep, Glob, etc.)
   return (
-    <div className="group not-prose my-1.5 overflow-hidden rounded-xl border border-border/70 bg-card/70 text-xs shadow-sm">
+    <div
+      className={`group not-prose my-0.5 overflow-hidden text-xs transition ${open ? "rounded-lg border border-border/70 bg-card/60" : "rounded-md"}`}
+    >
       <ToolHeader
         toolName={toolName}
         summary={summary}

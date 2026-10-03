@@ -2,8 +2,8 @@ import { Check, ChevronDown, ChevronRight, Copy } from "lucide-react";
 import { useState } from "react";
 import { t } from "@/i18n";
 import { copyText } from "@/lib/clipboard";
-import { friendlyToolLabel } from "@/lib/toolLabels";
 import { toast } from "@/lib/toast";
+import { friendlyToolLabel } from "@/lib/toolLabels";
 import { cn } from "@/lib/utils";
 import { toolIcon } from "../../utils/toolUtils";
 
@@ -41,8 +41,8 @@ export function ToolHeader({
   return (
     <div
       className={cn(
-        "flex items-center gap-2 pr-2 transition select-none",
-        open ? "bg-muted/40 border-b border-border/50" : "hover:bg-muted/30",
+        "flex items-center gap-1.5 pr-1 transition select-none text-muted-foreground",
+        open ? "border-b border-border/50" : "hover:bg-muted/30 rounded-md",
       )}
     >
       {/*
@@ -55,7 +55,7 @@ export function ToolHeader({
         type="button"
         onClick={onToggle}
         aria-expanded={open}
-        className="flex min-w-0 flex-1 items-center gap-2 px-3 py-2 text-left cursor-pointer"
+        className="flex min-w-0 flex-1 items-center gap-1.5 px-1.5 py-1 text-left cursor-pointer"
       >
         <span className="shrink-0 text-muted-foreground">
           {open ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
@@ -63,11 +63,11 @@ export function ToolHeader({
         <span className="shrink-0 text-muted-foreground">
           {toolIcon(toolName)}
         </span>
-        <span className="font-medium text-[12px] text-foreground shrink-0">
+        <span className="text-[12.5px] text-muted-foreground shrink-0">
           {friendlyToolLabel(toolName)}
         </span>
         {summary && (
-          <span className="min-w-0 flex-1 truncate text-[11px] text-muted-foreground font-mono">
+          <span className="min-w-0 flex-1 truncate text-[11.5px] text-muted-foreground/75 font-mono">
             {summary}
           </span>
         )}
@@ -82,7 +82,7 @@ export function ToolHeader({
           </span>
         )}
         {state === "completed" && (
-          <span className="text-[10px] text-emerald-500 font-medium px-1.5 py-0.5 rounded bg-emerald-500/10">
+          <span className="text-[11px] text-emerald-500 font-medium px-1">
             ✓
           </span>
         )}

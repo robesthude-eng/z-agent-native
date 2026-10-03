@@ -37,7 +37,7 @@ export function GeneratedFiles({ message }: { message: Message }) {
 
   if (files.size === 0) return null;
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-2 flex flex-wrap gap-1.5">
       {[...files].map(([path, name]) => (
         <WorkspaceFileChip
           key={path}

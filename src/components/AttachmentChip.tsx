@@ -40,7 +40,7 @@ function ChipShell({
   children: ReactNode;
 }) {
   const cls =
-    "group/att flex max-w-full items-center gap-2.5 rounded-lg border border-border bg-card px-2.5 py-2 text-sm not-prose";
+    "group/att flex max-w-full items-center gap-1.5 rounded-md border border-border bg-card/60 px-2 py-1 text-[13px] not-prose";
   if (!href) return <div className={cls}>{children}</div>;
   return (
     <a
@@ -87,19 +87,16 @@ export function WorkspaceFileChip({
 
   const body = (
     <>
-      <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-muted/50 text-muted-foreground">
+      <span className="shrink-0 text-muted-foreground" title={meta}>
         {isZip ? (
-          <FileArchive className="h-4 w-4" />
+          <FileArchive className="h-3.5 w-3.5" />
         ) : (
-          <Paperclip className="h-4 w-4" />
+          <FileText className="h-3.5 w-3.5" />
         )}
       </span>
-      <div className="min-w-0 flex-1 text-left">
-        <div className="truncate font-medium">{name}</div>
-        {meta && (
-          <div className="truncate text-xs text-muted-foreground">{meta}</div>
-        )}
-      </div>
+      <span className="min-w-0 truncate text-left text-foreground/90">
+        {name}
+      </span>
     </>
   );
 
@@ -111,10 +108,10 @@ export function WorkspaceFileChip({
     );
 
   return (
-    <div className="group/att flex max-w-full items-center gap-1 rounded-lg border border-border bg-card pr-1.5 text-sm not-prose transition hover:border-primary/40 hover:bg-accent/30">
+    <div className="group/att flex max-w-full items-center gap-0.5 rounded-md border border-border bg-card/60 pr-1 text-[13px] not-prose transition hover:border-primary/40 hover:bg-accent/30">
       <button
         type="button"
-        className="flex min-w-0 flex-1 items-center gap-2.5 px-2.5 py-2 text-left"
+        className="flex min-w-0 flex-1 items-center gap-1.5 px-2 py-1 text-left"
         onClick={() => {
           if (relPath) requestOpenFile(relPath);
         }}

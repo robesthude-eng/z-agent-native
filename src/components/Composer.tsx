@@ -530,7 +530,7 @@ export default function Composer() {
                   type="button"
                   variant="ghost"
                   size="icon"
-                  className="h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
+                  className="oc-tap h-7 w-7 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-white/10 bg-white/[0.03] shadow-[inset_0_1px_0_0_rgba(255,255,255,0.05)] hover:border-white/20 hover:bg-white/[0.07] transition-all"
                   onClick={() => fileInputRef.current?.click()}
                   title={t("composer.prikrepit_fayl")}
                   aria-label={t("composer.prikrepit_fayl")}
@@ -646,7 +646,7 @@ export default function Composer() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="oc-tap relative h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95"
+                      className="oc-tap relative h-7 w-7 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95"
                       onClick={stopTurn}
                       title={t("stop.action")}
                       aria-label={t("stop.action")}

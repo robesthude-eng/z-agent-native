@@ -54,22 +54,11 @@ button[data-z-stopping='true']::after {
     border-radius: 1.2rem !important;
   }
 
-  /* 44px physical hit areas on touch screens, while the icons themselves stay
-     visually compact. */
-  section[aria-label='Поле ввода сообщения']
-  button[aria-label='Прикрепить файл'],
-  section[aria-label='Поле ввода сообщения'] .oc-tap {
-    width: 44px !important;
-    height: 44px !important;
-    min-width: 44px !important;
-    min-height: 44px !important;
-  }
-
   .oc-msg-in button[aria-label='Изменить сообщение'],
   .oc-msg-in button[aria-label='Перегенерировать ответ'],
   .oc-msg-in button[aria-label^='Копировать'] {
-    min-width: 40px !important;
-    min-height: 40px !important;
+    min-width: 0 !important;
+    min-height: 28px !important;
   }
 
   /* Hover does not exist on touch. Message actions should be quietly visible

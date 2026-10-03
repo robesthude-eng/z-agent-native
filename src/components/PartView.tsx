@@ -139,10 +139,7 @@ function InlineCode({ children, ...props }: ComponentPropsWithoutRef<"code">) {
 
   if (!relPath) {
     return (
-      <code
-        className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground"
-        {...props}
-      >
+      <code className="oc-code" {...props}>
         {children}
       </code>
     );
@@ -152,7 +149,7 @@ function InlineCode({ children, ...props }: ComponentPropsWithoutRef<"code">) {
       type="button"
       title={tf("attachment_chip.otkryt_0_v_paneli_faylov", [relPath])}
       onClick={() => requestOpenFile(relPath)}
-      className="rounded-md bg-muted px-1.5 py-0.5 font-mono text-[0.9em] text-foreground underline decoration-dotted decoration-muted-foreground/60 underline-offset-2 transition hover:bg-accent hover:text-primary"
+      className="oc-code oc-code-link"
     >
       {children}
     </button>

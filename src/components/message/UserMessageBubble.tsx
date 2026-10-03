@@ -124,7 +124,7 @@ export function UserMessageBubble({
         </div>
       ) : (
         <div className="group/bubble relative flex flex-col items-end">
-          <div className="rounded-2xl bg-secondary px-4 py-2.5 text-secondary-foreground text-sm leading-relaxed shadow-sm max-w-full">
+          <div className="rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-secondary-foreground text-sm leading-relaxed shadow-sm max-w-full">
             <UserMessageText text={rest || "…"} />
           </div>
           <div className="mt-1 flex items-center justify-end">

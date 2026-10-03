@@ -787,3 +787,78 @@
 @media (prefers-reduced-motion: reduce) {
   .oc-stop-ring { animation: none; border-top-color: color-mix(in srgb, var(--color-foreground) 14%, transparent); }
 }
+
+/* Редизайн чата: инлайн-код красным на мягкой подложке, спокойные ссылки,
+   лёгкие таблицы и цитаты-выноски — как в Notion. */
+:root {
+  --oc-code-fg: #ff7369;
+  --oc-code-bg: rgb(235 87 87 / 0.14);
+}
+[data-theme='light'] {
+  --oc-code-fg: #d1453b;
+  --oc-code-bg: rgb(235 87 87 / 0.1);
+}
+.oc-code {
+  font-family: var(--font-mono);
+  font-size: 0.87em;
+  color: var(--oc-code-fg);
+  background: var(--oc-code-bg);
+  padding: 0.12em 0.38em;
+  border-radius: 5px;
+  overflow-wrap: anywhere;
+}
+button.oc-code-link {
+  text-decoration: underline dotted;
+  text-decoration-color: color-mix(in srgb, var(--oc-code-fg) 55%, transparent);
+  text-underline-offset: 3px;
+  transition: background 150ms ease;
+}
+button.oc-code-link:hover {
+  background: rgb(235 87 87 / 0.22);
+}
+.oc-prose {
+  font-size: 15px;
+  line-height: 1.65;
+}
+.oc-prose h1,
+.oc-prose h2,
+.oc-prose h3 {
+  margin: 1.2em 0 0.35em;
+}
+.oc-prose a {
+  color: var(--color-foreground);
+  font-weight: 500;
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--color-foreground) 30%,
+    transparent
+  );
+}
+.oc-prose table {
+  border: 0;
+  border-radius: 0;
+}
+.oc-prose th {
+  background: transparent;
+  color: var(--color-muted-foreground);
+  font-weight: 500;
+  font-size: 0.88em;
+}
+.oc-prose th,
+.oc-prose td {
+  padding: 0.45em 0.8em 0.45em 0;
+}
+.oc-prose th + th,
+.oc-prose td + td {
+  border-left: 0;
+}
+.oc-prose tr:last-child td {
+  border-bottom: 1px solid var(--color-border);
+}
+.oc-prose blockquote {
+  border-left: 0;
+  border-radius: 8px;
+  padding: 0.6em 0.85em;
+  background: color-mix(in srgb, var(--color-warning) 10%, transparent);
+  color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
+}
