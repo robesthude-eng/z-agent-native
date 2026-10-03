@@ -646,12 +646,13 @@ export default function Composer() {
                       type="button"
                       variant="ghost"
                       size="icon"
-                      className="oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-red-500/50 bg-red-500/15 text-red-400 shadow-[0_0_10px_rgba(239,68,68,0.25),inset_0_1px_0_0_rgba(255,255,255,0.12)] hover:bg-red-500/25 hover:border-red-500/70 hover:scale-105 active:scale-95"
+                      className="oc-tap relative h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)] hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95"
                       onClick={stopTurn}
                       title={t("stop.action")}
                       aria-label={t("stop.action")}
                     >
-                      <StopIcon size={14} />
+                      <span className="oc-stop-ring" aria-hidden="true" />
+                      <StopIcon size={12} />
                     </Button>
                   ) : (
                     <Button
