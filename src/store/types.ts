@@ -9,7 +9,6 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "../api/types";
-import type { ChatFolder } from "../components/sidebar/chatGrouping";
 import type { Theme } from "../config/theme";
 import type { PrefTimestamps } from "./prefsSync";
 
@@ -66,10 +65,6 @@ export interface UiSlice {
   sidebarCollapsed: boolean;
   workspaceOpen: boolean;
   pinnedSessions: string[];
-  // Папки чатов и привязка чатов к ним (синхронизируются между устройствами).
-  // Чат принадлежит не более чем одной папке, поэтому это карта, а не теги.
-  chatFolders: ChatFolder[];
-  chatFolderAssignments: Record<string, string>;
   // Приветственный тур уже пройден (синхронизируется между устройствами).
   onboardingDone: boolean;
   // Настройки с сервера хотя бы раз сверены с локальными. До этого момента
@@ -94,19 +89,12 @@ export interface UiSlice {
   toggleSidebar: () => void;
   setWorkspaceOpen: (open: boolean) => void;
   togglePinnedSession: (id: string) => void;
-  /** Создать папку; возвращает её id (сразу нужен, чтобы положить в неё чат). */
-  createChatFolder: (name: string) => string | null;
-  renameChatFolder: (id: string, name: string) => void;
-  /** Удалить папку; её чаты возвращаются в обычные группы по датам. */
-  deleteChatFolder: (id: string) => void;
-  /** Переложить чат в папку или, при null, вынуть из папок. */
-  assignChatFolder: (sessionId: string, folderId: string | null) => void;
   completeOnboarding: () => void;
   /** Открыть файл workspace в редакторе (путь относительно корня сессии). */
   requestOpenFile: (path: string) => void;
   clearPendingOpenFile: () => void;
   renameSession: (id: string, title: string) => void;
-  /** Убрать следы удалённых чатов из настроек: закрепление, папка, имя. */
+  /** Убрать следы удалённых чатов из настроек: закрепление и имя. */
   forgetSessionPrefs: (ids: string[]) => void;
   syncUserPrefsFromServer: () => Promise<void>;
 }

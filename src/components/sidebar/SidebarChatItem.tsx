@@ -1,14 +1,7 @@
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { SessionInfo } from "../../api/types";
-import {
-  CheckIcon,
-  CloseIcon,
-  FolderIcon,
-  PencilIcon,
-  PinIcon,
-  TrashIcon,
-} from "../icons";
+import { CheckIcon, CloseIcon, PencilIcon, PinIcon, TrashIcon } from "../icons";
 
 export interface SidebarChatItemProps {
   session: SessionInfo;
@@ -19,20 +12,12 @@ export interface SidebarChatItemProps {
   isEditing: boolean;
   editText: string;
   isConfirmDeleting: boolean;
-  folderMenuOpen: boolean;
-  chatFolders: Array<{ id: string; name: string }>;
-  currentFolderId?: string | undefined;
-  newFolderName: string;
   onSelect: () => void;
   onStartEditing: () => void;
   onEditTextChange: (val: string) => void;
   onCommitRename: () => void;
   onCancelEditing: () => void;
   onTogglePin: () => void;
-  onToggleFolderMenu: () => void;
-  onAssignFolder: (folderId: string | null) => void;
-  onNewFolderNameChange: (val: string) => void;
-  onCreateFolderAndAssign: () => void;
   onStartDelete: () => void;
   onConfirmDelete: () => void;
   onCancelDelete: () => void;
@@ -47,20 +32,12 @@ export function SidebarChatItem({
   isEditing,
   editText,
   isConfirmDeleting,
-  folderMenuOpen,
-  chatFolders,
-  currentFolderId,
-  newFolderName,
   onSelect,
   onStartEditing,
   onEditTextChange,
   onCommitRename,
   onCancelEditing,
   onTogglePin,
-  onToggleFolderMenu,
-  onAssignFolder,
-  onNewFolderNameChange,
-  onCreateFolderAndAssign,
   onStartDelete,
   onConfirmDelete,
   onCancelDelete,
@@ -140,23 +117,6 @@ export function SidebarChatItem({
               type="button"
               onClick={(e) => {
                 e.stopPropagation();
-                onToggleFolderMenu();
-              }}
-              title={t("sidebar.papka_chata")}
-              aria-label={tf("sidebar.vybrat_papku_dlya_chata_0", [
-                displayTitle,
-              ])}
-              className={cn(
-                "oc-reveal inline-flex h-6 w-6 shrink-0 self-center items-center justify-center rounded-md border-none bg-transparent p-0 text-[11px] leading-none text-current transition-all hover:bg-accent active:scale-90",
-                currentFolderId ? "opacity-90" : "opacity-45 hover:opacity-100",
-              )}
-            >
-              <FolderIcon size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
                 onStartEditing();
               }}
               title={t("sidebar.pereimenovat_chat")}
@@ -210,65 +170,6 @@ export function SidebarChatItem({
           </button>
         )}
       </div>
-
-      {folderMenuOpen && (
-        <div className="mt-1 rounded-xl border border-border bg-card p-2 text-xs shadow-lg space-y-1">
-          <p className="px-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            {t("sidebar.papka_chata")}
-          </p>
-          <button
-            type="button"
-            onClick={() => onAssignFolder(null)}
-            className={cn(
-              "flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-[11px] hover:bg-accent",
-              !currentFolderId
-                ? "font-semibold text-foreground"
-                : "text-muted-foreground",
-            )}
-          >
-            <span>{t("sidebar.bez_papki")}</span>
-            {!currentFolderId && <span>✓</span>}
-          </button>
-          {chatFolders.map((f) => {
-            const isAssigned = currentFolderId === f.id;
-            return (
-              <button
-                key={f.id}
-                type="button"
-                onClick={() => onAssignFolder(f.id)}
-                className={cn(
-                  "flex w-full items-center justify-between rounded-lg px-2 py-1 text-left text-[11px] hover:bg-accent",
-                  isAssigned
-                    ? "font-semibold text-foreground"
-                    : "text-muted-foreground",
-                )}
-              >
-                <span className="truncate">{f.name}</span>
-                {isAssigned && <span>✓</span>}
-              </button>
-            );
-          })}
-          <div className="pt-1 border-t border-border flex gap-1">
-            <input
-              value={newFolderName}
-              onChange={(e) => onNewFolderNameChange(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") onCreateFolderAndAssign();
-              }}
-              placeholder={t("sidebar.novaya_papka")}
-              aria-label={t("sidebar.nazvanie_novoy_papki")}
-              className="flex-1 rounded-md border border-border bg-background px-2 py-0.5 text-[11px] text-foreground outline-none"
-            />
-            <button
-              type="button"
-              onClick={onCreateFolderAndAssign}
-              className="rounded-md bg-foreground px-2 py-0.5 text-[11px] text-background hover:brightness-110"
-            >
-              +
-            </button>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

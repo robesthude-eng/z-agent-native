@@ -6,10 +6,8 @@ import { api } from "../api/client";
 import type { SessionInfo } from "../api/types";
 import { messageText } from "../lib/chatText";
 import { useStore } from "../store/useStore";
-import { FolderIcon } from "./icons";
 import { buildSidebarGroups } from "./sidebar/chatGrouping";
 import { SidebarChatItem } from "./sidebar/SidebarChatItem";
-import { SidebarFolderItem } from "./sidebar/SidebarFolderItem";
 import { SidebarFooter } from "./sidebar/SidebarFooter";
 import { type DeepHit, SidebarHeader } from "./sidebar/SidebarHeader";
 
@@ -30,24 +28,6 @@ export default function Sidebar() {
   const sessionTitleOverrides = useStore((s) => s.sessionTitleOverrides);
   const renameSession = useStore((s) => s.renameSession);
 
-  const chatFolders = useStore((s) => s.chatFolders);
-  const chatFolderAssignments = useStore((s) => s.chatFolderAssignments);
-  const createChatFolder = useStore((s) => s.createChatFolder);
-  const renameChatFolder = useStore((s) => s.renameChatFolder);
-  const deleteChatFolder = useStore((s) => s.deleteChatFolder);
-  const assignChatFolder = useStore((s) => s.assignChatFolder);
-  const [folderMenuFor, setFolderMenuFor] = useState<string | null>(null);
-  const [collapsedFolders, setCollapsedFolders] = useState<Set<string>>(
-    new Set(),
-  );
-  const [newFolderOpen, setNewFolderOpen] = useState(false);
-  const [newFolderName, setNewFolderName] = useState("");
-  const [editingFolderId, setEditingFolderId] = useState<string | null>(null);
-  const [folderNameDraft, setFolderNameDraft] = useState("");
-  const [confirmDeleteFolderId, setConfirmDeleteFolderId] = useState<
-    string | null
-  >(null);
-
   const normalizedFilter = filter.trim().toLowerCase();
 
   const titleOf = useCallback(
@@ -63,19 +43,10 @@ export default function Sidebar() {
       buildSidebarGroups({
         sessions,
         pinnedSessions,
-        folders: chatFolders,
-        assignments: chatFolderAssignments,
         titleOf,
         filter: normalizedFilter,
       }),
-    [
-      sessions,
-      pinnedSessions,
-      chatFolders,
-      chatFolderAssignments,
-      titleOf,
-      normalizedFilter,
-    ],
+    [sessions, pinnedSessions, titleOf, normalizedFilter],
   );
   const totalVisible = useMemo(
     () => groups.reduce((n, g) => n + g.items.length, 0),
@@ -84,8 +55,6 @@ export default function Sidebar() {
 
   // Enter → commit и тут же blur → commit; Escape → cancel и blur → commit.
   // Коммитим только пока поле действительно в режиме правки этого чата.
-  const folderEditRef = useRef<string | null>(null);
-  folderEditRef.current = editingFolderId;
   const editingRef = useRef<string | null>(null);
   editingRef.current = editingId;
   const commitRename = (id: string) => {
@@ -96,23 +65,6 @@ export default function Sidebar() {
     const session = sessions.find((x) => x.id === id);
     const current = session ? titleOf(session) : "";
     if (next && next !== current) renameSession(id, next);
-  };
-
-  // Enter и следующий за ним blur (поле исчезает) раньше создавали две
-  // одинаковые папки. Одна отправка — одна папка.
-  const folderSubmitLock = useRef(false);
-  const submitNewFolder = (assignSessionId?: string) => {
-    if (folderSubmitLock.current) return;
-    folderSubmitLock.current = true;
-    setTimeout(() => {
-      folderSubmitLock.current = false;
-    }, 300);
-    const id = createChatFolder(newFolderName);
-    setNewFolderName("");
-    setNewFolderOpen(false);
-    if (!id) return;
-    if (assignSessionId) assignChatFolder(assignSessionId, id);
-    setFolderMenuFor(null);
   };
 
   const runDeepSearch = async () => {
@@ -202,7 +154,7 @@ export default function Sidebar() {
             className="space-y-1 p-2"
             style={{ width: "100%", overflowX: "hidden" }}
           >
-            {totalVisible === 0 && chatFolders.length === 0 && (
+            {totalVisible === 0 && (
               <p className="px-3 py-8 text-sm text-muted-foreground text-center">
                 {normalizedFilter
                   ? t("settings_panel.nichego_ne_naydeno")
@@ -210,168 +162,59 @@ export default function Sidebar() {
               </p>
             )}
 
-            {!normalizedFilter && (
-              <div className="px-1 pb-1">
-                {newFolderOpen ? (
-                  <input
-                    ref={(el) => el?.focus()}
-                    value={newFolderName}
-                    onChange={(e) => setNewFolderName(e.target.value)}
-                    onBlur={() => {
-                      if (newFolderName.trim()) submitNewFolder();
-                      else setNewFolderOpen(false);
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") submitNewFolder();
-                      if (e.key === "Escape") {
-                        setNewFolderName("");
-                        setNewFolderOpen(false);
-                      }
-                    }}
-                    placeholder={t("sidebar.nazvanie_papki")}
-                    aria-label={t("sidebar.nazvanie_novoy_papki")}
-                    className="w-full rounded-lg border border-border bg-background px-2 py-1 text-[11px] text-foreground outline-none focus:border-ring"
-                  />
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setNewFolderOpen(true)}
-                    className="flex w-full items-center gap-1.5 rounded-lg px-2 py-1 text-[11px] text-muted-foreground transition hover:bg-accent hover:text-foreground"
-                  >
-                    <FolderIcon size={13} />
-                    <span>{t("sidebar.novaya_papka")}</span>
-                  </button>
-                )}
-              </div>
-            )}
-
             {groups.map((g) => (
               <div key={g.key}>
-                {g.kind === "folder" && g.folderId ? (
-                  <SidebarFolderItem
-                    folderId={g.folderId}
-                    label={g.label}
-                    count={g.items.length}
-                    isCollapsed={collapsedFolders.has(g.folderId)}
-                    isEditing={editingFolderId === g.folderId}
-                    editingDraft={folderNameDraft}
-                    isConfirmDeleting={confirmDeleteFolderId === g.folderId}
-                    onToggleCollapse={() =>
-                      setCollapsedFolders((prev) => {
-                        const next = new Set(prev);
-                        if (g.folderId) {
-                          if (next.has(g.folderId)) next.delete(g.folderId);
-                          else next.add(g.folderId);
-                        }
-                        return next;
-                      })
-                    }
-                    onStartEditing={() => {
-                      setFolderNameDraft(g.label);
-                      setEditingFolderId(g.folderId ?? null);
-                    }}
-                    onDraftChange={setFolderNameDraft}
-                    onCommitRename={() => {
-                      // blur после Escape/Enter не должен коммитить повторно
-                      if (!g.folderId || folderEditRef.current !== g.folderId)
-                        return;
-                      folderEditRef.current = null;
-                      renameChatFolder(g.folderId, folderNameDraft);
-                      setEditingFolderId(null);
-                    }}
-                    onCancelEditing={() => {
-                      folderEditRef.current = null;
-                      setEditingFolderId(null);
-                    }}
-                    onStartDelete={() =>
-                      setConfirmDeleteFolderId(g.folderId ?? null)
-                    }
-                    onConfirmDelete={() => {
-                      if (g.folderId) deleteChatFolder(g.folderId);
-                      setConfirmDeleteFolderId(null);
-                    }}
-                    onCancelDelete={() => setConfirmDeleteFolderId(null)}
-                  />
-                ) : (
-                  <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
-                    {g.label}
-                  </div>
-                )}
+                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                  {g.label}
+                </div>
 
-                {g.kind === "folder" &&
-                  g.folderId &&
-                  g.items.length === 0 &&
-                  !collapsedFolders.has(g.folderId) && (
-                    <p className="px-4 pb-1 text-[11px] text-muted-foreground">
-                      {t("sidebar.pusto_perenesite_syuda_chat")}
-                    </p>
-                  )}
-
-                {(g.kind !== "folder" ||
-                  !g.folderId ||
-                  !collapsedFolders.has(g.folderId)) &&
-                  g.items.map((s) => {
-                    const isActive = s.id === currentID;
-                    const displayTitle =
-                      sessionTitleOverrides[s.id] ||
-                      s.title ||
-                      t("shortcuts_overlay.novyy_chat");
-                    const isPinned = pinnedSessions.includes(s.id);
-                    const sStatus =
-                      typeof status[s.id] === "string"
-                        ? status[s.id]
-                        : (status[s.id] as { type?: string })?.type;
-                    const busy = sStatus === "busy";
-                    return (
-                      <SidebarChatItem
-                        key={s.id}
-                        session={s}
-                        isActive={isActive}
-                        displayTitle={displayTitle}
-                        isPinned={isPinned}
-                        busy={busy}
-                        isEditing={editingId === s.id}
-                        editText={editText}
-                        isConfirmDeleting={confirmDeleteId === s.id}
-                        folderMenuOpen={folderMenuFor === s.id}
-                        chatFolders={chatFolders}
-                        currentFolderId={chatFolderAssignments[s.id]}
-                        newFolderName={newFolderName}
-                        onSelect={() => {
-                          select(s.id);
-                          close();
-                        }}
-                        onStartEditing={() => {
-                          setEditText(displayTitle);
-                          setEditingId(s.id);
-                        }}
-                        onEditTextChange={setEditText}
-                        onCommitRename={() => commitRename(s.id)}
-                        onCancelEditing={() => {
-                          editingRef.current = null;
-                          setEditingId(null);
-                        }}
-                        onTogglePin={() => togglePinnedSession(s.id)}
-                        onToggleFolderMenu={() =>
-                          setFolderMenuFor((prev) =>
-                            prev === s.id ? null : s.id,
-                          )
-                        }
-                        onAssignFolder={(folderId) => {
-                          assignChatFolder(s.id, folderId);
-                          setFolderMenuFor(null);
-                        }}
-                        onNewFolderNameChange={setNewFolderName}
-                        onCreateFolderAndAssign={() => submitNewFolder(s.id)}
-                        onStartDelete={() => setConfirmDeleteId(s.id)}
-                        onConfirmDelete={() => {
-                          removeSession(s.id);
-                          setConfirmDeleteId(null);
-                        }}
-                        onCancelDelete={() => setConfirmDeleteId(null)}
-                      />
-                    );
-                  })}
+                {g.items.map((s) => {
+                  const isActive = s.id === currentID;
+                  const displayTitle =
+                    sessionTitleOverrides[s.id] ||
+                    s.title ||
+                    t("shortcuts_overlay.novyy_chat");
+                  const isPinned = pinnedSessions.includes(s.id);
+                  const sStatus =
+                    typeof status[s.id] === "string"
+                      ? status[s.id]
+                      : (status[s.id] as { type?: string })?.type;
+                  const busy = sStatus === "busy";
+                  return (
+                    <SidebarChatItem
+                      key={s.id}
+                      session={s}
+                      isActive={isActive}
+                      displayTitle={displayTitle}
+                      isPinned={isPinned}
+                      busy={busy}
+                      isEditing={editingId === s.id}
+                      editText={editText}
+                      isConfirmDeleting={confirmDeleteId === s.id}
+                      onSelect={() => {
+                        select(s.id);
+                        close();
+                      }}
+                      onStartEditing={() => {
+                        setEditText(displayTitle);
+                        setEditingId(s.id);
+                      }}
+                      onEditTextChange={setEditText}
+                      onCommitRename={() => commitRename(s.id)}
+                      onCancelEditing={() => {
+                        editingRef.current = null;
+                        setEditingId(null);
+                      }}
+                      onTogglePin={() => togglePinnedSession(s.id)}
+                      onStartDelete={() => setConfirmDeleteId(s.id)}
+                      onConfirmDelete={() => {
+                        removeSession(s.id);
+                        setConfirmDeleteId(null);
+                      }}
+                      onCancelDelete={() => setConfirmDeleteId(null)}
+                    />
+                  );
+                })}
               </div>
             ))}
           </nav>

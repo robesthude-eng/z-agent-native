@@ -84,10 +84,9 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       // (удалены с другого устройства или до этой правки).
       const alive = new Set(server.map((x) => x.id));
       const st = get();
-      const stale = [
-        ...(st.pinnedSessions ?? []),
-        ...Object.keys(st.chatFolderAssignments ?? {}),
-      ].filter((id) => !isTmpSession(id) && !alive.has(id));
+      const stale = (st.pinnedSessions ?? []).filter(
+        (id) => !isTmpSession(id) && !alive.has(id),
+      );
       if (stale.length > 0 && st.prefsSynced) st.forgetSessionPrefs?.(stale);
     } catch {
       set({ sessionError: true });

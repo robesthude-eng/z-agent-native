@@ -20,8 +20,6 @@ const titleOf = (s: SessionInfo) => s.title || "Новый чат";
 
 const base = {
   pinnedSessions: [] as string[],
-  folders: [] as { id: string; name: string }[],
-  assignments: {} as Record<string, string>,
   titleOf,
   now: NOW,
 };
@@ -46,90 +44,36 @@ describe("dateGroupLabel", () => {
 });
 
 describe("buildSidebarGroups", () => {
-  it("orders sections: pinned, folders, then date groups", () => {
+  it("orders sections: pinned, then date groups", () => {
     const groups = buildSidebarGroups({
       ...base,
       sessions: [
         session("s1", "pinned one"),
-        session("s2", "in folder"),
         session("s3", "loose today"),
         session("s4", "loose old", daysAgo(30)),
       ],
       pinnedSessions: ["s1"],
-      folders: [{ id: "f1", name: "Проект X" }],
-      assignments: { s2: "f1" },
     });
 
     expect(groups.map((g) => [g.kind, g.label])).toEqual([
       ["pinned", "📌 Закреплённые"],
-      ["folder", "Проект X"],
       ["date", "Сегодня"],
       ["date", "Раньше"],
     ]);
-    expect(groups[1]?.items.map((s) => s.id)).toEqual(["s2"]);
-    expect(groups[2]?.items.map((s) => s.id)).toEqual(["s3"]);
+    expect(groups[1]?.items.map((s) => s.id)).toEqual(["s3"]);
   });
 
-  it("shows a pinned chat only once, even when it is also in a folder", () => {
+  it("shows a pinned chat only once", () => {
     const groups = buildSidebarGroups({
       ...base,
       sessions: [session("s1", "both")],
       pinnedSessions: ["s1"],
-      folders: [{ id: "f1", name: "Проект X" }],
-      assignments: { s1: "f1" },
     });
-
     const appearances = groups.flatMap((g) =>
       g.items.filter((s) => s.id === "s1"),
     );
     expect(appearances).toHaveLength(1);
     expect(groups[0]?.kind).toBe("pinned");
-  });
-
-  it("keeps an empty folder visible so a freshly created one does not vanish", () => {
-    const groups = buildSidebarGroups({
-      ...base,
-      sessions: [session("s1", "loose")],
-      folders: [{ id: "f1", name: "Пустая" }],
-    });
-    expect(groups.map((g) => g.label)).toContain("Пустая");
-  });
-
-  it("hides empty folders while filtering — they are noise in search results", () => {
-    const groups = buildSidebarGroups({
-      ...base,
-      sessions: [session("s1", "alpha"), session("s2", "beta")],
-      folders: [{ id: "f1", name: "Пустая" }],
-      filter: "alpha",
-    });
-    expect(groups.map((g) => g.label)).not.toContain("Пустая");
-    expect(groups.flatMap((g) => g.items.map((s) => s.id))).toEqual(["s1"]);
-  });
-
-  it("returns a chat assigned to a deleted folder to the date groups", () => {
-    const groups = buildSidebarGroups({
-      ...base,
-      sessions: [session("s1", "orphan")],
-      folders: [],
-      assignments: { s1: "folder-that-no-longer-exists" },
-    });
-    expect(groups.map((g) => g.kind)).toEqual(["date"]);
-    expect(groups[0]?.items.map((s) => s.id)).toEqual(["s1"]);
-  });
-
-  it("preserves the user's folder order", () => {
-    const groups = buildSidebarGroups({
-      ...base,
-      sessions: [session("s1", "a"), session("s2", "b")],
-      folders: [
-        { id: "f2", name: "Вторая" },
-        { id: "f1", name: "Первая" },
-      ],
-      assignments: { s1: "f1", s2: "f2" },
-    });
-    expect(
-      groups.filter((g) => g.kind === "folder").map((g) => g.label),
-    ).toEqual(["Вторая", "Первая"]);
   });
 
   it("filters by title case-insensitively", () => {

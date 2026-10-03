@@ -24,8 +24,6 @@ const local = (over: Partial<PrefValues> = {}): PrefValues => ({
   pinnedSessions: [],
   selectedModel: null,
   onboardingDone: false,
-  chatFolders: [],
-  chatFolderAssignments: {},
   ...over,
 });
 

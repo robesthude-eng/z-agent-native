@@ -35,7 +35,11 @@ function sessionFromPath(pathname) {
 function mergePrefs(current, patch) {
   const base = current && typeof current === 'object' ? current : {};
   const next = patch && typeof patch === 'object' ? patch : {};
-  return { ...base, ...next };
+  const merged = { ...base, ...next };
+  // Папки чатов убраны из продукта: старые значения не храним.
+  delete merged.chatFolders;
+  delete merged.chatFolderAssignments;
+  return merged;
 }
 
 export async function handleSessionRoutes(req, res, p, url, ownerId) {

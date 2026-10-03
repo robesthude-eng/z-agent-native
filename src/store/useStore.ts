@@ -82,8 +82,6 @@ export const useStore = create<State>()(
         workspaceOpen: s.workspaceOpen,
         selectedModel: s.selectedModel,
         pinnedSessions: s.pinnedSessions,
-        chatFolders: s.chatFolders,
-        chatFolderAssignments: s.chatFolderAssignments,
         onboardingDone: s.onboardingDone,
         prefsUpdatedAt: s.prefsUpdatedAt,
       }),

@@ -14,23 +14,6 @@ import {
 } from "../prefsSync";
 import type { Slice, State, UiSlice } from "../types";
 
-/** Тот же предел, что применяет native runtime при сохранении настроек. */
-const MAX_FOLDER_NAME = 60;
-
-/**
- * Идентификатор папки. randomUUID недоступен на HTTP без TLS, поэтому нужен
- * запасной вариант — иначе создание папки падало бы на локальном доступе.
- */
-function newFolderId(): string {
-  if (
-    typeof crypto !== "undefined" &&
-    typeof crypto.randomUUID === "function"
-  ) {
-    return `fld_${crypto.randomUUID()}`;
-  }
-  return `fld_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-}
-
 export const createUiSlice: Slice<UiSlice> = (set, get) => {
   /**
    * Записать настройку локально, отметить время и отправить на сервер.
@@ -59,8 +42,6 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
     // Right workspace starts closed; preference is synced after auth.
     workspaceOpen: false,
     pinnedSessions: [],
-    chatFolders: [],
-    chatFolderAssignments: {},
     onboardingDone: false,
     prefsSynced: false,
     pendingOpenFile: null,
@@ -98,51 +79,6 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
       );
     },
 
-    createChatFolder: (rawName) => {
-      const name = rawName.trim().slice(0, MAX_FOLDER_NAME);
-      if (!name) return null;
-      const id = newFolderId();
-      setPref("chatFolders", [...get().chatFolders, { id, name }]);
-      return id;
-    },
-
-    renameChatFolder: (id, rawName) => {
-      const name = rawName.trim().slice(0, MAX_FOLDER_NAME);
-      if (!name) return;
-      setPref(
-        "chatFolders",
-        get().chatFolders.map((f) => (f.id === id ? { ...f, name } : f)),
-      );
-    },
-
-    deleteChatFolder: (id) => {
-      setPref(
-        "chatFolders",
-        get().chatFolders.filter((f) => f.id !== id),
-      );
-      // Чистим привязки к удалённой папке: раскладка их и так игнорирует, но
-      // иначе они копились бы в настройках навсегда.
-      const assignments = get().chatFolderAssignments;
-      if (!Object.values(assignments).includes(id)) return;
-      const next: Record<string, string> = {};
-      for (const [sessionId, folderId] of Object.entries(assignments)) {
-        if (folderId !== id) next[sessionId] = folderId;
-      }
-      setPref("chatFolderAssignments", next);
-    },
-
-    assignChatFolder: (sessionId, folderId) => {
-      const current = get().chatFolderAssignments;
-      if (folderId === null) {
-        if (!(sessionId in current)) return;
-        const { [sessionId]: _removed, ...rest } = current;
-        setPref("chatFolderAssignments", rest);
-        return;
-      }
-      if (current[sessionId] === folderId) return;
-      setPref("chatFolderAssignments", { ...current, [sessionId]: folderId });
-    },
-
     completeOnboarding: () => setPref("onboardingDone", true),
 
     // Клик по пути файла в чате. Панель workspace открываем здесь же: просить
@@ -167,14 +103,6 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
           "pinnedSessions",
           pinned.filter((x) => !gone.has(x)),
         );
-      const assignments = get().chatFolderAssignments;
-      if (Object.keys(assignments).some((x) => gone.has(x))) {
-        const next: Record<string, string> = {};
-        for (const [sessionId, folderId] of Object.entries(assignments)) {
-          if (!gone.has(sessionId)) next[sessionId] = folderId;
-        }
-        setPref("chatFolderAssignments", next);
-      }
       const overrides = get().sessionTitleOverrides;
       if (Object.keys(overrides).some((x) => gone.has(x)))
         set((s) => {
@@ -243,8 +171,6 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
         pinnedSessions: state.pinnedSessions,
         selectedModel: state.selectedModel,
         onboardingDone: state.onboardingDone,
-        chatFolders: state.chatFolders,
-        chatFolderAssignments: state.chatFolderAssignments,
       };
 
       const { apply, timestamps, pushBack } = reconcilePrefs(

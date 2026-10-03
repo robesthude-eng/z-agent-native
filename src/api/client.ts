@@ -204,8 +204,6 @@ export interface UserPrefs {
   workspaceOpen?: PrefEnvelope<boolean>;
   pinnedSessions?: PrefEnvelope<string[]>;
   selectedModel?: PrefEnvelope<PromptModel | null>;
-  chatFolders?: PrefEnvelope<{ id: string; name: string }[]>;
-  chatFolderAssignments?: PrefEnvelope<Record<string, string>>;
 }
 
 // UX-fix: локальный чёрный список sessionID, отсутствие которых подтвердил сервер.

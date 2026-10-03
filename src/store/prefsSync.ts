@@ -23,8 +23,6 @@ export interface PrefValues {
   pinnedSessions: string[];
   selectedModel: PromptModel | null;
   onboardingDone: boolean;
-  chatFolders: { id: string; name: string }[];
-  chatFolderAssignments: Record<string, string>;
 }
 
 const PREF_KEYS = [
@@ -34,8 +32,6 @@ const PREF_KEYS = [
   "pinnedSessions",
   "selectedModel",
   "onboardingDone",
-  "chatFolders",
-  "chatFolderAssignments",
 ] as const;
 
 export type PrefKey = (typeof PREF_KEYS)[number];
