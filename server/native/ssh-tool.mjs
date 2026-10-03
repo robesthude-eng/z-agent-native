@@ -10,7 +10,7 @@ const DEFAULT_SSH_TIMEOUT_MS = 60_000;
 const MAX_SSH_TIMEOUT_MS = 900_000;
 
 export const SSH_ACTIONS = ['test', 'exec', 'read', 'write', 'patch', 'service'];
-export const SSH_SERVICE_ACTIONS = ['status', 'restart', 'start', 'stop', 'logs'];
+export const SSH_SERVICE_ACTIONS = ['status', 'restart', 'start', 'stop', 'reload', 'logs'];
 
 const MUTATING_ACTIONS = new Set(['write', 'patch']);
 // service start/stop/restart change remote state but never the local workspace,
@@ -102,6 +102,7 @@ function keyArgs(root, value) {
 }
 
 export function buildSshArgs(root, action, input = {}) {
+  input = { ...input, key: input.key ?? input.keyPath, path: input.path ?? input.remotePath, name: input.name ?? input.service };
   const host = assertPattern(input.host, HOST_PATTERN, 'host');
   const user = assertPattern(input.user || 'root', USER_PATTERN, 'user');
   const port = Math.min(Math.max(Number(input.port) || 22, 1), 65535);
@@ -156,12 +157,13 @@ export function buildSshArgs(root, action, input = {}) {
 
   if (action === 'service') {
     const name = assertPattern(input.name, SERVICE_PATTERN, 'name');
-    const serviceAction = String(input.serviceAction || 'status').trim().toLowerCase();
+    const requested = String(input.serviceAction || 'status').trim().toLowerCase();
+    const serviceAction = requested === 'journal' ? 'logs' : requested;
     if (!SSH_SERVICE_ACTIONS.includes(serviceAction)) {
       throw new Error(`Unsupported serviceAction "${input.serviceAction}". Use one of: ${SSH_SERVICE_ACTIONS.join(', ')}`);
     }
     return {
-      args: ['service', ...conn, '--name', name, '--action', serviceAction],
+      args: ['service', ...conn, '--name', name, '--action', serviceAction, ...(serviceAction === 'logs' ? ['--lines', String(Math.min(500, Math.max(1, Math.floor(Number(input.lines) || 50))))] : [])],
       title: `ssh service ${name} ${serviceAction} @ ${host}`,
       stdin: '',
     };
@@ -192,6 +194,7 @@ function sshEnv(root, home, password) {
  * an unroutable-network error that looks nothing like the real cause.
  */
 async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
+  if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
   const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_SSH_TIMEOUT_MS, 1000), MAX_SSH_TIMEOUT_MS);
   const home = path.join(root, '.agent-home');
   const launcher = resolveSshToolLauncher();
@@ -206,6 +209,9 @@ async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
     });
     let stdout = '';
     let stderr = '';
+    let inputError = null;
+    let stopped = false;
+    let forceTimer = null;
     child.stdout.on('data', (chunk) => {
       stdout = truncateSsh(stdout + chunk.toString('utf8'));
       if (typeof onOutput === 'function') onOutput(stdout, stderr);
@@ -214,16 +220,34 @@ async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
       stderr = truncateSsh(stderr + chunk.toString('utf8'));
       if (typeof onOutput === 'function') onOutput(stdout, stderr);
     });
-    const kill = () => { try { child.kill('SIGTERM'); } catch { /* already gone */ } };
+    // The CLI can fail authentication/argument validation before reading stdin.
+    // An unhandled EPIPE here would crash the entire API process.
+    child.stdin.on('error', (err) => {
+      if (err.code === 'EPIPE' && !plan.stdin) return;
+      inputError = err;
+      stderr = truncateSsh(`${stderr}\nSSH input failed: ${err.message}`);
+    });
+    const kill = () => {
+      if (stopped) return;
+      stopped = true;
+      try { child.kill('SIGTERM'); } catch { /* already gone */ }
+      forceTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1000);
+      forceTimer.unref?.();
+    };
     const timer = setTimeout(kill, budget);
     timer.unref?.();
     signal?.addEventListener('abort', kill, { once: true });
     const cleanup = () => {
       clearTimeout(timer);
+      clearTimeout(forceTimer);
       signal?.removeEventListener('abort', kill);
     };
     child.on('error', (err) => { cleanup(); reject(err); });
-    child.on('close', (code) => { cleanup(); resolve({ code: code ?? 1, stdout, stderr }); });
+    child.on('close', (code) => {
+      cleanup();
+      if (signal?.aborted) return reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
+      resolve({ code: stopped ? 124 : (code || (inputError ? 1 : (code ?? 1))), stdout, stderr: stopped ? `${stderr}\nSSH operation timed out.` : stderr });
+    });
     child.stdin.end(String(plan.stdin ?? ''));
   });
 }
@@ -247,9 +271,9 @@ export async function executeSshTool({ root, identity, input = {}, signal, sessi
     result.stderr && `stderr:\n${result.stderr}`,
   ].filter(Boolean).join('\n');
 
-  if (result.code !== 0 && action === 'test') {
+  if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || '').trim();
-    throw new Error(detail || `ssh_tool test exited with code ${result.code}`);
+    throw new Error(detail || `ssh_tool ${action} exited with code ${result.code}`);
   }
 
   return {

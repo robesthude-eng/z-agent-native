@@ -159,7 +159,7 @@ test('a catastrophic regex is cancelled by the grep deadline', async () => {
   fs.rmSync(workspace, { recursive: true, force: true });
 });
 
-test('local env loading stays developer-friendly while production forces hard boundaries', () => {
+test('local env loading supports development while terminal access remains an explicit opt-in', () => {
   const pkg = JSON.parse(fs.readFileSync(path.join(repoRoot, 'package.json'), 'utf8'));
   const envExample = fs.readFileSync(path.join(repoRoot, '.env.example'), 'utf8');
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');
@@ -169,7 +169,7 @@ test('local env loading stays developer-friendly while production forces hard bo
   assert.match(pkg.scripts.dev, /--env-file-if-exists=\.env/);
   assert.match(envExample, /^Z_AGENT_EXECUTOR_REQUIRED=0$/m);
   assert.match(envExample, /^Z_AGENT_BROWSER_REQUIRED=0$/m);
-  assert.match(envExample, /^Z_AGENT_TERMINAL_ENABLED=1$/m);
+  assert.match(envExample, /^Z_AGENT_TERMINAL_ENABLED=0$/m);
   assert.match(api, /Z_AGENT_EXECUTOR_REQUIRED:\s*['"]?1['"]?/);
   assert.match(api, /Z_AGENT_BROWSER_REQUIRED:\s*['"]?1['"]?/);
   assert.match(api, /Z_AGENT_TERMINAL_ENABLED:\s*['"]?0['"]?/);

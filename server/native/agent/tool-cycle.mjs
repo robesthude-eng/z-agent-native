@@ -142,7 +142,7 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
       emitPart(assistant, part, { putMessage, emit });
       return { content: JSON.stringify({ answers: q.answers }), isError: false, metadata: part.state.metadata, mutatedPaths: [] };
     }
-    const resultMetadata = { ...(part.state?.metadata || {}), ...(result?.metadata || {}) };
+    const resultMetadata = { ...(part.state?.metadata || {}), ...(result?.metadata || {}), mutatedPaths: result?.mutatedPaths || [] };
     part.state = {
       ...part.state,
       status: 'completed',

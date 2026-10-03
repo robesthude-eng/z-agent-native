@@ -111,6 +111,9 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const csp = preview.headers.get('content-security-policy') || '';
   const origin = new URL(base).origin;
   assert.match(csp, /default-src 'none'/);
+  // Directly opening an HTML/SVG preview must retain isolation without an iframe.
+  assert.match(csp, /(?:^|; )sandbox allow-scripts allow-forms allow-popups(?:;|$)/);
+  assert.doesNotMatch(csp, /allow-same-origin|allow-popups-to-escape-sandbox/);
   assert.ok(csp.includes(`script-src ${origin} 'unsafe-inline'`), csp);
   assert.ok(csp.includes(`style-src ${origin} 'unsafe-inline'`), csp);
   assert.ok(csp.includes(`img-src ${origin} data: blob:`), csp);

@@ -4,7 +4,7 @@ import CopyButton from "../CopyButton";
 import { NewChatIcon, RefreshIcon } from "../icons";
 
 export interface MessageActionsProps {
-  role: string;
+  messageRole: string;
   visibleText: string;
   sessionId?: string | undefined;
   messageId?: string | undefined;
@@ -19,7 +19,7 @@ export interface MessageActionsProps {
 }
 
 export function MessageActions({
-  role,
+  messageRole,
   visibleText,
   isLatestTurn,
   isStreaming,
@@ -35,7 +35,7 @@ export function MessageActions({
     <div className="flex items-center gap-1 transition-opacity opacity-100 group-focus-within:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
       {visibleText && <CopyButton text={visibleText} />}
 
-      {role === "assistant" && isLatestTurn && !isStreaming && (
+      {messageRole === "assistant" && isLatestTurn && !isStreaming && (
         <Button
           variant="ghost"
           size="sm"
@@ -48,7 +48,7 @@ export function MessageActions({
         </Button>
       )}
 
-      {role === "user" && showEditButton && onEditAndResend && (
+      {messageRole === "user" && showEditButton && onEditAndResend && (
         <Button
           variant="ghost"
           size="sm"
@@ -60,7 +60,7 @@ export function MessageActions({
         </Button>
       )}
 
-      {role === "user" && onFork && (
+      {messageRole === "user" && onFork && (
         <Button
           variant="ghost"
           size="sm"

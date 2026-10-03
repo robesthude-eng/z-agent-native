@@ -352,7 +352,9 @@ export function observeTool(strategy, call, result) {
       noteVerification(state, { ok: toolExitOk(result), tool: 'bash', detail: command });
       return state;
     }
-    if (effect === 'may_mutate' && !result?.isError) {
+    const observed = result?.metadata?.workspaceChanges;
+    const changed = observed?.paths?.length > 0 || (!observed?.complete && effect === 'may_mutate');
+    if (changed && !result?.isError) {
       noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
       if (commandRecordsGitCommit(command) && toolExitOk(result)) {
         noteVerification(state, { ok: true, tool: 'bash', detail: command });
@@ -396,7 +398,7 @@ export function observeTool(strategy, call, result) {
 
   if (name === 'diagnostics') {
     const ok = !result?.isError && result?.metadata?.diagnostics?.ok === true;
-    noteVerification(state, { ok, tool: 'diagnostics', detail: String(call?.arguments?.kind || 'auto') });
+    noteVerification(state, { ok, tool: 'diagnostics', detail: String(call?.arguments?.kinds?.join(', ') || call?.arguments?.kind || 'auto') });
     return state;
   }
 

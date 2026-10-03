@@ -42,6 +42,7 @@ export function previewSecurityPolicy(req) {
   const own = host ? `${scheme}://${host}` : '';
   const from = own ? `${own} ` : '';
   return [
+    "sandbox allow-scripts allow-forms allow-popups",
     "default-src 'none'",
     `script-src ${from}'unsafe-inline' 'unsafe-eval'`,
     `style-src ${from}'unsafe-inline'`,

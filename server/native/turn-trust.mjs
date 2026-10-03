@@ -117,7 +117,10 @@ const WORKSPACE_MUTATING_TOOLS = new Set(['write', 'edit', 'apply_patch', 'ensur
 function callMutatesWorkspace(call, result) {
   const name = String(call?.name || '').trim().toLowerCase();
   if (WORKSPACE_MUTATING_TOOLS.has(name)) return true;
-  if (name === 'bash') return classifyBash(call?.arguments?.command) === 'may_mutate';
+  if (name === 'bash') {
+    const observed = result?.metadata?.workspaceChanges;
+    return observed?.paths?.length > 0 || (!observed?.complete && classifyBash(call?.arguments?.command) === 'may_mutate');
+  }
   return name === 'task' && Array.isArray(result?.mutatedPaths) && result.mutatedPaths.length > 0;
 }
 

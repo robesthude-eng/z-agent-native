@@ -181,7 +181,7 @@ export function AssistantMessageBubble({
 
         <div className="mt-1 flex items-center justify-between gap-2">
           <MessageActions
-            role="assistant"
+            messageRole="assistant"
             visibleText={combinedText}
             sessionId={firstMsg?.sessionID}
             messageId={firstMsg?.id}

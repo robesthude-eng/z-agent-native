@@ -66,20 +66,20 @@ export function detectLintCommand(root) {
 }
 
 export function planDiagnostics(root, input = {}) {
-  const requested = String(input.kind || 'all').trim().toLowerCase();
-  if (!DIAGNOSTIC_KINDS.includes(requested)) {
-    throw new Error(`Unsupported diagnostics kind "${input.kind}". Use one of: ${DIAGNOSTIC_KINDS.join(', ')}`);
+  const requested = [...new Set((Array.isArray(input.kinds) && input.kinds.length ? input.kinds : [input.kind || 'all']).map((kind) => String(kind).trim().toLowerCase()))];
+  if (requested.some((kind) => !DIAGNOSTIC_KINDS.includes(kind))) {
+    throw new Error(`Unsupported diagnostics kind "${requested.join(', ')}". Use one of: ${DIAGNOSTIC_KINDS.join(', ')}`);
   }
   const explicit = String(input.command || '').trim();
   if (explicit) {
-    return [{ kind: requested === 'all' ? 'lint' : requested, command: explicit, source: 'explicit command' }];
+    return [{ kind: requested.length === 1 && requested[0] !== 'all' ? requested[0] : 'lint', command: explicit, source: 'explicit command' }];
   }
   const plans = [];
-  if (requested === 'all' || requested === 'typecheck') {
+  if (requested.includes('all') || requested.includes('typecheck')) {
     const typecheck = detectTypecheckCommand(root);
     if (typecheck) plans.push(typecheck);
   }
-  if (requested === 'all' || requested === 'lint') {
+  if (requested.includes('all') || requested.includes('lint')) {
     const lint = detectLintCommand(root);
     if (lint) plans.push(lint);
   }

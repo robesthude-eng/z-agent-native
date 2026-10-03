@@ -6,7 +6,8 @@ import {
   MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS,
 } from '../media.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
-import { SSH_ACTIONS } from '../ssh-tool.mjs';
+import { SSH_ACTIONS, SSH_SERVICE_ACTIONS } from '../ssh-tool.mjs';
+import { TEST_FRAMEWORKS } from '../test-runner.mjs';
 import { subagentKinds } from '../subagents.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
 import { agentNetworkPolicy, sshPolicy } from '../workspace-policy.mjs';
@@ -141,17 +142,24 @@ export const TOOL_DEFINITIONS = [
     inputSchema: object({
       action: { type: 'string', enum: SSH_ACTIONS, description: 'test, exec, read, write, patch, or service.' },
       host: { type: 'string', description: 'Remote host IP or hostname.' },
-      user: { type: 'string', description: 'Remote SSH user, e.g. root or casano. Defaults to the configured SSH user or root.' },
+      user: { type: 'string', description: 'Remote SSH user. Defaults to root.' },
       port: { type: 'integer', minimum: 1, maximum: 65535, description: 'SSH port, default 22.' },
-      keyPath: { type: 'string', description: 'Workspace-relative path to private key, e.g. .ssh/id_rsa. Defaults to configured session key.' },
+      password: { type: 'string', description: 'SSH password supplied by the user, if key authentication is unavailable. Never invent a password.' },
+      key: { type: 'string', description: 'Workspace-relative path to the private key, e.g. .ssh/id_ed25519.' },
+      keyPath: { type: 'string', description: 'Alias for key.' },
       command: { type: 'string', description: 'For action=exec: command to run on remote host.' },
-      remotePath: { type: 'string', description: 'For action=read/write/patch: absolute path on remote host.' },
+      path: { type: 'string', description: 'For action=read/write/patch: path on the remote host.' },
+      remotePath: { type: 'string', description: 'Alias for path.' },
+      offset: { type: 'integer', minimum: 1, description: 'For read: first line, starting at 1.' },
+      limit: { type: 'integer', minimum: 1, maximum: 4000, description: 'For read: number of lines.' },
       content: { type: 'string', description: 'For action=write: file content to write.' },
-      patch: { type: 'string', description: 'For action=patch: unified diff text to apply on remote host.' },
-      service: { type: 'string', description: 'For action=service: systemd service name.' },
-      serviceAction: { type: 'string', enum: ['status', 'restart', 'stop', 'start', 'reload', 'journal'], description: 'For action=service: operation.' },
+      oldText: { type: 'string', description: 'For patch: exact non-empty text to replace once.' },
+      newText: { type: 'string', description: 'For patch: replacement text; empty string deletes oldText.' },
+      name: { type: 'string', description: 'For action=service: systemd service name.' },
+      service: { type: 'string', description: 'Alias for name.' },
+      serviceAction: { type: 'string', enum: [...SSH_SERVICE_ACTIONS, 'journal'], description: 'For service: operation; journal is an alias for logs.' },
       sudo: { type: 'boolean', description: 'Run command/service with sudo if non-root.' },
-      lines: { type: 'integer', minimum: 1, maximum: 500, description: 'For action=service, serviceAction=journal: number of lines.' },
+      lines: { type: 'integer', minimum: 1, maximum: 500, description: 'For service logs: number of lines, default 50.' },
       timeoutMs: { type: 'integer', minimum: 1000, maximum: 300_000 },
     }, ['action', 'host']),
   },
@@ -167,7 +175,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'git',
-    description: 'Perform Git operations in the workspace. Supported actions: status, diff, log, show, commit, create_branch, branches.',
+    description: 'Perform Git operations in the workspace: status, diff, log, blame, show, commit, create_branch, branches.',
     inputSchema: object({
       action: { type: 'string', enum: GIT_ACTIONS },
       message: { type: 'string', description: 'For action=commit: commit message' },
@@ -175,6 +183,11 @@ export const TOOL_DEFINITIONS = [
       paths: { type: 'array', items: { type: 'string' }, description: 'For commit (files to stage) or diff' },
       count: { type: 'integer', minimum: 1, maximum: 50, description: 'For action=log: number of commits' },
       ref: { type: 'string', description: 'For action=show: commit/tag ref' },
+      limit: { type: 'integer', minimum: 1, maximum: 200, description: 'For log: maximum commits; alias count is also supported.' },
+      rev: { type: 'string', description: 'Revision for log, show or diff; alias ref is also supported.' },
+      stat: { type: 'boolean', description: 'For diff: show a change summary.' },
+      startLine: { type: 'integer', minimum: 1, description: 'For blame: first line.' },
+      endLine: { type: 'integer', minimum: 1, description: 'For blame: last line.' },
       staged: { type: 'boolean', description: 'For action=diff: show staged changes' },
     }, ['action']),
   },
@@ -182,16 +195,19 @@ export const TOOL_DEFINITIONS = [
     name: 'run_tests',
     description: 'Discover and run the workspace test suite (Node, Python, Go, Rust, Java/Gradle, Maven, PHP, Ruby). Returns a structured pass/fail report.',
     inputSchema: object({
-      framework: { type: 'string', description: 'Override test framework detection' },
+      framework: { type: 'string', enum: TEST_FRAMEWORKS, description: 'Override test framework detection.' },
+      command: { type: 'string', description: 'Explicit test command. Takes precedence over automatic detection.' },
       filter: { type: 'string', description: 'Test name / path filter' },
       timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 },
     }),
   },
   {
     name: 'diagnostics',
-    description: 'Run static diagnostics on the workspace (tsc/typecheck, eslint/biome/oxlint, python/flake8/ruff/mypy, cargo check, go vet, golangci-lint, maven/gradle). Returns errors and warnings.',
+    description: 'Run configured typecheck/lint scripts or detected TypeScript, Go, Rust, mypy, Biome, ESLint and Ruff checks. An explicit command can select another checker.',
     inputSchema: object({
       kinds: { type: 'array', items: { type: 'string', enum: DIAGNOSTIC_KINDS } },
+      kind: { type: 'string', enum: DIAGNOSTIC_KINDS, description: 'Legacy single-kind alternative to kinds.' },
+      command: { type: 'string', description: 'Explicit diagnostic command instead of detection.' },
       timeoutMs: { type: 'integer', minimum: 1000, maximum: 300_000 },
     }),
   },

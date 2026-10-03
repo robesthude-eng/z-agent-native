@@ -66,12 +66,17 @@ fields (duration, resolution, codecs, bitrate).
 
 | Variable | Default | Meaning |
 | --- | --- | --- |
-| `Z_AGENT_IMAGE_MODEL` | `openai/gpt-image-1` | default `provider/model` for `generate_image` |
-| `Z_AGENT_SPEECH_MODEL` | `openai/gpt-4o-mini-tts` | default `provider/model` for `generate_speech` |
+| `Z_AGENT_IMAGE_MODEL` | `gpt-image-1` on a single OpenAI channel | default `provider/model` for `generate_image` |
+| `Z_AGENT_SPEECH_MODEL` | `gpt-4o-mini-tts` on a single OpenAI channel | default `provider/model` for `generate_speech` |
 
 Both accept any configured provider, including relay and OpenAI-compatible
 endpoints. The model reference splits on the **first** slash, so
 `openrouter/google/gemini-2.5-flash-image` resolves to provider `openrouter`.
+Use the exact saved channel ID (for example `channel_abc/image-model`), not its display name.
+The configured protocol selects the endpoint, regardless of the ID or name.
+An explicit unknown/disabled channel is an error; it never falls back to another key.
+With multiple active media channels, specify a full reference. Google always needs an explicit model.
+
 Anthropic and the fixture provider have no media endpoints and are rejected with
 a readable message rather than a 404 from the provider.
 

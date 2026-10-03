@@ -10,8 +10,9 @@ import {
   wavFromPcm,
   writeMediaFile,
 } from './media.mjs';
-import { callProviderBinary, callProviderJson, providerSpecs } from './providers.mjs';
+import { callProviderBinary, callProviderJson, providerSpecs, resolveModel } from './providers.mjs';
 import { getProviderKey } from './store.mjs';
+import { assertMediaCapableProvider } from './providers/media.mjs';
 
 // Model backed generation: images and speech.
 //
@@ -55,134 +56,38 @@ export function defaultSpeechModel() {
   return process.env.Z_AGENT_SPEECH_MODEL || DEFAULT_SPEECH_MODEL;
 }
 
-/**
- * Автоматический подбор модели и провайдера для генерации изображений:
- * находит активный провайдер пользователя (Sora, Z.ai, OpenAI и др.).
- */
-export function resolveImageModelRef(ownerId, modelInput) {
-  let specs = {};
-  try { specs = providerSpecs(ownerId); } catch { /* ignore */ }
-  const raw = String(modelInput || '').trim();
-
-  if (raw) {
-    if (raw.includes('/')) {
-      const { providerID, modelID } = parseModelRef(raw);
-      if (specs[providerID] && getProviderKey(ownerId, providerID)) {
-        return { providerID, modelID };
-      }
-      // Если провайдер с таким ID не найден (например, передали 'openai/gpt-image-1'),
-      // подбираем реального провайдера пользователя с этим ключом
-      for (const [pId, spec] of Object.entries(specs)) {
-        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
-        const name = (spec.name || '').toLowerCase();
-        if (pId === providerID || name === providerID.toLowerCase() || name.includes('sora') || name.includes('openai') || spec.protocol === 'openai') {
-          return { providerID: pId, modelID };
-        }
-      }
-    } else {
-      // Имя модели без слэша (например 'gpt-image-1' или 'cogview-3-plus')
-      for (const [pId, spec] of Object.entries(specs)) {
-        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
-        const name = (spec.name || '').toLowerCase();
-        if (raw.startsWith('cogview') && pId === 'zai') return { providerID: pId, modelID: raw };
-        if (!raw.startsWith('cogview') && (name.includes('sora') || name.includes('sota') || spec.protocol === 'openai')) {
-          return { providerID: pId, modelID: raw };
-        }
-      }
-      for (const [pId, spec] of Object.entries(specs)) {
-        if (spec.enabled && getProviderKey(ownerId, pId)) {
-          return { providerID: pId, modelID: raw };
-        }
-      }
+/** Explicit channel IDs are authoritative; never reroute their credentials. */
+function resolveMediaModelRef(ownerId, modelInput, configuredDefault, fallback) {
+  const specs = providerSpecs(ownerId);
+  const raw = String(modelInput || configuredDefault || '').trim();
+  const checked = (model) => {
+    const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
+    if (resolved.spec.enabled === false || !resolved.key) {
+      throw Object.assign(new Error('Медиа-канал выключен или API key не настроен'), { statusCode: 400 });
     }
+    return model;
+  };
+  if (raw.includes('/')) return checked(parseModelRef(raw));
+  // Bare model names are safe only when the destination is unambiguous.
+  const candidates = Object.entries(specs).filter(([id, spec]) =>
+    spec.enabled !== false && ['google', 'openai'].includes(spec.kind) && getProviderKey(ownerId, id));
+  if (candidates.length !== 1) {
+    throw Object.assign(new Error('Укажите медиа-модель как ID_канала/ID_модели: нужен один явно выбранный активный канал.'), { statusCode: 400 });
   }
-
-  // Модель не указана явно — выбираем лучший провайдер
-  const envModel = process.env.Z_AGENT_IMAGE_MODEL;
-  if (envModel && envModel.includes('/')) {
-    const { providerID, modelID } = parseModelRef(envModel);
-    if (specs[providerID] && getProviderKey(ownerId, providerID)) {
-      return { providerID, modelID };
-    }
+  const [providerID, spec] = candidates[0];
+  if (raw) return checked({ providerID, modelID: raw });
+  if (spec.kind === 'google') {
+    throw Object.assign(new Error('Укажите модель Google как ID_канала/ID_модели или настройте Z_AGENT_IMAGE_MODEL / Z_AGENT_SPEECH_MODEL.'), { statusCode: 400 });
   }
-
-  // 1. Sora / True-SOTA (gpt-image-1)
-  for (const [pId, spec] of Object.entries(specs)) {
-    if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
-    const name = (spec.name || '').toLowerCase();
-    if (name.includes('sora') || name.includes('sota') || (spec.baseURL || '').includes('true-sota')) {
-      return { providerID: pId, modelID: 'gpt-image-1' };
-    }
-  }
-
-  // 2. Z.ai (cogview-3-plus)
-  if (specs.zai && specs.zai.enabled && getProviderKey(ownerId, 'zai')) {
-    return { providerID: 'zai', modelID: 'cogview-3-plus' };
-  }
-
-  // 3. Любой доступный провайдер с ключом
-  for (const [pId, spec] of Object.entries(specs)) {
-    if (spec.enabled && getProviderKey(ownerId, pId)) {
-      return { providerID: pId, modelID: 'gpt-image-1' };
-    }
-  }
-
-  return parseModelRef(defaultImageModel());
+  return checked({ providerID, modelID: providerID === 'zai' && fallback === DEFAULT_IMAGE_MODEL ? 'cogview-3-plus' : parseModelRef(fallback).modelID });
 }
 
-/**
- * Автоматический подбор модели для синтеза речи (TTS).
- */
+export function resolveImageModelRef(ownerId, modelInput) {
+  return resolveMediaModelRef(ownerId, modelInput, process.env.Z_AGENT_IMAGE_MODEL, DEFAULT_IMAGE_MODEL);
+}
+
 export function resolveSpeechModelRef(ownerId, modelInput) {
-  let specs = {};
-  try { specs = providerSpecs(ownerId); } catch { /* ignore */ }
-  const raw = String(modelInput || '').trim();
-
-  if (raw) {
-    if (raw.includes('/')) {
-      const { providerID, modelID } = parseModelRef(raw);
-      if (specs[providerID] && getProviderKey(ownerId, providerID)) {
-        return { providerID, modelID };
-      }
-      for (const [pId, spec] of Object.entries(specs)) {
-        if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
-        const name = (spec.name || '').toLowerCase();
-        if (pId === providerID || name === providerID.toLowerCase() || name.includes('sora') || name.includes('openai') || spec.protocol === 'openai') {
-          return { providerID: pId, modelID };
-        }
-      }
-    } else {
-      for (const [pId, spec] of Object.entries(specs)) {
-        if (spec.enabled && getProviderKey(ownerId, pId)) {
-          return { providerID: pId, modelID: raw };
-        }
-      }
-    }
-  }
-
-  const envModel = process.env.Z_AGENT_SPEECH_MODEL;
-  if (envModel && envModel.includes('/')) {
-    const { providerID, modelID } = parseModelRef(envModel);
-    if (specs[providerID] && getProviderKey(ownerId, providerID)) {
-      return { providerID, modelID };
-    }
-  }
-
-  for (const [pId, spec] of Object.entries(specs)) {
-    if (!spec.enabled || !getProviderKey(ownerId, pId)) continue;
-    const name = (spec.name || '').toLowerCase();
-    if (name.includes('sora') || name.includes('sota') || spec.protocol === 'openai') {
-      return { providerID: pId, modelID: 'gpt-4o-mini-tts' };
-    }
-  }
-
-  for (const [pId, spec] of Object.entries(specs)) {
-    if (spec.enabled && getProviderKey(ownerId, pId)) {
-      return { providerID: pId, modelID: 'gpt-4o-mini-tts' };
-    }
-  }
-
-  return parseModelRef(defaultSpeechModel());
+  return resolveMediaModelRef(ownerId, modelInput, process.env.Z_AGENT_SPEECH_MODEL, DEFAULT_SPEECH_MODEL);
 }
 
 /** `1024x1536` → `{ width, height }`. Пустое значение — размер выбирает провайдер. */
@@ -198,11 +103,6 @@ export function parseImageSize(value) {
     throw Object.assign(new Error('Размер изображения допустим от 64 до 4096 пикселей по стороне'), { statusCode: 400 });
   }
   return { width, height };
-}
-
-/** Признак «это Google-протокол», а не OpenAI-совместимый. */
-function isGoogle(providerID) {
-  return /(^|[-_.:])google($|[-_.:])|gemini/i.test(String(providerID || ''));
 }
 
 /** Тело запроса для OpenAI-совместимого `images/generations`. */
@@ -302,10 +202,11 @@ export function readReferences(root, list) {
   for (const item of Array.isArray(list) ? list.slice(0, 4) : []) {
     const source = resolveMediaInput(root, item, 'referenceImages');
     if (!IMAGE_FORMATS.includes(source.ext)) throw new Error(`referenceImages: ${source.rel} — не изображение`);
-    const bytes = fs.readFileSync(source.full);
+    if (total + source.size > MAX_REFERENCE_BYTES) throw new Error('referenceImages: суммарный размер больше 8 МБ');
+    const bytes = fs.readFileSync(source.abs);
     total += bytes.length;
     if (total > MAX_REFERENCE_BYTES) throw new Error('referenceImages: суммарный размер больше 8 МБ');
-    refs.push({ bytes, mimeType: mediaMimeType(source.full), rel: source.rel });
+    refs.push({ bytes, mimeType: mediaMimeType(source.abs), rel: source.rel });
   }
   return refs;
 }
@@ -314,7 +215,7 @@ function assetResult({ target, kind, bytes, engine, extra = {}, output, mutatedP
   return {
     output,
     title: target.rel,
-    metadata: { media: { kind, path: target.rel, mimeType: target.mime, bytes, engine, ...extra } },
+    metadata: { media: { kind, path: target.rel, mimeType: mediaMimeType(target.rel), bytes, engine, ...extra } },
     mutatedPaths: mutatedPaths || [target.rel],
   };
 }
@@ -333,7 +234,7 @@ export async function generateImageAsset({ root, input = {}, ctx = {} }) {
   const size = parseImageSize(input.size);
   const count = Math.max(1, Math.min(4, Number(input.count) || 1));
   const references = readReferences(root, input.referenceImages);
-  const google = isGoogle(model.providerID);
+  const google = resolveModel(ctx.ownerId, model).spec.kind === 'google';
 
   if (references.length && !google) {
     // Правки по образцу у OpenAI живут на multipart-эндпоинте images/edits,
@@ -369,7 +270,7 @@ export async function generateImageAsset({ root, input = {}, ctx = {} }) {
   images.slice(0, count).forEach((image, index) => {
     const rel = variantPath(target.rel, index + 1);
     const slot = index === 0 ? target : resolveMediaOutput(root, rel, IMAGE_FORMATS, 'path');
-    const bytes = writeMediaFile(root, slot, image.bytes, ctx);
+    const { size: bytes } = writeMediaFile(root, slot.rel, image.bytes, ctx);
     written.push({ rel: slot.rel, bytes });
   });
 
@@ -402,7 +303,7 @@ export async function generateSpeechAsset({ root, input = {}, ctx = {} }) {
   const target = resolveMediaOutput(root, input.path, AUDIO_FORMATS, 'path');
   const model = resolveSpeechModelRef(ctx.ownerId, input.model);
   const voice = String(input.voice || '').trim();
-  const google = isGoogle(model.providerID);
+  const google = resolveModel(ctx.ownerId, model).spec.kind === 'google';
 
   if (google) {
     if (target.ext !== 'wav') {
@@ -418,7 +319,7 @@ export async function generateSpeechAsset({ root, input = {}, ctx = {} }) {
     });
     const audio = parseAudioPayload(body);
     const pcm = parsePcmMimeType(audio.mimeType);
-    const bytes = writeMediaFile(root, target, pcm ? wavFromPcm(audio.bytes, pcm) : audio.bytes, ctx);
+    const { size: bytes } = writeMediaFile(root, target.rel, pcm ? wavFromPcm(audio.bytes, pcm) : audio.bytes, ctx);
     return speechResult({ target, bytes, model, voice });
   }
 
@@ -442,7 +343,7 @@ export async function generateSpeechAsset({ root, input = {}, ctx = {} }) {
     // прокси-совместимых шлюзов.
     throw new Error(`Провайдер вернул JSON вместо аудио: ${audio.bytes.toString('utf8').slice(0, 300)}`);
   }
-  const bytes = writeMediaFile(root, target, audio.bytes, ctx);
+  const { size: bytes } = writeMediaFile(root, target.rel, audio.bytes, ctx);
   return speechResult({ target, bytes, model, voice: body.voice });
 }
 
@@ -460,7 +361,7 @@ export function speechResult({ target, bytes, model, voice }) {
 /** Размер файла артефакта — для тестов и отладки. */
 export function assetBytes(root, rel) {
   const source = resolveMediaInput(root, rel, 'path');
-  return fs.statSync(source.full).size;
+  return fs.statSync(source.abs).size;
 }
 
 /** Расширение целевого файла — тонкая обёртка, чтобы не тянуть media.mjs в тесты. */

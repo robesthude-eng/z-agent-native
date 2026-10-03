@@ -127,7 +127,7 @@ export function UserMessageBubble({
           <UserMessageText text={rest || "…"} />
           <div className="mt-1 flex items-center justify-end">
             <MessageActions
-              role="user"
+              messageRole="user"
               visibleText={rest}
               isLatestTurn={false}
               isStreaming={false}

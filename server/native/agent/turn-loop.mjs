@@ -95,13 +95,24 @@ function remainingPlanItems(strategy) {
 const DANGLING_INTENT_RE = /(?:^|[.!?\n]\s*)(?:let me(?! know)|let's|i'll|i will|i'm going to|now i(?:'ll| will)|next,? i|сейчас|теперь (?:я )?(?:запущу|проверю|открою|закрою|сделаю|выполню|попробую|исправлю)|далее|давай(?:те)?|пробую|попробую|запускаю|открываю|проверяю)(?=[\s,.:!…']|$)[^.!?\n]{0,160}[.!…:]?\s*$/iu;
 const MAX_DANGLING_INTENT_NUDGES = 2;
 
+export function expectsUserReply(text) {
+  const tail = String(text || '').trim().split(/\n\s*\n/).at(-1) || '';
+  // A request for the user's next decision is a stopping point, even when
+  // followed by "and I will start". Optional offers are not blocking requests.
+  if (/^(?:если (?:хотите|нужно|понадобится)|if you (?:want|need)|let me know if)/iu.test(tail)) return false;
+  return /^(?:\*{0,2})(?:скажите|скажи|пришлите|пришли|уточните|уточни|выберите|выбери|подтвердите|подтверди|укажите|укажи|сообщите|сообщи|что (?:делаем|сделать) дальше|please (?:provide|send|choose|confirm|specify)|(?:provide|send|choose|confirm|specify) (?:the|your|a)|which (?:option|project)|what (?:would you like|should we))/iu.test(tail);
+}
+
 export function endsWithDanglingIntent(text) {
   const tail = String(text || '').trim().slice(-400);
-  if (!tail) return false;
+  if (!tail || expectsUserReply(text)) return false;
   return DANGLING_INTENT_RE.test(tail);
 }
 
 function planContinuationGate(strategy) {
+  // A stale todo after a read-only investigation must not restart work after
+  // the model's final report. Unfinished items still produce a partial outcome.
+  if (!strategy?.changed) return null;
   const remaining = remainingPlanItems(strategy);
   if (!remaining.length) return null;
   return [
@@ -210,6 +221,8 @@ export function checkpointState(sessionId, runtime, strategy, fields = {}) {
 export function synthesizeTurnSummary({ strategy, outcome, note = '', error = null }) {
   const isFailed = outcome?.status === 'failed' || error != null;
   const isPartial = outcome?.status === 'partial';
+  const isCancelled = outcome?.status === 'cancelled';
+  const needsInput = outcome?.status === 'needs_input';
   const changed = Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0;
   const hasPlan = Array.isArray(strategy?.plan) && strategy.plan.length > 0;
   const hasEvidence = Boolean(strategy?.lastVerificationEvidence);
@@ -218,11 +231,18 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
     if (isFailed) {
       return note || error?.message || 'Не удалось завершить операцию из-за ошибки.';
     }
-    return 'Все компоненты и текущие изменения проверены. Система работает штатно, готов к следующей задаче.';
+    if (isCancelled) return note || 'Ход остановлен пользователем. Выполнение задачи не подтверждено.';
+    if (needsInput) return note || 'Для продолжения нужны данные пользователя.';
+    if (isPartial) return note || 'Задача выполнена не полностью. Подтверждённых результатов проверки нет.';
+    return note || 'Модель завершила ответ без итогового отчёта. Результаты выполнения и проверок не подтверждены.';
   }
 
   const lines = [];
-  if (isFailed) {
+  if (isCancelled || needsInput) {
+    lines.push(isCancelled ? '### Ход остановлен пользователем' : '### Нужны данные пользователя');
+    if (note) lines.push(note);
+    lines.push('');
+  } else if (isFailed) {
     lines.push('### ⚠️ Задача остановлена');
     if (note) lines.push(note);
     if (error?.message) lines.push(`**Причина:** ${error.message}`);
@@ -244,7 +264,7 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
   }
 
   if (hasPlan) {
-    lines.push('**2. Выполненные пункты плана:**');
+    lines.push('**2. Состояние плана:**');
     for (const item of strategy.plan.slice(0, 10)) {
       const mark = item.status === 'completed' ? '✓' : item.status === 'in_progress' ? '⏳' : '○';
       lines.push(`- ${mark} ${item.content}`);
@@ -254,7 +274,9 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
 
   if (hasEvidence) {
     const v = strategy.lastVerificationEvidence;
-    lines.push(`**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
+    lines.push(v.executable === false
+      ? '**3. Верификация:** Файлы прочитаны после изменений. Запуск тестов и исполняемых проверок недоступен; их результат не подтверждён.'
+      : `**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
     if (v.detail) lines.push(`> \`${v.detail.slice(0, 200)}\``);
     lines.push('');
   }
@@ -265,7 +287,7 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
   }
 
   const text = lines.join('\n').trim();
-  return text || (isFailed ? 'Задача не была завершена из-за ошибки.' : 'Операция успешно завершена. Все действия выполнены и сохранены.');
+  return text || 'Подтверждённых результатов выполнения нет.';
 }
 
 export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
@@ -412,7 +434,8 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       }
       if (calls.length > 0 || !cutOff) continuations = 0;
       if (calls.length === 0) {
-        const planGate = !completionGate(strategy) && runtime.gateReminders < MAX_COMPLETION_GATE_REMINDERS
+        const waitingForUser = expectsUserReply(response.text);
+        const planGate = !waitingForUser && !completionGate(strategy) && runtime.gateReminders < MAX_COMPLETION_GATE_REMINDERS
           ? planContinuationGate(strategy)
           : null;
         if (planGate) {
@@ -423,7 +446,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           checkpointState(sessionId, runtime, strategy, { phase: 'completion_gate', gateReminders: runtime.gateReminders });
           continue;
         }
-        if (shouldEnforceCompletionGate(strategy, runtime.gateReminders)) {
+        if (!waitingForUser && shouldEnforceCompletionGate(strategy, runtime.gateReminders)) {
           const gate = completionGate(strategy);
           runtime.gateReminders += 1;
           recordCompletionGate(runtime.telemetry);
@@ -473,7 +496,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           }
           await emitText(assistant, separated.text || finalText, 'text', { putMessage, emit });
         }
-        const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
+        const outcome = classifyTaskOutcome({ strategy, kind: waitingForUser ? 'needs_input' : 'completed' });
         return await finalizeAssistant({
           sessionId,
           assistant,

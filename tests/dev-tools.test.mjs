@@ -171,13 +171,13 @@ test('test runner detects npm projects and honours filters', () => {
   assert.equal(plan.framework, 'vitest');
 
   const filtered = buildTestCommand(root, { filter: 'parses diff' });
-  assert.equal(filtered.command, 'npm test -- parses diff');
+  assert.equal(filtered.command, "npm test -- 'parses diff'");
 });
 
 test('an explicit command still applies the filter', () => {
   const root = tempRoot();
   const plan = buildTestCommand(root, { command: 'pytest -q', filter: 'test_login' });
-  assert.equal(plan.command, 'pytest -q test_login');
+  assert.equal(plan.command, "pytest -q 'test_login'");
   assert.equal(plan.framework, 'pytest');
 });
 

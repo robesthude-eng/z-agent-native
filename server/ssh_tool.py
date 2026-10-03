@@ -10,8 +10,9 @@ from __future__ import annotations
 import argparse
 import datetime
 import os
+import shlex
 import sys
-import tempfile
+import uuid
 from pathlib import Path
 
 try:
@@ -38,6 +39,11 @@ def resolve_password(explicit: str | None) -> str | None:
 def get_client(host: str, user: str, password: str | None = None, key_file: str | None = None, port: int = 22, timeout: int = 15) -> paramiko.SSHClient:
     password = resolve_password(password)
     client = paramiko.SSHClient()
+    known_hosts = Path.home() / ".ssh" / "known_hosts"
+    known_hosts.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    known_hosts.touch(mode=0o600, exist_ok=True)
+    client.load_system_host_keys()
+    client.load_host_keys(str(known_hosts))
     client.set_missing_host_key_policy(paramiko.AutoAddPolicy())
     
     connect_kwargs = {
@@ -84,17 +90,25 @@ def cmd_test(args):
         sys.exit(1)
 
 
+def exec_remote(client, args, command, sudo=False):
+    password = resolve_password(args.password)
+    use_password = sudo and args.user != "root" and bool(password)
+    if sudo and args.user != "root":
+        # Never interpolate a password into the remote command/process list.
+        options = "-S -p ''" if use_password else "-n"
+        command = f"sudo {options} -- sh -c {shlex.quote(command)}"
+    stdin, stdout, stderr = client.exec_command(command, timeout=args.timeout)
+    if use_password:
+        stdin.write(password + "\n")
+        stdin.flush()
+    stdin.close()
+    return stdout, stderr
+
+
 def cmd_exec(args):
     try:
         client = get_client(args.host, args.user, args.password, args.key, args.port, args.timeout)
-        cmd = args.cmd
-        if args.sudo and args.user != "root":
-            if args.password:
-                cmd = f"echo '{args.password}' | sudo -S {cmd}"
-            else:
-                cmd = f"sudo {cmd}"
-                
-        stdin, stdout, stderr = client.exec_command(cmd, timeout=args.timeout)
+        stdout, stderr = exec_remote(client, args, args.cmd, sudo=args.sudo)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
         exit_code = stdout.channel.recv_exit_status()
@@ -135,6 +149,33 @@ def cmd_read(args):
         sys.exit(1)
 
 
+def atomic_write(sftp, remote_path, content):
+    """Keep the live file intact until a complete replacement is available."""
+    temporary = f"{remote_path}.tmp.{uuid.uuid4().hex}"
+    try:
+        try:
+            existing = sftp.stat(remote_path)
+        except FileNotFoundError:
+            existing = None
+        if existing is not None:
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+            backup_path = f"{remote_path}.bak.{timestamp}"
+            with sftp.file(remote_path, "rb") as source, sftp.file(backup_path, "wb") as backup:
+                while chunk := source.read(64 * 1024):
+                    backup.write(chunk)
+            sftp.chmod(backup_path, existing.st_mode & 0o777)
+            print(f"✓ Created remote backup: {backup_path}")
+        with sftp.file(temporary, "wb") as output:
+            output.write(content.encode("utf-8"))
+        sftp.chmod(temporary, (existing.st_mode & 0o777) if existing else 0o600)
+        sftp.posix_rename(temporary, remote_path)
+    finally:
+        try:
+            sftp.remove(temporary)
+        except IOError:
+            pass
+
+
 def cmd_write(args):
     try:
         content = args.content
@@ -146,25 +187,12 @@ def cmd_write(args):
         client = get_client(args.host, args.user, args.password, args.key, args.port, args.timeout)
         sftp = client.open_sftp()
         
-        # Backup remote file if it exists
         remote_path = args.path
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{remote_path}.bak.{timestamp}"
         try:
-            sftp.stat(remote_path)
-            # File exists -> make backup
-            sftp.posix_rename(remote_path, backup_path)
-            print(f"✓ Created remote backup: {backup_path}")
-        except IOError:
-            # File doesn't exist yet
-            pass
-            
-        # Write new content
-        with sftp.file(remote_path, "w") as f:
-            f.write(content.encode("utf-8"))
-            
-        sftp.close()
-        client.close()
+            atomic_write(sftp, remote_path, content)
+        finally:
+            sftp.close()
+            client.close()
         print(f"✓ Successfully wrote {len(content)} characters to {remote_path}")
     except Exception as e:
         print(f"Error writing to remote file {args.path}: {e}", file=sys.stderr)
@@ -200,22 +228,13 @@ def cmd_patch(args):
                 print(f"Error: Target text matched only with loose whitespace in {remote_path}. Please provide exact match.", file=sys.stderr)
                 sys.exit(1)
                 
-        # Create backup
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        backup_path = f"{remote_path}.bak.{timestamp}"
-        # Copy to backup
-        with sftp.file(backup_path, "w") as f:
-            f.write(content.encode("utf-8"))
-        print(f"✓ Created remote backup: {backup_path}")
-        
         # Replace only first occurrence
         updated_content = content.replace(old_text, new_text, 1)
-        
-        with sftp.file(remote_path, "w") as f:
-            f.write(updated_content.encode("utf-8"))
-            
-        sftp.close()
-        client.close()
+        try:
+            atomic_write(sftp, remote_path, updated_content)
+        finally:
+            sftp.close()
+            client.close()
         print(f"✓ Successfully applied patch to {remote_path}")
     except Exception as e:
         print(f"Error patching remote file {args.path}: {e}", file=sys.stderr)
@@ -225,28 +244,20 @@ def cmd_patch(args):
 def cmd_service(args):
     try:
         client = get_client(args.host, args.user, args.password, args.key, args.port, args.timeout)
-        srv = args.name
+        srv = shlex.quote(args.name)
         action = args.action.lower()
         
-        sudo_prefix = ""
-        if args.user != "root":
-            sudo_prefix = f"echo '{args.password}' | sudo -S " if args.password else "sudo "
-            
         if action == "status":
-            cmd = f"systemctl status {srv} --no-pager"
-        elif action == "restart":
-            cmd = f"{sudo_prefix}systemctl restart {srv} && systemctl status {srv} --no-pager"
-        elif action == "start":
-            cmd = f"{sudo_prefix}systemctl start {srv} && systemctl status {srv} --no-pager"
-        elif action == "stop":
-            cmd = f"{sudo_prefix}systemctl stop {srv} && systemctl status {srv} --no-pager"
+            cmd = f"systemctl --no-pager status -- {srv}"
+        elif action in ("restart", "start", "stop", "reload"):
+            cmd = f"systemctl {action} -- {srv}"
         elif action == "logs":
-            cmd = f"journalctl -u {srv} -n 50 --no-pager"
+            cmd = f"journalctl --unit={srv} -n {max(1, min(500, args.lines))} --no-pager"
         else:
             print(f"Unknown action: {action}", file=sys.stderr)
             sys.exit(1)
             
-        stdin, stdout, stderr = client.exec_command(cmd)
+        stdout, stderr = exec_remote(client, args, cmd, sudo=action in ("restart", "start", "stop", "reload") or args.sudo)
         out = stdout.read().decode("utf-8", errors="replace")
         err = stderr.read().decode("utf-8", errors="replace")
         exit_code = stdout.channel.recv_exit_status()
@@ -316,7 +327,8 @@ def main():
     p_srv = subparsers.add_parser("service", help="Manage remote systemd service")
     add_conn_args(p_srv)
     p_srv.add_argument("--name", required=True, help="Service name (e.g. nginx, travian_player)")
-    p_srv.add_argument("--action", default="status", choices=["status", "restart", "start", "stop", "logs"], help="Service action")
+    p_srv.add_argument("--action", default="status", choices=["status", "restart", "start", "stop", "reload", "logs"], help="Service action")
+    p_srv.add_argument("--lines", type=int, default=50, help="Number of journal lines (1–500)")
     p_srv.set_defaults(func=cmd_service)
     
     args = parser.parse_args()

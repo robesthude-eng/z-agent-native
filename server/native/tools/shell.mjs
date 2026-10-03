@@ -4,6 +4,7 @@ import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
 import { managedShellEnvironment } from '../environment.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS, suggestToolchainForCommand } from '../toolchains.mjs';
 import { classifyBash } from '../context.mjs';
+import { compareWorkspaceSnapshots, snapshotWorkspace } from '../workspace-changes.mjs';
 import {
   ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership,
 } from '../sandbox.mjs';
@@ -121,7 +122,9 @@ export async function execBash(root, command, timeoutMs = DEFAULT_TOOL_TIMEOUT_M
 export async function executeBashTool(root, input, ctx = {}) {
   const command = String(input?.command || '');
   assertShellCommandAllowed(command);
+  const before = await snapshotWorkspace(root);
   const result = await execBash(root, command, Number(input?.timeoutMs) || DEFAULT_TOOL_TIMEOUT_MS, ctx.signal, ctx);
+  const workspaceChanges = compareWorkspaceSnapshots(before, await snapshotWorkspace(root));
   const hint = missingCommandHint(result);
   const uidHint = sandboxUidHint(result);
   const body = [
@@ -134,9 +137,10 @@ export async function executeBashTool(root, input, ctx = {}) {
   return {
     output: body,
     title: command,
-    mutatedPaths: classifyBash(command) === 'read_only' ? [] : ['.'],
+    mutatedPaths: workspaceChanges.paths.length ? workspaceChanges.paths : workspaceChanges.complete || classifyBash(command) !== 'may_mutate' ? [] : ['.'],
     metadata: {
       exit: result.code,
+      workspaceChanges,
       shellNetworkPolicy: shellNetworkPolicy(),
       ...(hint ? { environmentHint: hint } : {}),
       ...(uidHint ? { sandboxUidHint: uidHint } : {}),

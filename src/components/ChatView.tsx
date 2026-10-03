@@ -570,12 +570,12 @@ export default function ChatView() {
 
   return (
     <div className="flex-1 relative min-h-0 overflow-hidden bg-transparent">
-      {/* biome-ignore lint/a11y/noNoninteractiveTabindex: длинную историю нужно листать с клавиатуры, а не только колесом мыши */}
       <div
         key={currentID}
         role="log"
         aria-live="off"
         aria-label={t("chat_view.lenta_soobscheniy_chata")}
+        // biome-ignore lint/a11y/noNoninteractiveTabindex: The scrollable chat log must support keyboard navigation.
         tabIndex={0}
         className="oc-chat-in oc-scroll-subtle h-full overflow-y-auto pb-6 outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring/40"
         ref={scrollRef}

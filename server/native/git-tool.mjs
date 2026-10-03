@@ -64,6 +64,7 @@ function relativePathArg(root, value, label) {
 }
 
 export function buildGitArgs(root, action, input = {}) {
+  input = { ...input, limit: input.limit ?? input.count, rev: input.rev ?? input.ref };
   const rawPaths = Array.isArray(input.paths) ? input.paths.slice(0, 20) : [];
   const paths = rawPaths.map((value, index) => relativePathArg(root, value, `paths[${index}]`));
 
