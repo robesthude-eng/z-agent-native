@@ -2,6 +2,7 @@ import { ChevronRight, Wrench } from "lucide-react";
 import { memo, type ReactNode, useEffect, useRef, useState } from "react";
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { Collapse } from "./ui/Collapse";
 
 /**
  * Compact activity disclosure for autonomous turns.
@@ -122,11 +123,11 @@ const AgentActivity = ({
           {t("agent_activity.podrobnosti")}
         </span>
       </button>
-      {expanded && (
-        <div className="oc-card-open ml-[9px] space-y-0.5 border-l border-border/60 pl-3">
+      <Collapse open={expanded}>
+        <div className="ml-[9px] space-y-0.5 border-l border-border/60 pl-3">
           {children}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 };

@@ -18,6 +18,7 @@ import { publicErrorText } from "../api/eventGuards";
 import { isVisible, presentationFor } from "../api/partPresentation";
 import type { Part, ToolPart } from "../api/types";
 import { extractAttachments } from "../lib/attachments";
+import { splitMarkdownBlocks } from "../lib/markdownBlocks";
 import { useSmoothStreamingText } from "../lib/useSmoothText";
 import {
   looksLikeWorkspacePath,
@@ -28,6 +29,7 @@ import { AttachmentChip, AttachmentPartChip } from "./AttachmentChip";
 import CopyButton from "./CopyButton";
 import { ThinkIcon } from "./icons";
 import ToolCard from "./ToolCard";
+import { Collapse } from "./ui/Collapse";
 
 /** Рекурсивно собирает текст из React-узлов (подсвеченный код и т.п.). */
 function nodeToText(node: unknown): string {
@@ -195,6 +197,17 @@ const RENDER_TEXT_LIMIT = 30_000;
 // даёт визуально непрерывный вывод без потери производительности
 // (обновления ~30fps, длинные тексты применяются сразу).
 
+// Каждый блок разбирается заново только когда меняется его собственный текст.
+const MarkdownBlock = memo(({ text }: { text: string }) => (
+  <ReactMarkdown
+    remarkPlugins={markdownPlugins}
+    rehypePlugins={rehypePlugins}
+    components={SAFE_MD_COMPONENTS}
+  >
+    {text}
+  </ReactMarkdown>
+));
+
 const LimitedMarkdown = ({
   text,
   streaming,
@@ -209,14 +222,15 @@ const LimitedMarkdown = ({
   const displayText = useSmoothStreamingText(visible, !!streaming);
   return (
     <>
-      <ReactMarkdown
-        remarkPlugins={markdownPlugins}
-        rehypePlugins={rehypePlugins}
-        components={SAFE_MD_COMPONENTS}
-      >
-        {displayText}
-      </ReactMarkdown>
-      {streaming && !truncated && <span className="streaming-cursor" />}
+      {/* Курсор стрима рисуется через ::after у последнего блока (.oc-md-live),
+          чтобы стоять в конце строки, а не на новой строке под текстом. */}
+      <div className={cn("oc-md", streaming && !truncated && "oc-md-live")}>
+        {splitMarkdownBlocks(displayText).map((block, index) => (
+          // Индекс — устойчивая идентичность: блоки только дописываются в конец.
+          // biome-ignore lint/suspicious/noArrayIndexKey: append-only blocks
+          <MarkdownBlock key={index} text={block} />
+        ))}
+      </div>
       {truncated && (
         <button
           type="button"
@@ -339,10 +353,10 @@ function ReasoningCard({
         </span>
       </button>
       {/* Раскрытый reasoning-текст единого сбалансированного размера */}
-      {expanded && (
+      <Collapse open={expanded}>
         <div
           ref={scrollRef}
-          className="oc-card-open mt-1.5 ml-6 max-h-60 overflow-y-auto rounded-lg border border-border px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted-foreground/90 prose prose-sm max-w-none prose-p:my-1.5 [&_*]:text-muted-foreground/90 font-mono scroll-smooth"
+          className="mt-1.5 ml-6 max-h-60 overflow-y-auto rounded-lg border border-border px-3.5 py-2.5 text-[12.5px] leading-relaxed text-muted-foreground/90 prose prose-sm max-w-none prose-p:my-1.5 [&_*]:text-muted-foreground/90 font-mono scroll-smooth"
           style={{
             background: "color-mix(in srgb, var(--color-card) 100%, white 4%)",
           }}
@@ -358,7 +372,7 @@ function ReasoningCard({
             <span className="streaming-cursor ml-0.5 inline-block w-1.5 h-3 bg-amber-400 animate-pulse" />
           )}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

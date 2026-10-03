@@ -16,6 +16,7 @@ import {
   getState,
   getSummary,
 } from "./tool-cards/toolCardUtils";
+import { Collapse } from "./ui/Collapse";
 
 export { friendlyToolLabel } from "./tool-cards/toolCardUtils";
 
@@ -65,7 +66,7 @@ function ToolCardComponent({ part }: ToolCardProps) {
   // 3. Generic Tool Card (Bash, Read, Write, Edit, Patch, Grep, Glob, etc.)
   return (
     <div
-      className={`group not-prose my-0.5 overflow-hidden text-xs transition ${open ? "rounded-lg border border-border/70 bg-card/60" : "rounded-md"}`}
+      className={`group not-prose my-0.5 overflow-hidden rounded-lg border text-xs transition-[background-color,border-color] duration-200 ${open ? "border-border/70 bg-card/60" : "border-transparent"}`}
     >
       <ToolHeader
         toolName={toolName}
@@ -76,11 +77,11 @@ function ToolCardComponent({ part }: ToolCardProps) {
         output={output}
         stats={getChangeStats(part)}
       />
-      {open && (
+      <Collapse open={open}>
         <div className="border-t border-border/50 bg-background/40">
           <ToolOutputView part={part} />
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

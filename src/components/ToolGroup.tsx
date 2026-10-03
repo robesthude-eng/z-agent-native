@@ -9,6 +9,7 @@ import type { ToolPart } from "../api/types";
 import { toolIcon } from "../utils/toolUtils";
 import ToolCard from "./ToolCard";
 import { getChangeStats } from "./tool-cards/toolCardUtils";
+import { Collapse } from "./ui/Collapse";
 
 /**
  * Идентичность вызова инструмента. Индекс как ключ здесь опасен: группа
@@ -129,13 +130,13 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
           </span>
         )}
       </button>
-      {expanded && (
-        <div className="oc-card-open mt-1 ml-4 pl-3 border-l border-border/40 space-y-0.5">
+      <Collapse open={expanded}>
+        <div className="mt-1 ml-4 pl-3 border-l border-border/40 space-y-0.5">
           {parts.map((part) => (
             <ToolCard key={partKey(part)} part={part} />
           ))}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 };
