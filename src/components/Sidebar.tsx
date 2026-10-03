@@ -82,12 +82,31 @@ export default function Sidebar() {
     [groups],
   );
 
+  // Enter → commit и тут же blur → commit; Escape → cancel и blur → commit.
+  // Коммитим только пока поле действительно в режиме правки этого чата.
+  const folderEditRef = useRef<string | null>(null);
+  folderEditRef.current = editingFolderId;
+  const editingRef = useRef<string | null>(null);
+  editingRef.current = editingId;
   const commitRename = (id: string) => {
-    renameSession(id, editText.trim());
+    if (editingRef.current !== id) return;
+    editingRef.current = null;
     setEditingId(null);
+    const next = editText.trim();
+    const session = sessions.find((x) => x.id === id);
+    const current = session ? titleOf(session) : "";
+    if (next && next !== current) renameSession(id, next);
   };
 
+  // Enter и следующий за ним blur (поле исчезает) раньше создавали две
+  // одинаковые папки. Одна отправка — одна папка.
+  const folderSubmitLock = useRef(false);
   const submitNewFolder = (assignSessionId?: string) => {
+    if (folderSubmitLock.current) return;
+    folderSubmitLock.current = true;
+    setTimeout(() => {
+      folderSubmitLock.current = false;
+    }, 300);
     const id = createChatFolder(newFolderName);
     setNewFolderName("");
     setNewFolderOpen(false);
@@ -253,11 +272,17 @@ export default function Sidebar() {
                     }}
                     onDraftChange={setFolderNameDraft}
                     onCommitRename={() => {
-                      if (g.folderId)
-                        renameChatFolder(g.folderId, folderNameDraft);
+                      // blur после Escape/Enter не должен коммитить повторно
+                      if (!g.folderId || folderEditRef.current !== g.folderId)
+                        return;
+                      folderEditRef.current = null;
+                      renameChatFolder(g.folderId, folderNameDraft);
                       setEditingFolderId(null);
                     }}
-                    onCancelEditing={() => setEditingFolderId(null)}
+                    onCancelEditing={() => {
+                      folderEditRef.current = null;
+                      setEditingFolderId(null);
+                    }}
                     onStartDelete={() =>
                       setConfirmDeleteFolderId(g.folderId ?? null)
                     }
@@ -322,7 +347,10 @@ export default function Sidebar() {
                         }}
                         onEditTextChange={setEditText}
                         onCommitRename={() => commitRename(s.id)}
-                        onCancelEditing={() => setEditingId(null)}
+                        onCancelEditing={() => {
+                          editingRef.current = null;
+                          setEditingId(null);
+                        }}
                         onTogglePin={() => togglePinnedSession(s.id)}
                         onToggleFolderMenu={() =>
                           setFolderMenuFor((prev) =>

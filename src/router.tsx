@@ -11,6 +11,7 @@ import { lazy, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import { isSessionDead, wasSessionDeleted } from "./api/client";
 import { EventStream } from "./api/events";
 import ChatView from "./components/ChatView";
 import Composer from "./components/Composer";
@@ -253,6 +254,16 @@ function AppShell() {
 
   // Sync store → URL when chat selected without route param (skip temp IDs)
   useEffect(() => {
+    // Открытый в адресе чат удалён, а показываем пустой/новый — уводим адрес
+    // на «/», иначе перезагрузка или «назад» пытались открыть удалённый чат.
+    if (
+      params.sessionId &&
+      (!currentID || isTmpSession(currentID)) &&
+      (wasSessionDeleted(params.sessionId) || isSessionDead(params.sessionId))
+    ) {
+      navigate({ to: "/", replace: true });
+      return;
+    }
     if (
       currentID &&
       !isTmpSession(currentID) &&

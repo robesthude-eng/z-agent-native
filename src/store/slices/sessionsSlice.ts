@@ -4,8 +4,11 @@ import {
   api,
   isSessionDead,
   markSessionDead,
+  markSessionDeleted,
   SessionGoneError,
   unmarkSessionDead,
+  unmarkSessionDeleted,
+  wasSessionDeleted,
 } from "../../api/client";
 import type { SessionInfo, SessionStatus } from "../../api/types";
 import { isTmpSession } from "../../lib/ids";
@@ -32,6 +35,16 @@ export function waitForSessionCreation(): Promise<void> {
 // с уходом в сеть, помним какие sid мы уже начинали проверять.
 // Комбо с __deadSessions в client.ts подавляет повторные запросы к удалённой сессии.
 const __pendingSelect = new Set<string>();
+
+/** Пустой оптимистичный чат: «Новый чат», в который ещё ничего не написали. */
+function isEmptyTmp(
+  id: string,
+  messages: Record<string, unknown[] | undefined>,
+): boolean {
+  return isTmpSession(id) && (messages[id]?.length ?? 0) === 0;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 function _cleanupGhostFromURL(sid: string) {
   if (typeof window === "undefined") return;
   if (window.location.pathname.includes(sid)) {
@@ -52,8 +65,30 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
 
   loadSessions: async () => {
     try {
-      const sessions = (await api.listSessions()).sort(byUpdated);
-      set({ sessions, sessionError: false, error: null });
+      const server = (await api.listSessions()).filter(
+        (x) => !wasSessionDeleted(x.id),
+      );
+      // Оптимистичные tmp_-чаты есть только в этой вкладке — список с сервера
+      // не должен их стирать (иначе открытый «Новый чат» пропадал).
+      set((s) => {
+        const local = s.sessions.filter(
+          (x) => isTmpSession(x.id) && !server.some((y) => y.id === x.id),
+        );
+        return {
+          sessions: [...local, ...server].sort(byUpdated),
+          sessionError: false,
+          error: null,
+        };
+      });
+      // Подчищаем закрепления/папки чатов, которых на сервере больше нет
+      // (удалены с другого устройства или до этой правки).
+      const alive = new Set(server.map((x) => x.id));
+      const st = get();
+      const stale = [
+        ...(st.pinnedSessions ?? []),
+        ...Object.keys(st.chatFolderAssignments ?? {}),
+      ].filter((id) => !isTmpSession(id) && !alive.has(id));
+      if (stale.length > 0 && st.prefsSynced) st.forgetSessionPrefs?.(stale);
     } catch {
       set({ sessionError: true });
     }
@@ -86,7 +121,19 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     }
     if (id) __pendingSelect.add(id);
 
-    set({ currentID: id });
+    // Уходим из пустого «Нового чата» — он больше не нужен в списке.
+    set((s) => {
+      const prev = s.currentID;
+      if (!prev || prev === id || !isEmptyTmp(prev, s.messages))
+        return { currentID: id };
+      const messages = { ...s.messages };
+      delete messages[prev];
+      return {
+        currentID: id,
+        sessions: s.sessions.filter((x) => x.id !== prev),
+        messages,
+      };
+    });
     if (!id) return;
     // Временный чат («Новый чат» до первого сообщения) ещё не существует на
     // сервере. Запрос его истории отвечал 404, и обработчик «мёртвой сессии»
@@ -137,6 +184,10 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
   // себя Claude и ChatGPT.
   newSession: async () => {
     if (creatingSession) return;
+    // Уже в пустом «Новом чате» — второй такой же не нужен. Раньше каждый
+    // клик добавлял в боковую панель ещё один пустой «New chat».
+    const { currentID, messages } = get();
+    if (currentID && isEmptyTmp(currentID, messages)) return;
     const tempId = `tmp_${Date.now()}`;
     const tempSession: SessionInfo = {
       id: tempId,
@@ -145,7 +196,11 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     };
 
     set((s) => ({
-      sessions: [tempSession, ...s.sessions].sort(byUpdated),
+      // Прочие брошенные пустые tmp_-чаты убираем: в списке их не больше одного.
+      sessions: [
+        tempSession,
+        ...s.sessions.filter((x) => !isEmptyTmp(x.id, s.messages)),
+      ].sort(byUpdated),
       currentID: tempId,
       messages: { ...s.messages, [tempId]: [] },
       status: { ...s.status, [tempId]: "idle" as SessionStatus },
@@ -193,8 +248,14 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     creatingSession = true;
     const creation = (async () => {
       // Настоящее создание на бэкенде: пустой воркспейс и свой контейнер.
-      const session = await api.createSession();
+      const draftTitle = get().sessionTitleOverrides?.[tempId];
+      const session = await api.createSession(draftTitle || undefined);
       set((s) => {
+        const overrides = { ...s.sessionTitleOverrides };
+        if (overrides[tempId]) {
+          overrides[session.id] = overrides[tempId];
+          delete overrides[tempId];
+        }
         // Replace temp session with real one
         const filtered = s.sessions.filter((x) => x.id !== tempId);
         const msgs = { ...s.messages };
@@ -207,9 +268,12 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
         if (tempStatus) st[session.id] = tempStatus;
         return {
           sessions: [session, ...filtered].sort(byUpdated),
-          currentID: session.id,
+          // Пока шло создание, пользователь мог перейти в другой чат —
+          // не выдёргиваем его обратно.
+          currentID: s.currentID === tempId ? session.id : s.currentID,
           messages: msgs,
           status: st,
+          sessionTitleOverrides: overrides,
         };
       });
     })();
@@ -234,43 +298,65 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     }
   },
 
-  // Claude-like delete: delete everything - messages, files, workspace, no recovery
+  // Полное удаление: сервер стирает историю, файлы, память проекта, процессы
+  // и браузер чата. В UI чат исчезает сразу; при ошибке возвращается.
   removeSession: async (id) => {
+    if (!id) return;
+    const dropLocal = () =>
+      set((s) => {
+        const messages = { ...s.messages };
+        delete messages[id];
+        const status = { ...s.status };
+        delete status[id];
+        const workspaceRevision = { ...s.workspaceRevision };
+        delete workspaceRevision[id];
+        return {
+          sessions: s.sessions.filter((x) => x.id !== id),
+          messages,
+          status,
+          workspaceRevision,
+          currentID: s.currentID === id ? null : s.currentID,
+        };
+      });
+
+    // Оптимистичный чат на сервере не существует: удалять там нечего.
+    // Раньше DELETE на tmp_ падал и «откат» возвращал чат обратно.
+    if (isTmpSession(id)) {
+      dropLocal();
+      get().forgetSessionPrefs?.([id]);
+      return;
+    }
+
     // Cancel any in-flight requests and mark the session as dead so that
     // stale SSE / polling / select() calls are suppressed immediately.
     abortSessionRequests(id);
     markSessionDead(id);
+    markSessionDeleted(id);
 
-    // Optimistic delete like Claude — immediately remove from UI.
-    // Релиз 4: снимаем только удаляемую сессию, а не целые коллекции —
-    // откат не должен затирать сессии/сообщения, пришедшие по SSE
-    // за время ожидания ответа сервера.
     const removedSession = get().sessions.find((x) => x.id === id);
     const removedMessages = get().messages[id];
     const wasCurrent = get().currentID === id;
-
-    set((s) => {
-      const messages = { ...s.messages };
-      delete messages[id];
-      return {
-        sessions: s.sessions.filter((x) => x.id !== id),
-        messages,
-        currentID: s.currentID === id ? null : s.currentID,
-      };
-    });
+    dropLocal();
 
     try {
-      await api.deleteSession(id);
-      // Backend deletes:
-      // - /app/workspace/sessions/{id} (workspace + uploads)
-      // - /app/workspace/uploads/{id} (old path)
-      // - ownership record
-      // - runtime storage (messages, metadata)
-      // So like Claude, everything is gone — no overlap, no leftover files
+      // 409 — ход агента ещё останавливается; сервер просит повторить.
+      for (let attempt = 0; ; attempt += 1) {
+        try {
+          await api.deleteSession(id);
+          break;
+        } catch (e) {
+          if (e instanceof SessionGoneError) break; // уже удалён — цель достигнута
+          if (attempt < 3 && /^409\b/.test((e as Error).message)) {
+            await sleep(1500);
+            continue;
+          }
+          throw e;
+        }
+      }
+      get().forgetSessionPrefs?.([id]);
     } catch (e) {
+      unmarkSessionDeleted(id);
       unmarkSessionDead(id);
-      // Rollback on error — функциональная форма: возвращаем только
-      // удалённую сессию, не трогая остальное текущее состояние.
       set((s) => ({
         sessions:
           removedSession && !s.sessions.some((x) => x.id === id)

@@ -158,6 +158,32 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
 
     // Переименование — клиентский оверлей над серверным заголовком:
     // пустая строка убирает оверлей и возвращает исходное название.
+    forgetSessionPrefs: (ids) => {
+      const gone = new Set(ids.filter(Boolean));
+      if (gone.size === 0) return;
+      const pinned = get().pinnedSessions;
+      if (pinned.some((x) => gone.has(x)))
+        setPref(
+          "pinnedSessions",
+          pinned.filter((x) => !gone.has(x)),
+        );
+      const assignments = get().chatFolderAssignments;
+      if (Object.keys(assignments).some((x) => gone.has(x))) {
+        const next: Record<string, string> = {};
+        for (const [sessionId, folderId] of Object.entries(assignments)) {
+          if (!gone.has(sessionId)) next[sessionId] = folderId;
+        }
+        setPref("chatFolderAssignments", next);
+      }
+      const overrides = get().sessionTitleOverrides;
+      if (Object.keys(overrides).some((x) => gone.has(x)))
+        set((s) => {
+          const next = { ...s.sessionTitleOverrides };
+          for (const id of gone) delete next[id];
+          return { sessionTitleOverrides: next };
+        });
+    },
+
     renameSession: (id, title) => {
       const prev = get().sessionTitleOverrides[id];
       // Оптимистично показываем новое имя сразу…
@@ -170,15 +196,27 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
       // …и сохраняем на сервере, чтобы название было видно с любого
       // устройства. Оптимистичные tmp_-сессии на сервере ещё не существуют.
       if (isTmpSession(id)) return;
-      api.renameSession(id, title).catch(() => {
-        // Сервер недоступен — откатываем к прежнему имени.
-        set((s) => {
-          const overrides = { ...s.sessionTitleOverrides };
-          if (prev !== undefined) overrides[id] = prev;
-          else delete overrides[id];
-          return { sessionTitleOverrides: overrides };
+      api
+        .renameSession(id, title)
+        .then((res) => {
+          // Название с сервера — источник правды: кладём его в список сразу,
+          // не дожидаясь SSE (поток подписан только на активный чат).
+          if (!res?.title) return;
+          set((s) => ({
+            sessions: s.sessions.map((x) =>
+              x.id === id ? { ...x, title: res.title } : x,
+            ),
+          }));
+        })
+        .catch(() => {
+          // Сервер недоступен — откатываем к прежнему имени.
+          set((s) => {
+            const overrides = { ...s.sessionTitleOverrides };
+            if (prev !== undefined) overrides[id] = prev;
+            else delete overrides[id];
+            return { sessionTitleOverrides: overrides };
+          });
         });
-      });
     },
 
     // Настройки следуют за пользователем: при загрузке подтягиваем серверные

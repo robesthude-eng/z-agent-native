@@ -1,5 +1,5 @@
 import { t } from "@/i18n";
-import { api } from "../../api/client";
+import { api, wasSessionDeleted } from "../../api/client";
 import { eventMessageId, eventPartId, statusText } from "../../api/eventGuards";
 import { mergeMessages as mergeMessagesDeterministic } from "../../api/messageMerge";
 import { finalMarkerOf } from "../../api/turnFinality";
@@ -73,6 +73,8 @@ export const DELTA_FLUSH_MS = 16;
 /** Появление или изменение сессии в списке. */
 const upsertSession: EventHandler = ({ set }, _sid, p) => {
   if (!p.session) return;
+  // Запоздалое событие об уже удалённом чате не должно его воскрешать.
+  if (wasSessionDeleted((p.session as SessionInfo).id)) return;
   set((s: State) => ({
     sessions: [
       p.session as SessionInfo,

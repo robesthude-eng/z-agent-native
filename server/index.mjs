@@ -12,6 +12,7 @@ import {
 } from './native/store.mjs';
 import { initTerminal } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
+import { sweepOrphanSessionData } from './native/orphan-sweep.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers } from './native/watcher.mjs';
 import { mintPreviewToken } from './native/preview-tokens.mjs';
@@ -31,6 +32,12 @@ const RESUMABLE_SESSIONS = listDurableJobs().map((job) => String(job.sessionId |
 recoverInterruptedRuntimeState({ skipSessionIds: RESUMABLE_SESSIONS });
 const RECOVERED_TURNS = startDurableRecovery();
 recoverDanglingTurnResults();
+try {
+  const swept = sweepOrphanSessionData();
+  if (swept) console.log(`[startup] removed ${swept} leftover entries of deleted chats`);
+} catch (error) {
+  console.warn(`[startup] orphan sweep failed: ${error?.message || error}`);
+}
 
 const APP_CONTENT_SECURITY_POLICY_BASE = [
   "default-src 'self'",

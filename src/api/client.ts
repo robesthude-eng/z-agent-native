@@ -232,6 +232,20 @@ export function isSessionDead(sid: string): boolean {
   return false;
 }
 
+// Чаты, удалённые в этой вкладке. В отличие от dead-list (TTL 5 минут) живёт
+// до перезагрузки: запоздалое session.updated (авто-заголовок, переименование)
+// или ответ listSessions, ушедший до удаления, не должны воскрешать чат.
+const __deletedSessions = new Set<string>();
+export function markSessionDeleted(sid: string) {
+  if (sid) __deletedSessions.add(sid);
+}
+export function unmarkSessionDeleted(sid: string) {
+  __deletedSessions.delete(sid);
+}
+export function wasSessionDeleted(sid?: string | null): boolean {
+  return Boolean(sid) && __deletedSessions.has(sid as string);
+}
+
 export class SessionGoneError extends Error {
   sessionId: string;
   constructor(sessionId: string, message = "session_gone") {

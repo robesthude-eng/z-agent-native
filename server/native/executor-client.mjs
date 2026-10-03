@@ -125,10 +125,10 @@ export function executeInExecutorSync({ workspace, uid, gid = uid, file, args = 
   return parsed;
 }
 
-export async function killExecutorIdentity(uid) {
+export async function killExecutorIdentity(uid, { purge = false } = {}) {
   if (!executorAvailable()) return 0;
   try {
-    const result = await requestExecutor('/kill', { uid }, { timeoutMs: 5_000 });
+    const result = await requestExecutor('/kill', purge ? { uid, purge: true } : { uid }, { timeoutMs: 15_000 });
     return Number(result?.killed) || 0;
   } catch {
     return 0;

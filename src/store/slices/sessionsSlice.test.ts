@@ -232,3 +232,104 @@ describe("removeSession: optimistic delete + откат", () => {
     expect(store.currentID).toBe("ses_2");
   });
 });
+
+describe("боковая панель: создание и удаление без «каши»", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("повторный «Новый чат» не плодит пустые чаты", async () => {
+    const store = makeStore({
+      sessions: [ses("ses_a", 1)],
+      currentID: "ses_a",
+    });
+    await store.newSession();
+    const first = store.currentID;
+    await store.newSession();
+    await store.newSession();
+    expect(store.currentID).toBe(first);
+    expect(store.sessions.filter((x) => x.id.startsWith("tmp_"))).toHaveLength(
+      1,
+    );
+  });
+
+  it("уход из пустого «Нового чата» убирает его из списка", async () => {
+    vi.spyOn(api, "listMessages").mockResolvedValue([] as never);
+    const store = makeStore({
+      sessions: [ses("ses_a", 1)],
+      currentID: "ses_a",
+    });
+    await store.newSession();
+    await store.select("ses_a");
+    expect(store.sessions.map((x) => x.id)).toEqual(["ses_a"]);
+    expect(store.currentID).toBe("ses_a");
+  });
+
+  it("удаление tmp_-чата не ходит на сервер и не возвращает чат", async () => {
+    const del = vi.spyOn(api, "deleteSession");
+    const store = makeStore({
+      sessions: [ses("ses_a", 1)],
+      currentID: "ses_a",
+    });
+    await store.newSession();
+    const tmp = store.currentID as string;
+    await store.removeSession(tmp);
+    expect(del).not.toHaveBeenCalled();
+    expect(store.sessions.map((x) => x.id)).toEqual(["ses_a"]);
+    expect(store.currentID).toBeNull();
+  });
+
+  it("старый чат удаляется, открытый новый остаётся на месте", async () => {
+    vi.spyOn(api, "deleteSession").mockResolvedValue(undefined as never);
+    const store = makeStore({
+      sessions: [ses("ses_old", 1)],
+      currentID: "ses_old",
+    });
+    await store.newSession();
+    const tmp = store.currentID;
+    await store.removeSession("ses_old");
+    expect(store.currentID).toBe(tmp);
+    expect(store.sessions.map((x) => x.id)).toEqual([tmp]);
+  });
+
+  it("удалённый чат не воскрешает поздний listSessions", async () => {
+    vi.spyOn(api, "deleteSession").mockResolvedValue(undefined as never);
+    vi.spyOn(api, "listSessions").mockResolvedValue([
+      ses("ses_gone", 3),
+      ses("ses_b", 2),
+    ] as never);
+    const store = makeStore({
+      sessions: [ses("ses_gone", 3), ses("ses_b", 2)],
+      currentID: "ses_b",
+    });
+    await store.removeSession("ses_gone");
+    await store.loadSessions();
+    expect(store.sessions.map((x) => x.id)).toEqual(["ses_b"]);
+  });
+
+  it("409 (ход останавливается) — повтор, а не откат", async () => {
+    vi.useFakeTimers();
+    const del = vi
+      .spyOn(api, "deleteSession")
+      .mockRejectedValueOnce(new Error("409 Conflict busy"))
+      .mockResolvedValueOnce(undefined as never);
+    const store = makeStore({ sessions: [ses("ses_x", 1)], currentID: null });
+    const done = store.removeSession("ses_x");
+    await vi.advanceTimersByTimeAsync(2000);
+    await done;
+    vi.useRealTimers();
+    expect(del).toHaveBeenCalledTimes(2);
+    expect(store.sessions).toHaveLength(0);
+    expect(store.error ?? null).toBeNull();
+  });
+
+  it("loadSessions не стирает открытый tmp_-чат", async () => {
+    vi.spyOn(api, "listSessions").mockResolvedValue([ses("ses_b", 2)] as never);
+    const store = makeStore({ sessions: [], currentID: null });
+    await store.newSession();
+    const tmp = store.currentID as string;
+    await store.loadSessions();
+    expect(store.sessions.map((x) => x.id)).toContain(tmp);
+    expect(store.sessions.map((x) => x.id)).toContain("ses_b");
+  });
+});

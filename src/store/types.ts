@@ -106,6 +106,8 @@ export interface UiSlice {
   requestOpenFile: (path: string) => void;
   clearPendingOpenFile: () => void;
   renameSession: (id: string, title: string) => void;
+  /** Убрать следы удалённых чатов из настроек: закрепление, папка, имя. */
+  forgetSessionPrefs: (ids: string[]) => void;
   syncUserPrefsFromServer: () => Promise<void>;
 }
 

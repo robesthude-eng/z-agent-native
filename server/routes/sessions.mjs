@@ -87,17 +87,24 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
         sendJson(res, 409, { error: 'Agent turn is still stopping; retry deletion.' });
         return true;
       }
-      killSandboxProcesses(sid);
+      // Каждый шаг очистки — по отдельности: сбой одного (браузер/executor
+      // недоступен) не должен оставлять в базе и на диске остальное.
+      const step = async (name, fn) => {
+        try { await fn(); } catch (error) { console.warn(`[session.delete] ${sid} ${name}: ${error?.message || error}`); }
+      };
       const sandboxUid = getSandboxUid(sid);
-      if (Number.isInteger(sandboxUid)) await killExecutorIdentity(sandboxUid);
-      await closeBrowserSessionRemote(sid, sandboxUid);
-      closeWorkspaceWatcher(sid);
+      await step('sandbox', () => killSandboxProcesses(sid));
+      if (Number.isInteger(sandboxUid)) await step('executor', () => killExecutorIdentity(sandboxUid, { purge: true }));
+      await step('browser', () => closeBrowserSessionRemote(sid, sandboxUid));
+      await step('watcher', () => closeWorkspaceWatcher(sid));
       emit(sid, 'session.removed', {});
+      // База (сообщения, ходы, вопросы, очередь — каскадом) и папка проекта.
       deleteChat(sid, ownerId);
-      revokePreviewTokens(sid);
-      clearAgentSessionState(sid);
-      clearSessionEvents(sid);
-      forgetPreparedSandbox(sid);
+      await step('preview', () => revokePreviewTokens(sid));
+      // Память проекта, durable-задачи, результаты ходов, журнал событий.
+      await step('agent', () => clearAgentSessionState(sid));
+      await step('events', () => clearSessionEvents(sid));
+      await step('prepared', () => forgetPreparedSandbox(sid));
       sendJson(res, 204, null);
       return true;
     }

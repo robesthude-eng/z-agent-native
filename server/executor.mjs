@@ -48,6 +48,26 @@ function ensureSudoIdentity(uid, gid) {
 }
 
 
+// Файлы, которые процессы чата оставили во временной папке executor (кэши
+// npm/pip, сборки, HOME=/tmp у sudo-учёток). /tmp — tmpfs, то есть память:
+// без чистки удалённые чаты копили бы её до перезапуска контейнера.
+function purgeUidTemp(uid, root = os.tmpdir(), depth = 0) {
+  let removed = 0;
+  let entries = [];
+  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return 0; }
+  for (const entry of entries) {
+    const full = path.join(root, entry.name);
+    let stat;
+    try { stat = fs.lstatSync(full); } catch { continue; }
+    if (stat.uid === uid) {
+      try { fs.rmSync(full, { recursive: true, force: true }); removed += 1; } catch { /* best effort */ }
+    } else if (entry.isDirectory() && !entry.isSymbolicLink() && depth < 3) {
+      removed += purgeUidTemp(uid, full, depth + 1);
+    }
+  }
+  return removed;
+}
+
 function trustedLauncherEnvironment() {
   // Never pass tool-controlled variables to a privileged dynamic executable.
   // LD_PRELOAD/NODE_OPTIONS-style values are only applied after setpriv has
@@ -244,7 +264,14 @@ const server = http.createServer(async (req, res) => {
       const uid = identity(input.uid, 'uid');
       let killed = 0;
       for (const child of activeByUid.get(uid) || []) if (killChild(child, 'SIGTERM')) killed += 1;
-      return json(res, 200, { ok: true, killed });
+      let purged = 0;
+      if (input.purge === true) {
+        // Чат удалён: дать процессам завершиться и стереть их временные файлы.
+        if (killed) await new Promise((resolve) => setTimeout(resolve, 300));
+        for (const child of activeByUid.get(uid) || []) killChild(child, 'SIGKILL');
+        purged = purgeUidTemp(uid);
+      }
+      return json(res, 200, { ok: true, killed, purged });
     }
     if (req.url === '/exec') return await execRequest(req, res, input);
     return json(res, 404, { error: 'Not found' });
