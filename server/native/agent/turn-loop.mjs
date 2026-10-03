@@ -63,6 +63,18 @@ function remainingPlanItems(strategy) {
   });
 }
 
+// A reply with no tool call whose last sentence only announces the next step
+// ("Let me close the browser now.", "Сейчас запущу тесты.") is not a final
+// answer: the model stopped mid-task. Detect that narrow pattern.
+const DANGLING_INTENT_RE = /(?:^|[.!?\n]\s*)(?:let me(?! know)|let's|i'll|i will|i'm going to|now i(?:'ll| will)|next,? i|сейчас|теперь (?:я )?(?:запущу|проверю|открою|закрою|сделаю|выполню|попробую|исправлю)|далее|давай(?:те)?|пробую|попробую|запускаю|открываю|проверяю)(?=[\s,.:!…']|$)[^.!?\n]{0,160}[.!…:]?\s*$/iu;
+const MAX_DANGLING_INTENT_NUDGES = 2;
+
+export function endsWithDanglingIntent(text) {
+  const tail = String(text || '').trim().slice(-400);
+  if (!tail) return false;
+  return DANGLING_INTENT_RE.test(tail);
+}
+
 function planContinuationGate(strategy) {
   const remaining = remainingPlanItems(strategy);
   if (!remaining.length) return null;
@@ -151,6 +163,7 @@ export function checkpointState(sessionId, runtime, strategy, fields = {}) {
       phase: fields.phase || 'running',
       stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
       gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
+      intentNudges: Number(fields.intentNudges ?? runtime.intentNudges ?? 0),
       lastUsage: fields.lastUsage ?? runtime.lastUsage ?? null,
       strategy: strategy ? {
         goal: strategy.goal,
@@ -246,6 +259,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
       stepsUsed: Math.max(0, Number(job?.checkpoint?.stepsUsed) || 0),
       gateReminders: Math.max(0, Number(job?.checkpoint?.gateReminders) || 0),
+      intentNudges: Math.max(0, Number(job?.checkpoint?.intentNudges) || 0),
       lastUsage,
       recovery: {
         resumed: resume,
@@ -378,6 +392,17 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           continue;
         }
         const reasoningOnly = Boolean(response.textFromReasoning) && streamed.reasoning;
+        if (!reasoningOnly && runtime.intentNudges < MAX_DANGLING_INTENT_NUDGES && endsWithDanglingIntent(response.text)) {
+          runtime.intentNudges += 1;
+          recordCompletionGate(runtime.telemetry);
+          frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+          frames.push({
+            role: 'user',
+            content: '[Runtime] Your last message announced a next step but contained no tool call and no final answer, so the turn would end here. If work remains, perform that step now with tools. If the task is complete, write the final answer for the user (in the user\'s language) with the actual results. Do not claim actions you did not perform.',
+          });
+          checkpointState(sessionId, runtime, strategy, { phase: 'intent_gate', intentNudges: runtime.intentNudges });
+          continue;
+        }
         let finalText = reasoningOnly ? '' : String(response.text || '').trim();
         if (!finalText && step > 0) {
           try {

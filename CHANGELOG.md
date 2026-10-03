@@ -15,6 +15,8 @@ made on top of it.
 - `server/executor.mjs`: with `Z_AGENT_ALLOW_SUDO=1` session UIDs are registered in passwd/group/shadow and launched without `--no-new-privs`, so passwordless `sudo` actually works.
 - Image ships `sudo` with a NOPASSWD rule (inert under the hardened profile).
 - `Caddyfile` hostname comes from `Z_AGENT_DOMAIN`.
+- Browser: public sites no longer fail with `ERR_BLOCKED_BY_CLIENT` (DNS is resolved by browser-egress).
+- Intent gate: a tool-less reply that ends on an announced next step ("Let me close the browser…", "Сейчас запущу тесты") is not accepted as final; the model is nudged (max 2 per turn) to act or answer.
 
 ## [Unreleased]
 
