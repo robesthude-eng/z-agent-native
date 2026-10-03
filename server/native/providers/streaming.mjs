@@ -74,12 +74,42 @@ export function openAiMessages(frames) {
   return out;
 }
 
-export async function callOpenAI(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
+// OpenRouter и похожие шлюзы без max_tokens резервируют максимум модели
+// (например, 65536) и отказывают, если баланса хватает меньше:
+// «You requested up to 65536 tokens, but can only afford 3666».
+// Тогда повторяем с доступным лимитом и запоминаем его для модели.
+const affordableCaps = new Map();
+export function affordableTokens(err) {
+  const text = `${err?.message || ''} ${JSON.stringify(err?.body || '')}`;
+  const m = /can only afford (\d+)/i.exec(text);
+  if (!m) return 0;
+  const n = Number(m[1]);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+export async function callOpenAI(resolved, opts) {
+  const capKey = `${resolved?.spec?.baseURL || ''}|${resolved?.modelId || ''}`;
+  let cap = affordableCaps.get(capKey) || 0;
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await callOpenAIOnce(resolved, opts, cap);
+    } catch (err) {
+      const afford = affordableTokens(err);
+      const next = Math.floor(afford * 0.95);
+      if (!afford || attempt >= 2 || next < 256 || (cap && next >= cap)) throw err;
+      cap = next;
+      affordableCaps.set(capKey, cap);
+    }
+  }
+}
+
+async function callOpenAIOnce(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }, maxTokens = 0) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
     model: resolved.modelId,
     messages: [{ role: 'system', content: system }, ...openAiMessages(frames)],
+    ...(maxTokens > 0 ? { max_tokens: maxTokens } : {}),
     ...(tools && tools.length > 0 ? {
       tools: tools.map((t) => ({ type: 'function', function: { name: t.name, description: t.description, parameters: t.inputSchema } })),
       tool_choice: 'auto',
