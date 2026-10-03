@@ -300,9 +300,15 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
   const timeout = timeoutFor(input);
   const html = String(input.html || '');
   const target = String(input.url || '').trim();
-  if (!html && !target) throw new Error(`${action} requires html or url`);
+  // Without html/url, render the page the session already has open (the
+  // natural "open → screenshot" sequence) instead of failing the call.
+  const currentUrl = (() => { try { return page.url(); } catch { return ''; } })();
+  const useCurrent = !html && !target && /^https?:/i.test(currentUrl);
+  if (!html && !target && !useCurrent) throw new Error(`${action} requires html or url (or open a page first)`);
 
-  if (html) {
+  if (useCurrent) {
+    // Already loaded and policy-checked by the earlier open/navigation.
+  } else if (html) {
     // `load` вместо `domcontentloaded`: документ с картинками иначе успевает
     // напечататься с пустыми местами вместо иллюстраций.
     await page.setContent(html, { timeout, waitUntil: 'load' });

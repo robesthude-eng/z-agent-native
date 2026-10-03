@@ -16,6 +16,7 @@ made on top of it.
 - Image ships `sudo` with a NOPASSWD rule (inert under the hardened profile).
 - `Caddyfile` hostname comes from `Z_AGENT_DOMAIN`.
 - Browser: public sites no longer fail with `ERR_BLOCKED_BY_CLIENT` (DNS is resolved by browser-egress).
+- Browser `screenshot`/`pdf` without `url` capture the already-open page instead of failing with "requires html or url".
 - Intent gate: a tool-less reply that ends on an announced next step ("Let me close the browser…", "Сейчас запущу тесты") is not accepted as final; the model is nudged (max 2 per turn) to act or answer.
 
 ## [Unreleased]

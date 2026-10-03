@@ -200,7 +200,7 @@ export const TOOL_DEFINITIONS = [
     description: 'Automate an isolated Chromium browser for the current chat session. Supported actions: open, screenshot, click, type, key, evaluate, content, cookies, wait.',
     inputSchema: object({
       action: { type: 'string', enum: BROWSER_ACTIONS, description: 'Browser action to execute' },
-      url: { type: 'string', description: 'For action=open: URL (http/https) or workspace-relative path (e.g. index.html)' },
+      url: { type: 'string', description: 'For action=open: URL (http/https) or workspace-relative path (e.g. index.html). For action=screenshot: optional; omit it to capture the page that is already open.' },
       selector: { type: 'string', description: 'For click/type/wait: CSS or text selector' },
       text: { type: 'string', description: 'For action=type: text to enter' },
       key: { type: 'string', description: 'For action=key: key name (Enter, Tab, Escape, etc.)' },
