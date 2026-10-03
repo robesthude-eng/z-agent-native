@@ -2,7 +2,6 @@ import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import CopyButton from "../CopyButton";
 import { NewChatIcon, RefreshIcon } from "../icons";
-import TurnResultButton from "../TurnResultButton";
 
 export interface MessageActionsProps {
   role: string;
@@ -22,8 +21,6 @@ export interface MessageActionsProps {
 export function MessageActions({
   role,
   visibleText,
-  sessionId,
-  messageId,
   isLatestTurn,
   isStreaming,
   onRetry,
@@ -37,10 +34,6 @@ export function MessageActions({
     // прячем их только там, где есть мышь, и показываем при фокусе с клавиатуры.
     <div className="flex items-center gap-1 transition-opacity opacity-100 group-focus-within:opacity-100 md:opacity-0 md:group-focus-within:opacity-100 md:group-hover:opacity-100">
       {visibleText && <CopyButton text={visibleText} />}
-
-      {role === "assistant" && sessionId && messageId && (
-        <TurnResultButton sessionId={sessionId} messageId={messageId} />
-      )}
 
       {role === "assistant" && isLatestTurn && !isStreaming && (
         <Button

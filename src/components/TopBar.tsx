@@ -1,4 +1,3 @@
-import { GitBranch } from "lucide-react";
 import { lazy, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -18,7 +17,6 @@ import { buildChatMarkdown, downloadTextFile } from "../lib/chatText";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
 import {
-  BashIcon,
   DownloadIcon,
   MenuIcon,
   PreviewIcon,
@@ -33,13 +31,9 @@ import ModelSelector from "./ModelSelector";
 import PanelModal from "./PanelModal";
 
 /** Heavy/secondary panels are loaded only when the user asks for them. */
-const Terminal = lazy(() =>
-  import("./Terminal").then((m) => ({ default: m.Terminal })),
-);
 const PreviewPanel = lazy(() =>
   import("./PreviewPanel").then((m) => ({ default: m.PreviewPanel })),
 );
-const ChangesPanel = lazy(() => import("./ChangesPanel"));
 
 export default function TopBar() {
   const setSidebarOpen = useStore((s) => s.setSidebarOpen);
@@ -48,9 +42,7 @@ export default function TopBar() {
   const workspaceOpen = useStore((s) => s.workspaceOpen);
   const setWorkspaceOpen = useStore((s) => s.setWorkspaceOpen);
   const currentID = useStore((s) => s.currentID);
-  const [showTerminal, setShowTerminal] = useState(false);
   const [showPreview, setShowPreview] = useState(false);
-  const [showChanges, setShowChanges] = useState(false);
   const sessionReady = !!currentID && !isTmpSession(currentID);
 
   /** Runtime capability state for terminal/preview/workspace. */
@@ -215,34 +207,11 @@ export default function TopBar() {
           variant="ghost"
           size="icon"
           className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-          onClick={() => setShowTerminal(true)}
-          {...gate("terminal", t("top_bar.terminal"))}
-          aria-label={t("top_bar.otkryt_terminal")}
-        >
-          <BashIcon size={16} />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
           onClick={() => setShowPreview(true)}
           {...gate("preview", t("preview_panel.predprosmotr"))}
           aria-label={t("top_bar.otkryt_predprosmotr")}
         >
           <PreviewIcon size={16} />
-        </Button>
-
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
-          onClick={() => setShowChanges(true)}
-          disabled={!sessionReady}
-          title={t("top_bar.rezultat_i_izmeneniya_proekta")}
-          aria-label={t("top_bar.pokazat_rezultat_i_izmeneniya_proekta")}
-        >
-          <GitBranch className="h-4 w-4" />
         </Button>
 
         <Button
@@ -264,21 +233,6 @@ export default function TopBar() {
       </header>
 
       <PanelModal
-        title={t("top_bar.terminal")}
-        open={showTerminal}
-        onClose={() => setShowTerminal(false)}
-      >
-        <div className="h-full w-full p-2">
-          <LazyPanel
-            label={t("top_bar.terminal_2")}
-            skeleton={<PanelBodySkeleton />}
-          >
-            <Terminal workdir={currentID || ""} />
-          </LazyPanel>
-        </div>
-      </PanelModal>
-
-      <PanelModal
         title={t("preview_panel.predprosmotr")}
         open={showPreview}
         onClose={() => setShowPreview(false)}
@@ -288,19 +242,6 @@ export default function TopBar() {
           skeleton={<PanelBodySkeleton />}
         >
           <PreviewPanel url={previewUrl} />
-        </LazyPanel>
-      </PanelModal>
-
-      <PanelModal
-        title={t("top_bar.rezultat")}
-        open={showChanges}
-        onClose={() => setShowChanges(false)}
-      >
-        <LazyPanel
-          label={t("top_bar.rezultat_2")}
-          skeleton={<PanelBodySkeleton />}
-        >
-          <ChangesPanel />
         </LazyPanel>
       </PanelModal>
     </>
