@@ -1,3 +1,4 @@
+import { normalizeBrowserInput } from '../browser-client.mjs';
 import { executeGitTool } from '../git-tool.mjs';
 import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { safeWorkspacePath } from '../security.mjs';
@@ -78,7 +79,8 @@ export function assertValidToolInput(name, input) {
   const tool = String(name || '').toLowerCase();
   const definition = TOOL_DEFINITIONS.find((d) => d.name === tool);
   if (!definition) return input || {};
-  const { ok, value, errors } = validateToolInput(definition.inputSchema, input || {});
+  const prepared = tool === 'browser' ? normalizeBrowserInput(input || {}) : input || {};
+  const { ok, value, errors } = validateToolInput(definition.inputSchema, prepared);
   if (!ok) throw new ToolArgumentsError(tool, errors, definition.inputSchema);
   return value;
 }

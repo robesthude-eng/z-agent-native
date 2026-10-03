@@ -117,7 +117,7 @@ export function transientStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-export const RATE_LIMIT_RE = /rate limit|too many requests|try again later|temporarily overloaded|overloaded|error from provider \(console\)|free tier can only be used/i;
+export const RATE_LIMIT_RE = /rate limit|too many requests|try again later|temporarily overloaded|overloaded|error from provider \(console\)|free tier can only be used|in-flight requests settle/i;
 export const RATE_LIMIT_BACKOFF_MS = [5_000, 15_000, 30_000, 45_000, 60_000, 60_000];
 export const RATE_LIMIT_EXTRA_RETRIES = 4;
 export const RATE_LIMIT_MAX_WAIT_MS = 60_000;

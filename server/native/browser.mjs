@@ -16,7 +16,23 @@ const SESSION_IDLE_MS = 10 * 60 * 1000;
 // as a broken tool and it retries, an eviction does not.
 const MAX_SESSIONS = Math.min(Math.max(Number(process.env.Z_AGENT_BROWSER_MAX_SESSIONS) || 4, 1), 64);
 
-export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'press', 'console', 'close'];
+export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'type', 'press', 'wait', 'console', 'close'];
+
+// Привычные моделям названия действий из других браузерных инструментов.
+// Без них вызов падал с «Unsupported browser action», и модель тратила шаги.
+export const BROWSER_ACTION_ALIASES = { key: 'press', content: 'snapshot', goto: 'open', navigate: 'open', input: 'fill' };
+
+export function normalizeBrowserInput(input = {}) {
+  const raw = String(input?.action || '').trim().toLowerCase();
+  const action = BROWSER_ACTION_ALIASES[raw] || raw;
+  const out = { ...input, action };
+  // fill/type: значение может прийти как value или как text.
+  if ((action === 'fill' || action === 'type') && out.value === undefined && typeof out.text === 'string' && out.selector) {
+    out.value = out.text;
+    delete out.text;
+  }
+  return out;
+}
 
 // Дев-сервер, поднятый bash-инструментом (vite/webpack/npm run dev), живёт в
 // executor-песочнице без сети — браузер до него физически не достучится, и
@@ -362,8 +378,9 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
   };
 }
 
-export async function executeBrowserTool({ sessionId, input = {}, signal }) {
-  const action = String(input.action || '').trim().toLowerCase();
+export async function executeBrowserTool({ sessionId, input: rawInput = {}, signal }) {
+  const input = normalizeBrowserInput(rawInput);
+  const action = input.action;
   if (!ALL_BROWSER_ACTIONS.includes(action)) {
     throw new Error(`Unsupported browser action "${input.action}". Use one of: ${BROWSER_ACTIONS.join(', ')}`);
   }
@@ -428,13 +445,38 @@ export async function executeBrowserTool({ sessionId, input = {}, signal }) {
     await resolveLocator(page, input).click({ timeout });
     await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {});
     extra.push('clicked');
-  } else if (action === 'fill') {
-    await resolveLocator(page, input).fill(String(input.value ?? ''), { timeout });
-    extra.push('filled');
+  } else if (action === 'fill' || action === 'type') {
+    if (input.value === undefined || input.value === null) throw new Error(`${action} requires value (the text to enter) and selector`);
+    if (!String(input.selector || '').trim()) throw new Error(`${action} requires selector (CSS) of the input field`);
+    const locator = resolveLocator(page, input);
+    const value = String(input.value);
+    if (action === 'fill') {
+      await locator.fill(value, { timeout });
+    } else {
+      // Посимвольный ввод с паузой: страницы с защитой от ботов и React-формы
+      // иногда сбрасывают значение, вставленное через fill.
+      await locator.click({ timeout });
+      await locator.pressSequentially(value, { delay: 35, timeout });
+    }
+    const actual = await locator.inputValue({ timeout: 2000 }).catch(() => null);
+    const verb = action === 'fill' ? 'filled' : 'typed';
+    const ok = actual !== null && (action === 'fill' ? actual === value : actual.endsWith(value));
+    extra.push(actual === null ? verb : `${verb}; field now contains ${actual.length} characters ${ok ? '(includes the requested text)' : '(does NOT contain the requested text — the page may have reset it; try type instead of fill, or click the field first)'}`);
+  } else if (action === 'wait') {
+    if (String(input.selector || input.text || '').trim()) {
+      await resolveLocator(page, input).waitFor({ state: 'visible', timeout });
+      extra.push('element visible');
+    } else {
+      const ms = Math.min(Math.max(Number(input.timeoutMs) || 1000, 100), 10000);
+      await page.waitForTimeout(ms);
+      extra.push(`waited ${ms} ms`);
+    }
   } else if (action === 'press') {
     const key = String(input.key || '').trim();
     if (!key) throw new Error('press requires key, for example "Enter"');
-    await resolveLocator(page, input).press(key, { timeout });
+    // Без selector клавиша уходит в элемент, который сейчас в фокусе.
+    if (String(input.selector || input.text || '').trim()) await resolveLocator(page, input).press(key, { timeout });
+    else await page.keyboard.press(key);
     await page.waitForLoadState('domcontentloaded', { timeout }).catch(() => {});
     extra.push(`pressed ${key}`);
   } else if (action === 'console') {

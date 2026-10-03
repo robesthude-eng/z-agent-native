@@ -50,3 +50,11 @@ test('system prompt includes SSH and toolchain sections only when applicable', (
   assert.match(withSsh, /ssh_tool action=exec/);
   assert.match(withSsh, /Toolchain specifics/);
 });
+
+test('browser calls are normalized: aliases, value from text, screenshot allowed, unsupported rejected', () => {
+  assert.deepEqual(assertValidToolInput('browser', { action: 'fill', selector: '#e', text: 'abc' }), { action: 'fill', selector: '#e', value: 'abc' });
+  assert.equal(assertValidToolInput('browser', { action: 'key', key: 'Enter' }).action, 'press');
+  assert.equal(assertValidToolInput('browser', { action: 'content' }).action, 'snapshot');
+  assert.equal(assertValidToolInput('browser', { action: 'screenshot', width: 390 }).action, 'screenshot');
+  assert.throws(() => assertValidToolInput('browser', { action: 'evaluate', script: '1' }), /must be one of/);
+});

@@ -1,8 +1,8 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, executeBrowserTool as executeBrowserToolLocal } from './browser.mjs';
+import { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, executeBrowserTool as executeBrowserToolLocal, normalizeBrowserInput } from './browser.mjs';
 
-export { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS };
+export { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, normalizeBrowserInput };
 
 // Снимок страницы и текстовый ответ — разные порядки величин. Общий потолок
 // пришлось бы ставить по самому большому, и тогда обычный snapshot потерял бы

@@ -7,8 +7,8 @@ import {
 } from '../media.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
 import { SSH_ACTIONS, SSH_SERVICE_ACTIONS } from '../ssh-tool.mjs';
-import { TEST_FRAMEWORKS } from '../test-runner.mjs';
 import { subagentKinds } from '../subagents.mjs';
+import { TEST_FRAMEWORKS } from '../test-runner.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
 import { agentNetworkPolicy, sshPolicy } from '../workspace-policy.mjs';
 
@@ -213,14 +213,14 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'browser',
-    description: 'Automate an isolated Chromium browser for the current chat session. Supported actions: open, screenshot, click, type, key, evaluate, content, cookies, wait. A screenshot is saved into the workspace and shown to you as an image in the next message, so you can verify a page visually (use width=390 for a phone layout).',
+    description: 'Automate an isolated Chromium browser for the current chat session. Actions: open (load a URL or workspace file), snapshot (page text and interactive elements), click (selector or visible text), fill (set an input value at once), type (type value key by key; use when fill is reset by the page), press (a key such as Enter, into selector or the focused element), wait (for selector to become visible, or timeoutMs), screenshot (saved into the workspace and shown to you as an image next message; width=390 for a phone layout), console (page console and failed requests), close. fill/type report how many characters the field actually holds afterwards.',
     inputSchema: object({
-      action: { type: 'string', enum: BROWSER_ACTIONS, description: 'Browser action to execute' },
+      action: { type: 'string', enum: [...BROWSER_ACTIONS, 'screenshot'], description: 'Browser action to execute' },
       url: { type: 'string', description: 'For action=open: URL (http/https) or workspace-relative path (e.g. index.html). For action=screenshot: optional; omit it to capture the page that is already open.' },
-      selector: { type: 'string', description: 'For click/type/wait: CSS or text selector' },
-      text: { type: 'string', description: 'For action=type: text to enter' },
-      key: { type: 'string', description: 'For action=key: key name (Enter, Tab, Escape, etc.)' },
-      script: { type: 'string', description: 'For action=evaluate: JavaScript expression to run in page context' },
+      selector: { type: 'string', description: 'For click/fill/type/press/wait: CSS selector of the element' },
+      text: { type: 'string', description: 'For click/wait without selector: visible text of the element' },
+      value: { type: 'string', description: 'For fill/type: the text to enter into the field' },
+      key: { type: 'string', description: 'For action=press: key name (Enter, Tab, Escape, ArrowDown, a, …)' },
       fullPage: { type: 'boolean', description: 'For action=screenshot: capture the full scrollable page (default true). Set false to capture only the viewport.' },
       width: { type: 'integer', minimum: 200, maximum: 4000, description: 'For action=screenshot: viewport width in px (default 1280). Use 390 to check a phone layout.' },
       height: { type: 'integer', minimum: 200, maximum: 8000, description: 'For action=screenshot: viewport height in px (default 1600).' },
