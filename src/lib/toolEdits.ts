@@ -17,8 +17,9 @@ export interface ToolEdit {
 
 function readEdit(value: unknown): ToolEdit | null {
   if (!isRecord(value)) return null;
-  const oldText = value.oldString ?? value.old_string;
-  const newText = value.newString ?? value.new_string;
+  // Сервер Z Agent пишет oldText/newText; остальные имена — совместимость.
+  const oldText = value.oldText ?? value.oldString ?? value.old_string;
+  const newText = value.newText ?? value.newString ?? value.new_string;
   if (typeof oldText !== "string" || typeof newText !== "string") return null;
   return { oldText, newText };
 }

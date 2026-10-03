@@ -8,6 +8,7 @@ import { isInterruptedQuestionPart } from "../api/interruptions";
 import type { ToolPart } from "../api/types";
 import { toolIcon } from "../utils/toolUtils";
 import ToolCard from "./ToolCard";
+import { getChangeStats } from "./tool-cards/toolCardUtils";
 
 /**
  * Идентичность вызова инструмента. Индекс как ключ здесь опасен: группа
@@ -54,6 +55,28 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
   const onlyPart = parts.length === 1 ? parts[0] : undefined;
   if (onlyPart) return <ToolCard part={onlyPart} />;
 
+  // Какие файлы и сколько строк затронула группа правок — видно без раскрытия.
+  const files = [
+    ...new Set(
+      parts
+        .map((p) => {
+          const title = (p.state as { title?: unknown } | undefined)?.title;
+          return typeof title === "string" ? title.split("/").pop() || "" : "";
+        })
+        .filter(Boolean),
+    ),
+  ];
+  const totals = parts.reduce(
+    (acc, p) => {
+      const s = getChangeStats(p);
+      return s
+        ? { added: acc.added + s.added, removed: acc.removed + s.removed }
+        : acc;
+    },
+    { added: 0, removed: 0 },
+  );
+  const hasTotals = totals.added > 0 || totals.removed > 0;
+
   return (
     <div className="not-prose my-1">
       <button
@@ -87,7 +110,24 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
             {t("changes_panel.oshibka")}
           </span>
         )}
+        {hasTotals && files.length > 0 && (
+          <span className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground/75">
+            {files.slice(0, 2).join(", ")}
+            {files.length > 2 ? ` +${files.length - 2}` : ""}
+          </span>
+        )}
         <span className="flex-1" />
+        {hasTotals && (
+          <span className="shrink-0 font-mono text-[11px] tabular-nums">
+            {totals.added > 0 && (
+              <span className="text-emerald-400">+{totals.added}</span>
+            )}
+            {totals.added > 0 && totals.removed > 0 && " "}
+            {totals.removed > 0 && (
+              <span className="text-rose-400">−{totals.removed}</span>
+            )}
+          </span>
+        )}
       </button>
       {expanded && (
         <div className="oc-card-open mt-1 ml-4 pl-3 border-l border-border/40 space-y-0.5">

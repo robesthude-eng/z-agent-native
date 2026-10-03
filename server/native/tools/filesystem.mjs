@@ -1,16 +1,15 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
 import { Worker } from 'node:worker_threads';
 import { DEFAULT_TOOL_TIMEOUT_MS, GREP_TIMEOUT_MS } from '../config.mjs';
-import { safeWorkspacePath } from '../security.mjs';
-import { ensureManagedHome, syncSandboxOwnership } from '../sandbox.mjs';
 import { executeInExecutor, executorRequired } from '../executor-client.mjs';
+import { ensureManagedHome, sandboxCommand, syncSandboxOwnership } from '../sandbox.mjs';
+import { safeWorkspacePath } from '../security.mjs';
 import { assertAgentReadablePath, isSensitiveWorkspacePath } from '../workspace-policy.mjs';
 import { truncate } from './dispatcher.mjs';
 import { externalSpawnIdentity } from './shell.mjs';
-import { sandboxCommand } from '../sandbox.mjs';
-import { spawn } from 'node:child_process';
 
 export const MAX_READ_BYTES = 512 * 1024;
 export const MAX_TOOL_OUTPUT = 512 * 1024;
@@ -252,12 +251,47 @@ export async function executeGrepFiles(root, input) {
   };
 }
 
+function lineCount(text) {
+  if (!text) return 0;
+  return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
+}
+
+/** Несколько строк файла с номерами — модель видит, что получилось после правки. */
+function numberedSnippet(text, fromLine, toLine) {
+  const lines = String(text).split('\n');
+  const start = Math.max(1, fromLine);
+  const end = Math.min(lines.length, toLine);
+  const width = String(end).length;
+  const out = [];
+  for (let n = start; n <= end; n++) out.push(`${String(n).padStart(width, ' ')} | ${lines[n - 1]}`);
+  return out.join('\n');
+}
+
+const SNIPPET_CONTEXT = 3;
+const SNIPPET_MAX_LINES = 40;
+
 export function executeWriteFile(root, input, sessionId = null) {
   const full = safeWorkspacePath(root, input?.path, { allowMissing: true });
+  const existed = fs.existsSync(full);
+  let previousLines = 0;
+  if (existed) {
+    try { previousLines = lineCount(fs.readFileSync(full, 'utf8')); } catch {}
+  }
+  const content = String(input?.content ?? '');
   fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, String(input?.content ?? ''), 'utf8');
+  fs.writeFileSync(full, content, 'utf8');
   if (sessionId) syncSandboxOwnership(sessionId, root, full);
-  return { output: `Wrote ${Buffer.byteLength(String(input?.content ?? ''))} bytes to ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
+  const lines = lineCount(content);
+  const bytes = Buffer.byteLength(content);
+  const target = rel(root, full);
+  return {
+    output: existed
+      ? `Overwrote ${target}: ${lines} lines, ${bytes} bytes (was ${previousLines} lines).`
+      : `Created ${target}: ${lines} lines, ${bytes} bytes.`,
+    title: target,
+    metadata: { fileChange: { kind: existed ? 'overwrite' : 'create', lines, bytes, previousLines } },
+    mutatedPaths: [target],
+  };
 }
 
 export const performWorkspaceWrite = executeWriteFile;
@@ -268,10 +302,31 @@ export function executeEditFile(root, input, sessionId = null) {
   const oldText = String(input?.oldText ?? '');
   if (!oldText) throw new Error('oldText must not be empty');
   if (!before.includes(oldText)) throw new Error('oldText was not found in file');
-  const after = input?.all ? before.split(oldText).join(String(input?.newText ?? '')) : before.replace(oldText, String(input?.newText ?? ''));
+  const newText = String(input?.newText ?? '');
+  const occurrences = before.split(oldText).length - 1;
+  const replaced = input?.all ? occurrences : 1;
+  const firstIndex = before.indexOf(oldText);
+  const after = input?.all ? before.split(oldText).join(newText) : before.replace(oldText, () => newText);
   fs.writeFileSync(full, after, 'utf8');
   if (sessionId) syncSandboxOwnership(sessionId, root, full);
-  return { output: `Edited ${rel(root, full)}`, title: rel(root, full), mutatedPaths: [rel(root, full)] };
+  const target = rel(root, full);
+  const startLine = before.slice(0, firstIndex).split('\n').length;
+  const removed = oldText.split('\n').length;
+  const added = newText ? newText.split('\n').length : 0;
+  const endLine = startLine + Math.max(added, 1) - 1;
+  const snippetEnd = Math.min(endLine + SNIPPET_CONTEXT, startLine - SNIPPET_CONTEXT + SNIPPET_MAX_LINES);
+  const notes = [];
+  if (!input?.all && occurrences > 1) notes.push(`Note: oldText occurs ${occurrences} times; only the first one (line ${startLine}) was replaced. Pass all=true to replace every occurrence, or include more surrounding text to target another one.`);
+  return {
+    output: [
+      `Edited ${target}: replaced ${replaced} occurrence${replaced === 1 ? '' : 's'} at line ${startLine} (-${removed} +${added} lines). File now has ${lineCount(after)} lines.`,
+      ...notes,
+      `Result around the edit:\n${numberedSnippet(after, startLine - SNIPPET_CONTEXT, snippetEnd)}`,
+    ].join('\n'),
+    title: target,
+    metadata: { fileChange: { kind: 'edit', startLine, added: added * replaced, removed: removed * replaced, replacements: replaced } },
+    mutatedPaths: [target],
+  };
 }
 
 export const performWorkspaceEdit = executeEditFile;

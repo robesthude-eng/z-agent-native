@@ -88,3 +88,46 @@ export function getSummary(part: ToolPart): string {
   }
   return "";
 }
+
+export interface ChangeStats {
+  added: number;
+  removed: number;
+}
+
+function countLines(value: unknown): number {
+  if (typeof value !== "string" || !value) return 0;
+  return value.split("\n").length - (value.endsWith("\n") ? 1 : 0);
+}
+
+/**
+ * «+N −M» для шагов, меняющих файлы: по сводке сервера (metadata.fileChange),
+ * а для старых сообщений без неё — по аргументам вызова.
+ */
+export function getChangeStats(part: ToolPart): ChangeStats | null {
+  const tool = String(part.tool || "").toLowerCase();
+  if (tool !== "edit" && tool !== "write" && tool !== "multiedit") return null;
+  const s = part.state;
+  const meta =
+    s && typeof s === "object"
+      ? ((s as ToolState).metadata as Record<string, unknown> | undefined)
+      : undefined;
+  const change = meta?.fileChange as Record<string, unknown> | undefined;
+  if (change && typeof change === "object") {
+    if (change.kind === "edit")
+      return {
+        added: Number(change.added) || 0,
+        removed: Number(change.removed) || 0,
+      };
+    return {
+      added: Number(change.lines) || 0,
+      removed: Number(change.previousLines) || 0,
+    };
+  }
+  const input = getInput(part) as Record<string, unknown> | undefined;
+  if (!input) return null;
+  if (tool === "write") return { added: countLines(input.content), removed: 0 };
+  const oldText = input.oldText ?? input.oldString ?? input.old_string;
+  const newText = input.newText ?? input.newString ?? input.new_string;
+  if (typeof oldText !== "string" || typeof newText !== "string") return null;
+  return { added: countLines(newText), removed: countLines(oldText) };
+}

@@ -6,6 +6,7 @@ import { toast } from "@/lib/toast";
 import { friendlyToolLabel } from "@/lib/toolLabels";
 import { cn } from "@/lib/utils";
 import { toolIcon } from "../../utils/toolUtils";
+import type { ChangeStats } from "./toolCardUtils";
 
 interface ToolHeaderProps {
   toolName: string;
@@ -14,6 +15,7 @@ interface ToolHeaderProps {
   open: boolean;
   onToggle: () => void;
   output: string;
+  stats?: ChangeStats | null;
 }
 
 export function ToolHeader({
@@ -23,6 +25,7 @@ export function ToolHeader({
   open,
   onToggle,
   output,
+  stats = null,
 }: ToolHeaderProps) {
   const [copied, setCopied] = useState(false);
 
@@ -72,6 +75,17 @@ export function ToolHeader({
           </span>
         )}
         {!summary && <span className="flex-1" />}
+        {stats && (stats.added > 0 || stats.removed > 0) && (
+          <span className="shrink-0 font-mono text-[11px] tabular-nums">
+            {stats.added > 0 && (
+              <span className="text-emerald-400">+{stats.added}</span>
+            )}
+            {stats.added > 0 && stats.removed > 0 && " "}
+            {stats.removed > 0 && (
+              <span className="text-rose-400">−{stats.removed}</span>
+            )}
+          </span>
+        )}
       </button>
 
       <div className="flex items-center gap-1.5 shrink-0">

@@ -10,6 +10,7 @@ import { QuestionCard, QuestionTrace } from "./tool-cards/QuestionCard";
 import { ToolHeader } from "./tool-cards/ToolHeader";
 import { ToolOutputView } from "./tool-cards/ToolOutputView";
 import {
+  getChangeStats,
   getMetadata,
   getOutput,
   getState,
@@ -73,6 +74,7 @@ function ToolCardComponent({ part }: ToolCardProps) {
         open={open}
         onToggle={() => setManuallyToggled(!open)}
         output={output}
+        stats={getChangeStats(part)}
       />
       {open && (
         <div className="border-t border-border/50 bg-background/40">

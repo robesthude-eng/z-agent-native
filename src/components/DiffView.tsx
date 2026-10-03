@@ -11,7 +11,7 @@ import { type DiffOptions, diffLines, diffStatLabel } from "../lib/diff";
  * нём цветом уместно.
  */
 const OP_STYLES = {
-  add: "bg-foreground/[0.07] text-foreground",
+  add: "bg-emerald-500/10 text-emerald-300",
   del: "bg-destructive/10 text-destructive",
   ctx: "text-muted-foreground/80",
 } as const;

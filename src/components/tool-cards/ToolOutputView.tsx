@@ -23,9 +23,12 @@ export function ToolOutputView({ part }: ToolOutputViewProps) {
   const smoothedOutput = useSmoothStreamingText(rawOutput, isStreaming);
   const output = isStreaming ? smoothedOutput : rawOutput;
 
-  const filePath = extractToolFilePath(part);
-  const edits = extractToolEdits(part);
-  const writtenContent = extractWrittenContent(part);
+  // Разбираем аргументы вызова, а не саму часть: раньше сюда передавалась
+  // вся part, полей правки в ней нет, и карточка показывала только
+  // «Edited file» вместо разницы.
+  const filePath = extractToolFilePath(input);
+  const edits = extractToolEdits(input);
+  const writtenContent = extractWrittenContent(input);
 
   if (tool === "edit" && edits && edits.length > 0) {
     return (

@@ -1,14 +1,14 @@
-import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
-import { GIT_ACTIONS } from '../git-tool.mjs';
-import { SSH_ACTIONS } from '../ssh-tool.mjs';
-import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
 import { BROWSER_ACTIONS } from '../browser-client.mjs';
+import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
+import { executorRequired } from '../executor-client.mjs';
+import { GIT_ACTIONS } from '../git-tool.mjs';
 import {
   MEDIA_MUTATING_TOOLS, MEDIA_SANDBOXED_TOOLS, MEDIA_TOOL_DEFINITIONS,
 } from '../media.mjs';
-import { subagentKinds } from '../subagents.mjs';
 import { shellSandboxAvailable } from '../sandbox.mjs';
-import { executorRequired } from '../executor-client.mjs';
+import { SSH_ACTIONS } from '../ssh-tool.mjs';
+import { subagentKinds } from '../subagents.mjs';
+import { EXTENDED_TOOLCHAIN_KINDS } from '../toolchains.mjs';
 import { agentNetworkPolicy, sshPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
@@ -20,22 +20,22 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'read',
     description: 'Read a numbered UTF-8 line window from a workspace file. Supports large text files via offset/limit without loading the whole file.',
-    inputSchema: object({ path: { type: 'string', description: 'Relative file path' }, offset: { type: 'integer', minimum: 0 }, limit: { type: 'integer', minimum: 1, maximum: 4000 } }, ['path']),
+    inputSchema: object({ path: { type: 'string', description: 'Relative file path' }, offset: { type: 'integer', minimum: 0, description: 'First line to return (0-based line offset). Default 0.' }, limit: { type: 'integer', minimum: 1, maximum: 4000, description: 'How many lines to return. Read only the window you need.' } }, ['path']),
   },
   {
     name: 'list',
     description: 'List files/directories in the current workspace. Heavy generated/vendor directories are skipped.',
-    inputSchema: object({ path: { type: 'string', description: 'Relative directory, default .' }, depth: { type: 'integer', minimum: 1, maximum: 6 } }),
+    inputSchema: object({ path: { type: 'string', description: 'Relative directory, default .' }, depth: { type: 'integer', minimum: 1, maximum: 6, description: 'How many directory levels to descend. Default 2.' } }),
   },
   {
     name: 'glob',
     description: 'Find workspace files by a simple glob such as **/*.ts, src/**, *.json. **/ also matches the workspace root.',
-    inputSchema: object({ pattern: { type: 'string' }, path: { type: 'string' } }, ['pattern']),
+    inputSchema: object({ pattern: { type: 'string', description: 'Glob such as **/*.ts or src/**/*.css' }, path: { type: 'string', description: 'Relative directory to search in, default .' } }, ['pattern']),
   },
   {
     name: 'grep',
-    description: 'Search UTF-8 workspace files for text or a regular expression.',
-    inputSchema: object({ query: { type: 'string' }, path: { type: 'string' }, regex: { type: 'boolean' }, maxResults: { type: 'integer', minimum: 1, maximum: 300 } }, ['query']),
+    description: 'Search UTF-8 workspace files for text or a regular expression. Returns matching lines as path:line: text.',
+    inputSchema: object({ query: { type: 'string', description: 'Literal text to find, or a JavaScript regular expression when regex=true' }, path: { type: 'string', description: 'Relative file or directory to search, default .' }, regex: { type: 'boolean', description: 'Treat query as a regular expression. Default false (literal match).' }, maxResults: { type: 'integer', minimum: 1, maximum: 300, description: 'Maximum matching lines to return. Default 100.' } }, ['query']),
   },
   {
     name: 'repo_map',
@@ -49,12 +49,12 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'write',
     description: 'Create or replace a UTF-8 file in the workspace. For a browser page/game the user-visible Preview opens index.html at the workspace root — write the main document there (a single root HTML page or a built dist/index.html is picked up automatically).',
-    inputSchema: object({ path: { type: 'string' }, content: { type: 'string' } }, ['path', 'content']),
+    inputSchema: object({ path: { type: 'string', description: 'Relative file path; missing directories are created' }, content: { type: 'string', description: 'Complete new file content. Prefer edit for changing part of an existing file.' } }, ['path', 'content']),
   },
   {
     name: 'edit',
-    description: 'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file.',
-    inputSchema: object({ path: { type: 'string' }, oldText: { type: 'string' }, newText: { type: 'string' }, all: { type: 'boolean' } }, ['path', 'oldText', 'newText']),
+    description: 'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file. The result reports the line number, -/+ line counts and the edited region with line numbers.',
+    inputSchema: object({ path: { type: 'string', description: 'Relative file path' }, oldText: { type: 'string', description: 'Exact existing text to replace, including whitespace and indentation. Include enough surrounding lines to make it unique.' }, newText: { type: 'string', description: 'Replacement text. Empty string deletes oldText.' }, all: { type: 'boolean', description: 'Replace every occurrence instead of only the first. Default false.' } }, ['path', 'oldText', 'newText']),
   },
   {
     name: 'apply_patch',
@@ -68,8 +68,8 @@ export const TOOL_DEFINITIONS = [
       todos: {
         type: 'array', maxItems: 30,
         items: object({
-          content: { type: 'string' },
-          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'] },
+          content: { type: 'string', description: 'Short task description' },
+          status: { type: 'string', enum: ['pending', 'in_progress', 'completed', 'cancelled'], description: 'Keep exactly one item in_progress while working' },
           priority: { type: 'string', enum: ['low', 'medium', 'high'] },
         }, ['content', 'status']),
       },
@@ -133,7 +133,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'bash',
     description: 'Run a shell command in the current workspace. Direct network clients and credential-like files are blocked by the default guarded egress policy; use structured web/environment/git tools where possible.',
-    inputSchema: object({ command: { type: 'string' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000 } }, ['command']),
+    inputSchema: object({ command: { type: 'string', description: 'Shell command run with bash in the workspace root. Output is truncated when very long; redirect bulky output to a file and inspect it with grep/read.' }, timeoutMs: { type: 'integer', minimum: 1000, maximum: 1_800_000, description: 'Timeout in ms. Default 600000 (10 min).' } }, ['command']),
   },
   {
     name: 'ssh_tool',
@@ -158,12 +158,12 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'websearch',
     description: 'Search the public web for developer documentation, APIs, error solutions, packages, and current information.',
-    inputSchema: object({ query: { type: 'string' }, count: { type: 'integer', minimum: 1, maximum: 10 } }, ['query']),
+    inputSchema: object({ query: { type: 'string', description: 'Search query' }, count: { type: 'integer', minimum: 1, maximum: 10, description: 'Number of results. Default 5.' } }, ['query']),
   },
   {
     name: 'webfetch',
     description: 'Fetch the text/HTML/JSON content of a public URL (HTTP/HTTPS only).',
-    inputSchema: object({ url: { type: 'string' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000 } }, ['url']),
+    inputSchema: object({ url: { type: 'string', description: 'Absolute http(s) URL' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000, description: 'Maximum characters of extracted text to return.' } }, ['url']),
   },
   {
     name: 'git',
@@ -197,7 +197,7 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'browser',
-    description: 'Automate an isolated Chromium browser for the current chat session. Supported actions: open, screenshot, click, type, key, evaluate, content, cookies, wait.',
+    description: 'Automate an isolated Chromium browser for the current chat session. Supported actions: open, screenshot, click, type, key, evaluate, content, cookies, wait. A screenshot is saved into the workspace and shown to you as an image in the next message, so you can verify a page visually (use width=390 for a phone layout).',
     inputSchema: object({
       action: { type: 'string', enum: BROWSER_ACTIONS, description: 'Browser action to execute' },
       url: { type: 'string', description: 'For action=open: URL (http/https) or workspace-relative path (e.g. index.html). For action=screenshot: optional; omit it to capture the page that is already open.' },
@@ -205,7 +205,10 @@ export const TOOL_DEFINITIONS = [
       text: { type: 'string', description: 'For action=type: text to enter' },
       key: { type: 'string', description: 'For action=key: key name (Enter, Tab, Escape, etc.)' },
       script: { type: 'string', description: 'For action=evaluate: JavaScript expression to run in page context' },
-      fullPage: { type: 'boolean', description: 'For action=screenshot: capture full scrollable page' },
+      fullPage: { type: 'boolean', description: 'For action=screenshot: capture the full scrollable page (default true). Set false to capture only the viewport.' },
+      width: { type: 'integer', minimum: 200, maximum: 4000, description: 'For action=screenshot: viewport width in px (default 1280). Use 390 to check a phone layout.' },
+      height: { type: 'integer', minimum: 200, maximum: 8000, description: 'For action=screenshot: viewport height in px (default 1600).' },
+      path: { type: 'string', description: 'For action=screenshot: optional workspace-relative output file (.png or .jpg). Defaults to .screenshots/screenshot-<time>.png' },
       timeoutMs: { type: 'integer', minimum: 500, maximum: 60000, description: 'Timeout in ms' },
     }, ['action']),
   },
