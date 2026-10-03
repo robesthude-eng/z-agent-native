@@ -4,12 +4,13 @@ import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
+import { MAX_AGENT_STEPS_CEILING } from '../config.mjs';
 import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
-import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { isTransientProviderError } from '../providers/transport.mjs';
+import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
 import { getTurn, listMessages, putMessage, releaseTurnCapacity, renewTurnCapacity, setTurn, workspaceFor } from '../store.mjs';
 import { availableToolDefinitions } from '../tools.mjs';
@@ -110,6 +111,7 @@ function planContinuationGate(strategy) {
     'Do not stop yet. Continue working on the remaining items with tools. If an item is already done or no longer needed, update the plan with todowrite (mark it completed or cancelled) and then give the final answer. If you are blocked and need the user, use the question tool.',
   ].join('\n');
 }
+
 import { liveTextSink } from './streaming.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
 
@@ -323,7 +325,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     const messages = listMessages(sessionId);
     const history = resume ? messages : messages.filter((m) => m.id !== assistant.id);
     const frames = framesFromMessages(history, workspace);
-    const maxSteps = Math.max(1, Math.min(128, Number(job?.stepBudget) || taskStepBudget(goal)));
+    const maxSteps = Math.max(1, Math.min(MAX_AGENT_STEPS_CEILING, Number(job?.stepBudget) || taskStepBudget(goal)));
     const rebuilt = resume ? rebuildLoopGuard(assistant) : { guard: createLoopGuard(), stop: null };
     const loopGuard = rebuilt.guard;
     let guardedStop = rebuilt.stop ? guardStopError(rebuilt.stop) : null;

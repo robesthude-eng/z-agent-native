@@ -380,6 +380,10 @@ test('a Console rate-limit payload is retryable even without HTTP 429', async ()
       statusCode: 400,
       message: 'Error from provider (Console): Rate limit exceeded. Please try again later.',
     }), true);
+    assert.equal(providers.isRateLimitProviderError({
+      statusCode: 401,
+      message: "OpenCode's free tier can only be used from within OpenCode",
+    }), true);
   } finally { globalThis.fetch = original; }
 });
 

@@ -11,7 +11,7 @@ export const MAX_UPLOAD_BYTES = Number.parseInt(process.env.Z_AGENT_MAX_UPLOAD_B
 // Hard ceiling for one turn. Z_AGENT_MAX_STEPS pins the budget exactly;
 // without it the runtime derives a budget from task complexity and clamps it here.
 export const MAX_AGENT_STEPS = Number.parseInt(process.env.Z_AGENT_MAX_STEPS || '', 10) || 0;
-export const MAX_AGENT_STEPS_CEILING = 128;
+export const MAX_AGENT_STEPS_CEILING = Number.parseInt(process.env.Z_AGENT_MAX_STEPS_CEILING || '', 10) || 400;
 export const DEFAULT_TOOL_TIMEOUT_MS = Number.parseInt(process.env.Z_AGENT_TOOL_TIMEOUT_MS || '', 10) || 600_000;
 // Streaming model calls last as long as tokens keep arriving. Abort only after
 // this much silence (not wall-clock). A 30-minute turn is many such calls.

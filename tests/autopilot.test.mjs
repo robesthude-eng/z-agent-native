@@ -1,8 +1,8 @@
-import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import test from 'node:test';
 import {
   buildModelPlan,
   fallbackEligible,
@@ -108,10 +108,10 @@ test('fallback switches away from an ended free-model SKU before visible output'
 });
 
 test('long tasks receive a larger bounded autonomous step budget', () => {
-  assert.equal(taskStepBudget('Поменяй один текст', ''), 64);
-  assert.ok(taskStepBudget('Полностью проведи архитектурную миграцию во всём репозитории и проверь production build', '') >= 96);
+  assert.equal(taskStepBudget('Поменяй один текст', ''), 150);
+  assert.ok(taskStepBudget('Полностью проведи архитектурную миграцию во всём репозитории и проверь production build', '') >= 200);
   assert.equal(taskStepBudget('anything', '17'), 17);
-  assert.equal(taskStepBudget('anything', '999'), 128);
+  assert.equal(taskStepBudget('anything', '999'), 400);
 });
 
 test('persistent project fingerprint changes when workspace state changes', () => {

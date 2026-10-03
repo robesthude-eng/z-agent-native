@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import { DATA_DIR, DURABLE_JOB_TTL_MS } from './config.mjs';
+import { DATA_DIR, DURABLE_JOB_TTL_MS, MAX_AGENT_STEPS_CEILING } from './config.mjs';
 
 const JOB_DIR = path.join(DATA_DIR, 'durable-jobs');
 
@@ -85,7 +85,7 @@ export function createDurableJob(input) {
     requestedModel: cleanModel(input?.requestedModel),
     goal: String(input?.goal || '').slice(0, 8_000),
     modelPlan: cleanPlan(input?.modelPlan),
-    stepBudget: Math.max(1, Math.min(128, Number(input?.stepBudget) || 36)),
+    stepBudget: Math.max(1, Math.min(MAX_AGENT_STEPS_CEILING, Number(input?.stepBudget) || 150)),
     state: 'running',
     checkpoint: {
       phase: 'created',

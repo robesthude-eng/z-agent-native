@@ -351,14 +351,14 @@ export function taskStepBudget(goal, configured = MAX_AGENT_STEPS) {
   // легко занимает несколько десятков шагов, а прежние 36 обрывали её на
   // середине с «достигнут лимит шагов». От настоящих циклов защищает
   // loop guard, а не маленький бюджет.
-  if (complexity >= 4) return Math.min(MAX_AGENT_STEPS_CEILING, 128);
-  if (complexity >= 2) return Math.min(MAX_AGENT_STEPS_CEILING, 96);
-  return Math.min(MAX_AGENT_STEPS_CEILING, 64);
+  if (complexity >= 4) return Math.min(MAX_AGENT_STEPS_CEILING, 300);
+  if (complexity >= 2) return Math.min(MAX_AGENT_STEPS_CEILING, 200);
+  return Math.min(MAX_AGENT_STEPS_CEILING, 150);
 }
 
 export function subagentStepBudget(profile, goal, configured = process.env.Z_AGENT_SUBAGENT_STEPS) {
   const explicit = Number(configured);
-  if (Number.isFinite(explicit) && explicit > 0) return Math.min(36, Math.max(2, Math.floor(explicit)));
+  if (Number.isFinite(explicit) && explicit > 0) return Math.min(120, Math.max(2, Math.floor(explicit)));
   const base = Math.max(2, Number(profile?.maxSteps) || 12);
-  return Math.min(30, base + complexityHint(goal) * 2);
+  return Math.min(80, base * 2 + complexityHint(goal) * 4);
 }
