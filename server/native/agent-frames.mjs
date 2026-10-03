@@ -5,12 +5,34 @@ import path from 'node:path';
 import { safeWorkspacePath } from './security.mjs';
 
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
+const SSH_FILE = new URL('../system-instruction-ssh.txt', import.meta.url);
+const TOOLCHAINS_FILE = new URL('../system-instruction-toolchains.txt', import.meta.url);
 
-let cachedSystem = null;
+const cache = new Map();
+function readPromptFile(url) {
+  if (!cache.has(url.href)) {
+    try { cache.set(url.href, fs.readFileSync(url, 'utf8').trim()); }
+    catch { cache.set(url.href, ''); }
+  }
+  return cache.get(url.href);
+}
 
-export function systemPrompt() {
-  if (cachedSystem == null) cachedSystem = fs.readFileSync(SYSTEM_FILE, 'utf8');
-  return cachedSystem;
+const TOOLCHAIN_TOPIC = /android|gradle|flutter|kotlin|\bapk\b|\baab\b|\bjdk\b|\bjava\b|\baws\b|gcloud|google cloud|kubectl|terraform/i;
+
+/**
+ * Системный промпт. Разделы, нужные не всегда, добавляются только когда
+ * применимы: правила SSH — если ssh_tool сейчас доступен (иначе промпт обещал
+ * бы инструмент, которого нет), подробности Android/облачных CLI — если
+ * задача или проект о них.
+ */
+export function systemPrompt({ toolNames = null, goal = '', projectContext = '' } = {}) {
+  const parts = [readPromptFile(SYSTEM_FILE)];
+  const available = (name) => !toolNames || toolNames.includes(name);
+  if (available('ssh_tool')) parts.push(readPromptFile(SSH_FILE));
+  if (available('ensure_environment') && TOOLCHAIN_TOPIC.test(`${goal}\n${projectContext}`)) {
+    parts.push(readPromptFile(TOOLCHAINS_FILE));
+  }
+  return parts.filter(Boolean).join('\n\n');
 }
 
 export function textParts(message) {

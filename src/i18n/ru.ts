@@ -409,6 +409,11 @@ export const messages = {
   "provider_channel_manager.klyuch_i_ego_ruchnye_modeli_tozhe":
     "Ключ и его ручные модели тоже будут удалены.",
   "provider_channel_manager.klyuch_ne_dobavlen": "ключ не добавлен",
+  "provider_channel_manager.vyzov_instrumentov": "Вызов инструментов",
+  "provider_channel_manager.kartinki": "Картинки",
+  "provider_channel_manager.cap_yes": "да",
+  "provider_channel_manager.cap_no": "нет",
+  "provider_channel_manager.cap_unknown": "не удалось проверить",
   "provider_channel_manager.model_otvetila_za_0_ms_mozhno":
     "Модель ответила за {0} мс — можно добавлять.",
   "provider_channel_manager.model_proverena_i_dobavlena":

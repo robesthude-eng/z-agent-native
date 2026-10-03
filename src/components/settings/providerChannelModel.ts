@@ -18,7 +18,13 @@ export interface ListedModel {
 export type ProbeState =
   | { kind: "idle" }
   | { kind: "checking" }
-  | { kind: "ok"; latencyMs: number }
+  | {
+      kind: "ok";
+      latencyMs: number;
+      capabilities?:
+        | { tools: boolean | null; vision: boolean | null }
+        | undefined;
+    }
   | { kind: "fail"; message: string };
 
 export interface ManualRow {

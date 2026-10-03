@@ -14,6 +14,9 @@ services:
       Z_AGENT_ALLOW_PUBLIC_WEB: '1'
       Z_AGENT_SHELL_NETWORK_POLICY: open
       Z_AGENT_SSH_POLICY: any
+      # Исполнитель в этом профиле имеет сеть; основной сервис должен знать
+      # это, чтобы не говорить модели, что shell работает без сети.
+      Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE: '0'
 
   z-agent-executor:
     network_mode: !override bridge

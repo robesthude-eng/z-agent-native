@@ -1,18 +1,20 @@
-import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { executeGitTool } from '../git-tool.mjs';
-import { executeSshTool } from '../ssh-tool.mjs';
+import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { safeWorkspacePath } from '../security.mjs';
-import {
-  executeReadFile, executeListFiles, executeGlobFiles, executeGrepFiles, executeWriteFile, executeEditFile, executeApplyPatch,
+import { executeSshTool } from '../ssh-tool.mjs';
+import { executeBrowserAction } from './browser.mjs';
+import { TOOL_DEFINITIONS } from './definitions.mjs';
+import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
+import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
+import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, executeListFiles, 
+  executeReadFile, executeWriteFile, 
 } from './filesystem.mjs';
+import { executeMediaAction, isMediaTool } from './media.mjs';
 import {
   execBash, executeBashTool, externalSpawnIdentity, missingCommandHint, sandboxUidHint,
 } from './shell.mjs';
-import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
-import { executeWebSearch, executeWebFetch } from './web.mjs';
-import { executeRunTests, executeDiagnostics } from './diagnostics.mjs';
-import { executeBrowserAction } from './browser.mjs';
-import { executeMediaAction, isMediaTool } from './media.mjs';
+import { ToolArgumentsError, validateToolInput } from './validate.mjs';
+import { executeWebFetch, executeWebSearch } from './web.mjs';
 
 const MAX_TOOL_OUTPUT = 512 * 1024;
 const LIVE_OUTPUT_INTERVAL_MS = 250;
@@ -72,10 +74,21 @@ export function createLiveOutput(onOutput) {
   };
 }
 
+export function assertValidToolInput(name, input) {
+  const tool = String(name || '').toLowerCase();
+  const definition = TOOL_DEFINITIONS.find((d) => d.name === tool);
+  if (!definition) return input || {};
+  const { ok, value, errors } = validateToolInput(definition.inputSchema, input || {});
+  if (!ok) throw new ToolArgumentsError(tool, errors, definition.inputSchema);
+  return value;
+}
+
 export async function executeTool(name, input, ctx = {}) {
   const root = ctx.workspace;
   if (!root) throw new Error('Workspace directory is required for tool execution');
   const tool = String(name || '').toLowerCase();
+  // Аргументы проверяются по схеме до любого действия (включая вызовы субагентов).
+  input = assertValidToolInput(tool, input);
 
   if (tool === 'question') return { kind: 'question', questions: Array.isArray(input?.questions) ? input.questions : [] };
 

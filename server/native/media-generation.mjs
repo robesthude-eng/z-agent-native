@@ -10,9 +10,9 @@ import {
   wavFromPcm,
   writeMediaFile,
 } from './media.mjs';
+import { assertMediaCapableProvider } from './providers/media.mjs';
 import { callProviderBinary, callProviderJson, providerSpecs, resolveModel } from './providers.mjs';
 import { getProviderKey } from './store.mjs';
-import { assertMediaCapableProvider } from './providers/media.mjs';
 
 // Model backed generation: images and speech.
 //
@@ -80,6 +80,31 @@ function resolveMediaModelRef(ownerId, modelInput, configuredDefault, fallback) 
     throw Object.assign(new Error('Укажите модель Google как ID_канала/ID_модели или настройте Z_AGENT_IMAGE_MODEL / Z_AGENT_SPEECH_MODEL.'), { statusCode: 400 });
   }
   return checked({ providerID, modelID: providerID === 'zai' && fallback === DEFAULT_IMAGE_MODEL ? 'cogview-3-plus' : parseModelRef(fallback).modelID });
+}
+
+/**
+ * Фактические медиа-каналы владельца для системного промпта: модели не нужно
+ * угадывать идентификаторы вида openai/… — она видит реальные ID каналов.
+ */
+export function mediaChannelsPrompt(ownerId) {
+  let specs = {};
+  try { specs = providerSpecs(ownerId) || {}; } catch { return ''; }
+  const channels = Object.entries(specs).filter(([id, spec]) =>
+    spec?.enabled !== false && ['google', 'openai'].includes(spec?.kind) && getProviderKey(ownerId, id));
+  const defaults = [
+    process.env.Z_AGENT_IMAGE_MODEL ? `image default ${process.env.Z_AGENT_IMAGE_MODEL}` : '',
+    process.env.Z_AGENT_SPEECH_MODEL ? `speech default ${process.env.Z_AGENT_SPEECH_MODEL}` : '',
+  ].filter(Boolean).join('; ');
+  if (!channels.length) {
+    return `Media generation channels: none configured with an API key${defaults ? ` (${defaults})` : ''}. If generate_image/generate_speech fail for this reason, tell the user to add a provider in Settings instead of guessing model IDs.`;
+  }
+  const lines = channels.slice(0, 12).map(([id, spec]) => `- ${id}${spec?.name && spec.name !== id ? ` (${spec.name})` : ''}: ${spec.kind}-compatible protocol`);
+  return [
+    'Media generation channels (use exactly "<channel id>/<model id>" for the model argument of generate_image/generate_speech; omit model to use the default):',
+    ...lines,
+    defaults ? `Configured defaults: ${defaults}.` : (channels.length === 1 && channels[0][1].kind === 'openai' ? 'With a single OpenAI-compatible channel the model may be omitted.' : 'Pass an explicit model: the default cannot be inferred for these channels.'),
+    'Only use model IDs the channel actually serves; if unsure, ask the user instead of guessing.',
+  ].join('\n');
 }
 
 export function resolveImageModelRef(ownerId, modelInput) {

@@ -3,7 +3,7 @@ import { emit } from '../events.mjs';
 import { isIncompleteToolCall } from '../providers.mjs';
 import { putMessage, workspaceFor } from '../store.mjs';
 import { runSubagent } from '../subagent-runner.mjs';
-import { executeTool, toolOutputText } from '../tools.mjs';
+import { assertValidToolInput, executeTool, toolOutputText } from '../tools.mjs';
 import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
 import { emitPart } from './message-parts.mjs';
 import { askQuestion } from './questions.mjs';
@@ -76,7 +76,7 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
       const subagent = await runSubagent({
         ownerId: runtime.ownerId,
         modelPlan: runtime.modelPlan,
-        input: call.arguments || {},
+        input: assertValidToolInput('task', call.arguments || {}),
         workspace,
         signal: controller.signal,
         projectContext: runtime.projectContext,

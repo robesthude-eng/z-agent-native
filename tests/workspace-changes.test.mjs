@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { snapshotWorkspace, compareWorkspaceSnapshots } from '../server/native/workspace-changes.mjs';
+import { completionGate, createTurnStrategy, observeTool } from '../server/native/context.mjs';
 import { executeBashTool } from '../server/native/tools/shell.mjs';
-import { createTurnStrategy, observeTool, completionGate } from '../server/native/context.mjs';
+import { compareWorkspaceSnapshots, snapshotWorkspace } from '../server/native/workspace-changes.mjs';
 
 test('workspace change tracking observes edits, removals and renames without reading symlink targets', async () => {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-changes-'));
@@ -47,4 +47,21 @@ test('real bash edits still require verification while environment inspection do
     else process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = prior;
     await fs.rm(root, { recursive: true, force: true });
   }
+});
+
+test('dependency and build folders do not make the scan incomplete', async () => {
+  const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspace-heavy-'));
+  try {
+    await fs.writeFile(path.join(root, 'index.js'), 'x');
+    for (const dir of ['node_modules/pkg', 'web/node_modules/a', '.venv/lib', 'dist']) {
+      await fs.mkdir(path.join(root, dir), { recursive: true });
+      for (let i = 0; i < 30; i++) await fs.writeFile(path.join(root, dir, `f${i}.js`), 'x');
+    }
+    const before = await snapshotWorkspace(root, { maxEntries: 20 });
+    assert.equal(before.complete, true);
+    await fs.writeFile(path.join(root, 'node_modules/pkg/f0.js'), 'changed');
+    assert.deepEqual(compareWorkspaceSnapshots(before, await snapshotWorkspace(root, { maxEntries: 20 })).paths, []);
+    await fs.writeFile(path.join(root, 'index.js'), 'changed');
+    assert.deepEqual(compareWorkspaceSnapshots(before, await snapshotWorkspace(root, { maxEntries: 20 })).paths, ['index.js']);
+  } finally { await fs.rm(root, { recursive: true, force: true }); }
 });

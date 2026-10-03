@@ -10,6 +10,12 @@ import type {
   ProbeState,
 } from "../providerChannelModel";
 
+function capabilityLabel(value: boolean | null): string {
+  if (value === true) return t("provider_channel_manager.cap_yes");
+  if (value === false) return t("provider_channel_manager.cap_no");
+  return t("provider_channel_manager.cap_unknown");
+}
+
 interface ProviderModelsSectionProps {
   channel: ProviderChannel;
   models: ListedModel[];
@@ -216,6 +222,14 @@ export function ProviderModelsSection({
                   probe.latencyMs,
                 ])
               : probe.message}
+            {probe.kind === "ok" && probe.capabilities && (
+              <div className="mt-1 text-muted-foreground">
+                {t("provider_channel_manager.vyzov_instrumentov")}:{" "}
+                {capabilityLabel(probe.capabilities.tools)} ·{" "}
+                {t("provider_channel_manager.kartinki")}:{" "}
+                {capabilityLabel(probe.capabilities.vision)}
+              </div>
+            )}
           </div>
         )}
         {manualModels.length > 0 && (

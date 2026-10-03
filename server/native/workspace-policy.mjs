@@ -1,3 +1,4 @@
+import { executorNetworkless } from './executor-client.mjs';
 import path from 'node:path';
 
 const SENSITIVE_BASENAMES = new Set([
@@ -194,8 +195,9 @@ export function runtimeCapabilityPrompt() {
   const shell = shellNetworkPolicy();
   const ssh = sshPolicy();
   const sudo = shellPrivilegePolicy() === 'sudo';
-  const isolatedExecutor = String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') === '1'
-    && String(process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE || '1') !== '0';
+  const executorRequiredHere = String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') === '1';
+  const attested = executorNetworkless();
+  const isolatedExecutor = executorRequiredHere && (attested ?? String(process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE || '1') !== '0');
   const installers = web === 'public'
     && (String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') !== '1'
       || process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS === '1');

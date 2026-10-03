@@ -135,11 +135,25 @@ export async function killExecutorIdentity(uid) {
   }
 }
 
+// Последнее, что executor сам сообщил о своей сети. Описание среды для модели
+// берёт это значение, а не переменную окружения: настройка сети задаётся
+// контейнеру executor, и основной сервис может о ней не знать.
+let lastNetworkAttestation = null;
+
+/** true — у executor нет внешних интерфейсов, false — есть, null — неизвестно. */
+export function executorNetworkless() {
+  return lastNetworkAttestation;
+}
+
 export async function probeExecutor() {
   if (!executorAvailable()) {
     await waitForExecutorSocket(1500);
   }
   if (!executorAvailable()) return { ok: false, reason: 'socket_missing' };
-  try { return await requestExecutor('/health', {}, { timeoutMs: 2_000 }); }
-  catch (error) { return { ok: false, reason: error?.message || String(error) }; }
+  try {
+    const result = await requestExecutor('/health', {}, { timeoutMs: 2_000 });
+    const external = result?.network?.externalInterfaces;
+    if (Array.isArray(external)) lastNetworkAttestation = external.length === 0;
+    return result;
+  } catch (error) { return { ok: false, reason: error?.message || String(error) }; }
 }

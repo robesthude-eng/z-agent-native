@@ -5,6 +5,8 @@ import {
 } from '../autopilot.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
 import { MAX_AGENT_STEPS_CEILING } from '../config.mjs';
+import { executorNetworkless, executorRequired, probeExecutor } from '../executor-client.mjs';
+import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
@@ -100,6 +102,9 @@ export function expectsUserReply(text) {
   // A request for the user's next decision is a stopping point, even when
   // followed by "and I will start". Optional offers are not blocking requests.
   if (/^(?:если (?:хотите|нужно|понадобится)|if you (?:want|need)|let me know if)/iu.test(tail)) return false;
+  // Ответ, который заканчивается вопросом к пользователю («Какой вариант
+  // выбрать?», «Would you like me to…?»), — тоже точка остановки.
+  if (/\?\s*[*_)»"']*\s*$/u.test(tail) && !/```\s*$/.test(tail)) return true;
   return /^(?:\*{0,2})(?:скажите|скажи|пришлите|пришли|уточните|уточни|выберите|выбери|подтвердите|подтверди|укажите|укажи|сообщите|сообщи|что (?:делаем|сделать) дальше|please (?:provide|send|choose|confirm|specify)|(?:provide|send|choose|confirm|specify) (?:the|your|a)|which (?:option|project)|what (?:would you like|should we))/iu.test(tail);
 }
 
@@ -291,6 +296,11 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
 }
 
 export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
+  // Описание среды для модели опирается на ответ самого executor о его сети.
+  if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
+  const mediaPrompt = availableToolDefinitions().some((t) => t.name === 'generate_image' || t.name === 'generate_speech')
+    ? mediaChannelsPrompt(ownerId)
+    : '';
   const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
@@ -367,7 +377,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       let response;
       try {
         response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-          system: [systemPrompt(), runtimeCapabilityPrompt(), runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          system: [systemPrompt({ toolNames: availableToolDefinitions().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
           frames: providerFrames,
           tools: availableToolDefinitions(),
           signal: controller.signal,
@@ -476,7 +486,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
               content: '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
             });
             const summaryRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
-              system: [systemPrompt(), runtimeCapabilityPrompt(), runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+              system: [systemPrompt({ toolNames: availableToolDefinitions().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
               frames: compactFrames(frames),
               tools: [],
               signal: controller.signal,

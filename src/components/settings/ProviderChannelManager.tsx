@@ -326,7 +326,11 @@ export function ProviderChannelManager() {
       );
       setProbe(
         result.available
-          ? { kind: "ok", latencyMs: result.latencyMs }
+          ? {
+              kind: "ok",
+              latencyMs: result.latencyMs,
+              capabilities: result.capabilities,
+            }
           : {
               kind: "fail",
               message:

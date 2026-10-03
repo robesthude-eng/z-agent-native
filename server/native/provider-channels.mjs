@@ -129,7 +129,7 @@ export async function handleProviderChannels(req, res, ownerId, url) {
       const body = await readJson(req, 64 * 1024);
       const modelId = String(body.modelId || '').trim();
       if (!modelId || modelId.length > 200) return reply(res, 400, { error: 'Некорректный Model ID' });
-      return reply(res, 200, await probeModel(ownerId, providerId, { modelId }));
+      return reply(res, 200, await probeModel(ownerId, providerId, { modelId, capabilities: true }));
     }
     if (req.method === 'GET') return reply(res, 200, { models: listManualModels(ownerId, providerId) });
     if (req.method === 'POST') {

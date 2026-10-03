@@ -8,7 +8,7 @@ export const MEDIA_TOOL_DEFINITIONS = [
     inputSchema: object({
       prompt: { type: 'string', description: 'What to draw. Be specific about subject, style, composition and colours.' },
       path: { type: 'string', description: 'Workspace-relative output file, for example assets/hero.png' },
-      model: { type: 'string', description: 'Optional provider/model override, for example openai/gpt-image-1 or google/gemini-2.5-flash-image.' },
+      model: { type: 'string', description: 'Optional "<channel id>/<model id>" from the Media generation channels list in the system prompt. Omit to use the configured default.' },
       size: { type: 'string', description: 'WIDTHxHEIGHT such as 1024x1024, 1536x1024 or 1024x1536.' },
       quality: { type: 'string', enum: ['auto', 'low', 'medium', 'high'] },
       background: { type: 'string', enum: ['auto', 'transparent', 'opaque'] },
@@ -23,7 +23,7 @@ export const MEDIA_TOOL_DEFINITIONS = [
       text: { type: 'string', description: 'Text to speak. Plain text, no markup.' },
       path: { type: 'string', description: 'Workspace-relative output file, for example assets/voice.mp3' },
       voice: { type: 'string', description: 'Provider voice name, for example alloy, verse or Kore.' },
-      model: { type: 'string', description: 'Optional provider/model override, for example openai/gpt-4o-mini-tts.' },
+      model: { type: 'string', description: 'Optional "<channel id>/<model id>" from the Media generation channels list in the system prompt. Omit to use the configured default.' },
       speed: { type: 'number', minimum: 0.25, maximum: 4, description: 'Playback rate multiplier where the provider supports it.' },
       instructions: { type: 'string', description: 'Optional delivery notes such as tone, emotion or pacing.' },
     }, ['text', 'path']),

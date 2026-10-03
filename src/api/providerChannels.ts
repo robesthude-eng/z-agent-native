@@ -61,6 +61,8 @@ export interface ProviderChannelProbeResult {
   latencyMs: number;
   checkedAt: number;
   error?: string;
+  /** true/false — подтверждено/нет, null — проверка не дала ответа. */
+  capabilities?: { tools: boolean | null; vision: boolean | null };
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

@@ -21,6 +21,7 @@ export {
 } from './tools/diagnostics.mjs';
 
 export {
+  assertValidToolInput,
   createLiveOutput,
   executeTool,
   textResult,
