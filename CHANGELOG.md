@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Release-ready chat controls
+
+- Replaced the glowing terminal agent indicator with a restrained activity dot, an evidence-based status and elapsed time. Removed the empty “no external actions” subtitle.
+- User messages now expose only copy/edit icons; removed the branching action from chat UI. Assistant retry remains an icon-only control. Accessible names, tooltips and 44px hit targets are preserved.
+
 ## Readable agent chat
 
 - Self-hosted Inter with Cyrillic support, larger chat text, calmer spacing and clearer Markdown hierarchy. Font size continues to follow accessibility preferences.

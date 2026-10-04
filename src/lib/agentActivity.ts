@@ -151,6 +151,7 @@ export function describeAgentActivity(
   let last: Message | undefined;
   for (let i = list.length - 1; i >= 0; i--) {
     const candidate = list[i];
+    if (candidate?.role === "user") break;
     if (candidate?.role === "assistant") {
       last = candidate;
       break;

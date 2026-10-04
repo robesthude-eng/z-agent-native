@@ -1,3 +1,4 @@
+import { setTimeout as delay } from 'node:timers/promises';
 import { getProviderKey, listHiddenModels, listManualModels } from '../store.mjs';
 import { listProviderConfigs } from '../provider-configs.mjs';
 import {
@@ -20,7 +21,7 @@ function fixturePrompt(frames) {
   return (Array.isArray(frames) ? frames : []).filter((frame) => frame?.role === 'user').map((frame) => String(frame?.content || '')).join('\n');
 }
 
-export function fixtureResponse(request) {
+export async function fixtureResponse(request) {
   if (!fixtureProviderEnabled()) throw Object.assign(new Error('Fixture provider is disabled'), { statusCode: 403 });
   const frames = request?.frames || [];
   const prompt = fixturePrompt(frames);
@@ -28,6 +29,10 @@ export function fixtureResponse(request) {
   const writeCount = fixtureToolCount(frames, 'write');
   const testsDone = fixtureToolCount(frames, 'run_tests') > 0;
   let response;
+  // Real busy state for UI regressions, only within the opt-in fixture provider.
+  if (writeCount === 0 && /FIXTURE_RELEASE_CONTROLS/i.test(prompt)) {
+    await delay(8000, undefined, { signal: request?.signal });
+  }
 
   if (/FIXTURE_ASK_USER/i.test(prompt) && !questionDone) {
     response = {

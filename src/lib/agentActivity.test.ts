@@ -80,7 +80,7 @@ describe("describeAgentActivity", () => {
         ]),
       ).label,
     ).toBe("Готовит следующий шаг");
-    expect(describeAgentActivity([]).label).toBe("Начинает");
+    expect(describeAgentActivity([]).label).toBe("Обрабатываю запрос");
   });
 });
 
@@ -105,5 +105,27 @@ describe("activityDetail", () => {
     expect(
       activityDetail("task", { state: { input: { agent: "security" } } }),
     ).toBe("security");
+  });
+});
+
+describe("new-turn progress", () => {
+  it("does not show tools from the previous turn while a new request starts", () => {
+    const messages = [
+      ...assistant([
+        {
+          type: "tool",
+          tool: "read",
+          state: { status: "completed", input: { path: "old.ts" } },
+        },
+      ]),
+      {
+        id: "new-user",
+        role: "user",
+        parts: [{ type: "text", text: "New task" }],
+      },
+    ] as Message[];
+    expect(describeAgentActivity(messages).label).toBe("Обрабатываю запрос");
+    expect(describeAgentActivity(messages).steps).toEqual([]);
+    expect(describeAgentActivity(messages).detail).toBe("");
   });
 });

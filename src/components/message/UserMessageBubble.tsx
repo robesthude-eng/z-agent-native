@@ -18,7 +18,6 @@ interface UserMessageBubbleProps {
   onStartEditing: () => void;
   onCancelEditing: () => void;
   onSaveAndResend: () => void;
-  onFork: () => void;
   isLatest: boolean;
 }
 
@@ -30,7 +29,6 @@ export function UserMessageBubble({
   onStartEditing,
   onCancelEditing,
   onSaveAndResend,
-  onFork,
   isLatest,
 }: UserMessageBubbleProps) {
   /*
@@ -133,7 +131,6 @@ export function UserMessageBubble({
               isStreaming={false}
               onRetry={() => {}}
               onEditAndResend={onStartEditing}
-              onFork={onFork}
               showEditButton={true}
             />
           </div>

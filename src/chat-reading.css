@@ -142,3 +142,73 @@
   white-space: nowrap;
   flex-shrink: 0;
 }
+.chat-message-actions .chat-message-action {
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border-radius: 8px;
+}
+.chat-message-actions .chat-message-action svg {
+  width: 16px;
+  height: 16px;
+}
+.agent-progress {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+  max-width: 100%;
+  padding: 8px 0;
+}
+.agent-progress-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  margin-top: 8px;
+  border-radius: 50%;
+  background: var(--color-foreground);
+  animation: agent-progress-pulse 1.8s ease-in-out infinite;
+}
+.agent-progress-copy {
+  flex: 1;
+  min-width: 0;
+}
+.agent-progress-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  line-height: 1.6;
+  color: var(--color-foreground);
+}
+.agent-progress-detail {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: var(--color-muted-foreground);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.agent-progress-time {
+  flex: none;
+  padding-top: 2px;
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  color: var(--color-muted-foreground);
+}
+@keyframes agent-progress-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .agent-progress-dot {
+    animation: none;
+  }
+}

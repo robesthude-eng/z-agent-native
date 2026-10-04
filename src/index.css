@@ -388,75 +388,6 @@
 }
 
 /* ==== agent work indicator (aura >_ ) ==== */
-@property --oc-a {
-  syntax: '<angle>';
-  initial-value: 0deg;
-  inherits: false;
-}
-.oc-thinking {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 4px 0;
-}
-.oc-aura {
-  position: relative;
-  width: 30px;
-  height: 30px;
-  flex-shrink: 0;
-}
-.oc-aura-glow {
-  position: absolute;
-  inset: -5px;
-  border-radius: 12px;
-  /* Аура вращается, а не переливается цветом. Раньше здесь по кругу шли
-     зелёный, синий и фиолетовый — три оттенка, которые ничего не сообщали:
-     «агент работает» уже сказано движением, текстом фазы и таймером.
-     Теперь тот же оборот собран из тона темы, поэтому индикатор одинаково
-     уместен и на тёмном фоне, и на светлом. */
-  background: conic-gradient(
-    from var(--oc-a, 0deg),
-    var(--color-foreground),
-    var(--color-muted-foreground),
-    var(--color-border),
-    var(--color-foreground)
-  );
-  filter: blur(9px);
-  opacity: 0.55;
-  animation:
-    oc-spin 3.6s linear infinite,
-    oc-breathe 2.6s ease-in-out infinite;
-}
-.oc-aura-mark {
-  position: absolute;
-  inset: 0;
-  border-radius: 9px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 700;
-  color: var(--color-foreground);
-}
-@keyframes oc-spin {
-  to {
-    --oc-a: 360deg;
-  }
-}
-@keyframes oc-breathe {
-  0%,
-  100% {
-    opacity: 0.3;
-    transform: scale(0.95);
-  }
-  50% {
-    opacity: 0.85;
-    transform: scale(1.07);
-  }
-}
 .oc-sheen-text {
   font-family: var(--font-mono);
   font-size: 12.5px;
@@ -485,7 +416,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .oc-aura-glow,
   .oc-sheen-text {
     animation: none;
   }
