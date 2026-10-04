@@ -67,6 +67,10 @@ export async function fixtureResponse(request) {
     response.text = 'Готово: создан модуль `hello.js` и проверен регрессионным тестом.\n\n## Что сделано\n\n- **Модуль:** добавлена функция приветствия.\n- **Проверка:** тест читает созданный файл и проверяет его содержимое.\n- **Файлы:** доступны в рабочем пространстве рядом с чатом.\n\n## Как проверено\n\nВыполнена команда `node --test hello.test.mjs`. Тест завершился успешно.\n\n### Пример использования\n\n```js\nimport { hello } from "./hello.js";\nconsole.log(hello());\n```\n\n| Файл | Назначение |\n| --- | --- |\n| hello.js | Код модуля |\n| hello.test.mjs | Регрессионный тест |\n\nОткройте файл в воркспейсе, чтобы посмотреть код.';
   }
 
+  if (response.finish === 'stop' && /FIXTURE_PROVIDER_RESEARCH_REPLY/i.test(prompt)) {
+    response.text = '## Документация OpenCode\n\nСсылка в ответе должна отображаться, а не превращаться в ошибку: [opencode.ai](https://opencode.ai/docs/zen/).\n\nПример параметра запроса: `{"model":"example-model"}`.\n\nФраза `Model is unavailable` здесь — пример текста ошибки, а не ошибка этого ответа.';
+  }
+
   if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text, 'text');
   return { ...response, usage: { prompt_tokens: 16, completion_tokens: 12 }, streamed: typeof request?.onTextDelta === 'function' };
 }

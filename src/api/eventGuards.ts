@@ -121,7 +121,8 @@ const PUBLIC_MODEL_UNAVAILABLE = t(
   "event_guards.eta_model_seychas_nedostupna_u_provaydera",
 );
 
-export function publicErrorText(text: string): string {
+/** Error-only mapper. Never apply to normal assistant text or Markdown. */
+function publicErrorText(text: string): string {
   const value = String(text || "").trim();
   if (PROVIDER_SALES_RE.test(value) || MODEL_UNAVAILABLE_RE.test(value)) {
     return PUBLIC_MODEL_UNAVAILABLE;

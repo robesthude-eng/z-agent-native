@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Preserve normal research replies
+
+- Fixed normal assistant replies being replaced with a model-unavailable notice when they contain OpenCode URLs, model JSON examples or quoted error text. Provider-error sanitization now stays within structured errors. Existing saved answers are preserved.
+- Added component and end-to-end regressions for Markdown links, request examples and reloading saved replies.
+
 ## Release-ready chat controls
 
 - Replaced the glowing terminal agent indicator with a restrained activity dot, an evidence-based status and elapsed time. Removed the empty “no external actions” subtitle.

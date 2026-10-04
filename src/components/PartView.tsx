@@ -14,7 +14,6 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { publicErrorText } from "../api/eventGuards";
 import { isVisible, presentationFor } from "../api/partPresentation";
 import type { Part, ToolPart } from "../api/types";
 import { extractAttachments } from "../lib/attachments";
@@ -462,7 +461,9 @@ const OptimizedPartView = ({
     }
     case "text": {
       if (!p.text) return null;
-      const txt = publicErrorText(asText(p.text));
+      // Ordinary response text is not a provider error: links and examples
+      // must survive rendering. Only structured errors use errorMessage.
+      const txt = asText(p.text);
       // Если это старое или текущее вложенное текстовое сообщение формата «📄 filename\n```...```»,
       // превращаем «📄 filename\n```...```» в «📎 filename → uploads/filename», чтобы отрендерить чипом!
       const normalizedTxt = txt.replace(
