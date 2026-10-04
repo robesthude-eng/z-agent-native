@@ -11,6 +11,7 @@ import { AgentTabContent } from "./settings/AgentTabContent";
 import { AppearanceTabContent } from "./settings/AppearanceTabContent";
 import { ChatTabContent } from "./settings/ChatTabContent";
 import { DataTabContent } from "./settings/DataTabContent";
+import { MemoryTabContent } from "./settings/MemoryTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
 import { RuntimeTabContent } from "./settings/RuntimeTabContent";
 import { ServerTabContent } from "./settings/ServerTabContent";
@@ -20,6 +21,7 @@ type SettingsTab =
   | "account"
   | "appearance"
   | "agent"
+  | "memory"
   | "chat"
   | "data"
   | "models"
@@ -82,6 +84,13 @@ const TAB_GROUPS: TabGroup[] = [
         title: "Агент и инструкции",
         keywords:
           "агент инструкции промпт стиль язык ответов кратко подробно персональные custom instructions",
+      },
+      {
+        id: "memory",
+        label: "Память и навыки",
+        title: "Память и навыки агента",
+        keywords:
+          "память навыки skills memory уроки факты предпочтения рецепты запомнил",
       },
       {
         id: "chat",
@@ -376,6 +385,7 @@ export default function SettingsPanel() {
               {activeTab === "account" && <AccountTabContent />}
               {activeTab === "appearance" && <AppearanceTabContent />}
               {activeTab === "agent" && <AgentTabContent />}
+              {activeTab === "memory" && <MemoryTabContent />}
               {activeTab === "chat" && <ChatTabContent />}
               {activeTab === "data" && <DataTabContent />}
               {activeTab === "server" && <ServerTabContent />}

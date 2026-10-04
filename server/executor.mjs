@@ -51,6 +51,26 @@ function ensureSudoIdentity(uid, gid) {
 // Файлы, которые процессы чата оставили во временной папке executor (кэши
 // npm/pip, сборки, HOME=/tmp у sudo-учёток). /tmp — tmpfs, то есть память:
 // без чистки удалённые чаты копили бы её до перезапуска контейнера.
+// Фоновые задачи агента (setsid) не входят в отслеживаемые группы процессов.
+// При удалении чата добиваем все процессы его uid по /proc.
+function killUidProcesses(uid, signal = 'SIGKILL') {
+  let killed = 0;
+  let entries = [];
+  try { entries = fs.readdirSync('/proc'); } catch { return 0; }
+  for (const name of entries) {
+    if (!/^\d+$/.test(name) || Number(name) === process.pid) continue;
+    try {
+      const status = fs.readFileSync(`/proc/${name}/status`, 'utf8');
+      const m = /^Uid:\s+(\d+)\s+(\d+)/m.exec(status);
+      if (m && (Number(m[1]) === uid || Number(m[2]) === uid)) {
+        process.kill(Number(name), signal);
+        killed += 1;
+      }
+    } catch {}
+  }
+  return killed;
+}
+
 function purgeUidTemp(uid, root = os.tmpdir(), depth = 0) {
   let removed = 0;
   let entries = [];
@@ -269,6 +289,7 @@ const server = http.createServer(async (req, res) => {
         // Чат удалён: дать процессам завершиться и стереть их временные файлы.
         if (killed) await new Promise((resolve) => setTimeout(resolve, 300));
         for (const child of activeByUid.get(uid) || []) killChild(child, 'SIGKILL');
+        if (uid >= 1000) killed += killUidProcesses(uid);
         purged = purgeUidTemp(uid);
       }
       return json(res, 200, { ok: true, killed, purged });

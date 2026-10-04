@@ -74,3 +74,54 @@ function saveScreenshot(root, input, result, ctx) {
     visualMedia: attach ? [{ name: target, dataUrl: `data:${mime};base64,${bytes.toString('base64')}` }] : [],
   };
 }
+
+const VISUAL_VIEWPORTS = [
+  { label: 'desktop', width: 1366, height: 900 },
+  { label: 'mobile', width: 390, height: 844 },
+];
+
+/**
+ * Проверка интерфейса «глазами»: страница открывается в браузере, снимается
+ * на компьютере и телефоне, собираются ошибки консоли. Оба снимка уходят
+ * модели картинками, чтобы она сама оценила вёрстку и поправила её.
+ */
+export async function executeVisualCheck(root, input, ctx = {}) {
+  const target = String(input?.url || 'index.html').trim();
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const wanted = Array.isArray(input?.viewports) && input.viewports.length
+    ? VISUAL_VIEWPORTS.filter((v) => input.viewports.includes(v.label))
+    : VISUAL_VIEWPORTS;
+  await executeBrowserAction(root, { action: 'open', url: target }, ctx);
+  if (input?.waitMs) await executeBrowserAction(root, { action: 'wait', timeoutMs: Math.min(10_000, Number(input.waitMs)) }, ctx).catch(() => null);
+  const shots = [];
+  for (const vp of wanted) {
+    const shot = await executeBrowserAction(root, {
+      action: 'screenshot',
+      width: vp.width,
+      height: vp.height,
+      fullPage: input?.fullPage !== false,
+      path: `.screenshots/visual-${stamp}-${vp.label}.png`,
+    }, ctx);
+    shots.push({ vp, shot });
+  }
+  let consoleText = '';
+  try {
+    const c = await executeBrowserAction(root, { action: 'console' }, ctx);
+    consoleText = typeof c?.output === 'string' ? c.output : JSON.stringify(c?.output ?? c ?? '');
+  } catch (err) {
+    consoleText = `console unavailable: ${err?.message || err}`;
+  }
+  const consoleErrors = /\b(error|uncaught|failed|404|500)\b/i.test(consoleText) && !/no (console )?(messages|errors)/i.test(consoleText);
+  const media = shots.flatMap((s) => s.shot?.visualMedia || []);
+  return {
+    output: [
+      `Visual check of ${target}: ${shots.map((s) => `${s.vp.label} ${s.vp.width}px → ${s.shot?.title || '?'}`).join('; ')}.`,
+      media.length ? 'Both screenshots are attached below. Inspect them critically: overlapping or cut-off elements, horizontal scroll on mobile, unreadable contrast, broken images, empty areas, misaligned grids, text overflow, missing content. Fix what is wrong and run visual_check again; if everything looks right, say so briefly.' : 'Screenshots were too large to attach; use view_media on the saved paths.',
+      `Console/network:\n${String(consoleText || '(empty)').slice(0, 4000)}`,
+    ].join('\n\n'),
+    title: `Проверка интерфейса: ${target}`,
+    metadata: { visualCheck: { target, shots: shots.map((s) => s.shot?.title).filter(Boolean), consoleErrors } },
+    mutatedPaths: [],
+    visualMedia: media,
+  };
+}

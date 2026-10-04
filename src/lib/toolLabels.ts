@@ -46,6 +46,12 @@ export const TOOL_LABEL_KEYS: Record<string, MessageKey> = {
   convert_media: "tool_card.konvertiruet_fayl",
   media_info: "tool_card.smotrit_svedeniya_o_fayle",
   view_media: "tool_card.rassmatrivaet_media",
+  review: "tool_card.revyu",
+  visual_check: "tool_card.proveryaet_interfeys",
+  background: "tool_card.fonovaya_zadacha",
+  memory: "tool_card.pamyat",
+  skill: "tool_card.navyk",
+  cloud_sandbox: "tool_card.oblachnaya_mashina",
 };
 
 export function friendlyToolLabel(tool?: string): string {

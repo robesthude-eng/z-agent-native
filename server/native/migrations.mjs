@@ -120,6 +120,39 @@ export const MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_chat_shares_owner ON chat_shares(owner_id);
       `);
     },
+  },
+  {
+    version: 8,
+    id: '20261004_008_agent_memory_skills',
+    // Additive: older readers ignore the new tables.
+    minReaderVersion: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_memory (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          kind TEXT NOT NULL,
+          text TEXT NOT NULL,
+          source TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_memory_owner ON agent_memory(owner_id, scope, created_at);
+        CREATE TABLE IF NOT EXISTS agent_skills (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          name TEXT NOT NULL,
+          description TEXT NOT NULL,
+          content TEXT NOT NULL,
+          uses INTEGER NOT NULL DEFAULT 0,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          UNIQUE(owner_id, name),
+          FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
+        );
+      `);
+    },
   }
 ];
 

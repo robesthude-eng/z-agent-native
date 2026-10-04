@@ -22,6 +22,11 @@ export interface AppSettings {
   customInstructions: string;
   responseStyle: ResponseStyle;
   responseLanguage: ResponseLanguage;
+  agentReview: boolean;
+  agentVisualCheck: boolean;
+  agentAutoResume: boolean;
+  agentDossier: boolean;
+  agentMemory: boolean;
 }
 
 export const MAX_INSTRUCTIONS = 4000;
@@ -36,6 +41,11 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   customInstructions: "",
   responseStyle: "default",
   responseLanguage: "auto",
+  agentReview: true,
+  agentVisualCheck: true,
+  agentAutoResume: true,
+  agentDossier: true,
+  agentMemory: true,
 };
 
 const pick = <T extends string>(v: unknown, allowed: readonly T[], d: T): T =>
@@ -80,7 +90,16 @@ export function normalizeAppSettings(raw: unknown): AppSettings {
       ["auto", "ru", "en"] as const,
       d.responseLanguage,
     ),
+    agentReview: bool(r.agentReview, d.agentReview),
+    agentVisualCheck: bool(r.agentVisualCheck, d.agentVisualCheck),
+    agentAutoResume: bool(r.agentAutoResume, d.agentAutoResume),
+    agentDossier: bool(r.agentDossier, d.agentDossier),
+    agentMemory: bool(r.agentMemory, d.agentMemory),
   };
+}
+
+function bool(v: unknown, d: boolean) {
+  return typeof v === "boolean" ? v : d;
 }
 
 export const FONT_SIZES: Record<FontScale, string> = {

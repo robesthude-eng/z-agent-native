@@ -6,6 +6,9 @@ import {
 import { taskStepBudget } from '../autopilot.mjs';
 import { clearDurableJob, createDurableJob, getDurableJob } from '../durable-jobs.mjs';
 import { clearProjectContext } from '../project-context.mjs';
+import { configureBackgroundJobHooks } from '../background-jobs.mjs';
+import { agentFeatures } from '../user-settings-prompt.mjs';
+import { clearDossier } from './dossier.mjs';
 import { acquireTurnLock, isClustered, releaseTurnLock, turnLockHolder } from '../cluster.mjs';
 import { promptText, userPartsFromPrompt } from '../agent-frames.mjs';
 import { recordTurnCapacityRejection } from '../metrics.mjs';
@@ -194,6 +197,7 @@ export function clearAgentSessionState(sessionId) {
   for (const [id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) questionWaiters.delete(id);
   clearDurableJob(sessionId);
   clearProjectContext(sessionId);
+  clearDossier(sessionId);
   return true;
 }
 
@@ -203,3 +207,13 @@ export function resetAgentStateForTests() {
   resetRuntimeState();
   for (const sessionId of sessions) notifyTurnIdle(sessionId);
 }
+
+// Фоновая задача закончилась, а агент уже ответил — продолжаем чат сами.
+configureBackgroundJobHooks({
+  isTurnActive: (sessionId) => activeTurns.has(sessionId),
+  submit: async ({ sessionId, ownerId, model, text }) => {
+    if (!agentFeatures(ownerId).autoResume) return;
+    submitTurn({ sessionId, ownerId, parts: [{ type: 'text', text }], model, system: '', actionId: '' })
+      .catch((err) => console.warn(`[background-jobs] auto-resume ${sessionId}: ${err?.message || err}`));
+  },
+});

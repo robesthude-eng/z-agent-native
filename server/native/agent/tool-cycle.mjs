@@ -102,6 +102,7 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
             workspace,
             sessionId,
             ownerId: runtime.ownerId,
+            requestedModel: runtime.modelPlan?.locked ? runtime.modelPlan.candidates?.[0] || null : null,
             signal: controller.signal,
             onOutput: emitLiveOutput,
           });

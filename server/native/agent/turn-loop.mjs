@@ -22,8 +22,12 @@ import {
   classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, stepLimitError,
 } from '../turn-trust.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
-import { userSettingsPrompt } from '../user-settings-prompt.mjs';
-import { emitText, persistAssistant } from './message-parts.mjs';
+import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
+import { memoryPrompt } from '../agent-memory.mjs';
+import { partId } from '../ids.mjs';
+import { framesWithDossier } from './dossier.mjs';
+import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
+import { emitPart, emitText, persistAssistant } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { activeTurns, idleWaiters, TURN_CAPACITY_TTL_MS } from './state.mjs';
@@ -208,6 +212,8 @@ export function checkpointState(sessionId, runtime, strategy, fields = {}) {
       stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
       gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
       intentNudges: Number(fields.intentNudges ?? runtime.intentNudges ?? 0),
+      reviewsDone: Number(fields.reviewsDone ?? runtime.reviewsDone ?? 0),
+      visualNudges: Number(fields.visualNudges ?? runtime.visualNudges ?? 0),
       lastUsage: fields.lastUsage ?? runtime.lastUsage ?? null,
       strategy: strategy ? {
         goal: strategy.goal,
@@ -296,13 +302,56 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
   return text || 'Подтверждённых результатов выполнения нет.';
 }
 
+const UI_FILE_RE = /\.(html?|css|scss|sass|less|jsx|tsx|vue|svelte|astro)$/i;
+
+export function uiFilesChanged(strategy) {
+  const paths = Array.isArray(strategy?.changedPaths) ? strategy.changedPaths : [];
+  return paths.filter((p) => UI_FILE_RE.test(String(p || '')) && !/(^|\/)(\.screenshots|node_modules|dist|build)\//.test(String(p)));
+}
+
+/** Ревью показывается в чате отдельной карточкой «review» и не идёт в историю модели. */
+async function runReview({ sessionId, assistant, runtime, goal, strategy, workspace, draft, signal }) {
+  const part = {
+    id: partId(),
+    type: 'tool',
+    tool: 'review',
+    callID: `review_${partId()}`,
+    state: { status: 'running', input: { files: (strategy.changedPaths || []).slice(-20) }, title: 'Ревью изменений перед ответом', metadata: { runtimeReview: true }, time: { start: Date.now() } },
+  };
+  emitPart(assistant, part, { putMessage, emit });
+  let review = null;
+  let error = null;
+  try {
+    review = await reviewTurn({ ownerId: runtime.ownerId, modelPlan: runtime.modelPlan, goal, strategy, workspace, draft, signal });
+  } catch (err) {
+    if (err?.name === 'AbortError' || signal.aborted) throw err;
+    error = err;
+  }
+  const output = review
+    ? review.verdict === 'fix'
+      ? `Найдены проблемы (${review.issues.length}), агент исправляет:\n${formatIssues(review)}`
+      : `Замечаний нет.${review.summary ? ` ${review.summary}` : ''}`
+    : `Ревью не выполнено: ${error ? publicProviderErrorMessage(error) : 'ревьюер не вернул разбор'}`;
+  part.state = {
+    ...part.state,
+    status: 'completed',
+    title: review?.verdict === 'fix' ? `Ревью: найдено проблем — ${review.issues.length}` : 'Ревью: замечаний нет',
+    output,
+    metadata: { ...part.state.metadata, review: review ? { verdict: review.verdict, issues: review.issues.length } : null },
+    time: { ...part.state.time, end: Date.now() },
+  };
+  emitPart(assistant, part, { putMessage, emit });
+  return review;
+}
+
 export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
   // Описание среды для модели опирается на ответ самого executor о его сети.
   if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
   const mediaPrompt = availableToolDefinitions().some((t) => t.name === 'generate_image' || t.name === 'generate_speech')
     ? mediaChannelsPrompt(ownerId)
     : '';
-  const ownerPrompt = userSettingsPrompt(ownerId);
+  const features = agentFeatures(ownerId);
+  const ownerPrompt = [userSettingsPrompt(ownerId), features.memory ? memoryPrompt(ownerId, sessionId) : ''].filter(Boolean).join('\n\n');
   const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
@@ -358,7 +407,17 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     const workspace = workspaceFor(sessionId);
     const messages = listMessages(sessionId);
     const history = resume ? messages : messages.filter((m) => m.id !== assistant.id);
-    const frames = framesFromMessages(history, workspace);
+    const frames = await framesWithDossier({
+      sessionId,
+      ownerId,
+      modelPlan: runtime.modelPlan,
+      history,
+      framesFor: (msgs) => framesFromMessages(msgs, workspace),
+      signal: controller.signal,
+      enabled: features.dossier,
+    });
+    runtime.reviewsDone = Math.max(0, Number(job?.checkpoint?.reviewsDone) || 0);
+    runtime.visualNudges = Math.max(0, Number(job?.checkpoint?.visualNudges) || 0);
     const maxSteps = Math.max(1, Math.min(MAX_AGENT_STEPS_CEILING, Number(job?.stepBudget) || taskStepBudget(goal)));
     const rebuilt = resume ? rebuildLoopGuard(assistant) : { guard: createLoopGuard(), stop: null };
     const loopGuard = rebuilt.guard;
@@ -478,6 +537,31 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           });
           checkpointState(sessionId, runtime, strategy, { phase: 'intent_gate', intentNudges: runtime.intentNudges });
           continue;
+        }
+        if (!waitingForUser && !reasoningOnly && runtime.visualNudges < 1 && features.visualCheck
+          && uiFilesChanged(strategy).length > 0 && strategy.visualEpoch !== strategy.mutationEpoch
+          && availableToolDefinitions().some((t) => t.name === 'visual_check')) {
+          runtime.visualNudges += 1;
+          frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+          frames.push({
+            role: 'user',
+            content: `[Runtime visual check] You changed UI files (${uiFilesChanged(strategy).slice(-6).join(', ')}) but have not looked at the rendered result since the last change. Call visual_check on the affected page (workspace HTML path or the running dev-server URL), examine both screenshots, fix anything that looks broken, then give the final answer. If the UI cannot be rendered in a browser at all, say so briefly in the final answer instead.`,
+          });
+          checkpointState(sessionId, runtime, strategy, { phase: 'visual_gate', visualNudges: runtime.visualNudges });
+          continue;
+        }
+        if (!reasoningOnly && shouldReview(strategy, { enabled: features.review, reviewsDone: runtime.reviewsDone, waitingForUser })) {
+          runtime.reviewsDone += 1;
+          const review = await runReview({ sessionId, assistant, runtime, goal, strategy, workspace, draft: response.text, signal: controller.signal });
+          checkpointState(sessionId, runtime, strategy, { phase: 'review', reviewsDone: runtime.reviewsDone });
+          if (review?.verdict === 'fix') {
+            frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
+            frames.push({
+              role: 'user',
+              content: `[Runtime review] Before you finish, an independent reviewer checked the changed files against the goal and found problems:\n${formatIssues(review)}\n\nFix the real problems now and re-run the relevant verification. If an item is a false positive, do not change the code for it — just mention it briefly in the final answer. Then write the final answer (it must reflect the fixed state, not the draft).`,
+            });
+            continue;
+          }
         }
         let finalText = reasoningOnly ? '' : String(response.text || '').trim();
         if (!finalText && step > 0) {

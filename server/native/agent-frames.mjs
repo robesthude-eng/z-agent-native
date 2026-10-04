@@ -94,7 +94,7 @@ export function framesFromMessages(messages, workspace) {
     if (msg.role !== 'assistant') continue;
     const content = (msg.parts || []).filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
     const reasoning = (msg.parts || []).filter((part) => part?.type === 'reasoning' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
-    const tools = (msg.parts || []).filter((part) => part?.type === 'tool' && part.callID && part.tool);
+    const tools = (msg.parts || []).filter((part) => part?.type === 'tool' && part.callID && part.tool && part.tool !== 'review');
     const toolCalls = tools.map((part) => ({
       id: String(part.callID),
       name: String(part.tool),

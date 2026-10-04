@@ -102,3 +102,18 @@ export {
   listChatShares,
   resolveChatShare,
 } from './store/shares.mjs';
+export {
+  addMemory,
+  clearChatMemory,
+  deleteSkill,
+  getSkill,
+  listMemory,
+  listSkills,
+  MAX_MEMORY_TEXT,
+  MAX_SKILL_CONTENT,
+  MEMORY_KINDS,
+  normalizeSkillName,
+  removeMemory,
+  saveSkill,
+  updateMemory,
+} from './store/memory.mjs';

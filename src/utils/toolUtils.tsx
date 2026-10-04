@@ -66,6 +66,12 @@ export const TOOL_ICONS: Record<string, IconComponent> = {
   convert_media: ConvertIcon,
   media_info: MediaInfoIcon,
   view_media: PreviewIcon,
+  review: TaskIcon,
+  visual_check: PreviewIcon,
+  background: BashIcon,
+  memory: ListFilesIcon,
+  skill: DocumentIcon,
+  cloud_sandbox: BashIcon,
 };
 
 export function toolIcon(name?: string | null): ReactNode {

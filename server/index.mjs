@@ -7,6 +7,7 @@ import { DIST_DIR, MAX_JSON_BYTES, PORT } from './native/config.mjs';
 import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.mjs';
 import { readJson, sendJson } from './native/json.mjs';
 import { assertRuntimeSecretsPrivate } from './native/sandbox.mjs';
+import { rescanBackgroundJobs } from './native/background-jobs.mjs';
 import {
   ownsChat, recoverInterruptedRuntimeState,
 } from './native/store.mjs';
@@ -32,6 +33,10 @@ pruneExpiredDurableJobs();
 const RESUMABLE_SESSIONS = listDurableJobs().map((job) => String(job.sessionId || '')).filter(Boolean);
 recoverInterruptedRuntimeState({ skipSessionIds: RESUMABLE_SESSIONS });
 const RECOVERED_TURNS = startDurableRecovery();
+try {
+  const watchedJobs = rescanBackgroundJobs();
+  if (watchedJobs) console.log(`[background-jobs] watching ${watchedJobs} unfinished job(s)`);
+} catch (err) { console.warn('[background-jobs] rescan failed', err?.message || err); }
 recoverDanglingTurnResults();
 try {
   const swept = sweepOrphanSessionData();

@@ -108,6 +108,11 @@ export function activityDetail(tool: string, part: LoosePart): string {
     const detail = str("command") || str("path") || str("name");
     return shorten(detail && host ? `${host}: ${detail}` : host || detail);
   }
+  if (kind === "background")
+    return shorten(str("name") || str("command") || str("id"));
+  if (kind === "visual_check") return shorten(str("url") || "index.html");
+  if (kind === "memory") return shorten(str("text") || str("action"));
+  if (kind === "skill") return shorten(str("name") || str("action"));
   if (kind === "glob") return shorten(str("pattern"));
   if (kind === "task") return shorten(str("agent") || str("description"));
   if (kind === "ensure_environment" || kind === "environment_status")

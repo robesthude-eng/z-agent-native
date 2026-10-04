@@ -12,6 +12,7 @@ import { previewDocument } from '../native/preview-document.mjs';
 import { revokePreviewTokens } from '../native/preview-tokens.mjs';
 import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
 import {
+  addMemory, clearChatMemory, deleteSkill, listMemory, listSkills, removeMemory, saveSkill, updateMemory,
   createChat, createChatShare, deleteChat, deleteChatShare, getChatShare, listChatShares, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
   listChats, listMessages, listPendingQuestions, listQueue, ownsChat, putMessage, renameChat, setPrefs, workspaceFor, 
 } from '../native/store.mjs';
@@ -112,6 +113,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       await step('events', () => clearSessionEvents(sid));
       await step('prepared', () => forgetPreparedSandbox(sid));
       await step('cloud', () => destroyCloudSandboxForSession(sid));
+      await step('memory', () => clearChatMemory(sid));
       invalidateStorageUsage(ownerId);
       sendJson(res, 204, null);
       return true;
@@ -273,6 +275,44 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
     } else {
       sendJson(res, 404, { error: 'Question not found' });
     }
+    return true;
+  }
+
+  if (p === '/api/user/memory' && req.method === 'GET') {
+    const titles = new Map(listChats(ownerId).map((c) => [c.id, c.title]));
+    sendJson(res, 200, listMemory(ownerId, { includeAllChats: true }).map((m) => ({ ...m, chatTitle: m.scope === 'global' ? null : titles.get(m.scope) || null })));
+    return true;
+  }
+  if (p === '/api/user/memory' && req.method === 'POST') {
+    const body = await readJson(req, 64 * 1024);
+    sendJson(res, 200, addMemory(ownerId, { text: body.text, kind: body.kind, scope: 'global', source: 'user' }));
+    return true;
+  }
+  const memMatch = /^\/api\/user\/memory\/(mem_[A-Za-z0-9_-]+)$/.exec(p);
+  if (memMatch && req.method === 'PATCH') {
+    const body = await readJson(req, 64 * 1024);
+    const updated = updateMemory(ownerId, memMatch[1], { text: body.text, kind: body.kind });
+    sendJson(res, updated ? 200 : 404, updated || { error: 'Not found' });
+    return true;
+  }
+  if (memMatch && req.method === 'DELETE') {
+    removeMemory(ownerId, memMatch[1]);
+    sendJson(res, 204, null);
+    return true;
+  }
+  if (p === '/api/user/skills' && req.method === 'GET') {
+    sendJson(res, 200, listSkills(ownerId, { withContent: true }));
+    return true;
+  }
+  if (p === '/api/user/skills' && req.method === 'PUT') {
+    const body = await readJson(req, 128 * 1024);
+    sendJson(res, 200, saveSkill(ownerId, { name: body.name, description: body.description, content: body.content }));
+    return true;
+  }
+  const skillMatch = /^\/api\/user\/skills\/(skl_[A-Za-z0-9_-]+)$/.exec(p);
+  if (skillMatch && req.method === 'DELETE') {
+    deleteSkill(ownerId, skillMatch[1]);
+    sendJson(res, 204, null);
     return true;
   }
 

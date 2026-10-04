@@ -354,6 +354,24 @@ export const api = {
   listChatShares: () =>
     req<Array<ChatShare & { title: string }>>(`/user/shares`),
   systemStatus: () => req<SystemStatus>(`/system/status`),
+  listMemory: () => req<MemoryEntry[]>(`/user/memory`),
+  addMemory: (text: string, kind: MemoryKind) =>
+    req<MemoryEntry>(`/user/memory`, {
+      method: "POST",
+      body: JSON.stringify({ text, kind }),
+    }),
+  updateMemory: (id: string, patch: { text?: string; kind?: MemoryKind }) =>
+    req<MemoryEntry>(`/user/memory/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteMemory: (id: string) =>
+    req<void>(`/user/memory/${id}`, { method: "DELETE" }),
+  listSkills: () => req<Skill[]>(`/user/skills`),
+  saveSkill: (skill: { name: string; description: string; content: string }) =>
+    req<Skill>(`/user/skills`, { method: "PUT", body: JSON.stringify(skill) }),
+  deleteSkill: (id: string) =>
+    req<void>(`/user/skills/${id}`, { method: "DELETE" }),
   storageUsage: (fresh = false) =>
     req<{
       total: number;
@@ -773,3 +791,23 @@ export async function fetchPublicShare(
   }
   return (await r.json()) as PublicSharedChat;
 }
+
+export type MemoryKind = "fact" | "preference" | "lesson";
+export type MemoryEntry = {
+  id: string;
+  scope: string;
+  kind: MemoryKind;
+  text: string;
+  source: "agent" | "user";
+  created: number;
+  chatTitle?: string | null;
+};
+export type Skill = {
+  id: string;
+  name: string;
+  description: string;
+  content: string;
+  uses: number;
+  created: number;
+  updated: number;
+};

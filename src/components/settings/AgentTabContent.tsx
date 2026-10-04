@@ -12,6 +12,7 @@ import {
   SettingsRow,
   SettingsSection,
   SettingsSegmented,
+  SettingsToggle,
 } from "./primitives";
 
 const STYLE_OPTIONS: Array<{ id: ResponseStyle; label: string }> = [
@@ -25,6 +26,39 @@ const LANGUAGE_OPTIONS: Array<{ id: ResponseLanguage; label: string }> = [
   { id: "ru", label: "Русский" },
   { id: "en", label: "English" },
 ];
+
+const QUALITY_TOGGLES = [
+  {
+    key: "agentReview",
+    label: "Ревьюер перед ответом",
+    description:
+      "Прежде чем сказать «готово», агент отдаёт изменённые файлы на независимую проверку и исправляет найденные ошибки. Дольше и чуть дороже, зато меньше «сделал, а не работает».",
+  },
+  {
+    key: "agentVisualCheck",
+    label: "Проверка интерфейса скриншотами",
+    description:
+      "После правок страниц и стилей агент смотрит на результат на компьютере и телефоне и правит вёрстку.",
+  },
+  {
+    key: "agentMemory",
+    label: "Память и навыки",
+    description:
+      "Агент запоминает ваши поправки, предпочтения и факты о среде, а успешные сложные процедуры сохраняет как навыки. Всё видно и редактируется в разделе «Память и навыки».",
+  },
+  {
+    key: "agentDossier",
+    label: "Досье для длинных чатов",
+    description:
+      "Когда история не помещается в контекст, старая часть пересказывается в досье (цель, решения, пути, состояние), а не выбрасывается.",
+  },
+  {
+    key: "agentAutoResume",
+    label: "Продолжать после фоновых задач",
+    description:
+      "Если долгая фоновая команда (сборка, обучение) закончилась после ответа агента, чат продолжится сам с её результатом.",
+  },
+] as const;
 
 const EXAMPLES = [
   "Обращайся ко мне на «ты».",
@@ -63,6 +97,27 @@ export function AgentTabContent() {
 
   return (
     <div className="space-y-8">
+      <SettingsSection
+        title="Качество работы"
+        description="Как агент проверяет себя и учится. Применяется со следующего сообщения."
+      >
+        <SettingsCard>
+          {QUALITY_TOGGLES.map((item) => (
+            <SettingsRow
+              key={item.key}
+              label={item.label}
+              description={item.description}
+            >
+              <SettingsToggle
+                checked={settings[item.key]}
+                onChange={(v) => update({ [item.key]: v })}
+                ariaLabel={item.label}
+              />
+            </SettingsRow>
+          ))}
+        </SettingsCard>
+      </SettingsSection>
+
       <SettingsSection
         title="Стиль ответов"
         description="Применяется ко всем чатам со следующего сообщения."

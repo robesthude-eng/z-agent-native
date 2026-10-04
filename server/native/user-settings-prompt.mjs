@@ -39,3 +39,20 @@ export function userSettingsPrompt(ownerId) {
   try { return buildUserSettingsPrompt(userSettingsFrom(getPrefs(ownerId))); }
   catch { return ''; }
 }
+
+/** Переключатели возможностей агента из настроек; по умолчанию всё включено. */
+export function agentFeatureFlags(settings = {}) {
+  const on = (key) => settings[key] !== false;
+  return {
+    review: on('agentReview'),
+    visualCheck: on('agentVisualCheck'),
+    autoResume: on('agentAutoResume'),
+    dossier: on('agentDossier'),
+    memory: on('agentMemory'),
+  };
+}
+
+export function agentFeatures(ownerId) {
+  try { return agentFeatureFlags(userSettingsFrom(getPrefs(ownerId))); }
+  catch { return agentFeatureFlags({}); }
+}

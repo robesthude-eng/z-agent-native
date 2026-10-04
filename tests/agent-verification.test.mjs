@@ -27,6 +27,9 @@ providerConfigs.upsertProviderConfig(ownerId, {
   enabled: true,
 });
 store.setProviderKey(ownerId, providerId, 'sk-verification-test');
+// These tests pin the base completion gate; the reviewer and the visual-check
+// gate add their own model calls and are covered in agent-quality.test.mjs.
+store.setPrefs(ownerId, { appSettings: { value: { agentReview: false, agentVisualCheck: false } } });
 providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 
 function sse(items) {

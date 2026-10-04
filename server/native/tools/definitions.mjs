@@ -240,13 +240,58 @@ export const TOOL_DEFINITIONS = [
       timeoutMs: { type: 'integer', minimum: 500, maximum: 60000, description: 'Timeout in ms' },
     }, ['action']),
   },
+  {
+    name: 'visual_check',
+    description: 'Look at a web page/UI the way a user sees it: opens a workspace HTML file or URL in the browser, takes full-page screenshots at desktop (1366px) and phone (390px) widths, collects console/network errors and attaches both images to you. Use after building or changing any page, app UI, layout or styles, then fix what looks wrong and re-check.',
+    inputSchema: object({
+      url: { type: 'string', description: 'Workspace-relative HTML path (default index.html) or an http(s) URL, e.g. a local dev server http://127.0.0.1:5173' },
+      viewports: { type: 'array', items: { type: 'string', enum: ['desktop', 'mobile'] }, description: 'Subset of viewports; default both' },
+      fullPage: { type: 'boolean', description: 'Capture the whole scrollable page (default true)' },
+      waitMs: { type: 'integer', minimum: 0, maximum: 10000, description: 'Extra wait after load for animations/data' },
+    }),
+  },
+  {
+    name: 'background',
+    description: 'Run long commands (builds, installs, training, big downloads, test suites >2 min, servers) in the background without hitting the tool timeout. action=start returns a job id immediately; the job keeps running after the turn ends. action=status/logs shows progress and the log tail, action=wait blocks until it finishes (up to timeoutSec), action=kill stops it, action=list shows all jobs of this chat. While a job runs, do other useful work instead of idling. With notify=true (default) the chat is resumed automatically with the result if it finishes after you have answered.',
+    inputSchema: object({
+      action: { type: 'string', enum: ['start', 'status', 'logs', 'wait', 'kill', 'list'] },
+      command: { type: 'string', description: 'For start: bash command/script to run' },
+      name: { type: 'string', description: 'For start: short human-readable name' },
+      cwd: { type: 'string', description: 'For start: workspace-relative working directory' },
+      notify: { type: 'boolean', description: 'For start: resume the chat automatically when the job finishes after the turn ended (default true)' },
+      id: { type: 'string', description: 'Job id for status/logs/wait/kill' },
+      timeoutSec: { type: 'integer', minimum: 5, maximum: 1800, description: 'For wait: max seconds to wait (default 600)' },
+      lines: { type: 'integer', minimum: 5, maximum: 400, description: 'Log tail lines to show' },
+    }, ['action']),
+  },
+  {
+    name: 'memory',
+    description: 'Long-term memory across chats. action=add saves one short fact, preference or lesson (kind) — especially when the user corrects you or states a lasting rule; scope=chat limits it to this chat. action=remove deletes an entry by id; action=list shows all. Never store secrets.',
+    inputSchema: object({
+      action: { type: 'string', enum: ['add', 'remove', 'list'] },
+      text: { type: 'string', description: 'For add: one self-contained sentence (max 600 chars)' },
+      kind: { type: 'string', enum: ['fact', 'preference', 'lesson'], description: 'For add: fact about the environment/project, user preference, or lesson from a mistake' },
+      scope: { type: 'string', enum: ['global', 'chat'], description: 'For add: global (default) or only this chat' },
+      id: { type: 'string', description: 'For remove: entry id' },
+    }, ['action']),
+  },
+  {
+    name: 'skill',
+    description: 'Library of reusable step-by-step recipes learned from past successful tasks. action=list/read to use one; action=save (name, description, content in Markdown) after successfully finishing a non-trivial repeatable procedure — saving with an existing name updates it; action=delete removes one.',
+    inputSchema: object({
+      action: { type: 'string', enum: ['list', 'read', 'save', 'delete'] },
+      name: { type: 'string', description: 'Skill name (short slug, e.g. deploy-ruvds, android-apk-decompile)' },
+      description: { type: 'string', description: 'For save: one line — when to use this skill' },
+      content: { type: 'string', description: 'For save: Markdown recipe — prerequisites, exact commands, paths, pitfalls and fixes, how to verify' },
+    }, ['action']),
+  },
   ...MEDIA_TOOL_DEFINITIONS,
 ];
 
-export const MUTATING_TOOLS = ['write', 'edit', 'apply_patch', 'bash', 'cloud_sandbox', 'git', 'run_tests', ...MEDIA_MUTATING_TOOLS];
+export const MUTATING_TOOLS = ['write', 'edit', 'apply_patch', 'bash', 'background', 'cloud_sandbox', 'git', 'run_tests', ...MEDIA_MUTATING_TOOLS];
 
 const risky = new Set([
-  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', 'cloud_sandbox',
+  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', 'cloud_sandbox', 'background', 'visual_check',
   'generate_image', 'generate_speech', 'render_document', 'render_video', 'convert_media', 'media_info', 'view_media',
 ]);
 
@@ -256,10 +301,10 @@ export function requiresPermission(name) {
 
 export function mutatesWorkspace(name) {
   const tool = String(name).toLowerCase();
-  return ['write', 'edit', 'apply_patch', 'bash', 'cloud_sandbox', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
+  return ['write', 'edit', 'apply_patch', 'bash', 'background', 'cloud_sandbox', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
 }
 
-const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
+const SANDBOXED_TOOLS = ['bash', 'background', 'visual_check', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
 
 export function availableToolDefinitions() {
   let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));

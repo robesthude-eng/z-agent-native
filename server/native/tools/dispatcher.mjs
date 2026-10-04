@@ -5,7 +5,9 @@ import { executeGitTool } from '../git-tool.mjs';
 import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
 import { safeWorkspacePath } from '../security.mjs';
 import { executeSshTool } from '../ssh-tool.mjs';
-import { executeBrowserAction } from './browser.mjs';
+import { executeMemoryTool, executeSkillTool } from '../agent-memory.mjs';
+import { executeBackgroundTool } from '../background-jobs.mjs';
+import { executeBrowserAction, executeVisualCheck } from './browser.mjs';
 import { TOOL_DEFINITIONS } from './definitions.mjs';
 import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
 import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
@@ -134,6 +136,10 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'ensure_environment') return await executeEnsureEnvironment(root, input, ctx, execBash);
   if (tool === 'environment_status') return executeEnvironmentStatus(root, input);
   if (tool === 'bash') return await executeBashTool(root, input, ctx);
+  if (tool === 'background') return await executeBackgroundTool(root, input, ctx);
+  if (tool === 'visual_check') return await executeVisualCheck(root, input, ctx);
+  if (tool === 'memory') return executeMemoryTool(input, ctx);
+  if (tool === 'skill') return executeSkillTool(input, ctx);
   if (tool === 'websearch') return await executeWebSearch(input, ctx.signal);
   if (tool === 'cloud_sandbox') {
     return await executeCloudSandbox(root, input || {}, {

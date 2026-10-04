@@ -410,6 +410,17 @@ export function observeTool(strategy, call, result) {
     noteMutation(state, result.mutatedPaths);
   }
 
+  if (name === 'visual_check' && !result?.isError) {
+    state.visualEpoch = state.mutationEpoch;
+    const consoleErrors = Boolean(result?.metadata?.visualCheck?.consoleErrors);
+    const paths = Array.isArray(state.changedPaths) ? state.changedPaths : [];
+    const onlyFrontend = paths.length > 0 && paths.every((p) => /\.(html?|css|scss|sass|less|svg|png|jpe?g|webp|gif|ico|json|md|txt)$/i.test(String(p)) || /(^|\/)\.screenshots\//.test(String(p)));
+    if (state.needsVerification && onlyFrontend && !consoleErrors) {
+      noteVerification(state, { ok: true, tool: 'visual_check', detail: String(call?.arguments?.url || 'index.html') });
+    }
+    return state;
+  }
+
   if (name === 'browser' && !result?.isError) {
     const action = String(call?.arguments?.action || '').toLowerCase();
     const url = String(call?.arguments?.url || '');

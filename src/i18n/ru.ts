@@ -597,6 +597,12 @@ export const messages = {
   "tool_card.ischet_fayly": "Ищет файлы",
   "tool_card.ischet_po_tekstu": "Ищет по тексту",
   "tool_card.ischet_v_internete": "Ищет в интернете",
+  "tool_card.revyu": "Ревью изменений",
+  "tool_card.proveryaet_interfeys": "Смотрит на интерфейс",
+  "tool_card.fonovaya_zadacha": "Фоновая задача",
+  "tool_card.pamyat": "Память",
+  "tool_card.navyk": "Навык",
+  "tool_card.oblachnaya_mashina": "Облачная машина",
   "tool_card.komanda": "Команда",
   "tool_card.konvertiruet_fayl": "Конвертирует файл",
   "tool_card.ne_udalos_otpravit_otvet_na_vopros":
