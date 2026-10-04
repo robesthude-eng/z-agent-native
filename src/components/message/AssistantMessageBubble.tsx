@@ -86,7 +86,7 @@ export function AssistantMessageBubble({
   };
 
   return (
-    <div className="group oc-msg-in flex flex-col items-start gap-1 px-3 py-1 md:px-6">
+    <div className="chat-assistant chat-message group oc-msg-in flex flex-col items-start gap-1 px-3 py-1 md:px-6">
       <div className="flex w-full flex-col gap-1 max-w-[min(100%,700px)]">
         {attParts.length > 0 && (
           <div className="mb-2 flex flex-wrap gap-2">
@@ -96,7 +96,7 @@ export function AssistantMessageBubble({
           </div>
         )}
 
-        <div className="flex flex-col gap-2">
+        <div className="chat-answer-flow flex flex-col gap-2">
           {flow.map((fi, i) => {
             const isTail = !!isWorking && i === flow.length - 1;
             if ((fi as ActivityRun).kind === "activity") {

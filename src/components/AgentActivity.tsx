@@ -84,7 +84,7 @@ const AgentActivity = ({
           formatSteps(count),
         ])}
         className={cn(
-          "group/activity flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-accent/30",
+          "chat-activity-toggle group/activity flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-left transition hover:bg-accent/30",
           hasError && !running && "text-red-400",
         )}
         onClick={() => {
@@ -108,11 +108,11 @@ const AgentActivity = ({
         >
           <Wrench className="h-[15px] w-[15px]" />
         </span>
-        <span className="text-[13px] font-medium text-foreground/85">
+        <span className="chat-tool-label font-medium text-foreground/85">
           {!running && !hasError ? "✓ " : ""}
           {status}
         </span>
-        <span className="text-[11.5px] text-muted-foreground/70">
+        <span className="chat-tool-label text-muted-foreground">
           · {formatSteps(count)}
         </span>
         {running && (

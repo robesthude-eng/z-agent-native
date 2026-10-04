@@ -300,7 +300,7 @@ function ReasoningCard({
   streaming?: boolean | undefined;
 }) {
   const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
-  const expanded = manuallyToggled ?? !!streaming;
+  const expanded = manuallyToggled ?? false;
   const duration = useThinkingDuration(streaming);
   // Плавный вывод стримящегося reasoning-текста.
   const displayText = useSmoothStreamingText(text, !!streaming);
@@ -317,7 +317,8 @@ function ReasoningCard({
       {/* Ghost-строка заголовка reasoning */}
       <button
         type="button"
-        className="group/reason flex w-full items-center gap-2 px-2.5 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
+        className="chat-reasoning-toggle group/reason flex w-full items-center gap-2 px-2.5 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
+        aria-expanded={expanded}
         // Один клик переключает относительно видимого состояния (фикс двойного клика).
         onClick={() => setManuallyToggled(!expanded)}
       >
@@ -329,7 +330,7 @@ function ReasoningCard({
         >
           <ThinkIcon size={15} />
         </span>
-        <span className="text-[13px] font-medium text-foreground/85">
+        <span className="chat-tool-label font-medium text-foreground/85">
           {streaming
             ? t("part_view.razmyshlyaet")
             : t("part_view.rassuzhdeniya")}

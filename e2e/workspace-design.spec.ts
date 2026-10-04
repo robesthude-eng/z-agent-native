@@ -54,7 +54,7 @@ test("approved workspace style: plus menu, real files, direct editor and compact
     if (!res.ok) throw new Error(`preview fixture: ${res.status}`);
   });
   await page.getByRole("button", { name: "Обновить", exact: true }).click();
-  await expect(page.locator("#workspace-panel-files").getByText("index.html", { exact: true })).toBeVisible();
+  await expect(page.locator("#workspace-panel-files").getByRole("button", { name: "index.html", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Открыть предпросмотр", exact: true }).click();
   await expect(page.locator("iframe[title=Предпросмотр]")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -68,12 +68,12 @@ test("approved workspace style: plus menu, real files, direct editor and compact
   await expect(search).toBeFocused();
   await expect(page.locator("#workspace-panel-files")).toBeVisible();
   await search.fill("index");
-  await expect(page.locator("#workspace-panel-files").getByText("index.html", { exact: true })).toBeVisible();
+  await expect(page.locator("#workspace-panel-files").getByRole("button", { name: "index.html", exact: true })).toBeVisible();
   await exportState(page, "workspace-search-desktop");
   await page.getByRole("button", { name: "Закрыть поиск файлов" }).click();
   await expect(search).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Поиск файлов", exact: true })).toBeFocused();
-  await page.locator("#workspace-panel-files").getByText("index.html", { exact: true }).click();
+  await page.locator("#workspace-panel-files").getByRole("button", { name: "index.html", exact: true }).click();
   const editor = page.getByRole("region", { name: "index.html", exact: true });
   await expect(editor.locator("textarea")).toBeVisible();
   await expect(editor.locator("iframe")).toHaveCount(0);
@@ -96,7 +96,7 @@ test("approved workspace style: plus menu, real files, direct editor and compact
   await expect(search).toBeFocused();
   await search.fill("hello");
   await exportState(page, "workspace-search-mobile");
-  await page.locator("#workspace-panel-files").getByText("hello.js", { exact: true }).click();
+  await page.locator("#workspace-panel-files").getByRole("button", { name: "hello.js", exact: true }).click();
   await expect(page.getByRole("region", { name: "hello.js" })).toBeVisible();
   await expect(search).toHaveCount(0);
   const fileEditor = page.getByRole("region", { name: "hello.js", exact: true });

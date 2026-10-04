@@ -66,7 +66,7 @@ function MessageItemComponent({
 
   if (isUser) {
     return (
-      <div className="group oc-msg-in flex flex-col items-end gap-1 px-3 py-1 md:px-6">
+      <div className="chat-user chat-message group oc-msg-in flex flex-col items-end gap-1 px-3 py-1 md:px-6">
         <div className="flex min-w-0 flex-col gap-1 items-end max-w-full">
           {msgArray.map((message, idx) => {
             const isEditing = editingId === message.id;

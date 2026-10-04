@@ -63,11 +63,11 @@ export function TurnSummaryCard({
                 : "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/20";
 
   return (
-    <div
+    <details
       data-testid="turn-summary-card"
-      className="mt-3 rounded-xl border border-border/70 bg-card/60 p-3 text-xs text-muted-foreground"
+      className="chat-turn-summary mt-3 text-muted-foreground"
     >
-      <div className="flex flex-wrap items-center justify-between gap-2">
+      <summary className="chat-turn-summary-toggle flex flex-wrap items-center justify-between gap-2">
         <span
           className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${statusTone}`}
         >
@@ -100,7 +100,7 @@ export function TurnSummaryCard({
             </span>
           )}
         </div>
-      </div>
+      </summary>
 
       {summary.changedFiles.length > 0 && (
         <div className="mt-2 flex flex-wrap items-center gap-1.5 pt-2 border-t border-border/50">
@@ -113,6 +113,6 @@ export function TurnSummaryCard({
           ))}
         </div>
       )}
-    </div>
+    </details>
   );
 }

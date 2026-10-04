@@ -58,3 +58,13 @@ test('browser calls are normalized: aliases, value from text, screenshot allowed
   assert.equal(assertValidToolInput('browser', { action: 'screenshot', width: 390 }).action, 'screenshot');
   assert.throws(() => assertValidToolInput('browser', { action: 'evaluate', script: '1' }), /must be one of/);
 });
+
+
+test('response instructions keep readable answers grounded in actual tool evidence', () => {
+  const prompt = systemPrompt({ toolNames: ['read'], goal: 'объясни результат' });
+  assert.match(prompt, /Readable user-facing responses/);
+  assert.match(prompt, /Reply in the user's language/);
+  assert.match(prompt, /Separate implementation from verification/);
+  assert.match(prompt, /never invent test counts, file sizes, timings, URLs or successful execution/);
+  assert.match(prompt, /a simple question needs a simple answer/);
+});

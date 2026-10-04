@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Readable agent chat
+
+- Self-hosted Inter with Cyrillic support, larger chat text, calmer spacing and clearer Markdown hierarchy. Font size continues to follow accessibility preferences.
+- Readable compact tool disclosures; reasoning stays collapsed until explicitly opened. Turn metadata is a single expandable line rather than a duplicate result card.
+- Response instructions distinguish completed work from verified results and favor outcome-first, readable answers without repetitive file lists.
+
 ## Tab-free workspace
 
 - Removed the redundant Preview / Files / Code workspace navigation. The workspace opens on its file list, text files open directly in the embedded code editor, and closing the editor returns to files.

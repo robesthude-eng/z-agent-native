@@ -60,6 +60,7 @@ import { initSentryBrowser } from "./lib/sentry";
 import "./index.css";
 import "./agent-workspace.css";
 import "./autonomy-ui.css";
+import "./chat-reading.css";
 import { t } from "@/i18n";
 
 initSentryBrowser();

@@ -51,8 +51,8 @@ export default function UserMessageText({ text }: { text: string }) {
   // чтобы на широком экране строка не становилась длиннее удобной для чтения.
   if (!isLong) {
     return (
-      <div className="w-fit min-w-[3rem] max-w-[min(85%,560px)] self-end rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-left">
-        <div className="whitespace-pre-wrap break-words text-[14.5px] leading-relaxed text-foreground/95">
+      <div className="chat-user-bubble w-fit min-w-[3rem] max-w-[min(85%,560px)] self-end rounded-2xl rounded-br-md bg-secondary px-3.5 py-2 text-left">
+        <div className="chat-user-text whitespace-pre-wrap break-words text-foreground">
           {text}
         </div>
       </div>

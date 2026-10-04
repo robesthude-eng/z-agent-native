@@ -85,7 +85,7 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
         // Состояние раскрытия видно глазами по стрелке, но не скринридеру:
         // без aria-expanded кнопка звучала как обычная кнопка без последствий.
         aria-expanded={expanded}
-        className="group/toolgrp flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
+        className="chat-activity-toggle group/toolgrp flex w-full items-center gap-2 px-2 py-1.5 text-left rounded-lg hover:bg-accent/30 transition cursor-pointer"
         // Один клик переключает относительно видимого состояния (фикс двойного клика).
         onClick={() => setManuallyToggled(!expanded)}
       >
@@ -100,7 +100,7 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
         <span className="flex h-5 w-5 shrink-0 items-center justify-center text-muted-foreground">
           {toolIcon(toolName)}
         </span>
-        <span className="text-[13px] font-medium text-foreground/85">
+        <span className="chat-tool-label font-medium text-foreground/85">
           {groupLabel(toolName, parts.length)}
         </span>
         {anyRunning && (
@@ -112,7 +112,7 @@ const ToolGroup = ({ tool, parts }: { tool: string; parts: ToolPart[] }) => {
           </span>
         )}
         {hasTotals && files.length > 0 && (
-          <span className="min-w-0 truncate font-mono text-[11.5px] text-muted-foreground/75">
+          <span className="chat-tool-description min-w-0 truncate font-mono text-muted-foreground">
             {files.slice(0, 2).join(", ")}
             {files.length > 2 ? ` +${files.length - 2}` : ""}
           </span>
