@@ -65,16 +65,33 @@ async function api(method, pathname, { body, base, raw = false, timeoutMs = 60_0
   try { return text ? JSON.parse(text) : {}; } catch { return { text }; }
 }
 
+// Daytona refuses explicit resources together with a snapshot. Requests that
+// fit a stock size use the prebuilt snapshot (instant start); larger ones are
+// built once from the same base image with explicit resources.
+export const SNAPSHOT_SIZES = [
+  { snapshot: 'daytona-small', cpu: 1, memory: 1 },
+  { snapshot: 'daytona-medium', cpu: 2, memory: 4 },
+  { snapshot: 'daytona-large', cpu: 4, memory: 8 },
+];
+const BASE_IMAGE = () => String(process.env.DAYTONA_BASE_IMAGE || 'daytonaio/sandbox:0.9.0');
+
+export function sandboxShape(cpu, memory, disk) {
+  const fit = SNAPSHOT_SIZES.find((s) => cpu <= s.cpu && memory <= s.memory);
+  if (fit) return { snapshot: fit.snapshot };
+  return { cpu, memory, disk, buildInfo: { dockerfileContent: `FROM ${BASE_IMAGE()}\n` } };
+}
+
 function sandboxName(sessionId) {
   return `zagent-${crypto.createHash('sha256').update(String(sessionId)).digest('hex').slice(0, 16)}`;
 }
 
-async function waitStarted(id, signal, timeoutMs = 180_000) {
+async function waitStarted(id, signal, timeoutMs = 900_000) {
   const until = Date.now() + timeoutMs;
   for (;;) {
     const sb = await api('GET', `/sandbox/${id}`, { signal });
     if (!sb) throw new Error('Daytona sandbox disappeared');
     if (sb.state === 'started') return sb;
+    // pending_build / building_snapshot / creating / starting: keep waiting
     if (['error', 'build_failed', 'destroyed'].includes(sb.state)) throw new Error(`Daytona sandbox state: ${sb.state} ${sb.errorReason || ''}`.trim());
     if (['stopped', 'archived'].includes(sb.state)) await api('POST', `/sandbox/${id}/start`, { signal, timeoutMs: 120_000 });
     if (Date.now() > until) throw new Error(`Daytona sandbox did not start in time (state ${sb.state})`);
@@ -92,11 +109,11 @@ async function ensureSandbox(sessionId, opts, signal) {
     const memory = Math.min(Math.max(Number(opts.memory) || d.memory, 1), 10);
     sb = await api('POST', '/sandbox', {
       signal,
-      timeoutMs: 180_000,
+      timeoutMs: 600_000,
       body: {
         name,
         labels: { 'z-agent-session': String(sessionId).slice(0, 63) },
-        cpu, memory, disk: d.disk,
+        ...sandboxShape(cpu, memory, d.disk),
         autoStopInterval: d.autoStop,
         autoArchiveInterval: 60 * 24,
         autoDeleteInterval: 60 * 24 * 3,
@@ -116,11 +133,15 @@ async function ensureSandbox(sessionId, opts, signal) {
   return entry;
 }
 
-async function exec(entry, command, { timeoutSec = 120, signal, cwd = REMOTE_ROOT } = {}) {
+async function exec(entry, command, { timeoutSec = 120, signal } = {}) {
+  // The toolbox chdirs before spawning, and a missing cwd surfaces as a
+  // misleading "fork/exec /usr/bin/zsh: no such file". Start from / and
+  // create the workspace inside the command instead.
+  const script = `mkdir -p ${REMOTE_ROOT} && cd ${REMOTE_ROOT} && ${command}`;
   const r = await api('POST', '/process/execute', {
     base: entry.base, signal,
     timeoutMs: (timeoutSec + 30) * 1000,
-    body: { command: `bash -lc ${shq(command)}`, cwd, timeout: timeoutSec },
+    body: { command: `bash -lc ${shq(script)}`, cwd: '/', timeout: timeoutSec },
   });
   return { code: Number(r?.exitCode ?? r?.code ?? 1), output: String(r?.result ?? '') };
 }

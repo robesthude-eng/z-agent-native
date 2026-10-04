@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  diffManifests, localManifest, parseRemoteManifest, verifyTarListing, shq, SYNC_EXCLUDES,
+  diffManifests, sandboxShape, localManifest, parseRemoteManifest, verifyTarListing, shq, SYNC_EXCLUDES,
 } from '../server/native/cloud-sandbox.mjs';
 
 test('localManifest skips dependency dirs and symlinks', () => {
@@ -40,4 +40,14 @@ test('verifyTarListing refuses symlinks, hardlinks and devices', () => {
 
 test('shq quotes single quotes safely', () => {
   assert.equal(shq("it's"), `'it'\\''s'`);
+});
+
+test('sandboxShape uses stock snapshots when they fit and builds larger ones', () => {
+  assert.deepEqual(sandboxShape(4, 8, 10), { snapshot: 'daytona-large' });
+  assert.deepEqual(sandboxShape(2, 2, 10), { snapshot: 'daytona-medium' });
+  const big = sandboxShape(8, 10, 20);
+  assert.equal(big.cpu, 8);
+  assert.equal(big.memory, 10);
+  assert.match(big.buildInfo.dockerfileContent, /^FROM daytonaio\/sandbox/);
+  assert.equal(big.snapshot, undefined);
 });
