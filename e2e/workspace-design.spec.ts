@@ -1,0 +1,71 @@
+import fs from "node:fs/promises";
+import { expect, test, type Page } from "@playwright/test";
+
+async function exportState(page: Page, name: string) {
+  await fs.mkdir(".e2e-tmp/design", { recursive: true });
+  const html = await page.evaluate(() => {
+    const clone = document.documentElement.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll("script").forEach(node => { node.remove(); });
+    clone.querySelectorAll<HTMLLinkElement>("link[href]").forEach(node => { node.href = new URL(node.getAttribute("href") || "", location.href).href; });
+    clone.querySelectorAll<HTMLImageElement>("img[src]").forEach(node => { node.src = new URL(node.getAttribute("src") || "", location.href).href; });
+    const fields = [...document.querySelectorAll<HTMLInputElement>("input")];
+    clone.querySelectorAll<HTMLInputElement>("input").forEach((node, i) => { node.value = fields[i]?.value || ""; if (fields[i]?.checked) node.setAttribute("checked", ""); else node.removeAttribute("checked"); });
+    clone.querySelectorAll<HTMLTextAreaElement>("textarea").forEach((node, i) => { node.textContent = document.querySelectorAll<HTMLTextAreaElement>("textarea")[i]?.value || ""; });
+    return `<!doctype html>${clone.outerHTML}`;
+  });
+  await fs.writeFile(`.e2e-tmp/design/${name}.html`, html);
+  await page.screenshot({ path: `.e2e-tmp/design/${name}.png` });
+}
+
+test("approved workspace style: plus menu, real files, embedded preview and compact send/stop", async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem("z-agent:theme", "light"));
+  await page.setViewportSize({ width: 1440, height: 900 });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Регистрация" }).click();
+  await page.locator("#email").fill(`design-${Date.now()}@example.com`);
+  await page.locator("#password").fill("correct-horse");
+  await page.locator("#confirm").fill("correct-horse");
+  await page.getByRole("button", { name: "Зарегистрироваться" }).click();
+  const composer = page.getByRole("textbox", { name: "Сообщение ассистенту" });
+  await expect(composer).toBeVisible();
+  const tour = page.getByRole("button", { name: "Пропустить знакомство" });
+  if (await tour.isVisible()) await tour.click();
+  await page.keyboard.press("Escape");
+  const send = page.getByRole("button", { name: "Отправить сообщение" });
+  const disc = send.locator(".composer-submit-disc");
+  await expect(disc).toHaveCSS("width", "28px");
+  await expect(send).toHaveCSS("width", "44px");
+  await exportState(page, "empty-desktop");
+  await page.getByRole("button", { name: "Добавить файлы, скиллы и инструменты" }).click();
+  await expect(page.getByRole("menuitem", { name: "Добавить фото" })).toBeVisible();
+  await exportState(page, "plus-desktop");
+  await page.keyboard.press("Escape");
+  await composer.fill("E2E fixture: create a tiny module, verify it with a regression test, and report completion.");
+  await send.click();
+  await expect(page.getByText(/Fixture task completed and verified: hello\.js/i)).toBeVisible({ timeout: 25_000 });
+  await page.getByTestId("workspace-toggle").click();
+  await expect(page.getByRole("tab", { name: "Файлы", exact: true })).toBeVisible();
+  // Create a real preview file in the disposable test user's workspace.
+  await page.evaluate(async () => {
+    const sessions = await fetch("/api/session", { credentials: "include" }).then(r => r.json());
+    const sid = sessions[0]?.id;
+    const res = await fetch(`/api/workspace/file?sessionId=${encodeURIComponent(sid)}`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json", "x-csrf-token": decodeURIComponent(document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith("z_agent_csrf="))?.split("=")[1] || "") }, body: JSON.stringify({ path: "index.html", content: '<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{margin:0;background:#f7f7f2;color:#282926;font:16px/1.6 Arial;padding:28px}header{font-weight:bold;border-bottom:1px solid #deded8;padding-bottom:24px}h1{font:48px/1.15 Georgia;letter-spacing:-1.5px;margin-top:64px}.card{margin-top:36px;background:#e3e8da;padding:32px;border-radius:8px;font:80px Georgia}</style><header>north studio</header><h1>Делаем сложное простым.</h1><p>Создаём цифровые продукты,<br>которыми приятно пользоваться.</p><div class="card">n.</div></html>' }) });
+    if (!res.ok) throw new Error(`preview fixture: ${res.status}`);
+  });
+  await page.getByRole("tab", { name: "Превью", exact: true }).click();
+  await expect(page.locator(".workspace-inline-editor iframe")).toBeVisible();
+  await expect(page.getByRole("dialog", { name: "index.html" })).toHaveCount(0);
+  await exportState(page, "workspace-desktop");
+  await page.getByRole("tab", { name: "Код", exact: true }).click();
+  await expect(page.locator("#workspace-panel-code")).toBeVisible();
+  await exportState(page, "code-desktop");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Закрыть файлы проекта" }).click();
+  await page.getByRole("button", { name: "Добавить файлы, скиллы и инструменты" }).click();
+  await exportState(page, "plus-mobile");
+  await page.keyboard.press("Escape");
+  await page.getByTestId("workspace-toggle").click();
+  await page.getByRole("tab", { name: "Превью", exact: true }).click();
+  await exportState(page, "workspace-mobile");
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+});

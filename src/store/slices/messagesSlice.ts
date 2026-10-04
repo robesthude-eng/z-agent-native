@@ -1,4 +1,5 @@
 import { t, tf } from "@/i18n";
+import { webSearchPreference } from "@/lib/chatTools";
 import { sessionSignal } from "../../api/abortRegistry";
 import { api, SessionGoneError } from "../../api/client";
 import { eventSessionId } from "../../api/eventGuards";
@@ -263,6 +264,9 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
         if (!sid || isTmpSession(sid)) return;
       }
       const sidStr = sid as string;
+      const toolOptions = {
+        webSearch: webSearchPreference(get().currentUser?.email || "", sidStr),
+      };
       // Новый ход стирает маркер «Стоп» прошлого: иначе ярлык
       // «Остановлено пользователем» прилипал к следующему ответу, который
       // агент завершил сам.
@@ -319,6 +323,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
                 systemInstruction,
                 signal,
                 actionId,
+                toolOptions,
               );
             } catch (err) {
               lastErr = err as Error;

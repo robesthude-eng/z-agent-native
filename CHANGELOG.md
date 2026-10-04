@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Workspace interface refresh
+
+- Neutral Arena-inspired chat layout with history on the left and files, preview and code in the right workspace. Preview/editor no longer covers the conversation.
+- Bold composer plus opens file/photo attachments, per-chat skills and web-search controls; the shared skill library remains in Settings.
+- Send and stop share a compact 28px visible disc with a 44px hit target. Removed decorative composer glow and spinning stop ring.
+- Per-chat web-search restrictions persist through draft materialization and durable turn recovery. They cannot grant tools disabled by server policy.
+- Responsive menus, keyboard-accessible workspace tabs, modal skill selection and readable light-theme code highlighting.
+
 ## Full-access default (single-user administrator)
 
 - `.env.example` / `prod:env:init` now default to the trusted unrestricted profile via `COMPOSE_FILE` (Internet, websearch, browser, SSH, installers, terminal, sudo, credential files).

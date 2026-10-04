@@ -133,7 +133,7 @@ export default function Sidebar() {
         data-testid="sidebar"
         data-open={sidebarOpen ? "true" : "false"}
         className={cn(
-          "fixed md:static inset-y-0 left-0 z-50 w-[min(260px,85vw)] shrink-0 bg-card flex flex-col h-dvh md:h-full transition-transform duration-[320ms] text-foreground",
+          "agent-sidebar fixed md:static inset-y-0 left-0 z-50 w-[min(236px,85vw)] shrink-0 bg-card flex flex-col h-dvh md:h-full transition-transform duration-[320ms] text-foreground",
           sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0",
         )}
       >
@@ -164,7 +164,7 @@ export default function Sidebar() {
 
             {groups.map((g) => (
               <div key={g.key}>
-                <div className="px-3 pb-1 pt-3 text-[10px] font-semibold uppercase tracking-[0.12em] text-muted-foreground">
+                <div className="px-3 pb-2 pt-6 text-sm font-normal text-muted-foreground">
                   {g.label}
                 </div>
 

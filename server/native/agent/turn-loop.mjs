@@ -1,19 +1,23 @@
 import { framesFromMessages, systemPrompt, textParts } from '../agent-frames.mjs';
+import { memoryPrompt } from '../agent-memory.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, waitForRetry } from '../agent-parts.mjs';
 import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
+import { filterChatTools, normalizeChatToolOptions } from '../chat-tool-options.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
 import { MAX_AGENT_STEPS_CEILING } from '../config.mjs';
-import { executorNetworkless, executorRequired, probeExecutor } from '../executor-client.mjs';
-import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
+import { executorNetworkless, executorRequired, probeExecutor } from '../executor-client.mjs';
+import { partId } from '../ids.mjs';
+import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
 import { isTransientProviderError } from '../providers/transport.mjs';
 import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
+import { chatSkillSettings, setChatSkillSettings, skillsPrompt } from '../skills/library.mjs';
 import { getTurn, listMessages, putMessage, releaseTurnCapacity, renewTurnCapacity, setTurn, workspaceFor } from '../store.mjs';
 import { availableToolDefinitions } from '../tools.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
@@ -21,16 +25,13 @@ import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recor
 import {
   classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, stepLimitError,
 } from '../turn-trust.mjs';
-import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
-import { memoryPrompt } from '../agent-memory.mjs';
-import { skillsPrompt, chatSkillSettings, setChatSkillSettings } from '../skills/library.mjs';
-import { partId } from '../ids.mjs';
+import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { framesWithDossier } from './dossier.mjs';
-import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
 import { emitPart, emitText, persistAssistant } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
+import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
 import { activeTurns, idleWaiters, TURN_CAPACITY_TTL_MS } from './state.mjs';
 
 // Сколько раз подряд шаг модели повторяется после временного сбоя провайдера
@@ -210,6 +211,7 @@ export function checkpointState(sessionId, runtime, strategy, fields = {}) {
   try {
     checkpointDurableJob(sessionId, {
       phase: fields.phase || 'running',
+      toolOptions: runtime.toolOptions,
       stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
       gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
       intentNudges: Number(fields.intentNudges ?? runtime.intentNudges ?? 0),
@@ -345,10 +347,12 @@ async function runReview({ sessionId, assistant, runtime, goal, strategy, worksp
   return review;
 }
 
-export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, goal, controller, resume = false, job = null }) {
+export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, toolOptions: requestedToolOptions = null, goal, controller, resume = false, job = null }) {
+  const toolOptions = normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions);
+  const turnTools = () => filterChatTools(availableToolDefinitions(), toolOptions);
   // Описание среды для модели опирается на ответ самого executor о его сети.
   if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
-  const mediaPrompt = availableToolDefinitions().some((t) => t.name === 'generate_image' || t.name === 'generate_speech')
+  const mediaPrompt = turnTools().some((t) => t.name === 'generate_image' || t.name === 'generate_speech')
     ? mediaChannelsPrompt(ownerId)
     : '';
   const features = agentFeatures(ownerId);
@@ -376,6 +380,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     const ambiguousSignatures = new Set([...persistedAmbiguous, ...interrupted]);
     runtime = {
       ownerId,
+      toolOptions,
       modelPlan: job?.modelPlan?.candidates?.length ? job.modelPlan : await buildModelPlan(ownerId, requestedModel, goal),
       projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
       stepsUsed: Math.max(0, Number(job?.checkpoint?.stepsUsed) || 0),
@@ -449,9 +454,9 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       let response;
       try {
         response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-          system: [systemPrompt({ toolNames: availableToolDefinitions().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
           frames: providerFrames,
-          tools: availableToolDefinitions(),
+          tools: turnTools(),
           signal: controller.signal,
           onTextDelta: (delta, type = null) => live.push(delta, type),
         });
@@ -551,7 +556,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         }
         if (!waitingForUser && !reasoningOnly && runtime.visualNudges < 1 && features.visualCheck
           && uiFilesChanged(strategy).length > 0 && strategy.visualEpoch !== strategy.mutationEpoch
-          && availableToolDefinitions().some((t) => t.name === 'visual_check')) {
+          && turnTools().some((t) => t.name === 'visual_check')) {
           runtime.visualNudges += 1;
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
           frames.push({
@@ -583,7 +588,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
               content: '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
             });
             const summaryRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
-              system: [systemPrompt({ toolNames: availableToolDefinitions().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+              system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
               frames: compactFrames(frames),
               tools: [],
               signal: controller.signal,

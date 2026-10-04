@@ -1,4 +1,5 @@
 import { t } from "@/i18n";
+import { transferChatTools } from "@/lib/chatTools";
 import { abortSessionRequests } from "../../api/abortRegistry";
 import {
   api,
@@ -188,6 +189,8 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
     const { currentID, messages } = get();
     if (currentID && isEmptyTmp(currentID, messages)) return;
     const tempId = `tmp_${Date.now()}`;
+    if (!currentID)
+      transferChatTools(get().currentUser?.email || "", null, tempId);
     const tempSession: SessionInfo = {
       id: tempId,
       title: "New chat",
@@ -249,6 +252,7 @@ export const createSessionsSlice: Slice<SessionsSlice> = (set, get) => ({
       // Настоящее создание на бэкенде: пустой воркспейс и свой контейнер.
       const draftTitle = get().sessionTitleOverrides?.[tempId];
       const session = await api.createSession(draftTitle || undefined);
+      transferChatTools(get().currentUser?.email || "", tempId, session.id);
       set((s) => {
         const overrides = { ...s.sessionTitleOverrides };
         if (overrides[tempId]) {

@@ -1,24 +1,25 @@
+import { promptText, userPartsFromPrompt } from '../agent-frames.mjs';
+import { taskStepBudget } from '../autopilot.mjs';
+import { configureBackgroundJobHooks } from '../background-jobs.mjs';
+import { normalizeChatToolOptions } from '../chat-tool-options.mjs';
+import { acquireTurnLock, isClustered, releaseTurnLock, turnLockHolder } from '../cluster.mjs';
+import { clearDurableJob, createDurableJob, getDurableJob } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
 import { assertActionId, messageId, turnId } from '../ids.mjs';
-import {
-  claimAction, completeAction, failAction, getAction, getChat, getTurn, listMessages, putMessage, releaseTurnCapacity, renameChat, reserveTurnCapacity, resetAction, setTurn, workspaceFor,
-} from '../store.mjs';
-import { taskStepBudget } from '../autopilot.mjs';
-import { clearDurableJob, createDurableJob, getDurableJob } from '../durable-jobs.mjs';
+import { recordTurnCapacityRejection } from '../metrics.mjs';
 import { clearProjectContext } from '../project-context.mjs';
-import { configureBackgroundJobHooks } from '../background-jobs.mjs';
+import {
+  claimAction, completeAction, failAction, getAction, getChat, getTurn, putMessage, releaseTurnCapacity, renameChat, reserveTurnCapacity, resetAction, setTurn, workspaceFor,
+} from '../store.mjs';
+import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { agentFeatures } from '../user-settings-prompt.mjs';
 import { clearDossier } from './dossier.mjs';
-import { acquireTurnLock, isClustered, releaseTurnLock, turnLockHolder } from '../cluster.mjs';
-import { promptText, userPartsFromPrompt } from '../agent-frames.mjs';
-import { recordTurnCapacityRejection } from '../metrics.mjs';
-import { assertTurnTransition } from '../turn-lifecycle.mjs';
+import { persistAssistant } from './message-parts.mjs';
+import { startDurableRecovery as startDurableRecoveryImpl } from './recovery.mjs';
 import {
   activeActions, activeTurns, idleWaiters, MAX_ACTIVE_TURNS, MAX_ACTIVE_TURNS_PER_OWNER, questionWaiters, resetRuntimeState, TURN_CAPACITY_TTL_MS,
 } from './state.mjs';
-import { persistAssistant } from './message-parts.mjs';
-import { notifyTurnIdle, updateTurn, executeTurnLifecycle } from './turn-loop.mjs';
-import { startDurableRecovery as startDurableRecoveryImpl } from './recovery.mjs';
+import { executeTurnLifecycle, notifyTurnIdle, updateTurn } from './turn-loop.mjs';
 
 export function submitTurn(args) {
   const rawActionId = String(args.actionId || '').trim();
@@ -50,7 +51,7 @@ export function submitTurn(args) {
 
 export async function runTurn(...params) {
   const args = params[0];
-  const { sessionId, ownerId, parts, model = null, system = '', actionId = '' } =
+  const { sessionId, ownerId, parts, model = null, system = '', actionId = '', toolOptions: rawToolOptions = null } =
     typeof args === 'object' && args !== null && 'sessionId' in args ? args : {
       sessionId: params[0],
       ownerId: params[1],
@@ -60,6 +61,7 @@ export async function runTurn(...params) {
       actionId: params[5] || '',
     };
 
+  const toolOptions = normalizeChatToolOptions(rawToolOptions);
   if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
   if (isClustered() && !acquireTurnLock(sessionId).ok) {
     throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409, holder: turnLockHolder(sessionId)?.instanceId || null });
@@ -86,6 +88,7 @@ export async function runTurn(...params) {
       requestedModel: model,
       goal,
       stepBudget,
+      toolOptions,
     });
   } catch (err) {
     if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
@@ -131,6 +134,7 @@ export async function runTurn(...params) {
       assistant,
       requestedModel: model,
       system,
+      toolOptions,
       goal,
       controller,
       resume: false,

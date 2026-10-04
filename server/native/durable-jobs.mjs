@@ -89,6 +89,7 @@ export function createDurableJob(input) {
     state: 'running',
     checkpoint: {
       phase: 'created',
+      toolOptions: { webSearch: input?.toolOptions?.webSearch !== false },
       stepsUsed: 0,
       gateReminders: 0,
       lastUsage: null,

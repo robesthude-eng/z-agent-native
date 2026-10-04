@@ -23,42 +23,8 @@ import { messageText } from "../lib/chatText";
 import { isTmpSession } from "../lib/ids";
 import { useStore } from "../store/useStore";
 import AgentIndicator from "./AgentIndicator";
-import {
-  BashIcon,
-  BookIcon,
-  BugIcon,
-  ChevronDownIcon,
-  FilePlusIcon,
-} from "./icons";
+import { ChevronDownIcon } from "./icons";
 import MessageItem from "./MessageItem";
-
-/*
-  Карточки-подсказки собираются на рендере, а не при импорте модуля: t()
-  на верхнем уровне выполняется до того, как приложение выберет язык, и
-  подписи застывали в том языке, который успел загрузиться первым.
-*/
-const suggestionCards = () => [
-  {
-    title: t("chat_view.sobrat_proekt"),
-    prompt: t("chat_view.sozday_v_workspace_staticheskuyu_stranicu_le"),
-    icon: FilePlusIcon,
-  },
-  {
-    title: t("chat_view.razobrat_kod"),
-    prompt: t("chat_view.obyasni_chto_delaet_etot_kod_i"),
-    icon: BookIcon,
-  },
-  {
-    title: t("chat_view.nayti_bag"),
-    prompt: t("chat_view.v_kode_nizhe_est_oshibka_naydi"),
-    icon: BugIcon,
-  },
-  {
-    title: t("chat_view.proverit_okruzhenie"),
-    prompt: t("chat_view.pokazhi_v_terminale_versii_node_npm"),
-    icon: BashIcon,
-  },
-];
 
 /**
  * Курсор в поле ввода? Тогда Ctrl/⌘+F — это поиск внутри самого поля
@@ -109,7 +75,6 @@ export default function ChatView() {
 
   const error = useStore((s) => s.error);
   const refreshTurnProjection = useStore((s) => s.refreshTurnProjection);
-  const prefillComposer = useStore((s) => s.prefillComposer);
   const scrollRef = useRef<HTMLDivElement>(null);
   const contentRef = useRef<HTMLDivElement>(null);
   const atBottomRef = useRef(true);
@@ -435,7 +400,7 @@ export default function ChatView() {
       );
       for (const node of nodes) {
         const mids = node.dataset.mids;
-        if (mids && mids.split(" ").includes(mid)) return node;
+        if (mids?.split(" ").includes(mid)) return node;
       }
       return null;
     };
@@ -533,36 +498,12 @@ export default function ChatView() {
   if (!currentID) {
     return (
       <div className="flex-1 flex items-center justify-center p-4 md:p-6 min-h-0 overflow-y-auto">
-        <div className="max-w-[var(--chat-max)] w-full text-center px-3 md:px-6">
-          <h1 className="text-xl md:text-3xl font-semibold mb-2">
-            {t("chat_view.chem_mogu_pomoch")}
-          </h1>
-          <p className="text-sm md:text-base text-muted-foreground">
-            {t("chat_view.tvoy_personalnyy_ai_assistent_dlya_koda")}
-          </p>
-          <div className="mt-6 grid grid-cols-1 gap-2 text-left sm:grid-cols-2">
-            {suggestionCards().map((s) => (
-              <button
-                key={s.title}
-                type="button"
-                className="flex items-start gap-3 rounded-2xl bg-card px-4 py-3 transition hover:bg-accent"
-                onClick={() => prefillComposer(s.prompt)}
-              >
-                <span
-                  className="mt-0.5 shrink-0 text-muted-foreground"
-                  aria-hidden="true"
-                >
-                  <s.icon size={16} />
-                </span>
-                <span className="min-w-0">
-                  <span className="block text-sm font-medium">{s.title}</span>
-                  <span className="mt-0.5 block truncate text-xs text-muted-foreground">
-                    {s.prompt.trim().split("\n")[0]}
-                  </span>
-                </span>
-              </button>
-            ))}
-          </div>
+        <div className="agent-empty-chat">
+          <span className="agent-empty-mark" aria-hidden="true">
+            Z
+          </span>
+          <h1>Чем займёмся?</h1>
+          <p>Опишите задачу — агент подберёт нужные инструменты и скиллы.</p>
         </div>
       </div>
     );
@@ -593,9 +534,15 @@ export default function ChatView() {
         )}
         <div ref={contentRef} className="mx-auto max-w-[var(--chat-max)]">
           {(!messages || messages.length === 0) && status !== "busy" && (
-            <p className="text-center text-muted-foreground py-12">
-              {t("chat_view.nachni_dialog_napishi_soobschenie_nizhe")}
-            </p>
+            <div className="agent-empty-chat">
+              <span className="agent-empty-mark" aria-hidden="true">
+                Z
+              </span>
+              <h1>Чем займёмся?</h1>
+              <p>
+                Опишите задачу — агент подберёт нужные инструменты и скиллы.
+              </p>
+            </div>
           )}
           {isWindowed && (
             <div className="text-center py-3">

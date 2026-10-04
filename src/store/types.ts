@@ -62,6 +62,7 @@ export interface ModelsSlice {
 export interface UiSlice {
   theme: Theme;
   settingsOpen: boolean;
+  settingsInitialTab?: "memory" | null;
   sidebarOpen: boolean;
   sidebarCollapsed: boolean;
   workspaceOpen: boolean;

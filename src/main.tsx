@@ -58,6 +58,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { initAutonomyUx } from "./lib/autonomyUx";
 import { initSentryBrowser } from "./lib/sentry";
 import "./index.css";
+import "./agent-workspace.css";
 import "./autonomy-ui.css";
 import { t } from "@/i18n";
 

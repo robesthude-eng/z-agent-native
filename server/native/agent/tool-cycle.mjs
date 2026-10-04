@@ -1,4 +1,5 @@
 import { toolCallSignature, toolPart, waitForRetry } from '../agent-parts.mjs';
+import { assertChatToolAllowed } from '../chat-tool-options.mjs';
 import { emit } from '../events.mjs';
 import { isIncompleteToolCall } from '../providers.mjs';
 import { putMessage, workspaceFor } from '../store.mjs';
@@ -60,6 +61,7 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
   }
 
   try {
+    assertChatToolAllowed(call.name, runtime?.toolOptions);
     const workspace = workspaceFor(sessionId);
     const emitLiveOutput = (text) => {
       if (controller.signal.aborted) return;

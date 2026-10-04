@@ -77,7 +77,8 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
     // settingsOpen и sidebarOpen — эфемерное состояние текущего экрана
     // (модалка, выдвижная панель на мобильном), синхронизировать его между
     // устройствами не нужно.
-    setSettingsOpen: (settingsOpen) => set({ settingsOpen }),
+    setSettingsOpen: (settingsOpen) =>
+      set({ settingsOpen, settingsInitialTab: null }),
     setSidebarOpen: (sidebarOpen) => set({ sidebarOpen }),
     setSidebarCollapsed: (sidebarCollapsed) =>
       setPref("sidebarCollapsed", sidebarCollapsed),

@@ -463,6 +463,7 @@ export const api = {
     systemInstruction?: string,
     signal?: AbortSignal,
     actionId?: string,
+    toolOptions?: { webSearch: boolean },
   ) =>
     req<Message>(
       `/session/${id}/message`,
@@ -472,6 +473,7 @@ export const api = {
           parts,
           ...(model ? { model } : {}),
           ...(systemInstruction ? { system: systemInstruction } : {}),
+          ...(toolOptions ? { toolOptions } : {}),
         }),
         ...(signal ? { signal } : {}),
         ...(actionId ? { headers: { [ACTION_ID_HEADER]: actionId } } : {}),

@@ -13,9 +13,9 @@ export function getInitialTheme(): Theme {
 }
 
 const THEME_COLORS: Record<Theme, string> = {
-  dark: "#111214",
+  dark: "#232321",
   mid: "#26282c",
-  light: "#f7f7f5",
+  light: "#fafaf9",
 };
 
 /** Порядок переключения: тёмная → средняя → светлая → тёмная */

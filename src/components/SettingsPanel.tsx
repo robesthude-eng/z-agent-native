@@ -165,6 +165,7 @@ const ALL_TABS: TabDef[] = TAB_GROUPS.flatMap((g) => g.items);
  */
 export default function SettingsPanel() {
   const open = useStore((s) => s.settingsOpen);
+  const initialTab = useStore((s) => s.settingsInitialTab);
   const setOpen = useStore((s) => s.setSettingsOpen);
   const loadAuth = useStore((s) => s.loadAuth);
 
@@ -179,12 +180,13 @@ export default function SettingsPanel() {
   const prevOpenRef = useRef(false);
   useEffect(() => {
     if (open && !prevOpenRef.current) {
-      setMobileView("menu");
+      setMobileView(initialTab ? "content" : "menu");
+      if (initialTab) setActiveTab(initialTab);
       setQuery("");
       loadAuth();
     }
     prevOpenRef.current = open;
-  }, [open, loadAuth]);
+  }, [open, loadAuth, initialTab]);
 
   // Закрытие по Escape (как у PanelModal) + перенос фокуса внутрь модалки (a11y).
   useEffect(() => {

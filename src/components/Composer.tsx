@@ -1,6 +1,4 @@
-import { BorderBeam } from "border-beam";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
 import { t, tf } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { api } from "../api/client";
@@ -20,11 +18,11 @@ import { dispositionOf, sendBlockReason } from "../api/turnVerdict";
 import { messageText } from "../lib/chatText";
 import { sessionActionPrep } from "../lib/ids";
 import { useStore } from "../store/useStore";
+import { ComposerActions } from "./composer/ComposerActions";
 import { ComposerAttachments } from "./composer/ComposerAttachments";
 import { ComposerDropOverlay } from "./composer/ComposerDropOverlay";
 import { ComposerQueue } from "./composer/ComposerQueue";
 import { ComposerSuggestions } from "./composer/ComposerSuggestions";
-import { ChatSkillsPicker } from "./skills/ChatSkillsPicker";
 import { useComposerSuggestions } from "./composer/useComposerSuggestions";
 import {
   clearSessionComposerCache,
@@ -32,7 +30,7 @@ import {
   useSessionComposerDrafts,
 } from "./composer/useSessionComposerDrafts";
 import { useWindowFileDrop } from "./composer/useWindowFileDrop";
-import { PaperclipIcon, SendIcon, StopIcon } from "./icons";
+import { ChatSkillsPicker } from "./skills/ChatSkillsPicker";
 
 /**
  * Сколько сессия должна пробыть свободной, прежде чем очередь имеет право
@@ -89,6 +87,7 @@ export default function Composer() {
   const failedSendText = useStore((s) => s.failedSendText);
   const clearFailedSendText = useStore((s) => s.clearFailedSendText);
   const [text, setText] = useState("");
+  const [skillsOpen, setSkillsOpen] = useState(false);
   // P2-fix: очередь сообщений — набранное во время генерации не теряется,
   // а отправляется автоматически, как только сессия освободится.
   const [queued, setQueued] = useState<QueueEntry[]>([]);
@@ -445,9 +444,13 @@ export default function Composer() {
   });
 
   return (
-    <div className="w-full max-w-[var(--chat-max)] shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
+    <div className="agent-composer-region w-full max-w-[var(--chat-max)] shrink-0 mx-auto px-3 md:px-6 pb-4 pointer-events-none">
       <div className="relative pointer-events-auto w-full">
-        <ChatSkillsPicker busy={busy} />
+        <ChatSkillsPicker
+          busy={busy}
+          open={skillsOpen}
+          onOpenChange={setSkillsOpen}
+        />
         <ComposerSuggestions
           commands={suggestions.commands}
           files={suggestions.files}
@@ -477,216 +480,179 @@ export default function Composer() {
           </div>
         )}
 
-        <BorderBeam
-          size="md"
-          colorVariant="colorful"
-          borderRadius={24}
-          className="w-full rounded-3xl"
-          active
-        >
-          {/* Именованная <section>, а не безымянный div: это зона приёма файлов
+        {/* Именованная <section>, а не безымянный div: это зона приёма файлов
               (drag&drop), и у интерактивного контейнера должна быть роль. Клавиатурный
               путь для тех же файлов — кнопка «Прикрепить файл» и вставка из буфера. */}
-          <section
-            aria-label={t("composer.pole_vvoda_soobscheniya")}
-            className={cn(
-              "relative w-full transition-all duration-[200ms]",
-              "bg-card/95 backdrop-blur-md rounded-3xl px-3 py-2.5 shadow-sm",
-              dragOver && "ring-2 ring-primary bg-primary/5",
-            )}
-            onDragOver={onDragOver}
-            onDragLeave={onDragLeave}
-            onDrop={onDrop}
-          >
-            <div className="flex flex-col gap-1">
-              {/* P2-fix: очередь сообщений, ожидающих окончания генерации */}
-              <ComposerQueue
-                entries={queued}
-                onRemove={(entry) => {
-                  const plan = removalPlan(entry, currentID);
-                  setQueued((previous) =>
-                    previous.filter(
-                      (message) => message.actionId !== plan.actionId,
-                    ),
-                  );
-                  if (plan.kind === "server") {
-                    api
-                      .dequeueAction(plan.sessionId, plan.actionId)
-                      .catch(() => {});
-                  }
-                }}
-              />
-              {/* Вложения и незавершённые загрузки — одним рядом карточек.
+        <section
+          aria-label={t("composer.pole_vvoda_soobscheniya")}
+          className={cn(
+            "agent-composer relative w-full border border-input bg-card rounded-[20px] px-3 py-2.5",
+            dragOver && "ring-2 ring-primary bg-primary/5",
+          )}
+          onDragOver={onDragOver}
+          onDragLeave={onDragLeave}
+          onDrop={onDrop}
+        >
+          <div className="flex flex-col gap-1">
+            {/* P2-fix: очередь сообщений, ожидающих окончания генерации */}
+            <ComposerQueue
+              entries={queued}
+              onRemove={(entry) => {
+                const plan = removalPlan(entry, currentID);
+                setQueued((previous) =>
+                  previous.filter(
+                    (message) => message.actionId !== plan.actionId,
+                  ),
+                );
+                if (plan.kind === "server") {
+                  api
+                    .dequeueAction(plan.sessionId, plan.actionId)
+                    .catch(() => {});
+                }
+              }}
+            />
+            {/* Вложения и незавершённые загрузки — одним рядом карточек.
               Раньше это были два разных ряда безымянных «пилюль»: загрузка
               показывалась в одном месте, а готовый файл появлялся в другом,
               без иконки, размера и превью. */}
-              <ComposerAttachments
-                attachments={attachments}
-                uploadProgress={uploadProgress}
-                sessionId={currentID}
-                onRemove={removeAttachment}
-              />
+            <ComposerAttachments
+              attachments={attachments}
+              uploadProgress={uploadProgress}
+              sessionId={currentID}
+              onRemove={removeAttachment}
+            />
 
-              {/* Input area */}
-              <div className="flex items-end gap-2 px-2 py-1 mt-1">
-                {/* Скрепка и отправка/стоп — одинаковые круги 32px в одинаковых
-                    обёртках, поэтому стоят на одной линии и симметрично по краям. */}
-                <div className="flex items-center pb-1">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="oc-tap h-8 w-8 shrink-0 rounded-full text-muted-foreground hover:text-foreground border border-foreground/15 bg-foreground/[0.04] hover:border-foreground/25 hover:bg-foreground/[0.08] transition-all"
-                    onClick={() => fileInputRef.current?.click()}
-                    title={t("composer.prikrepit_fayl")}
-                    aria-label={t("composer.prikrepit_fayl")}
-                  >
-                    <PaperclipIcon size={16} />
-                  </Button>
-                </div>
-                <input
-                  type="file"
-                  multiple
-                  ref={fileInputRef}
-                  className="hidden"
-                  onChange={(e) => handleFiles(e.target.files)}
-                />
-                <textarea
-                  ref={textareaRef}
-                  rows={1}
-                  placeholder={t("composer.chto_hotite_sdelat")}
-                  aria-label={t("composer.soobschenie_assistentu")}
-                  className="flex-1 min-h-[40px] max-h-[200px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-2 text-[15px] leading-relaxed"
-                  value={text}
-                  onChange={(e) => {
-                    setText(e.target.value);
-                    setCaret(e.target.selectionStart ?? e.target.value.length);
-                    grow(e.target);
-                  }}
-                  onKeyDown={(e) => {
-                    if (suggestions.commands.length > 0) {
-                      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                        e.preventDefault();
-                        suggestions.moveCommand(e.key === "ArrowDown" ? 1 : -1);
-                        return;
-                      }
-                      if (e.key === "Enter" || e.key === "Tab") {
-                        e.preventDefault();
-                        if (suggestions.activeCommand) {
-                          suggestions.chooseCommand(suggestions.activeCommand);
-                        }
-                        return;
-                      }
+            {/* Input area */}
+            <div className="flex flex-col gap-2 px-1 py-1">
+              <input
+                type="file"
+                multiple
+                ref={fileInputRef}
+                className="hidden"
+                onChange={(e) => handleFiles(e.target.files)}
+              />
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                placeholder={t("composer.chto_hotite_sdelat")}
+                aria-label={t("composer.soobschenie_assistentu")}
+                className="w-full min-h-[52px] max-h-[200px] bg-transparent border-none outline-none focus:outline-none focus:ring-0 focus-visible:outline-none focus-visible:ring-0 text-foreground placeholder:text-muted-foreground resize-none py-2 text-[16px] leading-relaxed"
+                value={text}
+                onChange={(e) => {
+                  setText(e.target.value);
+                  setCaret(e.target.selectionStart ?? e.target.value.length);
+                  grow(e.target);
+                }}
+                onKeyDown={(e) => {
+                  if (suggestions.commands.length > 0) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      suggestions.moveCommand(e.key === "ArrowDown" ? 1 : -1);
+                      return;
                     }
-                    if (suggestions.files.length > 0) {
-                      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-                        e.preventDefault();
-                        suggestions.moveFile(e.key === "ArrowDown" ? 1 : -1);
-                        return;
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      if (suggestions.activeCommand) {
+                        suggestions.chooseCommand(suggestions.activeCommand);
                       }
-                      if (e.key === "Enter" || e.key === "Tab") {
-                        e.preventDefault();
-                        if (suggestions.activeFile) {
-                          suggestions.chooseFile(suggestions.activeFile);
-                        }
-                        return;
-                      }
+                      return;
                     }
-                    /*
+                  }
+                  if (suggestions.files.length > 0) {
+                    if (e.key === "ArrowDown" || e.key === "ArrowUp") {
+                      e.preventDefault();
+                      suggestions.moveFile(e.key === "ArrowDown" ? 1 : -1);
+                      return;
+                    }
+                    if (e.key === "Enter" || e.key === "Tab") {
+                      e.preventDefault();
+                      if (suggestions.activeFile) {
+                        suggestions.chooseFile(suggestions.activeFile);
+                      }
+                      return;
+                    }
+                  }
+                  /*
                       Esc — это «стоп». До этого прервать ход можно было только
                       кнопкой: с клавиатуры её приходилось искать табом, хотя рука
                       уже лежит на Esc.
                     */
-                    if (e.key === "Escape" && busy) {
-                      e.preventDefault();
-                      stopTurn();
-                      return;
-                    }
-                    /*
+                  if (e.key === "Escape" && busy) {
+                    e.preventDefault();
+                    stopTurn();
+                    return;
+                  }
+                  /*
                       ↑ в пустом поле возвращает последнее отправленное
                       сообщение — привычка из терминала. Раньше опечатку в
                       длинном запросе приходилось набирать заново. Проверка стоит
                       ниже подсказок: пока открыт список команд или файлов,
                       ↑ принадлежит ему.
                     */
-                    if (e.key === "ArrowUp" && !text) {
-                      const all = currentID
-                        ? useStore.getState().messages[currentID]
-                        : null;
-                      const last = [...(all ?? [])]
-                        .reverse()
-                        .find((m) => m.role === "user");
-                      const restored = last ? messageText(last).trim() : "";
-                      if (!restored) return;
-                      e.preventDefault();
-                      setText(restored);
-                      requestAnimationFrame(() => {
-                        const el = textareaRef.current;
-                        if (!el) return;
-                        const end = restored.length;
-                        el.setSelectionRange(end, end);
-                        grow(el);
-                      });
-                      return;
-                    }
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      // Режим «Ctrl/⌘+Enter»: обычный Enter — перенос строки.
-                      const mod = e.ctrlKey || e.metaKey;
-                      if (sendKey === "mod-enter" && !mod) return;
-                      e.preventDefault();
-                      submit();
-                    }
-                  }}
-                  onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-                  onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
-                  onPaste={(e) => {
-                    const files = Array.from(e.clipboardData?.items ?? [])
-                      .filter((it) => it.kind === "file")
-                      .map((it) => it.getAsFile())
-                      .filter((f): f is File => f !== null);
-                    if (files.length > 0) {
-                      e.preventDefault();
-                      handleFiles(files);
-                    }
-                  }}
-                />
-                <div className="flex items-center gap-1 pb-1">
-                  {busy ? (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="icon"
-                      className="oc-tap relative h-8 w-8 shrink-0 rounded-full transition-all duration-200 border border-foreground/15 bg-foreground/[0.08] text-foreground hover:bg-foreground/[0.14] hover:text-foreground hover:scale-105 active:scale-95 disabled:opacity-70"
-                      onClick={stopTurn}
-                      title={t("stop.action")}
-                      aria-label={t("stop.action")}
-                    >
-                      <span className="oc-stop-ring" aria-hidden="true" />
-                      <StopIcon size={12} />
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="icon"
-                      className={cn(
-                        "oc-tap h-8 w-8 shrink-0 rounded-full transition-all duration-200",
-                        canSend
-                          ? "border border-primary bg-primary text-primary-foreground shadow-sm hover:scale-105 hover:brightness-110 active:scale-95 cursor-pointer"
-                          : "border border-foreground/15 bg-foreground/[0.04] text-muted-foreground cursor-not-allowed",
-                      )}
-                      onClick={submit}
-                      disabled={!canSend}
-                      title={blockedReason ?? t("composer.otpravit")}
-                      aria-label={t("composer.otpravit_soobschenie")}
-                    >
-                      <SendIcon size={15} />
-                    </Button>
-                  )}
-                </div>
-              </div>
+                  if (e.key === "ArrowUp" && !text) {
+                    const all = currentID
+                      ? useStore.getState().messages[currentID]
+                      : null;
+                    const last = [...(all ?? [])]
+                      .reverse()
+                      .find((m) => m.role === "user");
+                    const restored = last ? messageText(last).trim() : "";
+                    if (!restored) return;
+                    e.preventDefault();
+                    setText(restored);
+                    requestAnimationFrame(() => {
+                      const el = textareaRef.current;
+                      if (!el) return;
+                      const end = restored.length;
+                      el.setSelectionRange(end, end);
+                      grow(el);
+                    });
+                    return;
+                  }
+                  if (e.key === "Enter" && !e.shiftKey) {
+                    // Режим «Ctrl/⌘+Enter»: обычный Enter — перенос строки.
+                    const mod = e.ctrlKey || e.metaKey;
+                    if (sendKey === "mod-enter" && !mod) return;
+                    e.preventDefault();
+                    submit();
+                  }
+                }}
+                onClick={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                onKeyUp={(e) => setCaret(e.currentTarget.selectionStart ?? 0)}
+                onPaste={(e) => {
+                  const files = Array.from(e.clipboardData?.items ?? [])
+                    .filter((it) => it.kind === "file")
+                    .map((it) => it.getAsFile())
+                    .filter((f): f is File => f !== null);
+                  if (files.length > 0) {
+                    e.preventDefault();
+                    handleFiles(files);
+                  }
+                }}
+              />
+              <ComposerActions
+                busy={busy}
+                canSend={canSend}
+                blockedReason={blockedReason}
+                onSend={() => void submit()}
+                onStop={stopTurn}
+                onSkills={() => setSkillsOpen(true)}
+                onFiles={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.accept = "";
+                    fileInputRef.current.click();
+                  }
+                }}
+                onPhotos={() => {
+                  if (fileInputRef.current) {
+                    fileInputRef.current.accept = "image/*";
+                    fileInputRef.current.click();
+                  }
+                }}
+              />
             </div>
-          </section>
-        </BorderBeam>
+          </div>
+        </section>
       </div>
 
       {/* Подсказка на всё окно, пока над страницей тащат файл. */}

@@ -280,7 +280,7 @@ function AppShell() {
   }, [currentID, params.sessionId, navigate]);
 
   return (
-    <div className="flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground">
+    <div className="agent-app flex h-dvh w-dvw flex-col overflow-hidden bg-background text-foreground">
       <TopBar />
       <div className="relative flex min-h-0 flex-1 overflow-hidden">
         {/* Левый сайдбар: плавная анимация ширины на десктопе.
@@ -288,11 +288,11 @@ function AppShell() {
             обрежется, либо оставит пустую полосу. */}
         <div
           className={cn(
-            "hidden md:block shrink-0 transition-all duration-300 ease-in-out overflow-hidden",
-            sidebarCollapsed ? "w-0 opacity-0" : "w-[260px] opacity-100",
+            "agent-sidebar-slot hidden md:block shrink-0 transition-[width,opacity] duration-200 overflow-hidden",
+            sidebarCollapsed ? "w-0 opacity-0" : "w-[236px] opacity-100",
           )}
         >
-          <div className="w-[260px] h-full">
+          <div className="w-[236px] h-full">
             <ErrorBoundary fallback={(m: string) => <PanelCrash message={m} />}>
               <Sidebar />
             </ErrorBoundary>
@@ -330,7 +330,7 @@ function AppShell() {
               <button
                 type="button"
                 aria-label={t("router.zakryt_panel_faylov")}
-                className="absolute inset-0 z-40 bg-black/50 md:hidden"
+                className="absolute inset-0 z-40 bg-black/40 lg:hidden"
                 onClick={() => setWorkspaceOpen(false)}
               />
             )}
@@ -343,13 +343,13 @@ function AppShell() {
               inert={!workspaceOpen || undefined}
               aria-hidden={!workspaceOpen}
               className={cn(
-                "absolute right-0 top-0 bottom-0 z-50 md:relative shrink-0 transition-all duration-300 ease-in-out overflow-hidden bg-background md:bg-transparent",
+                "agent-workspace-slot absolute right-0 top-0 bottom-0 z-50 lg:relative shrink-0 transition-[width,opacity] duration-200 overflow-hidden bg-background lg:bg-transparent",
                 workspaceOpen
-                  ? "w-[85vw] max-w-[320px] md:w-80 opacity-100 border-l border-border md:border-none shadow-lg md:shadow-none"
+                  ? "w-full max-w-full lg:w-[420px] lg:max-w-[420px] opacity-100 border-l border-border lg:border-none shadow-lg lg:shadow-none"
                   : "w-0 opacity-0",
               )}
             >
-              <div className="w-[85vw] max-w-[320px] md:w-80 h-full flex flex-col min-h-0">
+              <div className="w-full lg:w-[420px] h-full flex flex-col min-h-0">
                 <ErrorBoundary
                   fallback={(m: string) => <PanelCrash message={m} />}
                 >

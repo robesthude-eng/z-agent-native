@@ -38,6 +38,7 @@ import {
   WorkspaceGitChanges,
   WorkspaceUploadStatus,
 } from "./workspace/WorkspaceMetaSections";
+import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { WorkspaceToolbar } from "./workspace/WorkspaceToolbar";
 import { WorkspaceTreeContent } from "./workspace/WorkspaceTreeContent";
 import {
@@ -83,6 +84,9 @@ export default function Workspace() {
   // расхождение и есть признак несохранённых правок.
   const [draft, setDraft] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("code");
+  const [workspaceTab, setWorkspaceTab] = useState<
+    "files" | "preview" | "code"
+  >("files");
   const [saving, setSaving] = useState(false);
   const [createKind, setCreateKind] = useState<"file" | "directory" | null>(
     null,
@@ -104,8 +108,7 @@ export default function Workspace() {
   const loadingDirs = useRef<Set<string>>(new Set());
   const loadGen = useRef(0);
 
-  // Every chat owns exactly one real workspace. No synthetic project tree or
-  // privileged self-editing path is injected into ordinary sessions.
+  // One real workspace per chat; never inject a privileged synthetic tree.
   const withWorkspaceRoot = useCallback((nodes: TreeNode[]) => nodes, []);
 
   const sessions = useStore((s) => s.sessions);
@@ -457,7 +460,9 @@ export default function Workspace() {
         setDraft(content);
         // Превью по умолчанию для того, что имеет смысл смотреть, а не читать:
         // содержимое картинки как текст — просто мусор на экране.
-        setViewMode(previewKind(path) === "image" ? "preview" : "code");
+        const kind = previewKind(path);
+        setViewMode(kind ? "preview" : "code");
+        setWorkspaceTab(kind ? "preview" : "code");
       } catch (e: unknown) {
         toast(
           "error",
@@ -533,6 +538,7 @@ export default function Workspace() {
     }
     setActiveFile(null);
     setDraft("");
+    setWorkspaceTab("files");
   }, [dirty, askConfirm]);
 
   const saveActiveFile = useCallback(async () => {
@@ -667,67 +673,121 @@ export default function Workspace() {
   if (!workspaceOpen) return null;
 
   return (
-    <>
-      {activeFile && (
-        <FileEditor
-          file={activeFile}
-          draft={draft}
-          dirty={dirty}
-          editable={activeEditable}
-          saving={saving}
-          modes={activeModes}
-          mode={activeMode}
-          previewKind={activePreviewKind}
-          previewUrl={activePreviewKind && currentID ? activePreviewUrl : null}
-          sessionId={currentID}
-          readonlyNote={readonlyNote}
-          onModeChange={setViewMode}
-          onDraftChange={setDraft}
-          onSave={() => {
-            saveActiveFile().catch(() => {});
-          }}
-          onClose={closeActiveFile}
-        />
+    <aside
+      className={cn(
+        // `bg-card`, а не `bg-background`: панель лежит на том же фоне,
+        // что и приложение, и без собственного тона её граница держалась
+        // только на тонкой линии border.
+        "agent-workspace z-50 flex flex-col border border-border text-foreground min-h-0",
+        // Mobile: fills the sliding right sidebar drawer perfectly without overflowing.
+        // Desktop: fixed maximum size window inside the right sidebar, height strictly clamped so ScrollArea scrolls.
+        "w-full h-full max-h-full shadow-lg md:static md:my-2 md:mx-2 md:h-[calc(100%-1rem)] md:max-h-[calc(100%-1rem)] md:w-[calc(100%-1rem)] md:max-w-[calc(100%-1rem)] md:shrink-0 md:rounded-2xl md:overflow-hidden md:shadow-none",
       )}
-
-      <aside
-        className={cn(
-          // `bg-card`, а не `bg-background`: панель лежит на том же фоне,
-          // что и приложение, и без собственного тона её граница держалась
-          // только на тонкой линии border.
-          "z-50 flex flex-col border border-border bg-card text-foreground min-h-0",
-          // Mobile: fills the sliding right sidebar drawer perfectly without overflowing.
-          // Desktop: fixed maximum size window inside the right sidebar, height strictly clamped so ScrollArea scrolls.
-          "w-full h-full max-h-full shadow-lg md:static md:my-2 md:mx-2 md:h-[calc(100%-1rem)] md:max-h-[calc(100%-1rem)] md:w-[calc(100%-1rem)] md:max-w-[calc(100%-1rem)] md:shrink-0 md:rounded-2xl md:overflow-hidden md:shadow-none",
+    >
+      <WorkspaceToolbar
+        showFilter={workspaceTab === "files"}
+        treeCount={tree.length}
+        filter={filter}
+        loading={loading}
+        createFileGate={opGate(t("workspace.novyy_fayl"))}
+        createDirectoryGate={opGate(t("sidebar.novaya_papka"))}
+        uploadGate={opGate(
+          t("workspace.zagruzit_papku"),
+          uploading,
+          t("workspace.idet_zagruzka"),
         )}
-      >
-        <WorkspaceToolbar
-          treeCount={tree.length}
-          filter={filter}
-          loading={loading}
-          createFileGate={opGate(t("workspace.novyy_fayl"))}
-          createDirectoryGate={opGate(t("sidebar.novaya_papka"))}
-          uploadGate={opGate(
-            t("workspace.zagruzit_papku"),
-            uploading,
-            t("workspace.idet_zagruzka"),
-          )}
-          onFilterChange={setFilter}
-          onCreateFile={() => {
-            setCreateKind("file");
-            setCreatePath("");
-          }}
-          onCreateDirectory={() => {
-            setCreateKind("directory");
-            setCreatePath("");
-          }}
-          onUpload={() => folderInputRef.current?.click()}
-          onRefresh={() => {
-            refresh().catch(() => {});
-          }}
-          onClose={() => setWorkspaceOpen(false)}
-        />
+        onFilterChange={setFilter}
+        onCreateFile={() => {
+          setCreateKind("file");
+          setCreatePath("");
+        }}
+        onCreateDirectory={() => {
+          setCreateKind("directory");
+          setCreatePath("");
+        }}
+        onUpload={() => folderInputRef.current?.click()}
+        onRefresh={() => {
+          refresh().catch(() => {});
+        }}
+        onClose={() => setWorkspaceOpen(false)}
+      />
 
+      <WorkspaceTabs
+        active={workspaceTab}
+        onSelect={(tab) => {
+          setWorkspaceTab(tab);
+          if (tab === "preview" && !activeFile && currentID)
+            void api
+              .capabilities(currentID)
+              .then((raw) => {
+                const path = (raw as { previewPath?: string }).previewPath;
+                if (path) return openFile(path);
+              })
+              .catch(() => {});
+        }}
+      />
+      {workspaceTab !== "files" && (
+        <div
+          role="tabpanel"
+          id={`workspace-panel-${workspaceTab}`}
+          aria-labelledby={`workspace-tab-${workspaceTab}`}
+          className="workspace-inline-editor"
+        >
+          {activeFile && (workspaceTab !== "preview" || activePreviewKind) ? (
+            <FileEditor
+              embedded
+              file={activeFile}
+              draft={draft}
+              dirty={dirty}
+              editable={activeEditable}
+              saving={saving}
+              modes={activeModes}
+              mode={
+                workspaceTab === "preview" && activePreviewKind
+                  ? "preview"
+                  : activeMode === "preview"
+                    ? "code"
+                    : activeMode
+              }
+              previewKind={activePreviewKind}
+              previewUrl={
+                activePreviewKind && currentID ? activePreviewUrl : null
+              }
+              sessionId={currentID}
+              readonlyNote={readonlyNote}
+              onModeChange={(mode) => {
+                setViewMode(mode);
+                setWorkspaceTab(mode === "preview" ? "preview" : "code");
+              }}
+              onDraftChange={setDraft}
+              onSave={() => {
+                saveActiveFile().catch(() => {});
+              }}
+              onClose={() => {
+                void closeActiveFile();
+              }}
+            />
+          ) : (
+            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
+              <p>
+                {activeFile
+                  ? "Для этого файла нет превью. Откройте вкладку «Код»."
+                  : "Выберите файл во вкладке «Файлы»."}
+              </p>
+              <p className="text-sm">
+                Превью и код откроются здесь, рядом с чатом.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+      <div
+        role="tabpanel"
+        id="workspace-panel-files"
+        aria-labelledby="workspace-tab-files"
+        hidden={workspaceTab !== "files"}
+        className="flex min-h-0 flex-1 flex-col"
+      >
         <WorkspaceUploadStatus
           uploading={uploading}
           message={uploadMsg}
@@ -776,7 +836,7 @@ export default function Workspace() {
           deleteItem={deleteItem}
           downloadWorkspaceItem={downloadWorkspaceItem}
         />
-      </aside>
-    </>
+      </div>
+    </aside>
   );
 }

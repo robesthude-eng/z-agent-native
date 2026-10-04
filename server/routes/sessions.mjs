@@ -11,12 +11,12 @@ import { readJson, sendJson } from '../native/json.mjs';
 import { previewDocument } from '../native/preview-document.mjs';
 import { revokePreviewTokens } from '../native/preview-tokens.mjs';
 import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
-import {
-  addMemory, clearChatMemory, deleteSkill, listMemory, listSkills, removeMemory, saveSkill, updateMemory,
-  createChat, createChatShare, deleteChat, deleteChatShare, getChatShare, listChatShares, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
-  listChats, listMessages, listPendingQuestions, listQueue, ownsChat, putMessage, renameChat, setPrefs, workspaceFor, 
-} from '../native/store.mjs';
 import { invalidateStorageUsage, storageUsage } from '../native/storage-usage.mjs';
+import {
+  addMemory, clearChatMemory,
+  createChat, createChatShare, deleteChat, deleteChatShare, deleteMessagesFrom, deleteSkill, dequeueAction, enqueueAction, getChat, getChatShare, getPrefs, getSandboxUid,getTurn,listChatShares,
+  listChats, listMemory, listMessages, listPendingQuestions, listQueue, listSkills, ownsChat, putMessage, removeMemory, renameChat, saveSkill, setPrefs, updateMemory,workspaceFor,
+} from '../native/store.mjs';
 import { terminalEnabled } from '../native/terminal.mjs';
 import { closeWorkspaceWatcher, ensureWorkspaceWatcher } from '../native/watcher.mjs';
 
@@ -135,6 +135,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
         parts: body.parts || [],
         model: body.model || null,
         system: '',
+        toolOptions: body.toolOptions,
         actionId: req.headers['x-action-id'] || '',
       });
       sendJson(res, 200, result);

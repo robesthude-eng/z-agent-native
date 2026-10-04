@@ -62,6 +62,7 @@ export interface FileEditorProps {
   onDraftChange: (value: string) => void;
   onSave: () => void;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 export default function FileEditor({
@@ -80,6 +81,7 @@ export default function FileEditor({
   onDraftChange,
   onSave,
   onClose,
+  embedded = false,
 }: FileEditorProps) {
   // Escape закрывает окно. Дальше решает `onClose`: у несохранённого файла он
   // сначала спросит подтверждение — то же, что и у крестика.
@@ -111,17 +113,23 @@ export default function FileEditor({
       {/* Фон — кнопка-сосед, как в PanelModal: закрытие кликом мимо
           остаётся доступным и с клавиатуры, а окну не нужен
           stopPropagation, чтобы клики внутри не закрывали его. */}
-      <button
-        type="button"
-        className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[3px] animate-in fade-in"
-        onClick={onClose}
-        aria-label={t("file_editor.zakryt_fayl")}
-      />
+      {!embedded && (
+        <button
+          type="button"
+          className="fixed inset-0 z-[60] bg-black/55 backdrop-blur-[3px] animate-in fade-in"
+          onClick={onClose}
+          aria-label={t("file_editor.zakryt_fayl")}
+        />
+      )}
       <div
-        role="dialog"
-        aria-modal="true"
+        role={embedded ? "region" : "dialog"}
+        aria-modal={embedded ? undefined : true}
         aria-label={rel}
-        className="fixed left-1/2 top-1/2 z-[65] flex h-[min(660px,88dvh)] w-[min(880px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-e3 animate-in fade-in zoom-in-95"
+        className={
+          embedded
+            ? "workspace-inline-editor"
+            : "fixed left-1/2 top-1/2 z-[65] flex h-[min(660px,88dvh)] w-[min(880px,94vw)] -translate-x-1/2 -translate-y-1/2 flex-col overflow-hidden rounded-2xl border border-border bg-card shadow-e3 animate-in fade-in zoom-in-95"
+        }
       >
         <div className="flex shrink-0 items-center gap-2.5 border-b border-border px-4 py-3">
           <span className="shrink-0" style={{ color: visual.color }}>
@@ -145,7 +153,7 @@ export default function FileEditor({
               {t("file_editor.ne_sohraneno")}
             </span>
           )}
-          {editable && (
+          {editable && (mode !== "preview" || dirty) && (
             <Button
               size="sm"
               className="h-8 shrink-0 gap-1.5 text-xs"
@@ -181,25 +189,27 @@ export default function FileEditor({
             было выписано здесь заново, а вынесенная функция вместе с
             `keepViewMode` не звалась ниоткуда: написана, покрыта тестами и
             мертва — тот же случай, что с полем `cancelsTurn`. */}
-        {modes.length > 1 && (
+        {(embedded ? dirty && modes.includes("diff") : modes.length > 1) && (
           <div className="flex shrink-0 items-center border-b border-border px-3 py-2">
             <div className="inline-flex items-center gap-0.5 rounded-lg bg-muted/60 p-0.5">
-              {modes.map((m) => (
-                <button
-                  key={m}
-                  type="button"
-                  aria-pressed={mode === m}
-                  className={cn(
-                    "rounded-[7px] px-3 py-1 text-[11.5px] transition-all",
-                    mode === m
-                      ? "bg-card text-foreground shadow-e1"
-                      : "text-muted-foreground hover:text-foreground",
-                  )}
-                  onClick={() => onModeChange(m)}
-                >
-                  {VIEW_MODE_LABEL[m]}
-                </button>
-              ))}
+              {modes
+                .filter((m) => !embedded || m !== "preview")
+                .map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    aria-pressed={mode === m}
+                    className={cn(
+                      "rounded-[7px] px-3 py-1 text-[11.5px] transition-all",
+                      mode === m
+                        ? "bg-card text-foreground shadow-e1"
+                        : "text-muted-foreground hover:text-foreground",
+                    )}
+                    onClick={() => onModeChange(m)}
+                  >
+                    {VIEW_MODE_LABEL[m]}
+                  </button>
+                ))}
             </div>
           </div>
         )}

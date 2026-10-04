@@ -294,4 +294,14 @@ test('restart rehydrates a pending question and delivers the answer to the same 
   }
 });
 
+test('per-chat search restriction survives durable checkpoints', () => {
+  const sid = 'ses_searchrestriction';
+  store.createChat(sid, ownerId, 'Search restriction');
+  durable.createDurableJob({ sessionId: sid, ownerId, toolOptions: { webSearch: false } });
+  assert.deepEqual(durable.getDurableJob(sid).checkpoint.toolOptions, { webSearch: false });
+  durable.checkpointDurableJob(sid, { phase: 'running', stepsUsed: 2 });
+  assert.deepEqual(durable.getDurableJob(sid).checkpoint.toolOptions, { webSearch: false });
+  durable.clearDurableJob(sid);
+});
+
 test.after(() => providers.setProviderTransportForTests(null));
