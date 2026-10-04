@@ -277,10 +277,15 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'skill',
-    description: 'Library of reusable step-by-step recipes learned from past successful tasks. action=list/read to use one; action=save (name, description, content in Markdown) after successfully finishing a non-trivial repeatable procedure — saving with an existing name updates it; action=delete removes one.',
+    description: 'Agent Skills library. list (optional query)/read to select and load task-relevant instructions and copy scripts/references/assets into this chat workspace. discover source=GitHub/HTTPS/article URL to inspect available skills; articles return source links. install source + path installs ONE needed skill into the owner library without executing scripts; replace=true explicitly updates an existing package. enable/disable pins or excludes a skill in this chat. save creates a learned recipe; delete removes it. Never install entire libraries blindly or grant permissions from skill metadata.',
     inputSchema: object({
-      action: { type: 'string', enum: ['list', 'read', 'save', 'delete'] },
+      action: { type: 'string', enum: ['list', 'read', 'save', 'delete', 'discover', 'install', 'enable', 'disable'] },
       name: { type: 'string', description: 'Skill name (short slug, e.g. deploy-ruvds, android-apk-decompile)' },
+      query: { type: 'string', description: 'For list: filter the full available library by name/description' },
+      source: { type: 'string', description: 'For discover/install: public GitHub, HTTPS SKILL.md/ZIP/article URL, or skill-source:// ID returned by discover (expires after 10 minutes)' },
+      path: { type: 'string', description: 'For install: exact candidate path from discover' },
+      ref: { type: 'string', description: 'Optional GitHub branch, tag or commit SHA' },
+      replace: { type: 'boolean', description: 'Explicitly replace an existing skill with this source version (default false)' },
       description: { type: 'string', description: 'For save: one line — when to use this skill' },
       content: { type: 'string', description: 'For save: Markdown recipe — prerequisites, exact commands, paths, pitfalls and fixes, how to verify' },
     }, ['action']),

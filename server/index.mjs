@@ -21,6 +21,7 @@ import { handleAuthRoutes } from './routes/auth.mjs';
 import { handleAdminSystemRoutes, handleSystemRoutes } from './routes/system.mjs';
 import { handlePublicShareRoutes } from './routes/share.mjs';
 import { handleSessionRoutes } from './routes/sessions.mjs';
+import { handleSkillRoutes } from './routes/skills.mjs';
 import { handleModelRoutes } from './routes/models.mjs';
 import { handleTokenPreview, servePreviewFile } from './routes/preview.mjs';
 
@@ -146,6 +147,7 @@ async function route(req, res) {
   }
 
   if (handleAdminSystemRoutes(req, res, p, auth)) return;
+  if (await handleSkillRoutes(req, res, p, ownerId)) return;
   if (await handleSessionRoutes(req, res, p, url, ownerId)) return;
   if (await handleModelRoutes(req, res, p, url, ownerId)) return;
 

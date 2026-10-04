@@ -8,7 +8,7 @@ const CONTEXT_DIR = path.join(DATA_DIR, 'project-context');
 const MAX_CONTEXT_CHARS = 90_000;
 const MAX_TURN_MEMORY = 14;
 const MAX_WALK_FILES = 8_000;
-const IGNORED = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home']);
+const IGNORED = new Set(['.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home', '.agent-skills']);
 
 function safeSessionId(value) {
   const id = String(value || '');

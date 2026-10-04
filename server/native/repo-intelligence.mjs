@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const IGNORED_DIRS = new Set([
-  '.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home',
+  '.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home', '.agent-skills',
   '.venv', 'venv', '__pycache__', 'target', '.turbo', '.parcel-cache', '.pytest_cache',
 ]);
 

@@ -139,6 +139,7 @@ jobs:
           cp .env.example .env
           printf 'Z_AGENT_SECRET_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
           printf 'Z_AGENT_AUDIT_KEY=%s\n' "$(openssl rand -hex 32)" >> .env
+          printf 'SEARXNG_SECRET=%s\n' "$(openssl rand -hex 32)" >> .env
           docker compose config -q
       - name: Validate public Caddy security config
         run: docker run --rm -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile

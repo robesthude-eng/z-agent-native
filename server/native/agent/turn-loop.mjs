@@ -24,6 +24,7 @@ import {
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
 import { memoryPrompt } from '../agent-memory.mjs';
+import { skillsPrompt, chatSkillSettings, setChatSkillSettings } from '../skills/library.mjs';
 import { partId } from '../ids.mjs';
 import { framesWithDossier } from './dossier.mjs';
 import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
@@ -351,7 +352,17 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     ? mediaChannelsPrompt(ownerId)
     : '';
   const features = agentFeatures(ownerId);
-  const ownerPrompt = [userSettingsPrompt(ownerId), features.memory ? memoryPrompt(ownerId, sessionId) : ''].filter(Boolean).join('\n\n');
+  const settings = chatSkillSettings(ownerId, sessionId);
+  if (settings.mode !== 'off') {
+    // Explicit $skill-name /skill-name mentions unlock manual-only skills.
+    const names = [...String(goal || '').matchAll(/(?:^|\s)[/$]([a-z0-9]+(?:-[a-z0-9]+)*)\b/g)].map((m) => m[1]);
+    if (names.length) {
+      const library = (await import('../store/memory.mjs')).listSkills(ownerId);
+      const selected = [...new Set([...settings.selected, ...names.filter((n) => library.some((s) => s.name === n && s.enabled))])].slice(0, 8);
+      setChatSkillSettings(ownerId, sessionId, { selected });
+    }
+  }
+  const ownerPrompt = [userSettingsPrompt(ownerId), features.memory ? memoryPrompt(ownerId, sessionId, { includeSkills: false }) : '', skillsPrompt(ownerId, sessionId, workspaceFor(sessionId))].filter(Boolean).join('\n\n');
   const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;

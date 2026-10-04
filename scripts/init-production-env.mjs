@@ -25,6 +25,7 @@ if (fs.existsSync(targetPath))
   );
 let text = fs.readFileSync(templatePath, "utf8");
 const values = {
+  SEARXNG_SECRET: crypto.randomBytes(32).toString("hex"),
   Z_AGENT_SECRET_KEY: crypto.randomBytes(32).toString("hex"),
   Z_AGENT_AUDIT_KEY: crypto.randomBytes(32).toString("hex"),
   Z_AGENT_METRICS_TOKEN: crypto.randomBytes(32).toString("base64url"),

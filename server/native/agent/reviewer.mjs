@@ -8,7 +8,7 @@ import { safeWorkspacePath } from '../security.mjs';
 
 const MAX_FILE_CHARS = 14_000;
 const MAX_TOTAL_CHARS = 70_000;
-const SKIP_PATH = /(^|\/)(\.screenshots|\.agent-home|node_modules|dist|build|\.git)(\/|$)|\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|mp[34]|wav|woff2?|ttf|lock)$/i;
+const SKIP_PATH = /(^|\/)(\.screenshots|\.agent-home|\.agent-skills|node_modules|dist|build|\.git)(\/|$)|\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|mp[34]|wav|woff2?|ttf|lock)$/i;
 
 export function reviewablePaths(strategy) {
   const paths = Array.isArray(strategy?.changedPaths) ? strategy.changedPaths : [];

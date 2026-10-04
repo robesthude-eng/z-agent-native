@@ -108,8 +108,7 @@ export function SettingsSegmented<T extends string>({
   ariaLabel: string;
 }) {
   return (
-    <div
-      role="group"
+    <fieldset
       aria-label={ariaLabel}
       className="inline-flex flex-wrap rounded-lg border border-border bg-muted/40 p-0.5"
     >
@@ -129,7 +128,7 @@ export function SettingsSegmented<T extends string>({
           {o.label}
         </button>
       ))}
-    </div>
+    </fieldset>
   );
 }
 

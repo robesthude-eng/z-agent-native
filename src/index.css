@@ -553,7 +553,7 @@
     grid-template-rows 260ms cubic-bezier(0.32, 0.72, 0, 1),
     opacity 200ms var(--ease-standard);
 }
-.oc-collapse[data-open="true"] {
+.oc-collapse[data-open='true'] {
   grid-template-rows: 1fr;
   opacity: 1;
 }
@@ -565,7 +565,7 @@
   transform: translateY(-3px);
   transition: transform 260ms cubic-bezier(0.32, 0.72, 0, 1);
 }
-.oc-collapse[data-open="true"] > .oc-collapse-inner > * {
+.oc-collapse[data-open='true'] > .oc-collapse-inner > * {
   transform: none;
 }
 @media (prefers-reduced-motion: reduce) {
@@ -737,15 +737,23 @@
   color: color-mix(in srgb, var(--color-foreground) 88%, transparent);
   overflow-wrap: anywhere;
 }
-.oc-prose > :first-child { margin-top: 0; }
-.oc-prose > :last-child { margin-bottom: 0; }
-.oc-md > :first-child { margin-top: 0; }
-.oc-md > :last-child { margin-bottom: 0; }
+.oc-prose > :first-child {
+  margin-top: 0;
+}
+.oc-prose > :last-child {
+  margin-bottom: 0;
+}
+.oc-md > :first-child {
+  margin-top: 0;
+}
+.oc-md > :last-child {
+  margin-bottom: 0;
+}
 /* Курсор стрима в конце последней строки текста. */
 .oc-md-live > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
 .oc-md-live > :is(ul, ol):last-child > li:last-child::after,
 .oc-md-live:empty::after {
-  content: "";
+  content: '';
   display: inline-block;
   width: 0.5em;
   height: 0.5em;
@@ -757,48 +765,98 @@
   animation: oc-caret-pulse 1.1s ease-in-out infinite;
 }
 @keyframes oc-caret-pulse {
-  0%, 100% { opacity: 0.75; transform: scale(1); }
-  50% { opacity: 0.25; transform: scale(0.8); }
+  0%,
+  100% {
+    opacity: 0.75;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
 }
 @media (prefers-reduced-motion: reduce) {
   .oc-md-live > :is(p, h1, h2, h3, h4, h5, h6, blockquote):last-child::after,
   .oc-md-live > :is(ul, ol):last-child > li:last-child::after,
-  .oc-md-live:empty::after { animation: none; }
+  .oc-md-live:empty::after {
+    animation: none;
+  }
 }
-.oc-prose p { margin: 0.7em 0; }
-.oc-prose pre { margin: 0.9em 0; }
-.oc-prose strong { font-weight: 600; color: var(--color-foreground); }
-.oc-prose h1, .oc-prose h2, .oc-prose h3, .oc-prose h4 {
+.oc-prose p {
+  margin: 0.7em 0;
+}
+.oc-prose pre {
+  margin: 0.9em 0;
+}
+.oc-prose strong {
+  font-weight: 600;
+  color: var(--color-foreground);
+}
+.oc-prose h1,
+.oc-prose h2,
+.oc-prose h3,
+.oc-prose h4 {
   color: var(--color-foreground);
   font-weight: 600;
   line-height: 1.35;
   letter-spacing: -0.015em;
   margin: 1.4em 0 0.5em;
 }
-.oc-prose h1 { font-size: 1.32em; }
-.oc-prose h2 { font-size: 1.18em; }
-.oc-prose h3 { font-size: 1.06em; }
-.oc-prose h4 { font-size: 1em; }
-.oc-prose ul, .oc-prose ol { margin: 0.6em 0; padding-left: 1.4em; }
-.oc-prose ul { list-style: disc; }
-.oc-prose ol { list-style: decimal; }
-.oc-prose li { margin: 0.3em 0; padding-left: 0.15em; }
-.oc-prose li::marker { color: var(--color-muted-foreground); }
+.oc-prose h1 {
+  font-size: 1.32em;
+}
+.oc-prose h2 {
+  font-size: 1.18em;
+}
+.oc-prose h3 {
+  font-size: 1.06em;
+}
+.oc-prose h4 {
+  font-size: 1em;
+}
+.oc-prose ul,
+.oc-prose ol {
+  margin: 0.6em 0;
+  padding-left: 1.4em;
+}
+.oc-prose ul {
+  list-style: disc;
+}
+.oc-prose ol {
+  list-style: decimal;
+}
+.oc-prose li {
+  margin: 0.3em 0;
+  padding-left: 0.15em;
+}
+.oc-prose li::marker {
+  color: var(--color-muted-foreground);
+}
 .oc-prose a {
   color: var(--color-foreground);
   text-decoration: underline;
-  text-decoration-color: color-mix(in srgb, var(--color-foreground) 35%, transparent);
+  text-decoration-color: color-mix(
+    in srgb,
+    var(--color-foreground) 35%,
+    transparent
+  );
   text-underline-offset: 3px;
   transition: text-decoration-color 150ms ease;
 }
-.oc-prose a:hover { text-decoration-color: var(--color-foreground); }
+.oc-prose a:hover {
+  text-decoration-color: var(--color-foreground);
+}
 .oc-prose blockquote {
   margin: 0.9em 0;
   padding: 0.15em 0 0.15em 0.9em;
   border-left: 2px solid var(--color-border);
   color: var(--color-muted-foreground);
 }
-.oc-prose hr { margin: 1.4em 0; border: 0; border-top: 1px solid var(--color-border); }
+.oc-prose hr {
+  margin: 1.4em 0;
+  border: 0;
+  border-top: 1px solid var(--color-border);
+}
 .oc-prose table {
   display: block;
   width: max-content;
@@ -812,7 +870,8 @@
   font-size: 0.92em;
   line-height: 1.5;
 }
-.oc-prose th, .oc-prose td {
+.oc-prose th,
+.oc-prose td {
   padding: 0.5em 0.8em;
   text-align: left;
   vertical-align: top;
@@ -823,8 +882,13 @@
   color: var(--color-foreground);
   background: color-mix(in srgb, var(--color-muted) 70%, transparent);
 }
-.oc-prose tr:last-child td { border-bottom: 0; }
-.oc-prose th + th, .oc-prose td + td { border-left: 1px solid var(--color-border); }
+.oc-prose tr:last-child td {
+  border-bottom: 0;
+}
+.oc-prose th + th,
+.oc-prose td + td {
+  border-left: 1px solid var(--color-border);
+}
 
 /* Кнопка «Стоп» в стиле кнопки отправки: светлый круг темы с квадратом и
    тонкое вращающееся кольцо — видно, что агент работает, без красной тревоги. */
@@ -832,14 +896,30 @@
   position: absolute;
   inset: -3px;
   border-radius: 9999px;
-  border: 1.5px solid color-mix(in srgb, var(--color-foreground) 14%, transparent);
-  border-top-color: color-mix(in srgb, var(--color-foreground) 70%, transparent);
+  border: 1.5px solid
+    color-mix(in srgb, var(--color-foreground) 14%, transparent);
+  border-top-color: color-mix(
+    in srgb,
+    var(--color-foreground) 70%,
+    transparent
+  );
   animation: oc-stop-spin 1.1s linear infinite;
   pointer-events: none;
 }
-@keyframes oc-stop-spin { to { transform: rotate(360deg); } }
+@keyframes oc-stop-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
 @media (prefers-reduced-motion: reduce) {
-  .oc-stop-ring { animation: none; border-top-color: color-mix(in srgb, var(--color-foreground) 14%, transparent); }
+  .oc-stop-ring {
+    animation: none;
+    border-top-color: color-mix(
+      in srgb,
+      var(--color-foreground) 14%,
+      transparent
+    );
+  }
 }
 
 /* Редизайн чата: инлайн-код красным на мягкой подложке, спокойные ссылки,
@@ -921,9 +1001,9 @@ button.oc-code-link:hover {
 :root {
   --chat-max: 48rem;
 }
-[data-reduce-motion="true"] *,
-[data-reduce-motion="true"] *::before,
-[data-reduce-motion="true"] *::after {
+[data-reduce-motion='true'] *,
+[data-reduce-motion='true'] *::before,
+[data-reduce-motion='true'] *::after {
   animation-duration: 0.001ms !important;
   animation-iteration-count: 1 !important;
   transition-duration: 0.001ms !important;

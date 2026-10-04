@@ -301,7 +301,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
     return true;
   }
   if (p === '/api/user/skills' && req.method === 'GET') {
-    sendJson(res, 200, listSkills(ownerId, { withContent: true }));
+    sendJson(res, 200, listSkills(ownerId, { withContent: url.searchParams.get('metadata') !== '1' }));
     return true;
   }
   if (p === '/api/user/skills' && req.method === 'PUT') {

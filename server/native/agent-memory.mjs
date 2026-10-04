@@ -2,20 +2,19 @@
 // системного промпта. Записи пишет агент (по словам пользователя или по
 // итогам задачи) либо сам пользователь в настройках.
 import {
-  addMemory, deleteSkill, getSkill, listMemory, listSkills, MAX_SKILL_CONTENT, removeMemory, saveSkill,
+  addMemory, deleteSkill, getSkill, listMemory, MAX_SKILL_CONTENT, removeMemory, saveSkill,
 } from './store.mjs';
+import { availableSkills, chatSkillSettings, installSkill, materializeSkill, setChatSkillSettings, skillsPrompt } from './skills/library.mjs';
+import { discoverSkills } from './skills/installer.mjs';
 
 const PROMPT_MEMORY_CHARS = 8_000;
-const PROMPT_SKILLS = 60;
 
 const KIND_LABEL = { fact: 'fact', preference: 'preference', lesson: 'lesson' };
 
-export function memoryPrompt(ownerId, sessionId) {
+export function memoryPrompt(ownerId, sessionId, { includeSkills = true } = {}) {
   if (!ownerId) return '';
   let memory = [];
-  let skills = [];
   try { memory = listMemory(ownerId, { sessionId }); } catch {}
-  try { skills = listSkills(ownerId); } catch {}
   const lines = [
     '[Long-term memory and skills]',
     'Memory persists across chats. Use it to avoid repeating past mistakes and to respect the owner\'s stable preferences.',
@@ -38,14 +37,7 @@ export function memoryPrompt(ownerId, sessionId) {
   } else {
     lines.push('', 'Memory is empty so far.');
   }
-  if (skills.length) {
-    lines.push('', 'Skill index (name — when to use):');
-    for (const s of skills.slice(0, PROMPT_SKILLS)) lines.push(`- ${s.name} — ${s.description}`);
-    if (skills.length > PROMPT_SKILLS) lines.push(`- … ${skills.length - PROMPT_SKILLS} more; use skill action=list.`);
-  } else {
-    lines.push('', 'No saved skills yet.');
-  }
-  return lines.join('\n');
+  return [lines.join('\n'), includeSkills ? skillsPrompt(ownerId, sessionId) : ''].filter(Boolean).join('\n\n');
 }
 
 export function executeMemoryTool(input, ctx = {}) {
@@ -79,16 +71,38 @@ export function executeSkillTool(input, ctx = {}) {
   const ownerId = ctx.ownerId;
   if (!ownerId) throw new Error('skill requires an authenticated owner');
   const action = String(input?.action || '').toLowerCase();
+  if (ctx.sessionId && chatSkillSettings(ownerId, ctx.sessionId).mode === 'off' && action !== 'list') throw new Error('Skills are disabled in this chat');
+  if (action === 'discover' || action === 'install') {
+    const settings = chatSkillSettings(ownerId, ctx.sessionId);
+    if (settings.mode === 'off' || !settings.allowInstall) throw new Error('Agent skill discovery/installation is disabled in this chat');
+    return (async () => {
+      const result = action === 'discover' ? await discoverSkills(ownerId, input, ctx.signal) : await installSkill(ownerId, input, ctx.signal);
+      return { output: JSON.stringify(result, null, 2), title: action === 'discover' ? 'Доступные скиллы в источнике' : `Установлен навык: ${result.name}`, metadata: { skill: { action, name: result.name, source: result.source } } };
+    })();
+  }
+  if (action === 'enable' || action === 'disable') {
+    const settings = chatSkillSettings(ownerId, ctx.sessionId);
+    const skill = getSkill(ownerId, input.name);
+    if (!skill || !skill.enabled) throw new Error('Skill is missing or disabled in the library');
+    if (action === 'enable' && !skill.autoUse && !settings.selected.includes(skill.name)) throw new Error('This is a manual-only skill; ask the user to select it in the chat skill picker');
+    const selected = settings.selected.filter((n) => n !== skill.name);
+    const excluded = settings.excluded.filter((n) => n !== skill.name);
+    if (action === 'enable') selected.push(skill.name); else excluded.push(skill.name);
+    const next = setChatSkillSettings(ownerId, ctx.sessionId, { selected, excluded });
+    return { output: JSON.stringify(next), title: `Навык ${action === 'enable' ? 'включён' : 'выключен'}: ${skill.name}` };
+  }
   if (action === 'list') {
-    const skills = listSkills(ownerId);
+    const query = String(input?.query || '').toLowerCase();
+    const skills = availableSkills(ownerId, ctx.sessionId).filter((s) => !query || `${s.name} ${s.description}`.toLowerCase().includes(query));
     return { output: skills.length ? skills.map((s) => `${s.name} — ${s.description} (used ${s.uses}×)`).join('\n') : 'No skills saved yet.', title: 'Навыки' };
   }
   if (action === 'read') {
-    const skill = getSkill(ownerId, input?.name, { countUse: true });
-    if (!skill) throw new Error(`Skill "${input?.name}" not found. Use skill action=list.`);
-    return { output: `# Skill: ${skill.name}\n${skill.description}\n\n${skill.content}`, title: `Навык: ${skill.name}`, metadata: { skill: { action, name: skill.name } } };
+    const { skill, directory } = materializeSkill(ownerId, ctx.sessionId, ctx.workspace, input?.name);
+    const body = directory ? skill.content.replace(/\$\{(?:CLAUDE_SKILL_DIR|SKILL_DIR)\}/g, directory) : skill.content;
+    return { output: `# Skill: ${skill.name}\n${skill.description}\n${directory ? `Resources copied to ${directory}; resolve relative file references from this directory. Inspect scripts before execution.\n` : ''}${skill.warnings?.length ? `Compatibility notes: ${skill.warnings.join('; ')}\n` : ''}\n${body}`, title: `Навык: ${skill.name}`, metadata: { skill: { action, name: skill.name, directory, revision: skill.source?.revision } } };
   }
   if (action === 'save') {
+    if (getSkill(ownerId, input?.name)?.source?.type) throw new Error('Imported skills cannot be overwritten by skill save; use explicit install replace=true for updates');
     const content = String(input?.content || '');
     if (content.length > MAX_SKILL_CONTENT) throw new Error(`Skill content is limited to ${MAX_SKILL_CONTENT} chars; keep it to the essential steps.`);
     const skill = saveSkill(ownerId, { name: input?.name, description: input?.description, content });
@@ -102,5 +116,5 @@ export function executeSkillTool(input, ctx = {}) {
     const ok = deleteSkill(ownerId, input?.name);
     return { output: ok ? `Deleted skill ${input.name}` : `No skill ${input?.name}`, title: 'Навык удалён' };
   }
-  throw new Error('skill action must be list, read, save or delete');
+  throw new Error('skill action must be list, read, discover, install, enable, disable, save or delete');
 }

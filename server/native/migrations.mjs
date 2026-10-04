@@ -153,6 +153,23 @@ export const MIGRATIONS = [
         );
       `);
     },
+  },
+  {
+    version: 9,
+    id: '20261004_009_installable_chat_skills',
+    minReaderVersion: 1,
+    up(db) {
+      const columns = new Set(db.prepare('PRAGMA table_info(agent_skills)').all().map((c) => c.name));
+      for (const [name, definition] of Object.entries({
+        enabled: 'INTEGER NOT NULL DEFAULT 1', auto_use: 'INTEGER NOT NULL DEFAULT 1',
+        source_json: "TEXT NOT NULL DEFAULT '{}'", package_json: "TEXT NOT NULL DEFAULT '{}'",
+        warnings_json: "TEXT NOT NULL DEFAULT '[]'",
+      })) if (!columns.has(name)) db.exec(`ALTER TABLE agent_skills ADD COLUMN ${name} ${definition}`);
+      db.exec(`CREATE TABLE IF NOT EXISTS chat_skill_settings (
+        session_id TEXT PRIMARY KEY, settings_json TEXT NOT NULL,
+        FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
+      );`);
+    },
   }
 ];
 

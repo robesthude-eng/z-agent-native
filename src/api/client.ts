@@ -368,6 +368,36 @@ export const api = {
   deleteMemory: (id: string) =>
     req<void>(`/user/memory/${id}`, { method: "DELETE" }),
   listSkills: () => req<Skill[]>(`/user/skills`),
+  getSkill: (id: string) => req<Skill>(`/user/skills/${id}`),
+  listSkillIndex: () => req<Skill[]>(`/user/skills?metadata=1`),
+  discoverSkills: (input: SkillSourceInput) =>
+    req<SkillDiscovery>(
+      `/user/skills/discover`,
+      { method: "POST", body: JSON.stringify(input) },
+      180_000,
+    ),
+  installSkill: (
+    input: SkillSourceInput & { path?: string; replace?: boolean },
+  ) =>
+    req<Skill>(
+      `/user/skills/install`,
+      { method: "POST", body: JSON.stringify(input) },
+      180_000,
+    ),
+  configureSkill: (
+    id: string,
+    patch: { enabled?: boolean; autoUse?: boolean },
+  ) =>
+    req<Skill>(`/user/skills/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  chatSkills: (id: string) => req<ChatSkillSettings>(`/session/${id}/skills`),
+  setChatSkills: (id: string, settings: ChatSkillSettings) =>
+    req<ChatSkillSettings>(`/session/${id}/skills`, {
+      method: "PUT",
+      body: JSON.stringify(settings),
+    }),
   saveSkill: (skill: { name: string; description: string; content: string }) =>
     req<Skill>(`/user/skills`, { method: "PUT", body: JSON.stringify(skill) }),
   deleteSkill: (id: string) =>
@@ -802,11 +832,50 @@ export type MemoryEntry = {
   created: number;
   chatTitle?: string | null;
 };
+export type SkillSourceInput = {
+  source?: string;
+  ref?: string;
+  contentBase64?: string;
+  filename?: string;
+};
+export type ChatSkillSettings = {
+  mode: "auto" | "manual" | "off";
+  selected: string[];
+  excluded: string[];
+  allowInstall: boolean;
+};
+export type SkillDiscovery = {
+  source: string;
+  origin: { type: string; url: string; revision?: string };
+  candidates: Array<{
+    name: string;
+    description: string;
+    path: string;
+    autoUse: boolean;
+    warnings: string[];
+    compatibility?: string;
+  }>;
+  invalid: Array<{ path: string; error: string }>;
+  links: string[];
+};
 export type Skill = {
   id: string;
   name: string;
   description: string;
-  content: string;
+  content?: string;
+  enabled: boolean;
+  autoUse: boolean;
+  source: {
+    type?: string;
+    url?: string;
+    revision?: string;
+    ref?: string;
+    hash?: string;
+    path?: string;
+    bytes?: number;
+    fileCount?: number;
+  };
+  warnings: string[];
   uses: number;
   created: number;
   updated: number;

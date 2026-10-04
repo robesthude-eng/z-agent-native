@@ -24,6 +24,7 @@ import { ComposerAttachments } from "./composer/ComposerAttachments";
 import { ComposerDropOverlay } from "./composer/ComposerDropOverlay";
 import { ComposerQueue } from "./composer/ComposerQueue";
 import { ComposerSuggestions } from "./composer/ComposerSuggestions";
+import { ChatSkillsPicker } from "./skills/ChatSkillsPicker";
 import { useComposerSuggestions } from "./composer/useComposerSuggestions";
 import {
   clearSessionComposerCache,
@@ -446,6 +447,7 @@ export default function Composer() {
   return (
     <div className="w-full max-w-[var(--chat-max)] shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
       <div className="relative pointer-events-auto w-full">
+        <ChatSkillsPicker busy={busy} />
         <ComposerSuggestions
           commands={suggestions.commands}
           files={suggestions.files}

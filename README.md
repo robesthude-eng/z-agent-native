@@ -322,3 +322,7 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Maximum aggregate body size of one folder-upload request. |
 
 See `SECURITY.md` for the trust boundaries and `OPERATIONS.md` for production bootstrap, backup/restore, key rotation, benchmarks and release operations.
+
+## Installable skills
+
+Install portable `SKILL.md` packages from public GitHub, HTTPS links, or uploaded ZIP files, and choose automatic/manual/off skill selection per chat. See [the skills guide](docs/SKILLS.md) for installation, safety boundaries and compatibility.

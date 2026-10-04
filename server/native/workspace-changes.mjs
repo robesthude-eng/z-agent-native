@@ -5,7 +5,7 @@ import { performance } from 'node:perf_hooks';
 // Evidence for completion bookkeeping, not a security boundary. A shell's
 // spelling cannot prove that it edited a file (e.g. java -version or free -m).
 // Bound traversal and fall back conservatively when either snapshot is partial.
-const IGNORED_ROOTS = new Set(['.agent-home', '.git']);
+const IGNORED_ROOTS = new Set(['.agent-home', '.agent-skills', '.git']);
 // Зависимости, кэши и артефакты сборки на любой глубине. В Node-проекте один
 // node_modules — десятки тысяч файлов: без исключения скан упирался в лимит,
 // считался неполным, и любая неизвестная команда (java -version) снова

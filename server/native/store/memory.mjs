@@ -6,8 +6,8 @@ import { db } from './db.mjs';
 export const MEMORY_KINDS = ['fact', 'preference', 'lesson'];
 export const MAX_MEMORY_TEXT = 600;
 export const MAX_MEMORY_ITEMS = 300;
-export const MAX_SKILL_CONTENT = 24_000;
-export const MAX_SKILLS = 200;
+export const MAX_SKILL_CONTENT = 96_000;
+export const MAX_SKILLS = 500;
 
 const id = (prefix) => `${prefix}_${crypto.randomBytes(9).toString('base64url')}`;
 
@@ -68,11 +68,13 @@ function skillRow(row, withContent = true) {
   return {
     id: row.id, name: row.name, description: row.description, uses: row.uses,
     created: row.created_at, updated: row.updated_at, ...(withContent ? { content: row.content } : {}),
+    enabled: row.enabled !== 0, autoUse: row.auto_use !== 0,
+    source: JSON.parse(row.source_json || '{}'), warnings: JSON.parse(row.warnings_json || '[]'),
   };
 }
 
 export function listSkills(ownerId, { withContent = false } = {}) {
-  return db.prepare('SELECT * FROM agent_skills WHERE owner_id=? ORDER BY uses DESC, updated_at DESC').all(ownerId).map((r) => skillRow(r, withContent));
+  return db.prepare(`SELECT id,name,description,uses,created_at,updated_at,enabled,auto_use,source_json,warnings_json${withContent ? ',content' : ''} FROM agent_skills WHERE owner_id=? ORDER BY uses DESC, updated_at DESC`).all(ownerId).map((r) => skillRow(r, withContent));
 }
 
 export function getSkill(ownerId, name, { countUse = false } = {}) {
@@ -85,13 +87,15 @@ export function getSkill(ownerId, name, { countUse = false } = {}) {
 export function saveSkill(ownerId, { name, description, content }) {
   const n = normalizeSkillName(name);
   if (!n) throw Object.assign(new Error('Skill name is required'), { statusCode: 400 });
-  const desc = String(description || '').replace(/\s+/g, ' ').trim().slice(0, 300);
+  const desc = String(description || '').replace(/\s+/g, ' ').trim().slice(0, 1024);
   const body = String(content || '').trim().slice(0, MAX_SKILL_CONTENT);
   if (!desc || !body) throw Object.assign(new Error('Skill description and content are required'), { statusCode: 400 });
   const now = Date.now();
-  const existing = db.prepare('SELECT id FROM agent_skills WHERE owner_id=? AND name=?').get(ownerId, n);
+  const existing = db.prepare('SELECT id,source_json FROM agent_skills WHERE owner_id=? AND name=?').get(ownerId, n);
   if (existing) {
     db.prepare('UPDATE agent_skills SET description=?,content=?,updated_at=? WHERE id=?').run(desc, body, now, existing.id);
+    const source = JSON.parse(existing.source_json || '{}');
+    if (source.type) db.prepare('UPDATE agent_skills SET source_json=? WHERE id=?').run(JSON.stringify({ ...source, modified: true }), existing.id);
     return { ...skillRow(db.prepare('SELECT * FROM agent_skills WHERE id=?').get(existing.id)), updatedExisting: true };
   }
   const count = Number(db.prepare('SELECT COUNT(*) AS n FROM agent_skills WHERE owner_id=?').get(ownerId)?.n || 0);
