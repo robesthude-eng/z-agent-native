@@ -59,6 +59,11 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
   await page.getByRole("tab", { name: "Код", exact: true }).click();
   await expect(page.locator("#workspace-panel-code")).toBeVisible();
   await exportState(page, "code-desktop");
+  await page.getByRole("button", { name: "Добавить файлы, скиллы и инструменты" }).click();
+  await page.getByRole("menuitem", { name: "Скиллы этого чата" }).click();
+  await expect(page.getByRole("dialog", { name: "Скиллы этого чата" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("region", { name: "index.html" })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByRole("button", { name: "Закрыть файлы проекта" }).click();
   await page.getByRole("button", { name: "Добавить файлы, скиллы и инструменты" }).click();

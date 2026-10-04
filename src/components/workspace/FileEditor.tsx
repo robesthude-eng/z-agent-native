@@ -87,6 +87,14 @@ export default function FileEditor({
   // сначала спросит подтверждение — то же, что и у крестика.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return;
+      // Embedded editor must not consume Escape intended for chat menus/dialogs.
+      if (
+        embedded &&
+        (!(e.target instanceof HTMLElement) ||
+          !e.target.closest('[role="region"].workspace-inline-editor'))
+      )
+        return;
       if (e.key === "Escape") {
         e.preventDefault();
         onClose();
@@ -94,7 +102,7 @@ export default function FileEditor({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
+  }, [onClose, embedded]);
 
   const rel = toRelPath(file.path);
   const slash = rel.lastIndexOf("/");
