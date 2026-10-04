@@ -319,3 +319,12 @@
 [data-theme='light'] .hljs-strong {
   font-weight: 700;
 }
+[data-theme='light'] .hljs-attr,
+[data-theme='light'] .hljs-property,
+[data-theme='light'] .hljs-selector-attr {
+  color: #005cc5;
+}
+[data-theme='light'] .hljs-doctag,
+[data-theme='light'] .hljs-section {
+  color: #6f42c1;
+}
