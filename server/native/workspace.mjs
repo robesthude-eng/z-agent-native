@@ -9,10 +9,10 @@ import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, syncSandbox
 import { safeWorkspacePath } from './security.mjs';
 import { workspaceFor } from './store.mjs';
 import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
+import { collectWorkspaceTree } from './workspace-tree.mjs';
 
 const TEXT_EXTS = new Set(['.txt','.md','.json','.js','.jsx','.ts','.tsx','.css','.scss','.html','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.py','.rb','.go','.rs','.java','.kt','.c','.cpp','.h','.hpp','.cs','.php','.swift','.sh','.bash','.zsh','.sql','.graphql','.vue','.svelte','.astro','.env','.csv','.tsv','.log']);
 const IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg']);
-const MAX_TREE_ENTRIES = 10_000;
 
 function kindOf(name) {
   const ext = path.extname(name).toLowerCase();
@@ -31,33 +31,10 @@ function node(root, full, st) {
 
 function listDir(root, relative) {
   const full = safeWorkspacePath(root, relative || '.', { allowMissing: false });
-  return fs.readdirSync(full, { withFileTypes: true }).sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name)).map((entry) => {
+  return fs.readdirSync(full, { withFileTypes: true }).filter((entry) => entry.name !== '.agent-home').sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name)).map((entry) => {
     const target = path.join(full, entry.name);
     return node(root, target, fs.lstatSync(target));
   });
-}
-
-function tree(root) {
-  const out = [];
-  const walk = (dir) => {
-    if (out.length >= MAX_TREE_ENTRIES) return;
-    let entries = [];
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
-    entries.sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name));
-    for (const entry of entries) {
-      if (out.length >= MAX_TREE_ENTRIES) break;
-      if (entry.name === '.agent-home') continue;
-      const full = path.join(dir, entry.name);
-      const stat = fs.lstatSync(full);
-      // Never follow a workspace symlink while building an API response: it
-      // may point outside the session even though later content reads reject it.
-      const item = node(root, full, stat);
-      out.push(item);
-      if (entry.isDirectory() && !stat.isSymbolicLink()) walk(full);
-    }
-  };
-  walk(root);
-  return out;
 }
 
 function uniqueUploadPath(root, name) {
@@ -122,7 +99,10 @@ export async function handleWorkspace(req, res, sessionId, url) {
   const root = workspaceFor(sessionId);
   const pathname = url.pathname;
 
-  if (pathname === '/api/workspace/tree' && req.method === 'GET') return sendJson(res, 200, tree(root));
+  if (pathname === '/api/workspace/tree' && req.method === 'GET') {
+    try { return sendJson(res, 200, collectWorkspaceTree(root)); }
+    catch (err) { return workspaceError(res, err, 'Не удалось получить полное дерево файлов'); }
+  }
   if (pathname === '/api/file' && req.method === 'GET') return sendJson(res, 200, listDir(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')) || '.'));
   if (pathname === '/api/file/content' && req.method === 'GET') {
     const full = safeWorkspacePath(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')), { allowMissing: false });

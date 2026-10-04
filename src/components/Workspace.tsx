@@ -197,6 +197,9 @@ export default function Workspace() {
     try {
       const nodes = await api.listTree(currentID);
       if (!Array.isArray(nodes)) throw new Error("bad tree response");
+      // Older servers silently truncated at 10,000 entries. Do not mark that
+      // response complete: list the root and expanded folders independently.
+      if (nodes.length >= 10_000) throw new Error("tree may be truncated");
       const markLoaded = (ns: TreeNode[]): TreeNode[] =>
         ns.map((n) =>
           n.isDir

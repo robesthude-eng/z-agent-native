@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Large-workspace file listing fix
+
+- Recursive listings no longer silently stop at 10,000 entries and hide root files behind large dependency folders. Incomplete trees trigger complete root/expanded-directory listing instead.
+- Read failures are no longer disguised as empty directories; symlink targets remain excluded.
+
 ## Workspace interface refresh
 
 - Neutral Arena-inspired chat layout with history on the left and files, preview and code in the right workspace. Preview/editor no longer covers the conversation.
