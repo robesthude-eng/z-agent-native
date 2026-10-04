@@ -118,7 +118,7 @@ export function WorkspaceTreeContent({
                 <p className="text-xs text-foreground">
                   {t("workspace.faylov_poka_net_v_workspace_etogo")}
                 </p>
-                <p className="max-w-[220px] text-[11px] leading-relaxed text-muted-foreground">
+                <p className="max-w-[260px] text-sm leading-relaxed text-muted-foreground">
                   {t("workspace.sozdayte_fayl_knopkoy_vyshe_zagruzite")}
                 </p>
                 <Button

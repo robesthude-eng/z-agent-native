@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Compact workspace search
+
+- Replaced workspace create-file/create-folder/upload buttons with a search icon; refresh and close remain.
+- Search expands within the header from its center with a brief split-light reveal, focuses immediately, and closes on outside tap, its close button or Escape. Closing resets the file filter.
+- Search opens the Files tab from preview/code. Reduced-motion users receive an instant reveal without light effects.
+
 ## Large-workspace file listing fix
 
 - Recursive listings no longer silently stop at 10,000 entries and hide root files behind large dependency folders. Incomplete trees trigger complete root/expanded-directory listing instead.

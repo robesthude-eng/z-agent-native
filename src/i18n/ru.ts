@@ -753,7 +753,7 @@ export const messages = {
   "workspace.server_zapisal_0_iz_1_faylov": "Сервер записал {0} из {1} файлов",
   "workspace.sohraneno_0": "Сохранено: {0}",
   "workspace.sozdayte_fayl_knopkoy_vyshe_zagruzite":
-    "Создайте файл кнопкой выше, загрузите папку или попросите агента.",
+    "Попросите агента создать файл или добавьте файлы через «+» в чате.",
   "workspace.udaleno_0": "Удалено: {0}",
   "workspace.udalit": "Удалить",
   "workspace.udalit_0": "Удалить {0}?",

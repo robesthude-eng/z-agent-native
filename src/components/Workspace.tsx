@@ -20,7 +20,6 @@ import {
 import {
   editorAfterRename,
   editorClosedByDelete,
-  panelButtonGate,
   renamePlan,
   uploadBatches,
   uploadPercent as uploadPercentOf,
@@ -98,6 +97,12 @@ export default function Workspace() {
   const [gitFiles, setGitFiles] = useState<{ path: string; status?: string }[]>(
     [],
   );
+  const filteredGitFiles = useMemo(() => {
+    const needle = filter.trim().toLowerCase();
+    return needle
+      ? gitFiles.filter((file) => file.path.toLowerCase().includes(needle))
+      : gitFiles;
+  }, [filter, gitFiles]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -424,6 +429,7 @@ export default function Workspace() {
     setDraft("");
     setCreateKind(null);
     setCreatePath("");
+    setFilter("");
     setRenamingPath(null);
     setTree([]);
   }, [currentID]);
@@ -515,20 +521,6 @@ export default function Workspace() {
       ? t("workspace.dvoichnyy_fayl_dostupen_tolko_prosmotr")
       : t("workspace.etot_tip_fayla_dostupen_tolko_dlya");
   const uploadPercent = uploadPercentOf(uploadProgress, uploadTotal);
-  // Один шлюз на все операции с файлами. Прежде это условие было выписано
-  // заново в каждом обработчике и в `disabled` каждой кнопки — и всюду молча.
-  /**
-   * Свойства кнопки панели. Правило — в `panelButtonGate`, там же оно и
-   * проверяется: внутри компонента его видел бы только рендер.
-   */
-  const opGate = (fallbackTitle: string, busy?: boolean, busyTitle?: string) =>
-    panelButtonGate({
-      sessionId: currentID,
-      fallbackTitle,
-      ...(busy === undefined ? {} : { busy }),
-      ...(busyTitle === undefined ? {} : { busyTitle }),
-    });
-
   const closeActiveFile = useCallback(async () => {
     if (dirty) {
       const ok = await askConfirm({
@@ -688,31 +680,19 @@ export default function Workspace() {
       )}
     >
       <WorkspaceToolbar
-        showFilter={workspaceTab === "files"}
+        key={currentID || "draft"}
         treeCount={tree.length}
         filter={filter}
         loading={loading}
-        createFileGate={opGate(t("workspace.novyy_fayl"))}
-        createDirectoryGate={opGate(t("sidebar.novaya_papka"))}
-        uploadGate={opGate(
-          t("workspace.zagruzit_papku"),
-          uploading,
-          t("workspace.idet_zagruzka"),
-        )}
         onFilterChange={setFilter}
-        onCreateFile={() => {
-          setCreateKind("file");
-          setCreatePath("");
-        }}
-        onCreateDirectory={() => {
-          setCreateKind("directory");
-          setCreatePath("");
-        }}
-        onUpload={() => folderInputRef.current?.click()}
+        onSearchStart={() => setWorkspaceTab("files")}
         onRefresh={() => {
           refresh().catch(() => {});
         }}
-        onClose={() => setWorkspaceOpen(false)}
+        onClose={() => {
+          setFilter("");
+          setWorkspaceOpen(false);
+        }}
       />
 
       <WorkspaceTabs
@@ -810,7 +790,7 @@ export default function Workspace() {
         />
 
         <WorkspaceGitChanges
-          files={gitFiles}
+          files={filteredGitFiles}
           onOpen={(path) => {
             openFile(path).catch(() => {});
           }}
