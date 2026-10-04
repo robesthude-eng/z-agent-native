@@ -1,3 +1,5 @@
+import { executeCloudSandbox } from '../cloud-sandbox.mjs';
+import { syncSandboxOwnership } from '../sandbox.mjs';
 import { normalizeBrowserInput } from '../browser-client.mjs';
 import { executeGitTool } from '../git-tool.mjs';
 import { buildRepoMap, formatRepoMap } from '../repo-intelligence.mjs';
@@ -133,6 +135,13 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'environment_status') return executeEnvironmentStatus(root, input);
   if (tool === 'bash') return await executeBashTool(root, input, ctx);
   if (tool === 'websearch') return await executeWebSearch(input, ctx.signal);
+  if (tool === 'cloud_sandbox') {
+    return await executeCloudSandbox(root, input || {}, {
+      sessionId: ctx.sessionId,
+      signal: ctx.signal,
+      chownToSession: ctx.sessionId ? (target) => syncSandboxOwnership(ctx.sessionId, root, target) : null,
+    });
+  }
   if (tool === 'webfetch') return await executeWebFetch(input, ctx.signal);
 
   if (tool === 'git') {

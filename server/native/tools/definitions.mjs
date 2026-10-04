@@ -1,3 +1,4 @@
+import { cloudSandboxConfigured } from '../cloud-sandbox.mjs';
 import { BROWSER_ACTIONS } from '../browser-client.mjs';
 import { DIAGNOSTIC_KINDS } from '../diagnostics.mjs';
 import { executorRequired } from '../executor-client.mjs';
@@ -169,6 +170,17 @@ export const TOOL_DEFINITIONS = [
     inputSchema: object({ query: { type: 'string', description: 'Search query' }, count: { type: 'integer', minimum: 1, maximum: 10, description: 'Number of results. Default 5.' } }, ['query']),
   },
   {
+    name: 'cloud_sandbox',
+    description: 'Run a shell command on a powerful remote cloud machine (Daytona, default 4 vCPU / 8 GB RAM, Linux with bash, git, Python and Node) against a synced copy of this workspace. Use it for heavy builds, test suites, compilation or data processing that are too slow or memory-hungry for local bash. Local workspace changes are uploaded before the command and files created/changed/deleted remotely are synced back after it. Not synced: node_modules, .venv/venv, __pycache__, .gradle, .next, .cache, .m2 — install dependencies inside the sandbox (they persist there between calls of this chat). The machine persists per chat and auto-stops after idle. Internet from the sandbox may be limited to package registries and GitHub. action=status shows the machine, action=destroy deletes it.',
+    inputSchema: object({
+      action: { type: 'string', enum: ['run', 'status', 'destroy'], description: 'Default run.' },
+      command: { type: 'string', description: 'Bash command to run in the workspace copy (required for run).' },
+      timeoutSec: { type: 'integer', minimum: 10, maximum: 3600, description: 'Command timeout in seconds. Default 600.' },
+      cpu: { type: 'integer', minimum: 1, maximum: 10, description: 'vCPUs, applied only when the machine is first created.' },
+      memory: { type: 'integer', minimum: 1, maximum: 10, description: 'RAM in GB, applied only when the machine is first created.' },
+    }, []),
+  },
+  {
     name: 'webfetch',
     description: 'Fetch the text/HTML/JSON content of a public URL (HTTP/HTTPS only).',
     inputSchema: object({ url: { type: 'string', description: 'Absolute http(s) URL' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000, description: 'Maximum characters of extracted text to return.' } }, ['url']),
@@ -231,10 +243,10 @@ export const TOOL_DEFINITIONS = [
   ...MEDIA_TOOL_DEFINITIONS,
 ];
 
-export const MUTATING_TOOLS = ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests', ...MEDIA_MUTATING_TOOLS];
+export const MUTATING_TOOLS = ['write', 'edit', 'apply_patch', 'bash', 'cloud_sandbox', 'git', 'run_tests', ...MEDIA_MUTATING_TOOLS];
 
 const risky = new Set([
-  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool',
+  'write', 'edit', 'apply_patch', 'ensure_environment', 'bash', 'webfetch', 'websearch', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', 'cloud_sandbox',
   'generate_image', 'generate_speech', 'render_document', 'render_video', 'convert_media', 'media_info', 'view_media',
 ]);
 
@@ -244,7 +256,7 @@ export function requiresPermission(name) {
 
 export function mutatesWorkspace(name) {
   const tool = String(name).toLowerCase();
-  return ['write', 'edit', 'apply_patch', 'bash', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
+  return ['write', 'edit', 'apply_patch', 'bash', 'cloud_sandbox', 'git', 'run_tests'].includes(tool) || MEDIA_MUTATING_TOOLS.includes(tool);
 }
 
 const SANDBOXED_TOOLS = ['bash', 'apply_patch', 'ensure_environment', 'git', 'run_tests', 'diagnostics', 'browser', 'ssh_tool', ...MEDIA_SANDBOXED_TOOLS];
@@ -253,6 +265,7 @@ export function availableToolDefinitions() {
   let tools = shellSandboxAvailable() ? TOOL_DEFINITIONS : TOOL_DEFINITIONS.filter((tool) => !SANDBOXED_TOOLS.includes(tool.name));
   if (agentNetworkPolicy() === 'off') tools = tools.filter((tool) => !['webfetch', 'websearch'].includes(tool.name));
   if (sshPolicy() === 'off') tools = tools.filter((tool) => tool.name !== 'ssh_tool');
+  if (!cloudSandboxConfigured()) tools = tools.filter((tool) => tool.name !== 'cloud_sandbox');
   if (agentNetworkPolicy() !== 'public' || (executorRequired() && process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS !== '1')) {
     tools = tools.filter((tool) => tool.name !== 'ensure_environment');
   }

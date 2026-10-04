@@ -227,6 +227,9 @@ export function runtimeCapabilityPrompt() {
   } else {
     lines.push('- Remote SSH: disabled for this instance.');
   }
+  if (String(process.env.DAYTONA_API_KEY || '').trim()) {
+    lines.push('- Cloud sandbox: enabled. cloud_sandbox runs commands on a remote Daytona machine (more CPU/RAM than local bash) over a synced copy of the workspace; prefer it for heavy builds, long test suites and memory-hungry jobs.');
+  }
   if (sudo) {
     lines.push('- Elevated shell: sudo is available. Install system packages when the task genuinely needs them, prefer non-destructive commands, and stay out of credentials and files unrelated to the task.');
   } else {
