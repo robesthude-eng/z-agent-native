@@ -3,6 +3,13 @@ import { expect, test } from "@playwright/test";
 const skill = `---\nname: e2e-design-skill\ndescription: Review interfaces and accessibility.\nlicense: MIT\n---\nInspect the UI and check keyboard navigation.\n`;
 
 test("upload portable skill, configure chat, persist choices and disable globally", async ({ page }) => {
+  await page.route("**/api/session/*/skills", async (route) => {
+    if (route.request().method() !== "PUT") return route.continue();
+    const response = await route.fetch();
+    // Exercise controlled inputs against a realistic delayed acknowledgement.
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    await route.fulfill({ response });
+  });
   await page.goto("/");
   await page.getByRole("button", { name: "Регистрация" }).click();
   await page.locator("#email").fill(`skills-${Date.now()}@example.com`);
@@ -22,6 +29,7 @@ test("upload portable skill, configure chat, persist choices and disable globall
   await page.getByLabel("Режим скиллов", { exact: true }).selectOption("manual");
   await page.getByLabel("e2e-design-skill", { exact: true }).check();
   await expect(page.getByRole("button", { name: /1 закреплено/ })).toBeVisible();
+  await expect(page.getByLabel("e2e-design-skill", { exact: true })).toBeEnabled();
   await page.reload();
   await page.getByRole("button", { name: /Скиллы: выбранные/ }).click();
   await expect(page.getByLabel("e2e-design-skill", { exact: true })).toBeChecked();

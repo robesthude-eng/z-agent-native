@@ -17,9 +17,11 @@ export function ChatSkillsPicker({ busy }: { busy: boolean }) {
   const [skills, setSkills] = useState<Skill[]>([]);
   const [pending, setPending] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  const [ready, setReady] = useState(false);
   const [error, setError] = useState("");
   useEffect(() => {
     setSettings(DEFAULT);
+    setReady(false);
     setError("");
     setLoaded(false);
     if (!sessionId || isTmpSession(sessionId)) return;
@@ -27,7 +29,10 @@ export function ChatSkillsPicker({ busy }: { busy: boolean }) {
     void api
       .chatSkills(sessionId)
       .then((s) => {
-        if (!disposed) setSettings(s);
+        if (!disposed) {
+          setSettings(s);
+          setReady(true);
+        }
       })
       .catch((err: unknown) => {
         if (!disposed) setError(String(err));
@@ -75,23 +80,26 @@ export function ChatSkillsPicker({ busy }: { busy: boolean }) {
   }
   async function save(next: ChatSkillSettings) {
     if (!sessionId || isTmpSession(sessionId)) return;
+    const previous = settings;
+    setSettings(next);
     setPending(true);
     setError("");
     try {
       setSettings(await api.setChatSkills(sessionId, next));
     } catch (err) {
+      setSettings(previous);
       setError(String(err));
     } finally {
       setPending(false);
     }
   }
-  const locked = busy || pending;
+  const locked = busy || pending || !ready;
   return (
     <div className="mb-2 text-xs">
       <button
         type="button"
         onClick={() => void toggle()}
-        disabled={locked}
+        disabled={busy || pending}
         aria-expanded={open}
         className="rounded-md px-2 py-1 text-muted-foreground hover:bg-muted hover:text-foreground"
       >

@@ -74,9 +74,18 @@ export function SkillsLibrary() {
     skill: Skill,
     patch: { enabled?: boolean; autoUse?: boolean },
   ) {
+    const previous = skills;
+    setSkills((old) =>
+      old.map((s) => (s.id === skill.id ? { ...s, ...patch } : s)),
+    );
     await run(async () => {
-      const next = await api.configureSkill(skill.id, patch);
-      setSkills((old) => old.map((s) => (s.id === next.id ? next : s)));
+      try {
+        const next = await api.configureSkill(skill.id, patch);
+        setSkills((old) => old.map((s) => (s.id === next.id ? next : s)));
+      } catch (err) {
+        setSkills(previous);
+        throw err;
+      }
     });
   }
 
