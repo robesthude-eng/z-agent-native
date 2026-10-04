@@ -345,6 +345,15 @@ export const api = {
       body: JSON.stringify({ messageID }),
     }),
   listMessages: (id: string) => req<Message[]>(`/session/${id}/message`),
+  getChatShare: (id: string) =>
+    req<{ share: ChatShare | null }>(`/session/${id}/share`),
+  createChatShare: (id: string) =>
+    req<{ share: ChatShare }>(`/session/${id}/share`, { method: "POST" }),
+  deleteChatShare: (id: string) =>
+    req<void>(`/session/${id}/share`, { method: "DELETE" }),
+  listChatShares: () =>
+    req<Array<ChatShare & { title: string }>>(`/user/shares`),
+  systemStatus: () => req<SystemStatus>(`/system/status`),
   storageUsage: (fresh = false) =>
     req<{
       total: number;
@@ -686,4 +695,81 @@ export function eventUrl(sessionId?: string | null): string {
     return `${config.baseUrl}/event?sessionId=${encodeURIComponent(sessionId)}`;
   }
   return `${config.baseUrl}/event`;
+}
+
+export type ChatShare = { token: string; sessionId: string; created: number };
+
+export function shareUrl(token: string) {
+  return `${window.location.origin}/share/${token}`;
+}
+
+export type SystemStatus = {
+  at: number;
+  host: { hostname: string; cpus: number; load: number[]; uptime: number };
+  memory: {
+    total: number;
+    available: number;
+    used: number;
+    swapTotal: number;
+    swapUsed: number;
+  };
+  disk: { total: number; free: number; used: number } | null;
+  app: { uptime: number; rss: number; node: string; activeTurns: number };
+  hostAgent: {
+    generatedAt: number;
+    stale: boolean;
+    rootDisk?: { total: number; used: number; free: number };
+    containers?: Array<{
+      name: string;
+      service: string;
+      state: string;
+      status: string;
+      health: string;
+      cpu: string;
+      mem: string;
+    }>;
+    backup?: {
+      running: boolean;
+      lastResult: string;
+      lastExitStatus: string;
+      timerActive: boolean;
+      nextAt: number | null;
+      lastSuccess: {
+        finishedAt: number;
+        verify?: string;
+        size?: string;
+        snapshots?: number;
+      } | null;
+    };
+  } | null;
+};
+
+export type PublicSharedChat = {
+  title: string;
+  created: number;
+  updated: number;
+  messages: Array<{
+    id: string;
+    role: "user" | "assistant";
+    time: number;
+    parts: Array<
+      | { type: "text"; text: string }
+      | { type: "tool"; tool: string; status: "done" | "error" }
+    >;
+  }>;
+};
+
+export async function fetchPublicShare(
+  token: string,
+): Promise<PublicSharedChat> {
+  const r = await fetch(`/api/public/share/${encodeURIComponent(token)}`, {
+    credentials: "omit",
+  });
+  if (!r.ok) {
+    const body = (await r.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(body?.error || `HTTP ${r.status}`);
+  }
+  return (await r.json()) as PublicSharedChat;
 }

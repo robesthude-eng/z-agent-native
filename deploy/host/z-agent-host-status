@@ -1,0 +1,107 @@
+#!/usr/bin/env python3
+"""Снимок состояния хоста для раздела «Сервер» в настройках Z Agent.
+
+Контейнер приложения не видит Docker и systemd, поэтому этот скрипт раз в
+минуту (z-agent-host-status.timer) пишет JSON в том данных приложения:
+контейнеры (состояние, health, CPU/память), диск хоста, последний бэкап.
+"""
+import json, os, shutil, subprocess, tempfile, time
+
+PROJECT = os.environ.get("Z_AGENT_COMPOSE_PROJECT", "z-agent-native-main")
+OUT = os.environ.get("Z_AGENT_HOST_STATUS_FILE", f"/var/lib/docker/volumes/{PROJECT}_z-agent-data/_data/host-status.json")
+BACKUP_STATE = "/var/lib/z-agent/backup-last.json"
+
+
+def run(*cmd, timeout=20):
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout).stdout
+    except Exception:
+        return ""
+
+
+def json_lines(text):
+    out = []
+    for line in text.splitlines():
+        try:
+            out.append(json.loads(line))
+        except Exception:
+            pass
+    return out
+
+
+def containers():
+    ps = json_lines(run("docker", "ps", "-a", "--filter", f"label=com.docker.compose.project={PROJECT}", "--format", "{{json .}}"))
+    stats = {s.get("Name"): s for s in json_lines(run("docker", "stats", "--no-stream", "--format", "{{json .}}", timeout=30))}
+    items = []
+    for c in ps:
+        name = c.get("Names", "")
+        status = c.get("Status", "")
+        health = "healthy" if "(healthy)" in status else "unhealthy" if "(unhealthy)" in status else "starting" if "health: starting" in status else ""
+        st = stats.get(name, {})
+        items.append({
+            "name": name,
+            "service": name.removeprefix(PROJECT + "-").removesuffix("-1"),
+            "state": c.get("State", ""),
+            "status": status,
+            "health": health,
+            "cpu": st.get("CPUPerc", ""),
+            "mem": st.get("MemUsage", ""),
+        })
+    return sorted(items, key=lambda x: x["service"])
+
+
+def systemd_props(unit, *props):
+    text = run("systemctl", "show", unit, *[f"-p{p}" for p in props])
+    return dict(line.split("=", 1) for line in text.splitlines() if "=" in line)
+
+
+def usec_to_ms(value):
+    try:
+        v = int(value)
+        return v // 1000 if v > 0 else None
+    except Exception:
+        return None
+
+
+def backup():
+    svc = systemd_props("z-agent-backup.service", "ActiveState", "Result", "ExecMainStartTimestampMonotonic", "ExecMainExitTimestamp", "ExecMainStatus")
+    timer = systemd_props("z-agent-backup.timer", "NextElapseUSecRealtime", "ActiveState")
+    last = None
+    try:
+        with open(BACKUP_STATE) as f:
+            last = json.load(f)
+    except Exception:
+        pass
+    nxt = None
+    raw = timer.get("NextElapseUSecRealtime", "")
+    if raw:
+        out = run("date", "-d", raw, "+%s")
+        nxt = int(out.strip()) * 1000 if out.strip().isdigit() else None
+    return {
+        "running": svc.get("ActiveState") == "activating",
+        "lastResult": svc.get("Result", ""),
+        "lastExitStatus": svc.get("ExecMainStatus", ""),
+        "timerActive": timer.get("ActiveState") == "active",
+        "nextAt": nxt,
+        "lastSuccess": last,
+    }
+
+
+def main():
+    du = shutil.disk_usage("/")
+    data = {
+        "generatedAt": int(time.time() * 1000),
+        "rootDisk": {"total": du.total, "used": du.used, "free": du.free},
+        "containers": containers(),
+        "backup": backup(),
+    }
+    d = os.path.dirname(OUT)
+    fd, tmp = tempfile.mkstemp(dir=d, prefix=".host-status.")
+    with os.fdopen(fd, "w") as f:
+        json.dump(data, f)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, OUT)
+
+
+if __name__ == "__main__":
+    main()

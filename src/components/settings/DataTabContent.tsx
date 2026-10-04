@@ -1,14 +1,16 @@
 import { useCallback, useEffect, useState } from "react";
-import { api } from "@/api/client";
+import { api, shareUrl } from "@/api/client";
 import { useConfirm } from "@/components/ConfirmDialog";
 import { Button } from "@/components/ui/button";
 import { chatToMarkdown, downloadText, safeFilename } from "@/lib/chatExport";
+import { copyText } from "@/lib/clipboard";
 import { toast } from "@/lib/toast";
 import { DEFAULT_APP_SETTINGS } from "../../config/appSettings";
 import { useStore } from "../../store/useStore";
 import { SettingsCard, SettingsRow, SettingsSection } from "./primitives";
 
 type Usage = Awaited<ReturnType<typeof api.storageUsage>>;
+type Shares = Awaited<ReturnType<typeof api.listChatShares>>;
 
 export function formatBytes(n: number) {
   if (!n) return "0 Б";
@@ -29,6 +31,24 @@ export function DataTabContent() {
   const [usage, setUsage] = useState<Usage | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [shares, setShares] = useState<Shares>([]);
+
+  useEffect(() => {
+    api
+      .listChatShares()
+      .then(setShares)
+      .catch(() => setShares([]));
+  }, []);
+
+  const revokeShare = async (sessionId: string) => {
+    try {
+      await api.deleteChatShare(sessionId);
+      setShares((list) => list.filter((x) => x.sessionId !== sessionId));
+      toast("success", "Ссылка отозвана");
+    } catch {
+      toast("error", "Не удалось отозвать ссылку");
+    }
+  };
 
   const load = useCallback(async (fresh = false) => {
     setLoading(true);
@@ -166,6 +186,48 @@ export function DataTabContent() {
           ) : (
             <div className="px-4 py-8 text-center text-sm text-muted-foreground">
               {loading ? "Считаю место на диске…" : "Чатов пока нет"}
+            </div>
+          )}
+        </SettingsCard>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Публичные ссылки"
+        description="Чаты, открытые для чтения по ссылке. Создать ссылку — кнопка «Поделиться» над чатом."
+      >
+        <SettingsCard>
+          {shares.length ? (
+            shares.map((sh) => (
+              <SettingsRow
+                key={sh.token}
+                label={sh.title}
+                description={`Создана ${new Date(sh.created).toLocaleString()}`}
+              >
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={async () => {
+                    if (await copyText(shareUrl(sh.token)))
+                      toast("success", "Ссылка скопирована");
+                  }}
+                >
+                  Копировать
+                </Button>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  className="text-destructive hover:text-destructive"
+                  onClick={() => void revokeShare(sh.sessionId)}
+                >
+                  Отозвать
+                </Button>
+              </SettingsRow>
+            ))
+          ) : (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Открытых ссылок нет
             </div>
           )}
         </SettingsCard>

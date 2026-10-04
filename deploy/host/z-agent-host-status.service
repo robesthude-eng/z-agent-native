@@ -1,0 +1,8 @@
+[Unit]
+Description=Z Agent host status snapshot for the settings panel
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/z-agent-host-status
+Nice=10

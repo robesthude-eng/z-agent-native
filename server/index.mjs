@@ -17,7 +17,8 @@ import { handleWorkspace } from './native/workspace.mjs';
 import { closeAllWorkspaceWatchers } from './native/watcher.mjs';
 import { mintPreviewToken } from './native/preview-tokens.mjs';
 import { handleAuthRoutes } from './routes/auth.mjs';
-import { handleSystemRoutes } from './routes/system.mjs';
+import { handleAdminSystemRoutes, handleSystemRoutes } from './routes/system.mjs';
+import { handlePublicShareRoutes } from './routes/share.mjs';
 import { handleSessionRoutes } from './routes/sessions.mjs';
 import { handleModelRoutes } from './routes/models.mjs';
 import { handleTokenPreview, servePreviewFile } from './routes/preview.mjs';
@@ -125,6 +126,7 @@ async function route(req, res) {
   if (await handleSystemRoutes(req, res, p, { draining: DRAINING, startedAt: STARTED_AT, isDraining: () => DRAINING })) return;
   if (await handleAuthRoutes(req, res, p)) return;
   if (handleTokenPreview(req, res, p)) return;
+  if (handlePublicShareRoutes(req, res, p)) return;
 
   if (!p.startsWith('/api/')) return serveStatic(req, res, p);
 
@@ -138,6 +140,7 @@ async function route(req, res) {
     return sendJson(res, 200, { systemInstruction: '', runtime: 'z-agent-native', version: '1.0.0' });
   }
 
+  if (handleAdminSystemRoutes(req, res, p, auth)) return;
   if (await handleSessionRoutes(req, res, p, url, ownerId)) return;
   if (await handleModelRoutes(req, res, p, url, ownerId)) return;
 

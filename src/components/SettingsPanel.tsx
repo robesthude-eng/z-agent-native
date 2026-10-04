@@ -13,6 +13,7 @@ import { ChatTabContent } from "./settings/ChatTabContent";
 import { DataTabContent } from "./settings/DataTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
 import { RuntimeTabContent } from "./settings/RuntimeTabContent";
+import { ServerTabContent } from "./settings/ServerTabContent";
 import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
 
 type SettingsTab =
@@ -23,6 +24,7 @@ type SettingsTab =
   | "data"
   | "models"
   | "runtime"
+  | "server"
   | "shortcuts"
   | "about";
 
@@ -113,6 +115,13 @@ const TAB_GROUPS: TabGroup[] = [
         title: "Данные и место на диске",
         keywords:
           "данные место диск хранилище экспорт удалить чаты размер сброс storage export",
+      },
+      {
+        id: "server",
+        label: "Сервер",
+        title: "Состояние сервера",
+        keywords:
+          "сервер мониторинг диск память cpu нагрузка контейнеры docker бэкап backup status",
       },
     ],
   },
@@ -369,6 +378,7 @@ export default function SettingsPanel() {
               {activeTab === "agent" && <AgentTabContent />}
               {activeTab === "chat" && <ChatTabContent />}
               {activeTab === "data" && <DataTabContent />}
+              {activeTab === "server" && <ServerTabContent />}
               {activeTab === "models" && <ModelsTabContent />}
               {activeTab === "runtime" && <RuntimeTabContent />}
               {activeTab === "shortcuts" && <ShortcutsTabContent />}

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Бэкап Z Agent в Google Drive (restic поверх rclone, шифрованный, инкрементальный).
+# База (с проверкой целостности), рабочие папки (без зависимостей), .env. На сервере копии не хранятся.
+set -eu
+export HOME=${HOME:-/root}
+. /etc/z-agent-backup.env; export RESTIC_REPOSITORY RESTIC_PASSWORD_FILE
+TS=$(date +%Y%m%d-%H%M%S)
+C=z-agent-native-main-z-agent-1
+WS=/var/lib/docker/volumes/z-agent-native-main_z-agent-workspaces/_data
+STAGE=/root/.zbk-stage
+rm -rf "$STAGE"; mkdir -p "$STAGE"; chmod 700 "$STAGE"
+trap "rm -rf $STAGE" EXIT
+docker exec "$C" node /app/server/backup.mjs "/data/backups/z-agent.sqlite" >/dev/null
+docker cp "$C:/data/backups/z-agent.sqlite" "$STAGE/"
+docker cp "$C:/data/backups/z-agent.sqlite.manifest.json" "$STAGE/" 2>/dev/null || true
+docker exec "$C" sh -c "rm -f /data/backups/z-agent.sqlite*"
+docker exec -i "$C" sh -c "mkdir -p /tmp/rv && cat > /tmp/rv/z-agent.sqlite" < "$STAGE/z-agent.sqlite"
+[ -f "$STAGE/z-agent.sqlite.manifest.json" ] && docker exec -i "$C" sh -c "cat > /tmp/rv/z-agent.sqlite.manifest.json" < "$STAGE/z-agent.sqlite.manifest.json"
+if docker exec -e Z_AGENT_RESTORE_REQUIRE_MANIFEST=1 "$C" node /app/server/restore-verify.mjs /tmp/rv/z-agent.sqlite > "$STAGE/verify.log" 2>&1; then V=ok; else V=FAILED; fi
+docker exec "$C" rm -rf /tmp/rv
+cp /root/z-agent-native-main/.env "$STAGE/env"
+restic cat config >/dev/null 2>&1 || restic init -q
+restic backup -q --tag z-agent --host z-agent \
+  --exclude node_modules --exclude .venv --exclude venv --exclude __pycache__ --exclude .gradle \
+  --exclude .next --exclude .cache --exclude .pnpm-store --exclude .m2 --exclude .turbo \
+  --exclude "$WS/*/.agent-home/cache" --exclude "$WS/*/.agent-home/toolchains" --exclude "$WS/*/.agent-home/downloads" \
+  "$STAGE" "$WS" || [ $? -eq 3 ]   # 3 = часть файлов не прочиталась (менялись), снимок создан
+restic forget -q --tag z-agent --keep-daily 7 --keep-weekly 4 --keep-monthly 3 --prune
+SIZE=$(restic stats latest --mode raw-data 2>/dev/null | grep -i "total size" | sed 's/.*: *//')
+SNAPS=$(restic snapshots --tag z-agent --json 2>/dev/null | python3 -c 'import json,sys; print(len(json.load(sys.stdin)))' 2>/dev/null || echo 0)
+echo "backup $TS verify=$V size=$SIZE snapshots=$SNAPS"
+# Состояние для раздела «Сервер» в настройках (читает z-agent-host-status).
+if [ "$V" = ok ]; then
+  mkdir -p /var/lib/z-agent
+  printf '{"finishedAt":%s000,"verify":"%s","size":"%s","snapshots":%s}\n' "$(date +%s)" "$V" "$SIZE" "${SNAPS:-0}" > /var/lib/z-agent/backup-last.json.tmp
+  mv /var/lib/z-agent/backup-last.json.tmp /var/lib/z-agent/backup-last.json
+fi
+[ "$V" = ok ]

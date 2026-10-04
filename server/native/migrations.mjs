@@ -102,6 +102,24 @@ export const MIGRATIONS = [
         CREATE INDEX IF NOT EXISTS idx_turn_capacity_expiry ON turn_capacity_leases(expires_at);
       `);
     },
+  },
+  {
+    version: 7,
+    id: '20261004_007_chat_shares',
+    // Additive: older readers simply ignore the table.
+    minReaderVersion: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS chat_shares (
+          token TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL UNIQUE,
+          owner_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_chat_shares_owner ON chat_shares(owner_id);
+      `);
+    },
   }
 ];
 

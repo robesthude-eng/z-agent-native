@@ -1,3 +1,4 @@
+import { Share2 } from "lucide-react";
 import { lazy, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
@@ -29,6 +30,7 @@ import {
 import { LazyPanel, PanelBodySkeleton } from "./LazyPanel";
 import ModelSelector from "./ModelSelector";
 import PanelModal from "./PanelModal";
+import { ShareChatDialog } from "./ShareChatDialog";
 
 /** Heavy/secondary panels are loaded only when the user asks for them. */
 const PreviewPanel = lazy(() =>
@@ -43,6 +45,7 @@ export default function TopBar() {
   const setWorkspaceOpen = useStore((s) => s.setWorkspaceOpen);
   const currentID = useStore((s) => s.currentID);
   const [showPreview, setShowPreview] = useState(false);
+  const [showShare, setShowShare] = useState(false);
   const sessionReady = !!currentID && !isTmpSession(currentID);
 
   /** Runtime capability state for terminal/preview/workspace. */
@@ -180,6 +183,18 @@ export default function TopBar() {
         <Button
           variant="ghost"
           size="icon"
+          className="h-8 w-8 shrink-0 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40"
+          onClick={() => setShowShare(true)}
+          disabled={!sessionReady}
+          title="Поделиться чатом"
+          aria-label="Поделиться чатом"
+        >
+          <Share2 size={16} />
+        </Button>
+
+        <Button
+          variant="ghost"
+          size="icon"
           className="hidden h-8 w-8 rounded-lg text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-40 md:inline-flex"
           onClick={handleExportChat}
           disabled={!sessionReady}
@@ -231,6 +246,14 @@ export default function TopBar() {
           )}
         </Button>
       </header>
+
+      {sessionReady && currentID && (
+        <ShareChatDialog
+          sessionId={currentID}
+          open={showShare}
+          onClose={() => setShowShare(false)}
+        />
+      )}
 
       <PanelModal
         title={t("preview_panel.predprosmotr")}

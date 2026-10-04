@@ -4,6 +4,18 @@ import { sendJson } from '../native/json.mjs';
 import { prometheusMetrics } from '../native/metrics.mjs';
 import { readinessCheck } from '../native/readiness.mjs';
 import { runtimeCapabilities } from '../native/runtime-capabilities.mjs';
+import { systemStatus } from '../native/system-status.mjs';
+
+/** GET /api/system/status — только для администратора (вызывается после входа). */
+export function handleAdminSystemRoutes(req, res, p, auth) {
+  if (p !== '/api/system/status' || req.method !== 'GET') return false;
+  if (auth?.user?.role !== 'admin') {
+    sendJson(res, 403, { error: 'Только для администратора' });
+    return true;
+  }
+  sendJson(res, 200, systemStatus({ activeTurns: activeTurnCount() }), { 'cache-control': 'no-store' });
+  return true;
+}
 
 export async function handleSystemRoutes(req, res, p, { draining, startedAt, isDraining }) {
   if (p === '/metrics' && req.method === 'GET') {

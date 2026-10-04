@@ -12,7 +12,7 @@ import { previewDocument } from '../native/preview-document.mjs';
 import { revokePreviewTokens } from '../native/preview-tokens.mjs';
 import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
 import {
-  createChat, deleteChat, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
+  createChat, createChatShare, deleteChat, deleteChatShare, getChatShare, listChatShares, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
   listChats, listMessages, listPendingQuestions, listQueue, ownsChat, putMessage, renameChat, setPrefs, workspaceFor, 
 } from '../native/store.mjs';
 import { invalidateStorageUsage, storageUsage } from '../native/storage-usage.mjs';
@@ -115,6 +115,11 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       invalidateStorageUsage(ownerId);
       sendJson(res, 204, null);
       return true;
+    }
+    if (p === `/api/session/${sid}/share`) {
+      if (req.method === 'GET') { sendJson(res, 200, { share: getChatShare(sid, ownerId) }); return true; }
+      if (req.method === 'POST') { sendJson(res, 200, { share: createChatShare(sid, ownerId) }); return true; }
+      if (req.method === 'DELETE') { deleteChatShare(sid, ownerId); sendJson(res, 204, null); return true; }
     }
     if (p === `/api/session/${sid}/message` && req.method === 'GET') {
       sendJson(res, 200, listMessages(sid));
@@ -268,6 +273,11 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
     } else {
       sendJson(res, 404, { error: 'Question not found' });
     }
+    return true;
+  }
+
+  if (p === '/api/user/shares' && req.method === 'GET') {
+    sendJson(res, 200, listChatShares(ownerId));
     return true;
   }
 

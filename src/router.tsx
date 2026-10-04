@@ -6,8 +6,9 @@ import {
   redirect,
   useNavigate,
   useParams,
+  useRouterState,
 } from "@tanstack/react-router";
-import { lazy, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -41,6 +42,7 @@ import { useStore } from "./store/useStore";
  */
 const SettingsPanel = lazy(() => import("./components/SettingsPanel"));
 const Workspace = lazy(() => import("./components/Workspace"));
+const SharedChatPage = lazy(() => import("./components/SharedChatPage"));
 
 /**
  * SettingsPanel сам возвращает null, когда закрыт, и держит выбранную вкладку
@@ -483,8 +485,19 @@ function RouteCrash({ error }: { error: Error }) {
   );
 }
 
-const rootRoute = createRootRoute({
-  component: () => (
+function RootLayout() {
+  // Публичная ссылка на чат открывается без входа и без оболочки приложения.
+  const isShare = useRouterState({
+    select: (s) => s.location.pathname.startsWith("/share/"),
+  });
+  if (isShare) {
+    return (
+      <Suspense fallback={null}>
+        <Outlet />
+      </Suspense>
+    );
+  }
+  return (
     <ConfirmProvider>
       <AuthGate>
         <AppShell />
@@ -492,7 +505,11 @@ const rootRoute = createRootRoute({
       {/* Подсказки по долгому нажатию — замена title= на сенсорном экране. */}
       <TouchHints />
     </ConfirmProvider>
-  ),
+  );
+}
+
+const rootRoute = createRootRoute({
+  component: RootLayout,
 });
 
 const indexRoute = createRoute({
@@ -507,6 +524,12 @@ const chatRoute = createRoute({
   component: () => <ChatView />,
 });
 
+const shareRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/share/$token",
+  component: () => <SharedChatPage />,
+});
+
 const loginRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/login",
@@ -515,7 +538,12 @@ const loginRoute = createRoute({
   },
 });
 
-const routeTree = rootRoute.addChildren([indexRoute, chatRoute, loginRoute]);
+const routeTree = rootRoute.addChildren([
+  indexRoute,
+  chatRoute,
+  shareRoute,
+  loginRoute,
+]);
 
 export const router = createRouter({
   routeTree,
