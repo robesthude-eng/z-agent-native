@@ -54,6 +54,7 @@ const QUEUE_SETTLE_MS = 1200;
 
 export default function Composer() {
   const currentID = useStore((s) => s.currentID);
+  const sendKey = useStore((s) => s.appSettings.sendKey);
   const newSession = useStore((s) => s.newSession);
   const materializeSession = useStore((s) => s.materializeSession);
 
@@ -443,7 +444,7 @@ export default function Composer() {
   });
 
   return (
-    <div className="w-full max-w-3xl shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
+    <div className="w-full max-w-[var(--chat-max)] shrink-0 mx-auto px-3 md:px-6 pb-6 pointer-events-none">
       <div className="relative pointer-events-auto w-full">
         <ComposerSuggestions
           commands={suggestions.commands}
@@ -627,6 +628,9 @@ export default function Composer() {
                       return;
                     }
                     if (e.key === "Enter" && !e.shiftKey) {
+                      // Режим «Ctrl/⌘+Enter»: обычный Enter — перенос строки.
+                      const mod = e.ctrlKey || e.metaKey;
+                      if (sendKey === "mod-enter" && !mod) return;
                       e.preventDefault();
                       submit();
                     }

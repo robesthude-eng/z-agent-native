@@ -1,6 +1,7 @@
 import * as idb from "idb-keyval";
 import { create } from "zustand";
 import { createJSONStorage, persist } from "zustand/middleware";
+import { applyAppSettings, normalizeAppSettings } from "../config/appSettings";
 import { createAuthSlice } from "./slices/authSlice";
 import { createMessagesSlice } from "./slices/messagesSlice";
 import { createModelsSlice } from "./slices/modelsSlice";
@@ -76,6 +77,11 @@ export const useStore = create<State>()(
       // sessionTitleOverrides намеренно НЕ персистится: имя чата приходит с
       // сервера, а сохранённый локальный оверлей перекрывал бы переименование,
       // сделанное с другого устройства.
+      // Визуальные настройки (размер шрифта, ширина чата) применяются к DOM
+      // сразу после чтения локальной копии, до синхронизации с сервером.
+      onRehydrateStorage: () => (state) => {
+        if (state) applyAppSettings(normalizeAppSettings(state.appSettings));
+      },
       partialize: (s) => ({
         theme: s.theme,
         sidebarCollapsed: s.sidebarCollapsed,
@@ -83,6 +89,7 @@ export const useStore = create<State>()(
         selectedModel: s.selectedModel,
         pinnedSessions: s.pinnedSessions,
         onboardingDone: s.onboardingDone,
+        appSettings: s.appSettings,
         prefsUpdatedAt: s.prefsUpdatedAt,
       }),
     },

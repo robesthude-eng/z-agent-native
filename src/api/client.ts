@@ -204,6 +204,7 @@ export interface UserPrefs {
   workspaceOpen?: PrefEnvelope<boolean>;
   pinnedSessions?: PrefEnvelope<string[]>;
   selectedModel?: PrefEnvelope<PromptModel | null>;
+  appSettings?: PrefEnvelope<import("../config/appSettings").AppSettings>;
 }
 
 // UX-fix: локальный чёрный список sessionID, отсутствие которых подтвердил сервер.
@@ -344,6 +345,17 @@ export const api = {
       body: JSON.stringify({ messageID }),
     }),
   listMessages: (id: string) => req<Message[]>(`/session/${id}/message`),
+  storageUsage: (fresh = false) =>
+    req<{
+      total: number;
+      measuredAt: number;
+      chats: Array<{
+        id: string;
+        title: string;
+        updated: number;
+        bytes: number;
+      }>;
+    }>(`/user/storage${fresh ? "?fresh=1" : ""}`),
 
   /**
    * Вердикт хода с сервера (I-30).

@@ -59,6 +59,14 @@ export function runtimeCapabilities() {
       },
       installers: { state: has('ensure_environment') ? 'ready' : 'disabled' },
       sudo: { state: shellPrivilegePolicy() === 'sudo' ? 'ready' : 'disabled' },
+      search: {
+        state: has('websearch') ? 'ready' : 'disabled',
+        mode: process.env.BRAVE_SEARCH_API_KEY ? 'brave' : process.env.Z_AGENT_SEARXNG_URL ? 'searxng' : 'duckduckgo',
+      },
+      cloud: {
+        state: has('cloud_sandbox') ? 'ready' : 'disabled',
+        mode: has('cloud_sandbox') ? 'daytona' : undefined,
+      },
     },
     policies: {
       web: webPolicy,

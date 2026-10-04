@@ -14,6 +14,7 @@ import {
   type PromptModel,
   type UserPrefs,
 } from "../api/client";
+import type { AppSettings } from "../config/appSettings";
 
 /** Типы значений синхронизируемых настроек — по одному источнику для стора и API. */
 export interface PrefValues {
@@ -23,6 +24,7 @@ export interface PrefValues {
   pinnedSessions: string[];
   selectedModel: PromptModel | null;
   onboardingDone: boolean;
+  appSettings: AppSettings;
 }
 
 const PREF_KEYS = [
@@ -32,6 +34,7 @@ const PREF_KEYS = [
   "pinnedSessions",
   "selectedModel",
   "onboardingDone",
+  "appSettings",
 ] as const;
 
 export type PrefKey = (typeof PREF_KEYS)[number];

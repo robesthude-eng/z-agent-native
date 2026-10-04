@@ -1,5 +1,11 @@
 import { api } from "../../api/client";
 import {
+  type AppSettings,
+  applyAppSettings,
+  DEFAULT_APP_SETTINGS,
+  normalizeAppSettings,
+} from "../../config/appSettings";
+import {
   applyTheme,
   getInitialTheme,
   nextTheme,
@@ -47,6 +53,16 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
     pendingOpenFile: null,
     sessionTitleOverrides: {},
     prefsUpdatedAt: {},
+    appSettings: DEFAULT_APP_SETTINGS,
+
+    setAppSettings: (patch) => {
+      const next: AppSettings = normalizeAppSettings({
+        ...get().appSettings,
+        ...patch,
+      });
+      applyAppSettings(next);
+      setPref("appSettings", next);
+    },
 
     toggleTheme: () => {
       // тёмная → средняя → светлая → тёмная
@@ -171,6 +187,7 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
         pinnedSessions: state.pinnedSessions,
         selectedModel: state.selectedModel,
         onboardingDone: state.onboardingDone,
+        appSettings: state.appSettings,
       };
 
       const { apply, timestamps, pushBack } = reconcilePrefs(
@@ -187,6 +204,11 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
         // Тема меняет DOM, а не только стор, — применяем её отдельно.
         if (typeof apply.theme === "string") {
           applyTheme(apply.theme as Theme);
+        }
+        if (apply.appSettings) {
+          const normalized = normalizeAppSettings(apply.appSettings);
+          set({ appSettings: normalized });
+          applyAppSettings(normalized);
         }
       }
 

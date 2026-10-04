@@ -384,7 +384,7 @@ export default function InterruptionBar() {
     >
       <div
         className={cn(
-          "pointer-events-auto mx-auto w-full max-w-3xl overflow-hidden rounded-2xl border bg-card/95 shadow-2xl backdrop-blur",
+          "pointer-events-auto mx-auto w-full max-w-[var(--chat-max)] overflow-hidden rounded-2xl border bg-card/95 shadow-2xl backdrop-blur",
           "animate-in fade-in slide-in-from-bottom-2",
           // Цветной кант — только у разрешения: оно про последствия. У вопроса
           // канта нет. Зелёная рамка на каждый вопрос — это акцент, который

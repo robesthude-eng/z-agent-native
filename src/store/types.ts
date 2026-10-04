@@ -9,6 +9,7 @@ import type {
   SessionInfo,
   SessionStatus,
 } from "../api/types";
+import type { AppSettings } from "../config/appSettings";
 import type { Theme } from "../config/theme";
 import type { PrefTimestamps } from "./prefsSync";
 
@@ -81,6 +82,8 @@ export interface UiSlice {
   // Время последнего локального изменения каждой синхронизируемой настройки —
   // по нему сервер и клиент решают, чья версия свежее.
   prefsUpdatedAt: PrefTimestamps;
+  appSettings: AppSettings;
+  setAppSettings: (patch: Partial<AppSettings>) => void;
   toggleTheme: () => void;
   setTheme: (theme: Theme) => void;
   setSettingsOpen: (open: boolean) => void;

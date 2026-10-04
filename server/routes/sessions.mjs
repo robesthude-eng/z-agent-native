@@ -2,6 +2,7 @@ import {
   abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle,
 } from '../native/agent.mjs';
 import { closeBrowserSessionRemote } from '../native/browser-client.mjs';
+import { destroyCloudSandboxForSession } from '../native/cloud-sandbox.mjs';
 import { MAX_JSON_BYTES } from '../native/config.mjs';
 import { clearSessionEvents, emit, openSse } from '../native/events.mjs';
 import { killExecutorIdentity } from '../native/executor-client.mjs';
@@ -14,6 +15,7 @@ import {
   createChat, deleteChat, deleteMessagesFrom, dequeueAction, enqueueAction, getChat, getPrefs, getSandboxUid,getTurn,
   listChats, listMessages, listPendingQuestions, listQueue, ownsChat, putMessage, renameChat, setPrefs, workspaceFor, 
 } from '../native/store.mjs';
+import { invalidateStorageUsage, storageUsage } from '../native/storage-usage.mjs';
 import { terminalEnabled } from '../native/terminal.mjs';
 import { closeWorkspaceWatcher, ensureWorkspaceWatcher } from '../native/watcher.mjs';
 
@@ -109,6 +111,8 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       await step('agent', () => clearAgentSessionState(sid));
       await step('events', () => clearSessionEvents(sid));
       await step('prepared', () => forgetPreparedSandbox(sid));
+      await step('cloud', () => destroyCloudSandboxForSession(sid));
+      invalidateStorageUsage(ownerId);
       sendJson(res, 204, null);
       return true;
     }
@@ -264,6 +268,11 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
     } else {
       sendJson(res, 404, { error: 'Question not found' });
     }
+    return true;
+  }
+
+  if (p === '/api/user/storage' && req.method === 'GET') {
+    sendJson(res, 200, await storageUsage(ownerId, { fresh: url.searchParams.get('fresh') === '1' }));
     return true;
   }
 

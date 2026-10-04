@@ -533,7 +533,7 @@ export default function ChatView() {
   if (!currentID) {
     return (
       <div className="flex-1 flex items-center justify-center p-4 md:p-6 min-h-0 overflow-y-auto">
-        <div className="max-w-3xl w-full text-center px-3 md:px-6">
+        <div className="max-w-[var(--chat-max)] w-full text-center px-3 md:px-6">
           <h1 className="text-xl md:text-3xl font-semibold mb-2">
             {t("chat_view.chem_mogu_pomoch")}
           </h1>
@@ -582,7 +582,7 @@ export default function ChatView() {
         onScroll={onScroll}
       >
         {error && !hasLocalAssistantError && (
-          <div className="mx-auto max-w-3xl px-3 md:px-6 pt-3">
+          <div className="mx-auto max-w-[var(--chat-max)] px-3 md:px-6 pt-3">
             <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
               {/* JSON.stringify(Error) возвращает "{}": плашка ошибки
                   оказывалась пустой. errorMessage() достаёт текст из любой
@@ -591,7 +591,7 @@ export default function ChatView() {
             </div>
           </div>
         )}
-        <div ref={contentRef} className="mx-auto max-w-3xl">
+        <div ref={contentRef} className="mx-auto max-w-[var(--chat-max)]">
           {(!messages || messages.length === 0) && status !== "busy" && (
             <p className="text-center text-muted-foreground py-12">
               {t("chat_view.nachni_dialog_napishi_soobschenie_nizhe")}

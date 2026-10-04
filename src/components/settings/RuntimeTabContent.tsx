@@ -20,6 +20,8 @@ const CAPABILITY_LABELS: Record<string, string> = {
   ssh: "Удалённый SSH",
   installers: "Установка окружения",
   sudo: "Повышенные права",
+  search: "Поиск в интернете",
+  cloud: "Облачная песочница (Daytona)",
 };
 
 const STATE_LABELS: Record<RuntimeCapability["state"], string> = {

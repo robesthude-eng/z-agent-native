@@ -393,3 +393,14 @@ export async function executeCloudSandbox(root, input = {}, ctx = {}) {
     mutatedPaths: pull.changedPaths,
   };
 }
+
+/** Удалить облачную машину чата (при удалении чата). Без ключа — ничего. */
+export async function destroyCloudSandboxForSession(sessionId) {
+  if (!cloudSandboxConfigured() || !sessionId) return false;
+  const entry = sessions.get(sessionId);
+  const sb = await api('GET', `/sandbox/${entry?.id || sandboxName(sessionId)}`, { timeoutMs: 15_000 });
+  sessions.delete(sessionId);
+  if (!sb) return false;
+  await api('DELETE', `/sandbox/${sb.id}`, { timeoutMs: 30_000 });
+  return true;
+}

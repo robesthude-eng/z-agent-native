@@ -916,3 +916,16 @@ button.oc-code-link:hover {
   background: color-mix(in srgb, var(--color-warning) 10%, transparent);
   color: color-mix(in srgb, var(--color-foreground) 85%, transparent);
 }
+
+/* Пользовательские настройки (см. src/config/appSettings.ts). */
+:root {
+  --chat-max: 48rem;
+}
+[data-reduce-motion="true"] *,
+[data-reduce-motion="true"] *::before,
+[data-reduce-motion="true"] *::after {
+  animation-duration: 0.001ms !important;
+  animation-iteration-count: 1 !important;
+  transition-duration: 0.001ms !important;
+  scroll-behavior: auto !important;
+}

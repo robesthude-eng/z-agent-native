@@ -10,6 +10,7 @@ import type {
   SessionStatus,
 } from "../../api/types";
 import { isTmpSession } from "../../lib/ids";
+import { notifyTurnDone } from "../../lib/turnNotify";
 import {
   normalizeMessage,
   normalizeMessages,
@@ -109,10 +110,12 @@ const removeSession: EventHandler = ({ set }, sid) => {
  */
 function closeTurnNow(ctx: EventCtx, sid: string): void {
   turnSettle.cancel(sid);
-  if (sessionFsm.isBusy(sid)) sessionFsm.resolveIdle(sid);
+  const wasBusy = sessionFsm.isBusy(sid);
+  if (wasBusy) sessionFsm.resolveIdle(sid);
   ctx.set((s: State) => ({
     status: { ...s.status, [sid]: "idle" as SessionStatus },
   }));
+  if (wasBusy) notifyTurnDone(ctx.get(), sid);
 }
 
 const applySessionStatus: EventHandler = (ctx, sid, p) => {

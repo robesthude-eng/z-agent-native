@@ -7,7 +7,10 @@ import { useStore } from "../store/useStore";
 import { CloseIcon, SearchIcon } from "./icons";
 import { AboutTabContent } from "./settings/AboutTabContent";
 import { AccountTabContent } from "./settings/AccountTabContent";
+import { AgentTabContent } from "./settings/AgentTabContent";
 import { AppearanceTabContent } from "./settings/AppearanceTabContent";
+import { ChatTabContent } from "./settings/ChatTabContent";
+import { DataTabContent } from "./settings/DataTabContent";
 import { ModelsTabContent } from "./settings/ModelsTabContent";
 import { RuntimeTabContent } from "./settings/RuntimeTabContent";
 import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
@@ -15,6 +18,9 @@ import { ShortcutsTabContent } from "./settings/ShortcutsTabContent";
 type SettingsTab =
   | "account"
   | "appearance"
+  | "agent"
+  | "chat"
+  | "data"
   | "models"
   | "runtime"
   | "shortcuts"
@@ -69,6 +75,20 @@ const TAB_GROUPS: TabGroup[] = [
     label: t("settings_panel.chat"),
     items: [
       {
+        id: "agent",
+        label: "Агент",
+        title: "Агент и инструкции",
+        keywords:
+          "агент инструкции промпт стиль язык ответов кратко подробно персональные custom instructions",
+      },
+      {
+        id: "chat",
+        label: "Чат и уведомления",
+        title: "Чат и уведомления",
+        keywords:
+          "чат enter ctrl отправка уведомления звук сигнал notification sound",
+      },
+      {
         id: "models",
         label: t("settings_panel.modeli"),
         title: t("settings_panel.modeli_i_api_klyuchi"),
@@ -81,6 +101,18 @@ const TAB_GROUPS: TabGroup[] = [
         keywords: t(
           "settings_panel.runtime_instrumenty_bash_shell_internet_ssh_browser",
         ),
+      },
+    ],
+  },
+  {
+    label: "Данные",
+    items: [
+      {
+        id: "data",
+        label: "Данные и место",
+        title: "Данные и место на диске",
+        keywords:
+          "данные место диск хранилище экспорт удалить чаты размер сброс storage export",
       },
     ],
   },
@@ -334,6 +366,9 @@ export default function SettingsPanel() {
             <div className="mx-auto w-full max-w-3xl">
               {activeTab === "account" && <AccountTabContent />}
               {activeTab === "appearance" && <AppearanceTabContent />}
+              {activeTab === "agent" && <AgentTabContent />}
+              {activeTab === "chat" && <ChatTabContent />}
+              {activeTab === "data" && <DataTabContent />}
               {activeTab === "models" && <ModelsTabContent />}
               {activeTab === "runtime" && <RuntimeTabContent />}
               {activeTab === "shortcuts" && <ShortcutsTabContent />}

@@ -1,8 +1,29 @@
 import { t } from "@/i18n";
 import { cn } from "@/lib/utils";
+import type { ChatWidth, FontScale } from "../../config/appSettings";
 import type { Theme } from "../../config/theme";
 import { useStore } from "../../store/useStore";
-import { SettingsSection } from "./primitives";
+import {
+  SettingsCard,
+  SettingsRow,
+  SettingsSection,
+  SettingsSegmented,
+  SettingsToggle,
+} from "./primitives";
+
+const FONT_OPTIONS: Array<{ id: FontScale; label: string }> = [
+  { id: "sm", label: "Мелкий" },
+  { id: "md", label: "Обычный" },
+  { id: "lg", label: "Крупный" },
+  { id: "xl", label: "Очень крупный" },
+];
+
+const WIDTH_OPTIONS: Array<{ id: ChatWidth; label: string }> = [
+  { id: "narrow", label: "Узкая" },
+  { id: "normal", label: "Обычная" },
+  { id: "wide", label: "Широкая" },
+  { id: "full", label: "Во всю ширину" },
+];
 
 const THEMES: Array<{ id: Theme; label: string; preview: string }> = [
   {
@@ -26,6 +47,8 @@ const THEMES: Array<{ id: Theme; label: string; preview: string }> = [
 export function AppearanceTabContent() {
   const theme = useStore((s) => s.theme);
   const setTheme = useStore((s) => s.setTheme);
+  const settings = useStore((s) => s.appSettings);
+  const update = useStore((s) => s.setAppSettings);
 
   return (
     <div className="space-y-6">
@@ -57,6 +80,46 @@ export function AppearanceTabContent() {
             </button>
           ))}
         </div>
+      </SettingsSection>
+
+      <SettingsSection
+        title="Текст и раскладка"
+        description="Сохраняется в аккаунте и применяется на всех устройствах."
+      >
+        <SettingsCard>
+          <SettingsRow
+            label="Размер шрифта"
+            description="Масштабирует весь интерфейс, включая чат."
+          >
+            <SettingsSegmented
+              ariaLabel="Размер шрифта"
+              value={settings.fontScale}
+              options={FONT_OPTIONS}
+              onChange={(fontScale) => update({ fontScale })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Ширина чата"
+            description="Максимальная ширина ленты сообщений и поля ввода."
+          >
+            <SettingsSegmented
+              ariaLabel="Ширина чата"
+              value={settings.chatWidth}
+              options={WIDTH_OPTIONS}
+              onChange={(chatWidth) => update({ chatWidth })}
+            />
+          </SettingsRow>
+          <SettingsRow
+            label="Меньше анимаций"
+            description="Отключает плавные переходы и анимации — быстрее на слабых устройствах."
+          >
+            <SettingsToggle
+              ariaLabel="Меньше анимаций"
+              checked={settings.reduceMotion}
+              onChange={(reduceMotion) => update({ reduceMotion })}
+            />
+          </SettingsRow>
+        </SettingsCard>
       </SettingsSection>
     </div>
   );
