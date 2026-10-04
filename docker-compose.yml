@@ -42,6 +42,7 @@ services:
       # explicit allowlist/public policy only for deployments that need it.
       Z_AGENT_NETWORK_POLICY: ${Z_AGENT_NETWORK_POLICY:-off}
       Z_AGENT_ALLOW_PUBLIC_WEB: ${Z_AGENT_ALLOW_PUBLIC_WEB:-0}
+      Z_AGENT_SEARXNG_URL: ${Z_AGENT_SEARXNG_URL:-http://z-agent-search:8080}
     # Loopback only. TLS termination and public exposure belong to the reverse
     # proxy in front of this container, not to Docker's default 0.0.0.0 publish
     # rule. 3002 is the port the deploy health check probes.
@@ -135,6 +136,32 @@ services:
       timeout: 3s
       retries: 5
       start_period: 5s
+
+  # Free self-hosted metasearch (Google/Bing/DuckDuckGo/Brave/Yandex/Wikipedia...)
+  # for the websearch tool. No API keys, no host ports; only the API container
+  # reaches it over runtime-egress. websearch falls back to DuckDuckGo if down.
+  z-agent-search:
+    image: ${Z_AGENT_SEARXNG_IMAGE:-searxng/searxng:latest}
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - CHOWN
+      - SETGID
+      - SETUID
+    pids_limit: 256
+    mem_limit: 320m
+    memswap_limit: 320m
+    cpus: 0.4
+    environment:
+      SEARXNG_SECRET: ${SEARXNG_SECRET:?set SEARXNG_SECRET in .env (openssl rand -hex 32)}
+      SEARXNG_BASE_URL: http://z-agent-search:8080/
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    networks:
+      - runtime-egress
 
   # Chromium/web content is isolated from provider secrets and all workspace/data
   # volumes. Only the model-selected browser command crosses the Unix socket.

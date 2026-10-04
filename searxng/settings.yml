@@ -1,0 +1,29 @@
+# Self-hosted SearXNG for the agent's websearch tool. Free, no API keys.
+# Reachable only from the z-agent container over the private Compose network;
+# no host port is published. secret_key comes from SEARXNG_SECRET.
+use_default_settings: true
+general:
+  instance_name: z-agent-search
+  enable_metrics: false
+search:
+  safe_search: 0
+  autocomplete: ""
+  formats:
+    - html
+    - json
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  limiter: false
+  public_instance: false
+  image_proxy: false
+  method: GET
+outgoing:
+  request_timeout: 4.0
+  max_request_timeout: 8.0
+  pool_connections: 50
+engines:
+  - name: yandex
+    disabled: false
+  - name: mojeek
+    disabled: false

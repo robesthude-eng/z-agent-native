@@ -7,6 +7,7 @@ import {
   parseDuckDuckGoInstant,
   parseWikipediaOpensearch,
   runWebSearch,
+  parseSearxngResults,
 } from '../server/native/websearch.mjs';
 
 process.env.Z_AGENT_NETWORK_POLICY = 'public';
@@ -194,4 +195,42 @@ test('time words are dropped in a later query variant', async () => {
 
 test('runWebSearch refuses an empty query', async () => {
   await assert.rejects(() => runWebSearch({ query: '  ', request: async () => ({ status: 200, text: '' }) }), /query must not be empty/);
+});
+
+test('parseSearxngResults maps results, strips tags and keeps answers', () => {
+  const rows = parseSearxngResults({
+    answers: ['1 USD = 82 RUB'],
+    results: [
+      { title: '<b>Курс</b> доллара', url: 'https://cbr.ru/', content: 'Официальный <em>курс</em>' },
+      { title: 'dup', url: 'https://cbr.ru/' },
+      { title: 'local', url: 'http://localhost/x' },
+    ],
+  }, 5);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].title, 'Курс доллара');
+  assert.match(rows[0].snippet, /1 USD = 82 RUB/);
+  assert.match(rows[0].snippet, /Официальный курс/);
+});
+
+test('runWebSearch prefers SearXNG and falls back to DuckDuckGo when it is down', async () => {
+  const searxCalls = [];
+  const searxngFetch = async (url) => {
+    searxCalls.push(String(url));
+    return { status: 200, text: async () => JSON.stringify({ results: [{ title: 'Hit', url: 'https://example.org/s', content: 'snippet' }] }) };
+  };
+  const request = async () => ({ status: 500, text: '' });
+  const ok = await runWebSearch({ query: 'node 24', searxngUrl: 'http://z-agent-search:8080/', searxngFetch, request });
+  assert.equal(ok.metadata.websearch.provider, 'searxng');
+  assert.match(ok.output, /example\.org\/s/);
+  assert.match(searxCalls[0], /^http:\/\/z-agent-search:8080\/search\?q=node\+24&format=json/);
+
+  let downCalls = 0;
+  const downFetch = async () => { downCalls++; throw new Error('ECONNREFUSED'); };
+  const ddgRequest = async (url) => (String(url).includes('html.duckduckgo.com')
+    ? { status: 200, text: '<a class="result__a" href="https://example.com/d">DDG</a>' }
+    : { status: 200, text: '{}' });
+  const fb = await runWebSearch({ query: 'погода Волгоград сегодня', searxngUrl: 'http://z-agent-search:8080', searxngFetch: downFetch, request: ddgRequest });
+  assert.equal(fb.metadata.websearch.provider, 'duckduckgo');
+  assert.match(fb.output, /example\.com\/d/);
+  assert.equal(downCalls, 1);
 });

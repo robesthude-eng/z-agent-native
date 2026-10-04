@@ -10,6 +10,7 @@ export async function executeWebSearch(input, signal) {
     count: input?.count,
     signal,
     apiKey,
+    searxngUrl: process.env.Z_AGENT_SEARXNG_URL,
   });
 }
 

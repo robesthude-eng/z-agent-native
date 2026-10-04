@@ -145,6 +145,66 @@ export function parseDuckDuckGoHtml(html, count = 5) {
   return rows;
 }
 
+/** SearXNG JSON API (`/search?format=json`). */
+export function parseSearxngResults(body, count = 5) {
+  const limit = boundedCount(count);
+  const rows = [];
+  const seen = new Set();
+  const answers = [];
+  for (const a of body?.answers || []) {
+    const text = typeof a === 'string' ? a : (a?.answer || '');
+    if (text) answers.push(String(text).trim());
+  }
+  for (const box of body?.infoboxes || []) {
+    const url = box?.id || box?.urls?.[0]?.url;
+    if (url && box?.content) pushRow(rows, seen, { title: box.infobox || url, url, snippet: String(box.content).slice(0, 500) }, limit);
+  }
+  for (const row of body?.results || []) {
+    pushRow(rows, seen, {
+      title: stripTags(row?.title || row?.url),
+      url: row?.url,
+      snippet: stripTags(row?.content || '').slice(0, 500),
+    }, limit);
+  }
+  if (answers.length && rows.length) rows[0] = { ...rows[0], snippet: [answers.join(' '), rows[0].snippet].filter(Boolean).join(' — ') };
+  return rows;
+}
+
+function searxngBase(value) {
+  const raw = String(value || '').trim().replace(/\/+$/, '');
+  if (!raw) return '';
+  try {
+    const url = new URL(raw);
+    return /^https?:$/.test(url.protocol) ? url.href.replace(/\/+$/, '') : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Self-hosted SearXNG is an operator-configured internal service (usually a
+ * sibling container on a private Docker network), so it is contacted directly
+ * rather than through the public-host SSRF guard, which rejects private IPs.
+ * The model never controls this URL.
+ */
+async function searchSearxng(base, q, n, signal, fetchImpl = fetch) {
+  const url = new URL(`${base}/search`);
+  url.searchParams.set('q', q);
+  url.searchParams.set('format', 'json');
+  url.searchParams.set('language', /[\u0400-\u04FF]/.test(q) ? 'ru' : 'auto');
+  url.searchParams.set('safesearch', '0');
+  const timeout = AbortSignal.timeout(12000);
+  const res = await fetchImpl(url.toString(), {
+    headers: { accept: 'application/json', 'user-agent': SEARCH_UA },
+    signal: signal ? AbortSignal.any([signal, timeout]) : timeout,
+  });
+  const text = await res.text();
+  if (res.status < 200 || res.status >= 300) throw new Error(`SearXNG HTTP ${res.status}`);
+  let body;
+  try { body = JSON.parse(text); } catch { throw new Error('SearXNG returned invalid JSON'); }
+  return parseSearxngResults(body, n);
+}
+
 export function formatSearchRows(rows) {
   return (Array.isArray(rows) ? rows : []).map((row, i) => {
     const lines = [`${i + 1}. ${row.title || row.url}`, row.url];
@@ -188,7 +248,8 @@ async function searchDuckDuckGoHtml(q, n, fetchUrl, signal) {
 }
 
 /**
- * Brave when an API key is configured; otherwise the DuckDuckGo HTML results,
+ * Brave when an API key is configured; then self-hosted SearXNG (free
+ * metasearch) when Z_AGENT_SEARXNG_URL is set; then the DuckDuckGo HTML results,
  * then Instant Answer plus Wikipedia OpenSearch. Callers must already have
  * passed the agent network policy gate for the host that will actually be
  * contacted.
@@ -280,7 +341,7 @@ function emptyResult(q, variants, notes) {
   };
 }
 
-export async function runWebSearch({ query, count, signal, apiKey = '', request = safeExternalRequest } = {}) {
+export async function runWebSearch({ query, count, signal, apiKey = '', searxngUrl = '', searxngFetch, request = safeExternalRequest } = {}) {
   const q = String(query || '').trim();
   if (!q) throw new Error('query must not be empty');
   const n = boundedCount(count);
@@ -307,12 +368,22 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
   }
 
   const variants = queryVariants(q);
+  const searx = searxngBase(searxngUrl);
+  let searxDown = !searx;
   const notes = [];
   const blocks = [];
   let rows = [];
   let source = '';
   for (const variant of variants) {
     const steps = [
+      ...(searxDown ? [] : [{
+        name: 'searxng',
+        run: () => searchSearxng(searx, variant, n, signal, searxngFetch).catch((error) => {
+          // Не ждём таймаут недоступного сервиса на каждом варианте запроса.
+          searxDown = true;
+          throw error;
+        }),
+      }]),
       { name: 'duckduckgo-html', run: () => searchDuckDuckGoHtml(variant, n, fetchUrl, signal) },
       { name: 'duckduckgo-instant+wikipedia', run: () => collectPublicResults(variant, n, fetchUrl, signal) },
     ];
@@ -338,6 +409,6 @@ export async function runWebSearch({ query, count, signal, apiKey = '', request 
   return {
     output: formatSearchRows(rows),
     title: q,
-    metadata: { websearch: { provider: 'duckduckgo', source, count: rows.length } },
+    metadata: { websearch: { provider: source === 'searxng' ? 'searxng' : 'duckduckgo', source, count: rows.length } },
   };
 }
