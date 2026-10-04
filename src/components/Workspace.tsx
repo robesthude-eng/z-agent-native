@@ -37,7 +37,6 @@ import {
   WorkspaceGitChanges,
   WorkspaceUploadStatus,
 } from "./workspace/WorkspaceMetaSections";
-import { WorkspaceTabs } from "./workspace/WorkspaceTabs";
 import { WorkspaceToolbar } from "./workspace/WorkspaceToolbar";
 import { WorkspaceTreeContent } from "./workspace/WorkspaceTreeContent";
 import {
@@ -83,9 +82,9 @@ export default function Workspace() {
   // расхождение и есть признак несохранённых правок.
   const [draft, setDraft] = useState("");
   const [viewMode, setViewMode] = useState<ViewMode>("code");
-  const [workspaceTab, setWorkspaceTab] = useState<
-    "files" | "preview" | "code"
-  >("files");
+  const [workspaceView, setWorkspaceView] = useState<"files" | "editor">(
+    "files",
+  );
   const [saving, setSaving] = useState(false);
   const [createKind, setCreateKind] = useState<"file" | "directory" | null>(
     null,
@@ -426,6 +425,7 @@ export default function Workspace() {
   useEffect(() => {
     setExpanded(new Set([""]));
     setActiveFile(null);
+    setWorkspaceView("files");
     setDraft("");
     setCreateKind(null);
     setCreatePath("");
@@ -467,11 +467,11 @@ export default function Workspace() {
         const content = res.content ?? res.text ?? "";
         setActiveFile({ path, content });
         setDraft(content);
-        // Превью по умолчанию для того, что имеет смысл смотреть, а не читать:
-        // содержимое картинки как текст — просто мусор на экране.
+        // Text files open as code; binary media keeps its meaningful viewer.
+        // Page preview is available independently from the top bar.
         const kind = previewKind(path);
-        setViewMode(kind ? "preview" : "code");
-        setWorkspaceTab(kind ? "preview" : "code");
+        setViewMode(kind === "image" ? "preview" : "code");
+        setWorkspaceView("editor");
       } catch (e: unknown) {
         toast(
           "error",
@@ -533,7 +533,7 @@ export default function Workspace() {
     }
     setActiveFile(null);
     setDraft("");
-    setWorkspaceTab("files");
+    setWorkspaceView("files");
   }, [dirty, askConfirm]);
 
   const saveActiveFile = useCallback(async () => {
@@ -685,90 +685,45 @@ export default function Workspace() {
         filter={filter}
         loading={loading}
         onFilterChange={setFilter}
-        onSearchStart={() => setWorkspaceTab("files")}
+        onSearchStart={() => setWorkspaceView("files")}
         onRefresh={() => {
           refresh().catch(() => {});
         }}
         onClose={() => {
+          setWorkspaceView("files");
           setFilter("");
           setWorkspaceOpen(false);
         }}
       />
 
-      <WorkspaceTabs
-        active={workspaceTab}
-        onSelect={(tab) => {
-          setWorkspaceTab(tab);
-          if (tab === "preview" && !activeFile && currentID)
-            void api
-              .capabilities(currentID)
-              .then((raw) => {
-                const path = (raw as { previewPath?: string }).previewPath;
-                if (path) return openFile(path);
-              })
-              .catch(() => {});
-        }}
-      />
-      {workspaceTab !== "files" && (
-        <div
-          role="tabpanel"
-          id={`workspace-panel-${workspaceTab}`}
-          aria-labelledby={`workspace-tab-${workspaceTab}`}
-          className="workspace-inline-editor"
-        >
-          {activeFile && (workspaceTab !== "preview" || activePreviewKind) ? (
-            <FileEditor
-              embedded
-              file={activeFile}
-              draft={draft}
-              dirty={dirty}
-              editable={activeEditable}
-              saving={saving}
-              modes={activeModes}
-              mode={
-                workspaceTab === "preview" && activePreviewKind
-                  ? "preview"
-                  : activeMode === "preview"
-                    ? "code"
-                    : activeMode
-              }
-              previewKind={activePreviewKind}
-              previewUrl={
-                activePreviewKind && currentID ? activePreviewUrl : null
-              }
-              sessionId={currentID}
-              readonlyNote={readonlyNote}
-              onModeChange={(mode) => {
-                setViewMode(mode);
-                setWorkspaceTab(mode === "preview" ? "preview" : "code");
-              }}
-              onDraftChange={setDraft}
-              onSave={() => {
-                saveActiveFile().catch(() => {});
-              }}
-              onClose={() => {
-                void closeActiveFile();
-              }}
-            />
-          ) : (
-            <div className="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center text-muted-foreground">
-              <p>
-                {activeFile
-                  ? "Для этого файла нет превью. Откройте вкладку «Код»."
-                  : "Выберите файл во вкладке «Файлы»."}
-              </p>
-              <p className="text-sm">
-                Превью и код откроются здесь, рядом с чатом.
-              </p>
-            </div>
-          )}
-        </div>
+      {workspaceView === "editor" && activeFile && (
+        <FileEditor
+          embedded
+          file={activeFile}
+          draft={draft}
+          dirty={dirty}
+          editable={activeEditable}
+          saving={saving}
+          modes={activeModes}
+          mode={activeMode}
+          previewKind={activePreviewKind}
+          previewUrl={activePreviewKind && currentID ? activePreviewUrl : null}
+          sessionId={currentID}
+          readonlyNote={readonlyNote}
+          onModeChange={setViewMode}
+          onDraftChange={setDraft}
+          onSave={() => {
+            saveActiveFile().catch(() => {});
+          }}
+          onClose={() => {
+            void closeActiveFile();
+          }}
+        />
       )}
-      <div
-        role="tabpanel"
+      <section
         id="workspace-panel-files"
-        aria-labelledby="workspace-tab-files"
-        hidden={workspaceTab !== "files"}
+        aria-label="Файлы проекта"
+        hidden={workspaceView !== "files"}
         className="flex min-h-0 flex-1 flex-col"
       >
         <WorkspaceUploadStatus
@@ -819,7 +774,7 @@ export default function Workspace() {
           deleteItem={deleteItem}
           downloadWorkspaceItem={downloadWorkspaceItem}
         />
-      </div>
+      </section>
     </aside>
   );
 }

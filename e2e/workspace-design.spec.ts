@@ -17,7 +17,7 @@ async function exportState(page: Page, name: string) {
   await page.screenshot({ path: `.e2e-tmp/design/${name}.png` });
 }
 
-test("approved workspace style: plus menu, real files, embedded preview and compact send/stop", async ({ page }) => {
+test("approved workspace style: plus menu, real files, direct editor and compact send/stop", async ({ page }) => {
   await page.addInitScript(() => localStorage.setItem("z-agent:theme", "light"));
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto("/");
@@ -44,7 +44,8 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
   await send.click();
   await expect(page.getByText(/Fixture task completed and verified: hello\.js/i)).toBeVisible({ timeout: 25_000 });
   await page.getByTestId("workspace-toggle").click();
-  await expect(page.getByRole("tab", { name: "Файлы", exact: true })).toBeVisible();
+  await expect(page.locator("#workspace-panel-files")).toBeVisible();
+  await expect(page.locator(".agent-workspace [role=tablist]")).toHaveCount(0);
   // Create a real preview file in the disposable test user's workspace.
   await page.evaluate(async () => {
     const sessions = await fetch("/api/session", { credentials: "include" }).then(r => r.json());
@@ -52,8 +53,11 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
     const res = await fetch(`/api/workspace/file?sessionId=${encodeURIComponent(sid)}`, { method: "PUT", credentials: "include", headers: { "Content-Type": "application/json", "x-csrf-token": decodeURIComponent(document.cookie.split(";").map(s => s.trim()).find(s => s.startsWith("z_agent_csrf="))?.split("=")[1] || "") }, body: JSON.stringify({ path: "index.html", content: '<!doctype html><html lang="ru"><meta charset="utf-8"><style>body{margin:0;background:#f7f7f2;color:#282926;font:16px/1.6 Arial;padding:28px}header{font-weight:bold;border-bottom:1px solid #deded8;padding-bottom:24px}h1{font:48px/1.15 Georgia;letter-spacing:-1.5px;margin-top:64px}.card{margin-top:36px;background:#e3e8da;padding:32px;border-radius:8px;font:80px Georgia}</style><header>north studio</header><h1>Делаем сложное простым.</h1><p>Создаём цифровые продукты,<br>которыми приятно пользоваться.</p><div class="card">n.</div></html>' }) });
     if (!res.ok) throw new Error(`preview fixture: ${res.status}`);
   });
-  await page.getByRole("tab", { name: "Превью", exact: true }).click();
-  await expect(page.locator(".workspace-inline-editor iframe")).toBeVisible();
+  await page.getByRole("button", { name: "Обновить", exact: true }).click();
+  await expect(page.locator("#workspace-panel-files").getByText("index.html", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Открыть предпросмотр", exact: true }).click();
+  await expect(page.locator("iframe[title=Предпросмотр]")).toBeVisible();
+  await page.keyboard.press("Escape");
   await expect(page.getByRole("dialog", { name: "index.html" })).toHaveCount(0);
   await exportState(page, "workspace-desktop");
   await expect(page.getByRole("button", { name: "Новый файл", exact: true })).toHaveCount(0);
@@ -62,15 +66,17 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
   await page.getByRole("button", { name: "Поиск файлов", exact: true }).click();
   const search = page.getByRole("searchbox", { name: "Поиск файлов" });
   await expect(search).toBeFocused();
-  await expect(page.getByRole("tab", { name: "Файлы", exact: true })).toHaveAttribute("aria-selected", "true");
+  await expect(page.locator("#workspace-panel-files")).toBeVisible();
   await search.fill("index");
   await expect(page.locator("#workspace-panel-files").getByText("index.html", { exact: true })).toBeVisible();
   await exportState(page, "workspace-search-desktop");
   await page.getByRole("button", { name: "Закрыть поиск файлов" }).click();
   await expect(search).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Поиск файлов", exact: true })).toBeFocused();
-  await page.getByRole("tab", { name: "Код", exact: true }).click();
-  await expect(page.locator("#workspace-panel-code")).toBeVisible();
+  await page.locator("#workspace-panel-files").getByText("index.html", { exact: true }).click();
+  const editor = page.getByRole("region", { name: "index.html", exact: true });
+  await expect(editor.locator("textarea")).toBeVisible();
+  await expect(editor.locator("iframe")).toHaveCount(0);
   await exportState(page, "code-desktop");
   await page.getByRole("button", { name: "Добавить файлы, скиллы и инструменты" }).click();
   await page.getByRole("menuitem", { name: "Скиллы этого чата" }).click();
@@ -83,7 +89,8 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
   await exportState(page, "plus-mobile");
   await page.keyboard.press("Escape");
   await page.getByTestId("workspace-toggle").click();
-  await page.getByRole("tab", { name: "Превью", exact: true }).click();
+  await expect(page.locator("#workspace-panel-files")).toBeVisible();
+  await expect(page.locator(".agent-workspace [role=tablist]")).toHaveCount(0);
   await exportState(page, "workspace-mobile");
   await page.getByRole("button", { name: "Поиск файлов", exact: true }).click();
   await expect(search).toBeFocused();
@@ -92,6 +99,12 @@ test("approved workspace style: plus menu, real files, embedded preview and comp
   await page.locator("#workspace-panel-files").getByText("hello.js", { exact: true }).click();
   await expect(page.getByRole("region", { name: "hello.js" })).toBeVisible();
   await expect(search).toHaveCount(0);
+  const fileEditor = page.getByRole("region", { name: "hello.js", exact: true });
+  await expect(fileEditor.locator("textarea")).toBeVisible();
+  await exportState(page, "code-mobile");
+  await fileEditor.getByRole("button", { name: "Закрыть", exact: true }).click();
+  await expect(page.locator("#workspace-panel-files")).toBeVisible();
+  await expect(fileEditor).toHaveCount(0);
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.getByRole("button", { name: "Поиск файлов", exact: true }).click();
   await expect(search.locator("..")).toHaveCSS("animation-name", "none");

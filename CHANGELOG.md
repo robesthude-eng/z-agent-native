@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Tab-free workspace
+
+- Removed the redundant Preview / Files / Code workspace navigation. The workspace opens on its file list, text files open directly in the embedded code editor, and closing the editor returns to files.
+- Kept page preview in the top bar and preserved media viewers, file search, editing and unsaved-change confirmation.
+
 ## Compact workspace search
 
 - Replaced workspace create-file/create-folder/upload buttons with a search icon; refresh and close remain.
