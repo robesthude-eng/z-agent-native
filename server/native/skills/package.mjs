@@ -83,7 +83,7 @@ export function extractSelected(bytes, manifest, names, limit = MAX_PACKAGE_BYTE
     if (entry.originalSize !== manifest.get(entry.name)?.size) throw skillError('ZIP size mismatch');
     return true;
   } });
-  for (const name of selected) if (!files[name] || files[name].length !== manifest.get(name).size) throw skillError('Incomplete or corrupt ZIP entry');
+  for (const name of selected) if (!Object.hasOwn(files, name) || files[name].length !== manifest.get(name).size) throw skillError('Incomplete or corrupt ZIP entry');
   return files;
 }
 
@@ -110,7 +110,7 @@ export function packageFromArchive(bytes, candidatePath) {
   const prefix = candidate.path ? `${candidate.path}/` : '';
   const names = [...manifest.keys()].filter((n) => n.startsWith(prefix) && !n.endsWith('/') && !/(^|\/)(\.git|node_modules|\.env(?:\.[^/]*)?|\.ssh|\.aws)(\/|$)/.test(n.slice(prefix.length)));
   const extracted = extractSelected(bytes, manifest, names);
-  const files = {};
+  const files = Object.create(null);
   for (const name of names) files[safePackagePath(name.slice(prefix.length))] = { base64: Buffer.from(extracted[name]).toString('base64'), executable: manifest.get(name).executable };
   let extra;
   if (files['agents/openai.yaml']) {

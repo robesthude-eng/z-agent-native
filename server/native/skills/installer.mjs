@@ -164,7 +164,14 @@ async function discoverSource(ownerId, input, signal) {
 }
 
 export async function resolveInstallPackage(ownerId, input, signal) {
-  const discovered = await discoverSkills(ownerId, input, signal);
+  if (activeOwners.has(ownerId) || activeOwners.size >= 2) throw skillError('Another skill download is in progress; retry shortly', 429);
+  activeOwners.add(ownerId);
+  try { return await resolvePackage(ownerId, input, signal); }
+  finally { activeOwners.delete(ownerId); }
+}
+
+async function resolvePackage(ownerId, input, signal) {
+  const discovered = await discoverSource(ownerId, input, signal);
   if (discovered.links.length && !discovered.candidates.length) throw skillError('This is an article, not a skill. Discover one of its source links first.');
   let candidate;
   if (input.path != null) candidate = discovered.candidates.find((c) => c.path === input.path);
@@ -202,7 +209,7 @@ async function packageFromGithub(entry, candidate, signal) {
     total += file.size;
     if (total > MAX_PACKAGE_BYTES) throw skillError('Skill package exceeds 16 MB');
   }
-  const files = {};
+  const files = Object.create(null);
   await mapLimited(tree, async (file) => {
     const bytes = await githubFile(entry.info, file.path, signal);
     if (bytes.length !== file.size) throw skillError('GitHub file size mismatch');

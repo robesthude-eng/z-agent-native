@@ -141,6 +141,28 @@ test('GitHub uses pinned selective file downloads, not the entire repository', a
   installer.setSkillFetcherForTests(null);
 });
 
+test('installation download slots are held until all bundled resources finish', async () => {
+  const sha = 'c'.repeat(40), treeSha = 'd'.repeat(40), content = doc('slow-skill');
+  let release, started;
+  const waiting = new Promise((resolve) => { release = resolve; });
+  const resourceStarted = new Promise((resolve) => { started = resolve; });
+  installer.setSkillFetcherForTests(async (url) => {
+    if (url.includes('/commits/')) return Response.json({ sha, commit: { tree: { sha: treeSha } } });
+    if (url.includes('/git/trees/')) return Response.json({ truncated: false, tree: [
+      { path: 'skills/slow-skill/SKILL.md', mode: '100644', type: 'blob', size: Buffer.byteLength(content) },
+      { path: 'skills/slow-skill/resource.txt', mode: '100644', type: 'blob', size: 1 },
+    ] });
+    if (url.endsWith('SKILL.md')) return new Response(content);
+    started(); await waiting; return new Response('x');
+  });
+  const found = await installer.discoverSkills(owner, { source: 'https://github.com/example/slow' });
+  const installing = lib.installSkill(owner, { source: found.source, path: found.candidates[0].path });
+  try {
+    await resourceStarted;
+    await assert.rejects(installer.discoverSkills(owner, { source: 'https://example.com/SKILL.md' }), /in progress/);
+  } finally { release(); await installing; installer.setSkillFetcherForTests(null); }
+});
+
 test('public source fetch rejects private hosts and insecure URLs', async () => {
   await assert.rejects(installer.discoverSkills(owner, { source: 'http://example.com/SKILL.md' }), /HTTPS/);
   await assert.rejects(installer.discoverSkills(owner, { source: 'https://127.0.0.1/SKILL.md' }), /private|public|local|loopback|запрещ/i);
