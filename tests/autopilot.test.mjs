@@ -266,6 +266,13 @@ test('причина отказа выбранной модели объясня
   assert.match(text, /баланс/i);
   assert.match(text, /Авто/, 'подсказываем, где включается автовыбор');
   assert.doesNotMatch(text, /возьмёт другую/i, 'никаких обещаний взять другую модель');
+
+  const custom = lockedModelMessage(
+    { providerID: 'channel_08e58798cc9b36c2', modelID: 'claude-sonnet-4-6' },
+    Object.assign(new Error('Invalid API key'), { statusCode: 401 }),
+  );
+  assert.match(custom, /Модель «claude-sonnet-4-6»/, 'внутренний id канала не показываем');
+  assert.doesNotMatch(custom, /channel_/);
 });
 
 test('замок модели соблюдается во всей цепочке: рантайм, чат и перезапуск', () => {

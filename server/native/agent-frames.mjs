@@ -80,6 +80,22 @@ function messageMedia(message, workspace) {
   return out;
 }
 
+/**
+ * A turn that failed before doing anything has no reply of its own. Older
+ * turns stored the error text as if the assistant had said it; the model now
+ * sees an explicit runtime note instead, and the user/assistant alternation is
+ * kept for providers that require it.
+ */
+function failedTurnNote(msg, content, toolCount) {
+  if (msg?.info?.finish !== 'error' || toolCount) return null;
+  const error = msg.info?.error || {};
+  const message = String(error.message || '').trim();
+  const detail = String(error.detail || '').trim();
+  const text = String(content || '').trim();
+  if (text && text !== message && text !== detail) return null;
+  return `[Runtime note] This turn failed before any answer was produced${message ? `: ${message}` : ''}. The user did not receive a reply.`;
+}
+
 export function framesFromMessages(messages, workspace) {
   const frames = [];
   for (const msg of messages) {
@@ -100,6 +116,11 @@ export function framesFromMessages(messages, workspace) {
       name: String(part.tool),
       arguments: part.state?.input && typeof part.state.input === 'object' ? part.state.input : {},
     }));
+    const failedNote = failedTurnNote(msg, content, toolCalls.length);
+    if (failedNote) {
+      frames.push({ role: 'assistant', content: failedNote, toolCalls: [] });
+      continue;
+    }
     if (content || reasoning || toolCalls.length) {
       frames.push({
         role: 'assistant',

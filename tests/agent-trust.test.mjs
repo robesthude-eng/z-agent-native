@@ -304,3 +304,30 @@ test('the model cannot stop while its own todo plan still has unfinished items',
     agent.resetAgentStateForTests();
   }
 });
+
+test('a provider auth failure is shown once, in plain words, and is not replayed as the assistant reply', async () => {
+  agent.resetAgentStateForTests();
+  const original = globalThis.fetch;
+  let providerCalls = 0;
+  globalThis.fetch = async () => {
+    providerCalls += 1;
+    return new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), { status: 401, headers: { 'content-type': 'application/json' } });
+  };
+  try {
+    const assistant = await runTrustTurn('ses_trustauth1', 'act_auth_401');
+    assert.equal(providerCalls, 1, '401 is not retried');
+    assert.equal(assistant.info?.finish, 'error');
+    assert.equal(assistant.parts.filter((part) => part.type === 'text').length, 0, 'the banner is the only place the error appears');
+    assert.match(assistant.info?.error?.message || '', /отклонил API/i);
+    assert.equal(assistant.info?.error?.detail, 'Invalid API key');
+    assert.equal(assistant.info?.error?.statusCode, 401);
+
+    const { framesFromMessages } = await import('../server/native/agent-frames.mjs');
+    const frames = framesFromMessages(store.listMessages('ses_trustauth1'), store.workspaceFor('ses_trustauth1'));
+    const reply = frames.find((frame) => frame.role === 'assistant');
+    assert.match(reply?.content || '', /^\[Runtime note\] This turn failed before any answer was produced/);
+  } finally {
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});

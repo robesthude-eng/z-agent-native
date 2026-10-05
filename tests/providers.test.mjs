@@ -523,3 +523,12 @@ test('truncated tool-call JSON is marked incomplete instead of becoming _raw', (
 });
 
 test.after(() => providers.setProviderTransportForTests(null));
+
+test('auth failures and stream timeouts get a plain-language explanation', () => {
+  const auth = Object.assign(new Error('Invalid API key'), { statusCode: 401 });
+  assert.match(providers.publicProviderErrorMessage(auth), /Провайдер отклонил API-ключ \(HTTP 401\)/);
+  assert.match(providers.publicProviderErrorMessage(new Error('Incorrect API key provided: sk-***')), /отклонил API-ключ/);
+  const timeout = Object.assign(new Error('Provider stream timed out (idle or hard ceiling)'), { name: 'TimeoutError', code: 'ETIMEDOUT' });
+  assert.match(providers.publicProviderErrorMessage(timeout), /слишком долго не отвечал/);
+  assert.equal(providers.publicProviderErrorMessage(new Error('Something else')), 'Something else');
+});

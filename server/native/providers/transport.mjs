@@ -173,12 +173,27 @@ export function rateLimitMessage(err) {
   return `${PUBLIC_RATE_LIMITED} Это ограничение частоты, а не исчерпанный баланс: повторите чуть позже.`;
 }
 
+export const PROVIDER_AUTH_RE = /invalid (?:api[ _-]?)?key|incorrect api key|api[ _-]?key (?:is )?(?:invalid|missing|not valid|required)|unauthori[sz]ed|authentication (?:failed|required|error)|invalid[ _]token|no auth credentials/i;
+
+export function isProviderAuthError(err) {
+  if (Number(err?.statusCode) === 401) return true;
+  return PROVIDER_AUTH_RE.test(String(err?.message || ''));
+}
+
 export function publicProviderErrorMessage(err) {
   const prepared = String(err?.publicMessage || '').trim();
   if (prepared) return prepared;
   const raw = String(err?.message || err || '').trim();
   if (isRateLimitProviderError(err) && !isModelUnavailableError(err)) return rateLimitMessage(err);
   if (isModelUnavailableError(err) || PROVIDER_SALES_RE.test(raw) || looksLikeOpaqueModelPayload(raw)) return PUBLIC_MODEL_UNAVAILABLE;
+  // Raw "Invalid API key" read like a bug in the app; say who refused and what to do.
+  if (isProviderAuthError(err)) {
+    const status = Number(err?.statusCode);
+    return `Провайдер отклонил API-ключ${Number.isInteger(status) && status > 0 ? ` (HTTP ${status})` : ''}. Проверьте ключ в настройках провайдера или выберите другую модель.`;
+  }
+  if (err?.name === 'TimeoutError' && /timed out/i.test(raw)) {
+    return 'Провайдер слишком долго не отвечал. Повторите запрос или выберите другую модель.';
+  }
   if (/error from provider \(console\)/i.test(raw) || (raw.startsWith('{') && raw.endsWith('}'))) {
     return 'Провайдер не смог завершить этот ответ.';
   }

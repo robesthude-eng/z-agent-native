@@ -120,15 +120,49 @@ const VERIFY_PATTERNS = [
   /\bnode\s+--(?:check|test)\b/i,
   /\bpython3?\s+-m\s+(?:compileall|json\.tool|py_compile)\b/i,
   /\b(?:python3?|node)\s+\S*(?:test|spec|check)\S*/i,
+  // Built-in and common runners. Interpreter flags may precede the module
+  // (`python3 -B -m unittest -v`): stdlib unittest is what agents use when
+  // pytest is not installed, and missing it kept the completion gate open
+  // after green test runs.
+  /\bpython3?(?:\.\d+)?\s+(?:-[A-Za-z]+\s+)*-m\s+(?:unittest|pytest|doctest|mypy|pyflakes|flake8|pylint|ruff\s+check|compileall|py_compile|json\.tool)\b/i,
+  /\b(?:npx|bunx|pnpm\s+(?:exec|dlx)|yarn\s+(?:exec|dlx))\s+(?:-{1,2}[\w-]+\s+)*(?:vitest|jest|mocha|ava|tsc|eslint|playwright\s+test|cypress\s+run|biome\s+check|prettier\s+--check)\b/i,
+  /^\s*(?:vitest|jest|mocha)\b/i,
+  /\b(?:deno\s+(?:test|check|lint)|go\s+vet|cargo\s+clippy|dotnet\s+(?:test|build)|swift\s+test|mix\s+test|ctest|phpunit|rspec|flake8|pylint|shellcheck)\b/i,
+  /^\s*make\s+(?:test|tests|check|lint)\b/i,
+  /^\s*(?:bash|sh)\s+-n\s+\S+/i,
   // Running the program the user asked for is the check. Extra args such as
   // `setup.py install` stay may_mutate so a real installer cannot clear the gate.
   /^\s*(?:python3?|node)\s+(?:-[uBI]+\s+)*\.?\/?[\w.-][\w./-]*\.(?:py|js|mjs|cjs)\s*$/i,
 ];
 
+// Installing or removing packages changes the environment even when the
+// package is named like a checker (`pip install pytest`, `npm i -D eslint`).
+const INSTALL_SEGMENT_RE = /^\s*(?:sudo\s+)?(?:(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|ci|remove|rm|uninstall|update|upgrade|link)\b|(?:pip3?|pipx|poetry|pdm|conda|mamba)\s+(?:install|add|uninstall|remove)\b|uv\s+(?:pip\s+install|add|remove|sync)\b|python3?\s+-m\s+pip\s+(?:install|uninstall)\b|(?:apt(?:-get)?|apk|dnf|yum|brew|pacman|zypper)\s+\S|(?:cargo|go)\s+(?:install|get)\b|gem\s+install\b|composer\s+(?:install|require|update)\b)/i;
+
+// Summary lines that mean the run failed even if the shell exit status says 0.
+const VERIFY_FAILURE_OUTPUT = [
+  /^FAILED \((?:failures|errors)=\d+/m, // unittest
+  /\b[1-9]\d* (?:failed|errors?)\b[^\n]*\bin [\d.]+\s?s\b/, // pytest summary
+  /^\s*Tests?:\s+[1-9]\d* failed/m, // jest
+  /^\s*Test Files\s+[1-9]\d* failed/m, // vitest
+  /^# fail [1-9]\d*/m, // node --test (TAP)
+  /^(?:--- )?FAIL\b/m, // go test
+  /test result: FAILED/, // cargo
+  /^\s*[1-9]\d* failing\b/m, // mocha
+  /\berror TS\d{3,5}:/, // tsc
+  /^Traceback \(most recent call last\):/m, // uncaught Python exception
+  /^[\s=#*-]*exit(?:\s*code)?\s*[=:]\s*[1-9]\d*[\s=#*-]*$/im, // `echo "exit=$?"` after the check
+];
+
 const READ_ONLY_BASH_PATTERNS = [
   /^\s*(?:pwd|ls\b|find\b|cat\b|head\b|tail\b|sed\s+-n\b|grep\b|rg\b|wc\b|du\b|file\b|stat\b|md5sum\b|sha1sum\b|sha256sum\b|cksum\b|echo\b|printf\b|date\b|id\b|whoami\b|uname\b|true\b|false\b|test\b|\[|dirname\b|basename\b|realpath\b|readlink\b|which\b|type\b|cut\b|sort\b|uniq\b|tr\b|nl\b|od\b|hexdump\b|cmp\b|diff\b|comm\b|awk\b|column\b|cd\b|export\b|unset\b)/i,
-  /^\s*git\s+(?:status|diff|log|show|branch|rev-parse|blame)\b/i,
-  /^\s*(?:node|python|python3)\s+--version\b/i,
+  // `git -C repo status` is as read-only as `git status`; missing it turned
+  // a check like `git -C repo status; npm test` into a fake mutation.
+  /^\s*git(?:\s+(?:-C\s+\S+|-c\s+\S+|--no-pager))*\s+(?:status|diff|log|show|branch|rev-parse|blame|ls-files|remote\s+-v|describe)\b/i,
+  /^\s*(?:node|npm|npx|python|python3|pip|pip3|go|cargo|rustc|java|javac|ruby|php|deno|bun|git|gcc|make)\s+(?:--version|-v|-V|version)\s*$/i,
+  /^\s*(?:npm|pnpm|yarn)\s+(?:ls|list|view|info|outdated|why|root|prefix|config\s+get)\b/i,
+  /^\s*(?:pip3?|python3?\s+-m\s+pip)\s+(?:list|show|freeze|check)\b/i,
+  /^\s*(?:tree|jq|printenv|ps|df|free|uptime|nproc|lscpu|ss|netstat)\b/i,
   /^\s*(?:curl|wget|ping|traceroute|dig|nslookup|host|ssh_tool\s+(?:test|read|service))\b/i,
 ];
 
@@ -158,7 +192,8 @@ function hasUnquotedRedirectOrSubstitution(text) {
 }
 
 function classifyOneShotSegment(segment) {
-  if (!/^\s*(?:python3?|node)\s+-[ce]\s+/i.test(segment)) return null;
+  // Interpreter flags may come first: `python3 -B -c`, `node --input-type=module -e`.
+  if (!/^\s*(?:python3?|node)\s+(?:-{1,2}[A-Za-z][\w=-]*\s+)*?-[ce]\s+/i.test(segment)) return null;
   if (ONE_SHOT_MUTATION.test(segment)) return 'may_mutate';
   return 'verification';
 }
@@ -185,6 +220,7 @@ export function classifyBash(command) {
       hasVerification = true;
       continue;
     }
+    if (INSTALL_SEGMENT_RE.test(segment)) return 'may_mutate';
     if (VERIFY_PATTERNS.some((rx) => rx.test(segment))) {
       hasVerification = true;
       continue;
@@ -198,6 +234,32 @@ export function classifyBash(command) {
 function toolExitOk(result) {
   const exit = Number(result?.metadata?.exit ?? result?.metadata?.git?.exit);
   return !result?.isError && (!Number.isFinite(exit) || exit === 0);
+}
+
+/**
+ * `pytest | tail`, `npm test; echo "exit=$?"` and `cmd || true` report the
+ * status of the last command, not of the check. `&&` chains stop on the first
+ * failure, so their exit status is trustworthy.
+ */
+function checkExitMayBeMasked(command) {
+  const parts = stripQuotedStrings(stripFdRedirects(command)).split(/(\|\||&&|[|;\n])/);
+  for (let i = 0; i < parts.length; i += 2) {
+    const segment = parts[i].trim();
+    if (!segment || !VERIFY_PATTERNS.some((rx) => rx.test(segment))) continue;
+    const separator = parts[i + 1];
+    if (separator && separator !== '&&' && parts.slice(i + 2).some((rest) => rest.trim())) return true;
+  }
+  return false;
+}
+
+export function verificationOutputShowsFailure(content) {
+  const text = String(content || '');
+  return VERIFY_FAILURE_OUTPUT.some((rx) => rx.test(text));
+}
+
+function verificationRunOk(command, result) {
+  if (!toolExitOk(result)) return false;
+  return !(checkExitMayBeMasked(command) && verificationOutputShowsFailure(result?.content));
 }
 
 function commandRecordsGitCommit(command) {
@@ -407,7 +469,7 @@ export function observeTool(strategy, call, result) {
     if (effect === 'verification') {
       // An unrelated green one-liner is neither a mutation nor a check.
       if (state.needsVerification && verificationIsOnlyOneShot(command) && !oneShotTouchesChangedPaths(command, state.changedPaths)) return state;
-      noteVerification(state, { ok: toolExitOk(result), tool: 'bash', detail: command });
+      noteVerification(state, { ok: verificationRunOk(command, result), tool: 'bash', detail: command });
       return state;
     }
     if (commandIsGitBookkeeping(command) && commandRecordsGitCommit(command)) {

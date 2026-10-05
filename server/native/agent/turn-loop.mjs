@@ -170,7 +170,7 @@ export function updateTurn(sessionId, state, transitionOptions = {}) {
   return projection;
 }
 
-export async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
+export async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, publicError = '', lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
   if (note) await emitText(assistant, note, 'text', { putMessage, emit });
   assistant.time.completed = Date.now();
   assistant.info.finish = finish;
@@ -182,7 +182,7 @@ export async function finalizeAssistant({ sessionId, assistant, strategy, usage,
   assistant.info.outcome = outcome;
   assistant.info.telemetry = finalizeTurnTelemetry(telemetry, { outcome, strategy, model: assistant.info.model || '', reason });
   assistant.info.time = { ...(assistant.info.time || {}), completed: assistant.time.completed };
-  if (error) assistant.info.error = { message: error?.message || String(error), name: error?.name || 'Error' };
+  if (error) assistant.info.error = turnErrorInfo(error, publicError);
   rememberProjectTurn(sessionId, {
     goal: strategy?.goal || '',
     outcome: outcome?.status || verdict,
@@ -196,6 +196,27 @@ export async function finalizeAssistant({ sessionId, assistant, strategy, usage,
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
   emit(sessionId, 'session.idle', {});
   return assistant;
+}
+
+/**
+ * What the error banner shows: the user-facing explanation first, the raw
+ * provider text and HTTP status only under «Детали».
+ */
+export function turnErrorInfo(error, publicError = '') {
+  const raw = String(error?.message || error || '').trim();
+  const message = String(publicError || '').trim() || raw || 'Ошибка';
+  const info = { message, name: error?.name || 'Error' };
+  if (raw && raw !== message) info.detail = raw.slice(0, 2_000);
+  const status = Number(error?.statusCode);
+  if (Number.isInteger(status) && status > 0) info.statusCode = status;
+  return info;
+}
+
+/** A structured stop report has substance beyond the error itself. */
+export function hasStructuredSummary(strategy) {
+  return (Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0)
+    || (Array.isArray(strategy?.plan) && strategy.plan.length > 0)
+    || Boolean(strategy?.lastVerificationEvidence);
 }
 
 export function safeAttemptInfo(attempt) {
@@ -687,8 +708,29 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
 
     if (guardedStop && loopStopSatisfiesTask(strategy)) {
       const outcome = classifyTaskOutcome({ strategy, kind: 'completed', reason: 'verified_repeat_stop' });
-      const hasText = (assistant.parts || []).some((part) => part.type === 'text' && String(part.text || '').trim());
-      if (!hasText) await emitText(assistant, synthesizeTurnSummary({ strategy, outcome }), 'text', { putMessage, emit });
+      // The guard can fire right after a tool call, before the model wrote a
+      // conclusion: the reply then ended on a progress line («Проверяю
+      // умножение.») under a green «Готово». Ask once for the final answer
+      // with tools disabled; fall back to the runtime summary.
+      if ((assistant.parts || []).at(-1)?.type !== 'text') {
+        let finalText = '';
+        try {
+          frames.push({
+            role: 'user',
+            content: `[Runtime] ${guardedStop.message} Tool calls are disabled for the rest of this turn. Write the final answer for the user now, in the user's language, using only results you already have: what was done, what was actually checked, and what was not checked. Do not call tools.`,
+          });
+          const finalRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
+            system: [systemPrompt({ toolNames: [], goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+            frames: compactFrames(frames),
+            tools: [],
+            signal: controller.signal,
+          });
+          finalText = splitReasoningFromContent(String(finalRes.text || '').trim()).text || '';
+        } catch (err) {
+          if (!controller.signal.aborted) console.warn(`[turn] ${sessionId}: final answer after loop stop failed: ${String(err?.message || err).slice(0, 300)}`);
+        }
+        await emitText(assistant, finalText.trim() || synthesizeTurnSummary({ strategy, outcome }), 'text', { putMessage, emit });
+      }
       return await finalizeAssistant({
         sessionId,
         assistant,
@@ -743,13 +785,16 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       });
     }
     const modelLocked = Boolean(runtime?.modelPlan?.locked);
-    const _errorText = modelLocked && err?.modelLocked
+    const publicError = modelLocked && err?.modelLocked
       ? (err?.publicMessage || err?.message || String(err))
-      : assistantHasProgress(assistant, strategy)
-        ? `Работа остановилась: ${publicProviderErrorMessage(err)}`
-        : publicProviderErrorMessage(err);
+      : publicProviderErrorMessage(err);
     const outcome = classifyTaskOutcome({ strategy, kind: 'failed' });
-    const summary = synthesizeTurnSummary({ strategy, outcome, error: err });
+    // The error banner already states the reason. Repeating it as reply text
+    // showed the same line twice and replayed it to the model on the next turn
+    // as if the assistant had said it. Only a real stop report is written.
+    const summary = hasStructuredSummary(strategy)
+      ? synthesizeTurnSummary({ strategy, outcome, error: { message: publicError } })
+      : '';
     return await finalizeAssistant({
       sessionId,
       assistant,
@@ -760,6 +805,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       finish: 'error',
       note: summary,
       error: err,
+      publicError,
       lifecycle: 'failed',
       verdict: 'failed',
       reason: 'error',

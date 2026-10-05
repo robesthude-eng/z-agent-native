@@ -184,8 +184,14 @@ export function modelFailureReason(error) {
 }
 
 /** Текст для чата, когда упала именно та модель, которую выбрал человек. */
+/** Custom channels have opaque ids (`channel_08e5…`): show just the model there. */
+function displayModelName(model) {
+  const provider = String(model?.providerID || '');
+  return /^channel_[0-9a-f]+$/i.test(provider) && model?.modelID ? String(model.modelID) : modelKey(model);
+}
+
 export function lockedModelMessage(model, error) {
-  return `Модель «${modelKey(model)}» не выполнила запрос: ${modelFailureReason(error)}. ${LOCKED_MODEL_HINT}`;
+  return `Модель «${displayModelName(model)}» не выполнила запрос: ${modelFailureReason(error)}. ${LOCKED_MODEL_HINT}`;
 }
 
 export function fallbackEligible(error, { strict = false } = {}) {

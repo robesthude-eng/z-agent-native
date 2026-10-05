@@ -131,6 +131,16 @@ export function createLoopGuard(options = {}) {
 
 const WORKSPACE_MUTATING_TOOLS = new Set(['write', 'edit', 'apply_patch', 'ensure_environment']);
 
+// Pressing "1" or clicking "=" again is how a page gets tested; the same call
+// leads somewhere new each time. These actions are judged by what the page
+// shows afterwards, not by how often the identical call was made.
+const STATEFUL_BROWSER_ACTIONS = new Set(['click', 'press', 'type', 'fill', 'select', 'check', 'uncheck', 'hover', 'scroll', 'wait']);
+
+function isStatefulBrowserCall(call) {
+  if (String(call?.name || '').trim().toLowerCase() !== 'browser') return false;
+  return STATEFUL_BROWSER_ACTIONS.has(String(call?.arguments?.action || '').trim().toLowerCase());
+}
+
 function callMutatesWorkspace(call, result) {
   const name = String(call?.name || '').trim().toLowerCase();
   if (WORKSPACE_MUTATING_TOOLS.has(name)) return true;
@@ -167,7 +177,9 @@ export function observeToolLoop(guard, call, result) {
   if (!Array.isArray(guard.calls)) guard.calls = [];
 
   const name = String(call?.name || 'действие');
-  const signature = callSignature(call);
+  const stateful = isStatefulBrowserCall(call);
+  // For stateful browser actions the page state is part of the identity.
+  const signature = stateful ? `${callSignature(call)}:${digest(result?.content || '')}` : callSignature(call);
   const index = guard.calls.length;
   // edit/write/mutating bash between two identical checks is progress.
   if (callMutatesWorkspace(call, result) && !result?.isError) guard.lastMutationAt = index;
@@ -197,7 +209,9 @@ export function observeToolLoop(guard, call, result) {
       message: `Агент ${guard.consecutive} ${plural(guard.consecutive, 'раз', 'раза', 'раз')} подряд повторил одно и то же действие «${name}» без нового результата.`,
     };
   }
-  if (guard.callCounts[signature] >= guard.callRepeatLimit) {
+  // A reset such as Escape → "0" legitimately recurs between test scenarios;
+  // stateful browser steps are caught by the consecutive and recent checks.
+  if (!stateful && guard.callCounts[signature] >= guard.callRepeatLimit) {
     return {
       code: 'repeated_tool_call',
       tool: name,

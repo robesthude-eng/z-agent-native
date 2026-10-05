@@ -182,3 +182,62 @@ test('a reconnect replays each part as it was published, so text is not doubled'
   }
   assert.equal(text, 'AB');
 });
+
+test('testing a page key by key is not a loop; a click that changes nothing still is', () => {
+  const guard = createLoopGuard();
+  const page = (display) => ({ isError: false, content: `url: about:blank\ninteractive elements:\n  - button :: =\n\n--- page text ---\n${display}` });
+  const steps = [
+    ['press', 'Escape', '0'], ['press', '1', '1'], ['press', '2', '12'], ['press', '*', '12'], ['press', '1', '1'], ['press', 'Enter', '12'],
+    ['press', 'Escape', '0'], ['press', '8', '8'], ['press', '/', '8'], ['press', '0', '0'], ['press', 'Enter', 'Ошибка'],
+    ['press', 'Escape', '0'], ['press', '1', '1'], ['press', '+', '1'], ['press', '1', '1'], ['press', 'Enter', '2'],
+  ];
+  for (const [action, key, display] of steps) {
+    assert.equal(observeToolLoop(guard, { name: 'browser', arguments: { action, key } }, page(display)), null, `${action} ${key}`);
+  }
+
+  const stuck = createLoopGuard();
+  let stop = null;
+  for (let i = 0; i < 3 && !stop; i += 1) stop = observeToolLoop(stuck, { name: 'browser', arguments: { action: 'click', selector: '#broken' } }, page('0'));
+  assert.equal(stop?.code, 'repeated_tool_result');
+});
+
+test('a loop stop after verified work still ends with a final answer, not a progress line', async () => {
+  const FINAL = 'Итог: страница создана и прочитана после записи.';
+  const html = '<!doctype html><title>t</title><p>ok</p>';
+  let calls = 0;
+  let finalRequestTools = null;
+  const tool = (index, name, args) => sse([
+    { choices: [{ delta: { content: index === 1 ? 'Создаю страницу.' : '', tool_calls: [{ index: 0, id: `call_${index}`, function: { name, arguments: JSON.stringify(args) } }] } }] },
+    { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+    '[DONE]',
+  ]);
+  // Read-back of a static page counts as verification only when a shell
+  // sandbox exists; the development fallback provides one for this test.
+  const previousShell = process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL;
+  const previousRootShell = process.env.Z_AGENT_ALLOW_ROOT_SHELL;
+  process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
+  process.env.Z_AGENT_ALLOW_ROOT_SHELL = '1';
+  const restore = () => {
+    if (previousShell == null) delete process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL; else process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = previousShell;
+    if (previousRootShell == null) delete process.env.Z_AGENT_ALLOW_ROOT_SHELL; else process.env.Z_AGENT_ALLOW_ROOT_SHELL = previousRootShell;
+  };
+  const { assistant } = await runWith('ses_loopfinal1', async (_url, init) => {
+    calls += 1;
+    const body = JSON.parse(String(init?.body || '{}'));
+    const tools = body.tools || [];
+    if (!tools.length) {
+      finalRequestTools = tools;
+      if (!body.stream) {
+        return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: FINAL }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+      }
+      return sse([{ choices: [{ delta: { content: FINAL } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
+    }
+    if (calls === 1) return tool(1, 'write', { path: 'index.html', content: html });
+    return tool(calls, 'read', { path: 'index.html' });
+  }).finally(restore);
+  assert.equal(assistant.info?.outcome?.reason, 'verified_repeat_stop');
+  assert.ok(Array.isArray(finalRequestTools) && finalRequestTools.length === 0, 'the closing request has no tools');
+  const last = assistant.parts.at(-1);
+  assert.equal(last?.type, 'text');
+  assert.equal(String(last?.text || '').trim(), FINAL);
+});

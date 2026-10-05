@@ -182,8 +182,12 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'webfetch',
-    description: 'Fetch the text/HTML/JSON content of a public URL (HTTP/HTTPS only).',
-    inputSchema: object({ url: { type: 'string', description: 'Absolute http(s) URL' }, maxChars: { type: 'integer', minimum: 1000, maximum: 200000, description: 'Maximum characters of extracted text to return.' } }, ['url']),
+    description: 'Fetch a public URL (HTTP/HTTPS only). HTML pages come back as readable text (title, headings, paragraphs, lists, tables, code, links as [text](url)); JSON and plain text are returned as-is. Use format="html" only when you need the raw markup.',
+    inputSchema: object({
+      url: { type: 'string', description: 'Absolute http(s) URL' },
+      maxChars: { type: 'integer', minimum: 1000, maximum: 200000, description: 'Maximum characters of extracted text to return.' },
+      format: { type: 'string', enum: ['text', 'html'], description: 'text (default): readable text extracted from HTML; html: raw markup.' },
+    }, ['url']),
   },
   {
     name: 'git',

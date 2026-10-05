@@ -154,6 +154,61 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash(`node -e "\nconst fs = require('fs');\nconst html = fs.readFileSync('index.html', 'utf8');\nif (html.length > 100) console.log('ok');\n"`), 'verification');
 });
 
+test('stdlib unittest and common runners count as checks; installs never do', () => {
+  assert.equal(classifyBash('python3 -m unittest -v test_textstats 2>&1'), 'verification');
+  assert.equal(classifyBash('python3 -B -m unittest discover -s tests'), 'verification');
+  assert.equal(classifyBash('python -m doctest README.md'), 'verification');
+  assert.equal(classifyBash('cd /w && python3 -B -m unittest -v test_textstats 2>&1; echo "--- exit=$? ---"; python3 -B -c "print(1)"'), 'verification');
+  assert.equal(classifyBash('npx vitest run'), 'verification');
+  assert.equal(classifyBash('npx --yes jest --runInBand'), 'verification');
+  assert.equal(classifyBash('make test'), 'verification');
+  assert.equal(classifyBash('bash -n deploy.sh'), 'verification');
+  assert.equal(classifyBash('node --input-type=module -e "console.log(1)"'), 'verification');
+  assert.equal(classifyBash('pip install pytest'), 'may_mutate');
+  assert.equal(classifyBash('python3 -m pip install pytest'), 'may_mutate');
+  assert.equal(classifyBash('npm i -D eslint'), 'may_mutate');
+  assert.equal(classifyBash('apt-get install -y shellcheck'), 'may_mutate');
+  assert.equal(classifyBash('python3 -B -c "open(\'f\',\'w\').write(1)"'), 'may_mutate');  assert.equal(classifyBash('git -C slugify status --short'), 'read_only');
+  assert.equal(classifyBash('git -C repo checkout main'), 'may_mutate');
+  assert.equal(classifyBash('npm ls --depth=0 2>&1 | head -15'), 'read_only');
+  assert.equal(classifyBash('env FOO=1 npm install'), 'may_mutate');
+  assert.equal(classifyBash('cd /w && git -C slugify status --short; md5sum a b; cd slugify && npm test; echo "exit=$?"'), 'verification');
+});
+
+test('a green unittest run clears the gate even though it writes __pycache__', () => {
+  const strategy = createTurnStrategy('Мини-проект на Python с тестами');
+  observeTool(strategy, { name: 'write', arguments: { path: 'textstats.py' } }, { isError: false, mutatedPaths: ['textstats.py'] });
+  observeTool(strategy, { name: 'write', arguments: { path: 'test_textstats.py' } }, { isError: false, mutatedPaths: ['test_textstats.py'] });
+  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 -m unittest -v test_textstats 2>&1' } }, {
+    isError: false,
+    content: 'exit=0\nstdout:\nRan 11 tests in 0.001s\n\nOK\n',
+    metadata: { exit: 0, workspaceChanges: { complete: true, paths: ['__pycache__/textstats.cpython-311.pyc'] } },
+  });
+  assert.equal(strategy.needsVerification, false);
+  assert.equal(strategy.lastVerificationOk, true);
+  assert.equal(completionGate(strategy), null);
+});
+
+test('a masked exit status does not turn a failing test run into a pass', () => {
+  const failing = 'exit=0\nstdout:\n--- exit=1 ---\nstderr:\nFAIL: test_ties (test_textstats.TestTopWords)\n----\nRan 3 tests in 0.001s\n\nFAILED (failures=1)\n';
+  const masked = createTurnStrategy('Тесты');
+  observeTool(masked, { name: 'write', arguments: { path: 'textstats.py' } }, { isError: false, mutatedPaths: ['textstats.py'] });
+  observeTool(masked, { name: 'bash', arguments: { command: 'python3 -m unittest -v 2>&1; echo "--- exit=$? ---"' } }, { isError: false, content: failing, metadata: { exit: 0 } });
+  assert.equal(masked.lastVerificationOk, false);
+  assert.equal(masked.needsVerification, true);
+
+  const piped = createTurnStrategy('Тесты');
+  observeTool(piped, { name: 'write', arguments: { path: 'app.py' } }, { isError: false, mutatedPaths: ['app.py'] });
+  observeTool(piped, { name: 'bash', arguments: { command: 'pytest -q | tail -5' } }, { isError: false, content: 'exit=0\nstdout:\n1 failed, 4 passed in 0.12s\n', metadata: { exit: 0 } });
+  assert.equal(piped.lastVerificationOk, false);
+
+  // A plain run with no masking trusts its own exit status.
+  const plain = createTurnStrategy('Тесты');
+  observeTool(plain, { name: 'write', arguments: { path: 'app.py' } }, { isError: false, mutatedPaths: ['app.py'] });
+  observeTool(plain, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, content: 'exit=0\nstdout:\nprints "1 failed in 2s" as fixture text\n', metadata: { exit: 0 } });
+  assert.equal(plain.lastVerificationOk, true);
+});
+
 test('python -c checks and static HTML read-back satisfy the gate; wc does not reopen it', () => {
   const strategy = createTurnStrategy('Сделай браузерную игру шашки');
   observeTool(strategy, { name: 'write', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });

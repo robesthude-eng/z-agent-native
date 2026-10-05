@@ -8,6 +8,13 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Live agent test fixes: checks, web pages, errors and browser testing
+
+- The verification gate recognises common test and lint runners (`python -m unittest`/`pytest`, `npx vitest`/`jest`/`tsc`, `deno test`, `go vet`, `cargo clippy`, `dotnet test`, `make test`, `bash -n` and others). Package installs no longer count as checks, and a check whose exit code is hidden by `;`, `|` or `||` fails when its output shows failures. Read-only Git (`git -C … status`), `--version` and package listing commands no longer trigger re-verification.
+- `webfetch` returns readable page text (title, description, headings, lists, tables, code and absolute links) instead of raw HTML; `format: "html"` keeps the raw page. Pages that need JavaScript and truncated pages are labelled.
+- A failed turn shows its error once in plain words (for example, a rejected provider API key or a provider timeout), keeps the raw detail in the turn record, hides internal channel ids, and is replayed to the model only as a short runtime note.
+- Interactive browser testing (pressing the same key or clicking the same control again) is no longer stopped as a loop when the page state changes. When the loop guard does stop a turn, the agent still writes a final answer instead of ending on a progress line.
+
 ## Workspace boundary, editor safety and honest verification
 
 - File tools, the editor, search and preview now open workspace files through a descriptor chain without following symlinks at any path component, and read or write that descriptor. A file or directory swapped for a symlink after validation can no longer redirect the API process outside the workspace.
