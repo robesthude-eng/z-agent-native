@@ -151,3 +151,34 @@ test('the loop guard sees one URL fetched with different size limits as the same
     assert.ok(!observeToolLoop(distinct, { name: 'webfetch', arguments: { url: page, maxChars: 12000 } }, failed));
   }
 });
+
+test('a reconnect replays each part as it was published, so text is not doubled', async () => {
+  const events = await import('../server/native/events.mjs');
+  const { liveTextSink } = await import('../server/native/agent/streaming.mjs');
+  const sessionId = 'ses_ReplaySnapshot1';
+  store.createChat(sessionId, ownerId, 'Replay');
+  const assistant = { id: 'msg_ReplaySnapshot1', role: 'assistant', sessionID: sessionId, parts: [], time: { created: Date.now() } };
+  const sink = liveTextSink(assistant);
+  sink.push('A');
+  sink.push('B');
+  sink.finish();
+
+  const frames = [];
+  const unsubscribe = events.subscribe(sessionId, (frame) => frames.push(frame), 0);
+  unsubscribe();
+  const relevant = frames.filter((frame) => /^message\.part\./.test(frame.event.type));
+  assert.equal(relevant[0].event.type, 'message.part.updated');
+  // The ring used to hold the live part object, whose text had grown to "AB"
+  // by replay time; replaying it plus the deltas rendered "ABAB".
+  assert.equal(relevant[0].event.properties.part.text, '');
+  let text = '';
+  for (const frame of relevant) {
+    const props = frame.event.properties;
+    if (frame.event.type === 'message.part.updated') text = props.part.text;
+    else {
+      assert.equal(props.offset, text.length);
+      text += props.delta;
+    }
+  }
+  assert.equal(text, 'AB');
+});

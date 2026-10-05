@@ -173,7 +173,7 @@ export function registerUser(email, password, inviteCode = '') {
   if (!bootstrapHint && !INVITE_CODE && !ALLOW_OPEN_REGISTRATION) {
     throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
   }
-  if (INVITE_CODE && inviteCode !== INVITE_CODE) throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
+  if (INVITE_CODE && !safeEqual(String(inviteCode ?? '').trim(), INVITE_CODE)) throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
   if (getUser(clean)) throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
   const result = createRegistrationUser(clean, hashPassword(passwordText), { allowAdditional: Boolean(INVITE_CODE || ALLOW_OPEN_REGISTRATION) });
   if (result.status === 'closed') throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });

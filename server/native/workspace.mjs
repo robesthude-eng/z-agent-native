@@ -7,6 +7,7 @@ import { sendJson } from './json.mjs';
 import { boundaryFromContentType, fileSink, PART_TOO_LARGE, parseMultipartStream } from './multipart.mjs';
 import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, syncSandboxOwnership } from './sandbox.mjs';
 import { safeWorkspacePath } from './security.mjs';
+import { contentVersion, mkdirWorkspaceDir, openWorkspaceFile, readWorkspaceFile, writeWorkspaceFile } from './workspace-fs.mjs';
 import { workspaceFor } from './store.mjs';
 import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
 import { collectWorkspaceTree } from './workspace-tree.mjs';
@@ -69,7 +70,12 @@ function gitOptions(sessionId, root) {
 
 function workspaceError(res, err, fallback) {
   const status = Number(err?.statusCode) || 400;
-  return sendJson(res, status, { error: err?.message || fallback, ...(Array.isArray(err?.conflicts) ? { conflicts: err.conflicts } : {}) });
+  return sendJson(res, status, {
+    error: err?.message || fallback,
+    ...(Array.isArray(err?.conflicts) ? { conflicts: err.conflicts } : {}),
+    ...(typeof err?.code === 'string' && /^[A-Z_]+$/.test(err.code) ? { code: err.code } : {}),
+    ...(typeof err?.reason === 'string' ? { reason: err.reason } : {}),
+  });
 }
 
 function publicTurnResult(result) {
@@ -105,11 +111,18 @@ export async function handleWorkspace(req, res, sessionId, url) {
   }
   if (pathname === '/api/file' && req.method === 'GET') return sendJson(res, 200, listDir(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')) || '.'));
   if (pathname === '/api/file/content' && req.method === 'GET') {
-    const full = safeWorkspacePath(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')), { allowMissing: false });
-    const buf = fs.readFileSync(full);
-    if (buf.length > 4 * 1024 * 1024) return sendJson(res, 413, { error: 'Файл слишком большой для редактора' });
+    let file;
+    try {
+      file = readWorkspaceFile(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')), { maxBytes: 4 * 1024 * 1024 });
+    } catch (err) {
+      if (err?.code === 'FILE_TOO_LARGE') return sendJson(res, 413, { error: 'Файл слишком большой для редактора' });
+      throw err;
+    }
+    const buf = file.buffer;
     if (buf.includes(0)) return sendJson(res, 415, { error: 'Бинарный файл нельзя открыть как текст' });
-    return sendJson(res, 200, { path: path.relative(root, full).split(path.sep).join('/'), content: buf.toString('utf8') });
+    // version — хеш содержимого на момент чтения. Редактор присылает его при
+    // сохранении, и запись поверх более свежей версии отклоняется с 409.
+    return sendJson(res, 200, { path: path.relative(root, file.full).split(path.sep).join('/'), content: buf.toString('utf8'), version: contentVersion(buf) });
   }
   if (pathname === '/api/file/status' && req.method === 'GET') {
     try {
@@ -169,19 +182,47 @@ export async function handleWorkspace(req, res, sessionId, url) {
 
   if (pathname === '/api/workspace/file' && req.method === 'PUT') {
     const body = req.bodyJson || {};
-    const full = safeWorkspacePath(root, body.path, { allowMissing: true });
-    fs.mkdirSync(path.dirname(full), { recursive: true });
-    fs.writeFileSync(full, String(body.content ?? ''), 'utf8');
-    syncSandboxOwnership(sessionId, root, full);
+    const content = String(body.content ?? '');
+    // Без baseVersion запись безусловная (старые клиенты и сценарии). С ним —
+    // условная: если файл изменили после открытия (агент, другая вкладка),
+    // сохранение старого черновика больше не затирает молча новую работу.
+    const baseVersion = typeof body.baseVersion === 'string' && body.baseVersion ? body.baseVersion : null;
+    const guard = baseVersion && body.force !== true
+      ? (previous) => {
+          const current = previous == null ? null : contentVersion(previous);
+          if (current === baseVersion) return;
+          throw Object.assign(new Error(previous == null ? 'Файл удалён после открытия в редакторе' : 'Файл изменился после открытия в редакторе'), {
+            statusCode: 409,
+            code: 'WORKSPACE_FILE_CONFLICT',
+            currentVersion: current,
+            exists: previous != null,
+          });
+        }
+      : null;
+    let written;
+    try {
+      written = writeWorkspaceFile(root, body.path, content, { mkdirs: true, guard });
+    } catch (err) {
+      if (err?.code === 'WORKSPACE_FILE_CONFLICT') {
+        return sendJson(res, 409, { error: err.message, code: err.code, version: err.currentVersion, exists: err.exists });
+      }
+      return workspaceError(res, err, 'Не удалось сохранить файл');
+    }
+    syncSandboxOwnership(sessionId, root, written.full);
     emit(sessionId, 'file.edited', { paths: [body.path] });
-    return sendJson(res, 200, { ok: true, path: body.path, size: Buffer.byteLength(String(body.content ?? '')) });
+    return sendJson(res, 200, { ok: true, path: body.path, size: written.bytes, version: contentVersion(content) });
   }
   if (pathname === '/api/workspace/file' && req.method === 'POST') {
     const body = req.bodyJson || {};
     const full = safeWorkspacePath(root, body.path, { allowMissing: true });
     if (fs.existsSync(full)) return sendJson(res, 409, { error: 'Файл уже существует' });
-    if (body.type === 'directory') fs.mkdirSync(full, { recursive: true });
-    else { fs.mkdirSync(path.dirname(full), { recursive: true }); fs.writeFileSync(full, '', 'utf8'); }
+    try {
+      if (body.type === 'directory') mkdirWorkspaceDir(root, body.path);
+      else fs.closeSync(openWorkspaceFile(root, body.path, { write: true, create: true, exclusive: true, mkdirs: true }).fd);
+    } catch (err) {
+      if (err?.code === 'EEXIST') return sendJson(res, 409, { error: 'Файл уже существует' });
+      return workspaceError(res, err, 'Не удалось создать файл');
+    }
     syncSandboxOwnership(sessionId, root, full);
     emit(sessionId, 'file.edited', { paths: [body.path] });
     return sendJson(res, 200, { ok: true, path: body.path, type: body.type === 'directory' ? 'directory' : 'file' });

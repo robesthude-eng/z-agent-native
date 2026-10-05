@@ -49,7 +49,7 @@ function listenersFor(sessionId) {
 }
 
 function frameText(frame) {
-  return `id: ${frame.id}\nevent: ${frame.event.type}\ndata: ${JSON.stringify(frame.event)}\n\n`;
+  return `id: ${frame.id}\nevent: ${frame.event.type}\ndata: ${frame.data ?? JSON.stringify(frame.event)}\n\n`;
 }
 
 // Remote frames get local ids so Last-Event-ID resume keeps working per
@@ -61,7 +61,13 @@ function deliver(sessionId, event) {
   state.touchedAt = now;
   sweepIdleRings(now);
   state.seq += 1;
-  const frame = { id: `${EVENT_EPOCH}:${state.seq}`, seq: state.seq, event };
+  // The ring must keep what was published, not a live reference. Emitters pass
+  // mutable objects (a streamed part keeps growing after its first
+  // message.part.updated), so a stored reference later replayed the
+  // accumulated text followed by the very deltas that built it: "AB" + "A" +
+  // "B" rendered as "ABAB" after a reconnect.
+  const data = JSON.stringify(event);
+  const frame = { id: `${EVENT_EPOCH}:${state.seq}`, seq: state.seq, event: JSON.parse(data), data };
   state.frames.push(frame);
   if (state.frames.length > EVENT_RING_SIZE) state.frames.splice(0, state.frames.length - EVENT_RING_SIZE);
   for (const listener of listenersFor(sessionId)) {

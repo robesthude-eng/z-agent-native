@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 const { classifyBash, compactFrames, completionGate, createTurnStrategy, gitStatusLooksClean, observeTool, shouldEnforceCompletionGate, strategyGuidance } = await import('../server/native/context.mjs');
+const { classifyTaskOutcome } = await import('../server/native/turn-trust.mjs');
 
 test('compactFrames bounds large tool observations and preserves recent tool coherence', () => {
   const frames = [
@@ -203,32 +204,54 @@ test('opening local HTML in the browser satisfies the completion gate', () => {
   assert.equal(completionGate(strategy), null);
 });
 
-test('git commit and a clean git status satisfy the completion gate', () => {
+test('git commit and a clean git status are reported but do not count as verification', () => {
   assert.equal(gitStatusLooksClean('exit=0\nstdout:\n## main'), true);
   assert.equal(gitStatusLooksClean('## main\n?? hello.txt'), false);
   assert.equal(gitStatusLooksClean('On branch main\nnothing to commit, working tree clean'), true);
 
+  // Committing records the change; it says nothing about whether the code works.
   const committed = createTurnStrategy('Сохрани в git');
-  observeTool(committed, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
-  observeTool(committed, { name: 'bash', arguments: { command: 'git add hello.txt && git commit -m hello' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n[main 1] hello' });
-  assert.equal(committed.needsVerification, false);
-  assert.equal(committed.lastVerificationOk, true);
-  assert.equal(completionGate(committed), null);
+  observeTool(committed, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
+  observeTool(committed, { name: 'bash', arguments: { command: 'git add broken.mjs && git commit -m broken' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n[main 1] broken' });
+  assert.equal(committed.needsVerification, true);
+  assert.equal(committed.lastVerificationOk, null);
+  assert.equal(committed.gitEvidence?.action, 'commit');
+  assert.ok(completionGate(committed));
+  assert.equal(classifyTaskOutcome({ strategy: committed }).status, 'partial');
 
   const viaTool = createTurnStrategy('Закоммить изменения');
-  observeTool(viaTool, { name: 'write', arguments: { path: 'readme.md' } }, { isError: false, mutatedPaths: ['readme.md'] });
+  observeTool(viaTool, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
   observeTool(viaTool, { name: 'git', arguments: { action: 'commit', message: 'save' } }, { isError: false, metadata: { git: { action: 'commit', exit: 0 } }, mutatedPaths: ['.'] });
-  assert.equal(viaTool.needsVerification, false);
-  assert.equal(viaTool.lastVerificationOk, true);
-
-  const dirty = createTurnStrategy('Проверь git');
-  observeTool(dirty, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
-  observeTool(dirty, { name: 'bash', arguments: { command: 'git status --porcelain=v1 --branch' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n## main\n?? hello.txt' });
-  assert.equal(dirty.needsVerification, true);
+  assert.equal(viaTool.needsVerification, true);
+  assert.equal(viaTool.gitEvidence?.action, 'commit');
 
   const clean = createTurnStrategy('Проверь git');
-  observeTool(clean, { name: 'write', arguments: { path: 'hello.txt' } }, { isError: false, mutatedPaths: ['hello.txt'] });
+  observeTool(clean, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
   observeTool(clean, { name: 'git', arguments: { action: 'status' } }, { isError: false, metadata: { git: { action: 'status', exit: 0 } }, content: '## main' });
-  assert.equal(clean.needsVerification, false);
-  assert.equal(clean.lastVerificationOk, true);
+  observeTool(clean, { name: 'bash', arguments: { command: 'git status --porcelain=v1 --branch' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n## main' });
+  assert.equal(clean.needsVerification, true);
+  assert.equal(clean.gitEvidence?.action, 'status');
+
+  // A commit after a real check keeps the verified state: it does not change the tree.
+  const verified = createTurnStrategy('Исправь и закоммить');
+  observeTool(verified, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
+  observeTool(verified, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, metadata: { exit: 0 } });
+  observeTool(verified, { name: 'bash', arguments: { command: 'git add -A && git commit -m fix' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0' });
+  assert.equal(verified.needsVerification, false);
+  assert.equal(verified.lastVerificationOk, true);
+  assert.equal(completionGate(verified), null);
+  assert.equal(classifyTaskOutcome({ strategy: verified }).status, 'completed');
+});
+
+test('an inline script counts as verification only when it exercises the changed files', () => {
+  const run = (command) => {
+    const strategy = createTurnStrategy('Исправь модуль');
+    observeTool(strategy, { name: 'write', arguments: { path: 'src/broken.mjs' } }, { isError: false, mutatedPaths: ['src/broken.mjs'] });
+    observeTool(strategy, { name: 'bash', arguments: { command } }, { isError: false, metadata: { exit: 0 } });
+    return strategy;
+  };
+  assert.equal(run('node -e "console.log(42)"').needsVerification, true);
+  assert.equal(run('python3 -c "print(1)"').needsVerification, true);
+  assert.equal(run('node -e "import(\'./src/broken.mjs\')"').needsVerification, false);
+  assert.equal(run('node -e "1" && npm test').needsVerification, false);
 });

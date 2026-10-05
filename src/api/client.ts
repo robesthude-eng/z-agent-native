@@ -126,7 +126,12 @@ async function req<T>(
         if (sid) _markSessionDead(sid);
         throw new SessionGoneError(sid ?? "unknown", body || "session_gone");
       }
-      throw new Error(`${res.status} ${res.statusText} ${body}`.trim());
+      // status/data позволяют вызывающему коду различать ответы (например, 409
+      // конфликт версии файла), не разбирая текст сообщения.
+      throw Object.assign(
+        new Error(`${res.status} ${res.statusText} ${body}`.trim()),
+        { status: res.status, data: parsedError },
+      );
     }
     if (res.status === 204) return undefined as T;
     const ct = res.headers.get("content-type") ?? "";
@@ -530,7 +535,7 @@ export const api = {
       `/workspace/tree?sessionId=${encodeURIComponent(sessionId)}`,
     ),
   readFile: (path: string, sessionId?: string | null) =>
-    req<{ content?: string; text?: string; path: string }>(
+    req<{ content?: string; text?: string; path: string; version?: string }>(
       `/file/content?path=${encodeURIComponent(path)}${sessionId ? `&sessionId=${encodeURIComponent(sessionId)}` : ""}`,
     ),
   gitStatus: (sessionId?: string | null) =>
@@ -541,10 +546,17 @@ export const api = {
   // Правки файлов воркспейса напрямую через native runtime, без отдельного
   // агентного хода. Все операции требуют sessionId, чтобы runtime выбрал
   // изолированный каталог сессии.
-  writeFile: (path: string, content: string, sessionId: string) =>
-    req<{ ok: boolean; path: string; size: number }>(
+  // baseVersion — версия файла, на которой основан черновик: сервер отклонит
+  // запись с 409, если файл успели изменить. force — осознанная перезапись.
+  writeFile: (
+    path: string,
+    content: string,
+    sessionId: string,
+    options: { baseVersion?: string | undefined; force?: boolean } = {},
+  ) =>
+    req<{ ok: boolean; path: string; size: number; version?: string }>(
       `/workspace/file?sessionId=${encodeURIComponent(sessionId)}`,
-      { method: "PUT", body: JSON.stringify({ path, content }) },
+      { method: "PUT", body: JSON.stringify({ path, content, ...options }) },
     ),
   createFile: (
     path: string,

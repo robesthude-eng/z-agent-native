@@ -209,6 +209,45 @@ function commandIsGitStatus(command) {
   return useful.length > 0 && useful.every((segment) => /^\s*git\s+status\b/i.test(segment));
 }
 
+/** Only git add/commit/status/stage bookkeeping (plus cd): records state, does not change code. */
+function commandIsGitBookkeeping(command) {
+  const useful = bashSegments(command).filter((segment) => !/^\s*cd\b/i.test(segment));
+  return useful.length > 0 && useful.every((segment) => /^\s*git(?:\s+-c\s+(?:'[^']+'|"[^"]+"|\S+))*\s+(?:add|commit|status|stage)\b/i.test(segment));
+}
+
+/**
+ * The verification signal of this command comes only from inline
+ * `node -e` / `python -c` scripts, not from a test/build/lint/typecheck run.
+ */
+function verificationIsOnlyOneShot(command) {
+  const text = String(command || '').trim();
+  // A real test/build/lint/typecheck run outside the quoted script bodies settles it.
+  if (bashSegments(stripQuotedStrings(text)).some((segment) => VERIFY_PATTERNS.some((rx) => rx.test(segment)))) return false;
+  return classifyOneShotSegment(text) === 'verification' || bashSegments(text).some((segment) => classifyOneShotSegment(segment) === 'verification');
+}
+
+function escapeRegExp(value) {
+  return String(value).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * An inline script proves something about the change only when it touches the
+ * changed files: `node -e "console.log(42)"` exits 0 regardless of whether the
+ * edited module even parses. With no concrete changed paths (a shell mutation
+ * of unknown scope) the binding cannot be checked, so the script is accepted.
+ */
+function oneShotTouchesChangedPaths(command, changedPaths) {
+  const concrete = (changedPaths || []).map((item) => String(item || '').trim().replace(/\\/g, '/')).filter((item) => item && item !== '.');
+  if (!concrete.length) return true;
+  const text = String(command || '');
+  return concrete.some((changed) => {
+    const base = changed.split('/').pop() || '';
+    const stem = base.replace(/\.[^.]+$/, '');
+    if (text.includes(changed) || (base && text.includes(base))) return true;
+    return stem.length >= 3 && new RegExp(`(?:^|[^\\w-])${escapeRegExp(stem)}(?:$|[^\\w-])`).test(text);
+  });
+}
+
 export function gitStatusLooksClean(content) {
   const text = String(content || '');
   if (/^Error:/i.test(text.trim()) || /not a git repository/i.test(text)) return false;
@@ -260,6 +299,7 @@ export function createTurnStrategy(goal = '') {
     verificationEpoch: -1,
     changedPaths: [],
     lastVerificationEvidence: null,
+    gitEvidence: null,
   };
 }
 
@@ -268,7 +308,23 @@ function normalizeStrategyEvidence(state) {
   if (!Number.isFinite(Number(state.verificationEpoch))) state.verificationEpoch = -1;
   if (!Array.isArray(state.changedPaths)) state.changedPaths = [];
   if (!('lastVerificationEvidence' in state)) state.lastVerificationEvidence = null;
+  if (!('gitEvidence' in state)) state.gitEvidence = null;
   return state;
+}
+
+/**
+ * Git state is reported separately from verification. A commit or a clean
+ * status proves the change is recorded, not that it works, so neither clears
+ * the completion gate nor turns the outcome into a verified success.
+ */
+function noteGitEvidence(state, { action, detail = '' }) {
+  normalizeStrategyEvidence(state);
+  state.gitEvidence = {
+    action: String(action || ''),
+    detail: String(detail || '').slice(0, 500),
+    mutationEpoch: state.mutationEpoch,
+    at: Date.now(),
+  };
 }
 
 function noteMutation(state, paths = []) {
@@ -349,20 +405,26 @@ export function observeTool(strategy, call, result) {
     const command = String(call?.arguments?.command || '');
     const effect = classifyBash(command);
     if (effect === 'verification') {
+      // An unrelated green one-liner is neither a mutation nor a check.
+      if (state.needsVerification && verificationIsOnlyOneShot(command) && !oneShotTouchesChangedPaths(command, state.changedPaths)) return state;
       noteVerification(state, { ok: toolExitOk(result), tool: 'bash', detail: command });
+      return state;
+    }
+    if (commandIsGitBookkeeping(command) && commandRecordsGitCommit(command)) {
+      // Staging and committing record the tree; they neither change the code
+      // nor prove it, so verification state stays exactly as it was.
+      if (toolExitOk(result)) noteGitEvidence(state, { action: 'commit', detail: command });
       return state;
     }
     const observed = result?.metadata?.workspaceChanges;
     const changed = observed?.paths?.length > 0 || (!observed?.complete && effect === 'may_mutate');
     if (changed && !result?.isError) {
       noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
-      if (commandRecordsGitCommit(command) && toolExitOk(result)) {
-        noteVerification(state, { ok: true, tool: 'bash', detail: command });
-      }
+      if (commandRecordsGitCommit(command) && toolExitOk(result)) noteGitEvidence(state, { action: 'commit', detail: command });
       return state;
     }
-    if (effect === 'read_only' && commandIsGitStatus(command) && toolExitOk(result) && gitStatusLooksClean(result?.content) && state.needsVerification) {
-      noteVerification(state, { ok: true, tool: 'bash', detail: command });
+    if (effect === 'read_only' && commandIsGitStatus(command) && toolExitOk(result) && gitStatusLooksClean(result?.content)) {
+      noteGitEvidence(state, { action: 'status', detail: command });
     }
     return state;
   }
@@ -370,17 +432,14 @@ export function observeTool(strategy, call, result) {
   if (name === 'git') {
     const action = String(call?.arguments?.action || '').trim().toLowerCase();
     const ok = !result?.isError && Number(result?.metadata?.git?.exit || 0) === 0;
-    if (action === 'commit' && ok) {
-      noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
-      noteVerification(state, { ok: true, tool: 'git', detail: 'commit' });
+    // Commit, branch and status change or describe Git metadata, not the
+    // working tree, so they keep the verification state as it was.
+    if ((action === 'commit' || action === 'create_branch') && ok) {
+      noteGitEvidence(state, { action, detail: action });
       return state;
     }
-    if (action === 'create_branch' && ok) {
-      noteMutation(state, result?.mutatedPaths?.length ? result.mutatedPaths : ['.']);
-      return state;
-    }
-    if (action === 'status' && ok && gitStatusLooksClean(result?.content) && state.needsVerification) {
-      noteVerification(state, { ok: true, tool: 'git', detail: 'status' });
+    if (action === 'status' && ok && gitStatusLooksClean(result?.content)) {
+      noteGitEvidence(state, { action: 'status', detail: 'status' });
     }
     return state;
   }
@@ -448,7 +507,7 @@ export function completionGate(strategy) {
     '[Runtime completion gate]',
     'The workspace may have changed, but no successful verification has happened after the latest change.',
     'Do not finish yet. Inspect the resulting diff/state and run the most relevant available test, build, typecheck, lint, syntax check, or another executable validation of the changed behavior.',
-    'A read-only command such as git diff/status is useful inspection but does not by itself satisfy verification.',
+    'A read-only command such as git diff/status is useful inspection but does not by itself satisfy verification, and a commit records the change without proving it. An inline node -e/python -c script counts only when it exercises the changed files.',
     'If verification cannot be run, investigate why and explicitly report the limitation only after reasonable attempts.',
   ].join('\n');
 }

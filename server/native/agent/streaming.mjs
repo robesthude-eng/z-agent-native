@@ -38,8 +38,11 @@ export function liveTextSink(assistant) {
       emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part: current });
       return;
     }
+    // offset — длина текста до этой дельты. По нему клиент применяет дельту
+    // ровно один раз, даже если после переподключения она пришла повторно.
+    const offset = current.text.length;
     current.text += chunk;
-    emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: current.id, field: 'text', delta: chunk });
+    emit(assistant.sessionID, 'message.part.delta', { messageID: assistant.id, partID: current.id, field: 'text', delta: chunk, offset });
   };
 
   const splitter = createReasoningSplitter(applySegment);

@@ -21,13 +21,14 @@ async function performAuthAction(
   defaultError: string,
   get: () => State,
   set: (updater: Partial<AuthSlice>) => void,
+  extra: Record<string, string> = {},
 ): Promise<{ ok: boolean; error?: string }> {
   try {
     const res = await fetch(endpoint, {
       method: "POST",
       credentials: "include",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
+      body: JSON.stringify({ email, password, ...extra }),
     });
     const data = ((await jsonOrNull(res)) ?? {}) as AuthJson;
     if (res.ok && data.status === "success" && data.user) {
@@ -82,7 +83,9 @@ export const createAuthSlice: Slice<AuthSlice> = (set, get) => ({
       set,
     ),
 
-  register: (email, password) =>
+  // Production-конфигурация закрывает регистрацию кодом приглашения (даже для
+  // первого администратора), поэтому код обязан доходить до сервера.
+  register: (email, password, inviteCode) =>
     performAuthAction(
       "/api/auth/register",
       email,
@@ -90,6 +93,7 @@ export const createAuthSlice: Slice<AuthSlice> = (set, get) => ({
       t("auth_slice.oshibka_registracii"),
       get,
       set,
+      inviteCode?.trim() ? { inviteCode: inviteCode.trim() } : {},
     ),
 
   logout: async () => {

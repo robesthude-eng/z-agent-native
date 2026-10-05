@@ -278,6 +278,8 @@ export const messages = {
     "вопрос ещё не подтверждён сервером",
   "interruptions.vsegda": "Всегда",
   "interruptions.zapros_razresheniya": "Запрос разрешения",
+  "login_page.esli_vydan_administratorom": "Если выдан администратором",
+  "login_page.kod_priglasheniya": "Код приглашения",
   "login_page.oshibka_avtorizacii": "Ошибка авторизации.",
   "login_page.parol": "Пароль",
   "login_page.parol_dolzhen_soderzhat_minimum_12_simvolov":
@@ -663,7 +665,7 @@ export const messages = {
     "Двоичный файл изменён. Текстовый diff недоступен.",
   "turn_result_modal.etot_hod_uzhe_byl_otkatan": "Этот ход уже был откатан.",
   "turn_result_modal.etot_otvet_sozdan_do_poyavleniya_snimkov":
-    "Этот ответ создан до появления снимков хода, поэтому точный rollback для него недоступен.",
+    "Для этого ответа снимок workspace не сохранялся (например, ответ создан до появления снимков), поэтому точный откат недоступен.",
   "turn_result_modal.fayly_ne_menyalis": "Файлы не менялись",
   "turn_result_modal.ne_udalos_otkatit_etot_hod":
     "Не удалось откатить этот ход",
@@ -723,6 +725,9 @@ export const messages = {
   "workspace.esche_0": "…и ещё {0}",
   "workspace.etot_tip_fayla_dostupen_tolko_dlya":
     "Этот тип файла доступен только для просмотра.",
+  "workspace.fayl_izmenili_posle_otkrytiya":
+    "Пока файл был открыт, его изменили (агент или другая вкладка). Перезаписать его вашей версией? Если отказаться, правки останутся в редакторе, а вкладка «Изменения» покажет отличия от новой версии.",
+  "workspace.fayl_izmenilsya": "Файл изменился",
   "workspace.fayl_sozdan_0": "Файл создан: {0}",
   "workspace.faylov_poka_net_v_workspace_etogo":
     "Файлов пока нет в workspace этого чата.",
@@ -747,7 +752,10 @@ export const messages = {
   "workspace.papka_sozdana_0": "Папка создана: {0}",
   "workspace.papku": "папку",
   "workspace.pereimenovano_v_0": "Переименовано в {0}",
+  "workspace.perezapisat_moey_versiey": "Перезаписать моей версией",
   "workspace.povtorit": "Повторить",
+  "workspace.pravki_ostalis_v_redaktore":
+    "Сохранение отменено: правки остались в редакторе, эталоном стала новая версия файла.",
   "workspace.put_0_budet_udalen_bez_vozmozhnosti":
     "Путь {0} будет удалён без возможности отмены.",
   "workspace.put_ot_kornya_workspace_enter_sozdat":
@@ -759,6 +767,10 @@ export const messages = {
   "workspace.udaleno_0": "Удалено: {0}",
   "workspace.udalit": "Удалить",
   "workspace.udalit_0": "Удалить {0}?",
+  "workspace.vosstanovleny_nesohranennye_pravki":
+    "Восстановлены несохранённые правки этого файла.",
+  "workspace.vosstanovleny_pravki_fayl_izmenilsya":
+    "Восстановлены несохранённые правки. Файл успел измениться — проверьте вкладку «Изменения».",
   "workspace.vyberite_ili_sozdayte_chat":
     "Выберите или создайте чат, чтобы увидеть workspace.",
   "workspace.zagruzheno_faylov_0": "Загружено файлов: {0}",

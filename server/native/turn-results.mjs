@@ -347,6 +347,43 @@ function latestAssistant(sessionId) {
   return rows.at(-1) || null;
 }
 
+// Почему для хода нет снимка. Раньше ошибка проглатывалась, и интерфейс
+// объяснял любое отсутствие снимка тем, что ответ «создан до появления
+// снимков», даже для нового ответа в workspace без Git.
+const UNAVAILABLE_MESSAGES = {
+  not_git: 'Workspace этого чата не является Git-репозиторием, поэтому снимок хода не сохранялся и точный откат недоступен.',
+  too_many_changes: 'Ход изменил слишком много файлов, поэтому снимок не сохранён и точный откат недоступен.',
+  capture_failed: 'Не удалось сохранить снимок workspace для этого хода, поэтому точный откат недоступен.',
+};
+
+function unavailableReason(err) {
+  const text = String(err?.message || err || '');
+  if (/not a git repository/i.test(text)) return 'not_git';
+  if (Number(err?.statusCode) === 413) return 'too_many_changes';
+  return 'capture_failed';
+}
+
+function unavailableInfo(err) {
+  return { reason: unavailableReason(err), detail: String(err?.message || err || '').slice(0, 300) };
+}
+
+function writeUnavailableManifest(sessionId, descriptor, unavailable, reason) {
+  const assistant = latestAssistant(sessionId);
+  if (!assistant?.id) return null;
+  const manifest = {
+    version: 1,
+    sessionId,
+    messageId: assistant.id,
+    turnId: descriptor.turnId,
+    startedAt: descriptor.startedAt || Number(assistant?.time?.created) || Date.now(),
+    completedAt: Date.now(),
+    reason,
+    unavailable,
+  };
+  writeJsonAtomic(manifestPath(sessionId, assistant.id), manifest);
+  return manifest;
+}
+
 function beginTurnResult(sessionId) {
   if (active.has(sessionId) || descriptorFromDisk(sessionId)) return;
   const turn = getTurn(sessionId);
@@ -363,14 +400,28 @@ function beginTurnResult(sessionId) {
       beforeIndexTree,
       startedAt: Date.now(),
     });
-  } catch {
-    // Result snapshots are a safety feature, never a reason to prevent a turn.
+  } catch (err) {
+    // Result snapshots are a safety feature, never a reason to prevent a turn,
+    // but the reason is kept so the result view can tell the truth about it.
+    try {
+      saveActive(sessionId, { sessionId, turnId: turn.turnId, unavailable: unavailableInfo(err), startedAt: Date.now() });
+    } catch { /* best effort */ }
   }
 }
 
 function completeTurnResult(sessionId, reason = 'completed') {
   const descriptor = active.get(sessionId) || descriptorFromDisk(sessionId);
-  if (!descriptor?.turnId || !descriptor?.beforeTree) return null;
+  if (!descriptor?.turnId) return null;
+  if (!descriptor.beforeTree) {
+    if (!descriptor.unavailable) return null;
+    try {
+      return writeUnavailableManifest(sessionId, descriptor, descriptor.unavailable, reason);
+    } catch {
+      return null;
+    } finally {
+      clearActive(sessionId);
+    }
+  }
   const root = workspaceFor(sessionId);
   try {
     const assistant = latestAssistant(sessionId);
@@ -397,8 +448,14 @@ function completeTurnResult(sessionId, reason = 'completed') {
     writeJsonAtomic(manifestPath(sessionId, assistant.id), manifest);
     clearActive(sessionId);
     return manifest;
-  } catch {
-    return null;
+  } catch (err) {
+    try {
+      const manifest = writeUnavailableManifest(sessionId, descriptor, unavailableInfo(err), reason);
+      if (manifest) clearActive(sessionId);
+      return manifest;
+    } catch {
+      return null;
+    }
   }
 }
 
@@ -418,7 +475,11 @@ export function getTurnResult(sessionId, messageId) {
   const message = listMessages(sessionId).find((row) => row?.id === messageId && row?.role === 'assistant');
   if (!message) throw Object.assign(new Error('Ответ не найден'), { statusCode: 404 });
   const manifest = readJson(manifestPath(sessionId, messageId));
-  if (!manifest?.beforeTree || !manifest?.afterTree) throw Object.assign(new Error('Для этого ответа нет сохранённого результата workspace'), { statusCode: 404 });
+  if (manifest?.unavailable) {
+    const why = manifest.unavailable.reason in UNAVAILABLE_MESSAGES ? manifest.unavailable.reason : 'capture_failed';
+    throw Object.assign(new Error(UNAVAILABLE_MESSAGES[why]), { statusCode: 404, code: 'TURN_RESULT_UNAVAILABLE', reason: why });
+  }
+  if (!manifest?.beforeTree || !manifest?.afterTree) throw Object.assign(new Error('Для этого ответа нет сохранённого результата workspace'), { statusCode: 404, code: 'TURN_RESULT_MISSING' });
   const root = workspaceFor(sessionId);
   const changes = diffWorkspaceTrees(root, manifest.beforeTree, manifest.afterTree);
   return { ...manifest, changes };

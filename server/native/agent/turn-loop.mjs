@@ -294,6 +294,10 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
       : `**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
     if (v.detail) lines.push(`> \`${v.detail.slice(0, 200)}\``);
     lines.push('');
+  } else if (changed && strategy?.gitEvidence) {
+    // Коммит или чистый git status — это сохранение, а не проверка работы.
+    lines.push(`**3. Верификация:** не выполнялась. Git: ${({ commit: 'изменения закоммичены', create_branch: 'создана ветка' })[strategy.gitEvidence.action] || 'рабочее дерево чистое'}, но это не подтверждает, что изменения работают.`);
+    lines.push('');
   }
 
   if (isFailed || isPartial) {

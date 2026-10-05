@@ -7,6 +7,7 @@ import { DEFAULT_TOOL_TIMEOUT_MS, GREP_TIMEOUT_MS } from '../config.mjs';
 import { executeInExecutor, executorRequired } from '../executor-client.mjs';
 import { ensureManagedHome, sandboxCommand, syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
+import { openWorkspaceFile, readFd, replaceFdContent, writeWorkspaceFile } from '../workspace-fs.mjs';
 import { assertAgentReadablePath, isSensitiveWorkspacePath } from '../workspace-policy.mjs';
 import { truncate } from './dispatcher.mjs';
 import { externalSpawnIdentity } from './shell.mjs';
@@ -79,19 +80,24 @@ export function readUtf8(full) {
   return buf.toString('utf8');
 }
 
-export async function readUtf8Window(full, offset, limit) {
-  const stat = fs.statSync(full);
-  if (!stat.isFile()) throw new Error('Path is not a file');
-  const fd = fs.openSync(full, 'r');
+/**
+ * Read a line window from an already opened and verified descriptor.
+ * Takes ownership of `fd`: it is closed before this function settles.
+ */
+async function readUtf8WindowFromFd(fd, size, offset, limit) {
+  let stream = null;
   try {
-    const probe = Buffer.alloc(Math.min(8192, stat.size));
+    const probe = Buffer.alloc(Math.min(8192, size));
     if (probe.length) fs.readSync(fd, probe, 0, probe.length, 0);
     if (probe.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
-  } finally {
-    fs.closeSync(fd);
+    // Читаем тот же дескриптор, который проверили: повторное открытие по пути
+    // позволяло подменить файл symlink-ом между проверкой и чтением.
+    stream = fs.createReadStream(null, { fd, encoding: 'utf8', start: 0, autoClose: true });
+  } catch (err) {
+    if (!stream) fs.closeSync(fd);
+    throw err;
   }
-
-  const stream = fs.createReadStream(full, { encoding: 'utf8' });
+  const closed = new Promise((resolve) => stream.once('close', resolve));
   const rl = readline.createInterface({ input: stream, crlfDelay: Infinity });
   const rows = [];
   let lineNo = 0;
@@ -104,18 +110,32 @@ export async function readUtf8Window(full, offset, limit) {
   } finally {
     rl.close();
     stream.destroy();
+    await closed;
   }
   return rows.join('\n');
 }
 
+export async function readUtf8Window(full, offset, limit) {
+  const fd = fs.openSync(full, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+  let stat;
+  try {
+    stat = fs.fstatSync(fd);
+    if (!stat.isFile()) throw new Error('Path is not a file');
+  } catch (err) {
+    fs.closeSync(fd);
+    throw err;
+  }
+  return await readUtf8WindowFromFd(fd, stat.size, offset, limit);
+}
+
 export const readLinesWindow = readUtf8Window;
 
-export async function grepInWorker(files, pattern, max, timeoutMs, regex) {
+export async function grepInWorker(files, pattern, max, timeoutMs, regex, root = null) {
   const workerUrl = new URL('../grep-worker.mjs', import.meta.url);
   return await new Promise((resolve, reject) => {
     let settled = false;
     const worker = new Worker(workerUrl, {
-      workerData: { files, pattern, max, regex, maxBytes: MAX_READ_BYTES, maxLine: MAX_MATCH_LINE },
+      workerData: { files, pattern, max, regex, root, maxBytes: MAX_READ_BYTES, maxLine: MAX_MATCH_LINE },
       resourceLimits: { maxOldGenerationSizeMb: 256 },
     });
     const finish = (fn, value) => {
@@ -201,11 +221,11 @@ export const executeApplyPatch = applyGitPatch;
 export async function executeReadFile(root, input) {
   const requestedPath = String(input?.path || '');
   assertAgentReadablePath(requestedPath);
-  const full = safeWorkspacePath(root, requestedPath, { allowMissing: false });
   const offset = Math.max(0, Number(input?.offset) || 0);
   const limit = Math.min(Math.max(1, Number(input?.limit) || 500), 4000);
-  const body = await readUtf8Window(full, offset, limit);
-  return { output: body, title: rel(root, full), metadata: { offset, limit } };
+  const handle = openWorkspaceFile(root, requestedPath);
+  const body = await readUtf8WindowFromFd(handle.fd, handle.stat.size, offset, limit);
+  return { output: body, title: rel(root, handle.full), metadata: { offset, limit } };
 }
 
 export function executeListFiles(root, input) {
@@ -243,7 +263,7 @@ export async function executeGrepFiles(root, input) {
   }
 
   const regex = Boolean(input?.regex);
-  const hits = await grepInWorker(files, query, max, GREP_TIMEOUT_MS, regex);
+  const hits = await grepInWorker(files, query, max, GREP_TIMEOUT_MS, regex, root);
   return {
     output: hits.join('\n'),
     title: query,
@@ -271,15 +291,13 @@ const SNIPPET_CONTEXT = 3;
 const SNIPPET_MAX_LINES = 40;
 
 export function executeWriteFile(root, input, sessionId = null) {
-  const full = safeWorkspacePath(root, input?.path, { allowMissing: true });
-  const existed = fs.existsSync(full);
-  let previousLines = 0;
-  if (existed) {
-    try { previousLines = lineCount(fs.readFileSync(full, 'utf8')); } catch {}
-  }
   const content = String(input?.content ?? '');
-  fs.mkdirSync(path.dirname(full), { recursive: true });
-  fs.writeFileSync(full, content, 'utf8');
+  const written = writeWorkspaceFile(root, input?.path, content, { mkdirs: true });
+  const { full, existed } = written;
+  let previousLines = 0;
+  if (existed && written.previous) {
+    try { previousLines = lineCount(written.previous.toString('utf8')); } catch {}
+  }
   if (sessionId) syncSandboxOwnership(sessionId, root, full);
   const lines = lineCount(content);
   const bytes = Buffer.byteLength(content);
@@ -297,17 +315,32 @@ export function executeWriteFile(root, input, sessionId = null) {
 export const performWorkspaceWrite = executeWriteFile;
 
 export function executeEditFile(root, input, sessionId = null) {
-  const full = safeWorkspacePath(root, input?.path, { allowMissing: false });
-  const before = readUtf8(full);
-  const oldText = String(input?.oldText ?? '');
-  if (!oldText) throw new Error('oldText must not be empty');
-  if (!before.includes(oldText)) throw new Error('oldText was not found in file');
-  const newText = String(input?.newText ?? '');
-  const occurrences = before.split(oldText).length - 1;
-  const replaced = input?.all ? occurrences : 1;
-  const firstIndex = before.indexOf(oldText);
-  const after = input?.all ? before.split(oldText).join(newText) : before.replace(oldText, () => newText);
-  fs.writeFileSync(full, after, 'utf8');
+  const handle = openWorkspaceFile(root, input?.path, { write: true });
+  let before;
+  let after;
+  let oldText;
+  let newText;
+  let occurrences;
+  let replaced;
+  let firstIndex;
+  try {
+    if (handle.stat.size > MAX_READ_BYTES) throw new Error(`File is too large for whole-file editing (${handle.stat.size} bytes); use read with offset/limit to inspect it`);
+    const buf = readFd(handle.fd, handle.stat.size);
+    if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
+    before = buf.toString('utf8');
+    oldText = String(input?.oldText ?? '');
+    if (!oldText) throw new Error('oldText must not be empty');
+    if (!before.includes(oldText)) throw new Error('oldText was not found in file');
+    newText = String(input?.newText ?? '');
+    occurrences = before.split(oldText).length - 1;
+    replaced = input?.all ? occurrences : 1;
+    firstIndex = before.indexOf(oldText);
+    after = input?.all ? before.split(oldText).join(newText) : before.replace(oldText, () => newText);
+    replaceFdContent(handle.fd, after);
+  } finally {
+    fs.closeSync(handle.fd);
+  }
+  const full = handle.full;
   if (sessionId) syncSandboxOwnership(sessionId, root, full);
   const target = rel(root, full);
   const startLine = before.slice(0, firstIndex).split('\n').length;

@@ -88,6 +88,28 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const loaded = await file.json();
   assert.equal(loaded.content, 'native workspace');
 
+  // The editor saves conditionally: a draft based on an older version must not
+  // silently overwrite work written after the file was opened.
+  assert.match(loaded.version, /^sha256:[a-f0-9]{64}$/);
+  const putFile = (body) => fetch(`${base}/api/workspace/file?sessionId=${encodeURIComponent(session.id)}`, {
+    method: 'PUT',
+    headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+    body: JSON.stringify({ path: 'project/hello.txt', ...body }),
+  });
+  const agentWrite = await putFile({ content: 'newer work', baseVersion: loaded.version });
+  assert.equal(agentWrite.status, 200, await agentWrite.clone().text());
+  const newer = await agentWrite.json();
+  assert.match(newer.version, /^sha256:/);
+  const staleSave = await putFile({ content: 'stale draft', baseVersion: loaded.version });
+  assert.equal(staleSave.status, 409);
+  const conflict = await staleSave.json();
+  assert.equal(conflict.code, 'WORKSPACE_FILE_CONFLICT');
+  assert.equal(conflict.version, newer.version);
+  const afterConflict = await (await fetch(`${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent('project/hello.txt')}`, { headers: { cookie } })).json();
+  assert.equal(afterConflict.content, 'newer work');
+  const forced = await putFile({ content: 'native workspace', baseVersion: loaded.version, force: true });
+  assert.equal(forced.status, 200);
+
   for (const [filePath, content] of [
     ['index.html', '<!doctype html><link rel="stylesheet" href="style.css"><script src="app.js"></script><main>preview works</main>'],
     ['style.css', 'main { color: green; }'],

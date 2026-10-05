@@ -43,13 +43,28 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     let message = text;
+    let code: string | undefined;
+    let reason: string | undefined;
     try {
-      const body = JSON.parse(text) as { error?: string };
+      const body = JSON.parse(text) as {
+        error?: string;
+        code?: string;
+        reason?: string;
+      };
       if (body?.error) message = body.error;
+      code = typeof body?.code === "string" ? body.code : undefined;
+      reason = typeof body?.reason === "string" ? body.reason : undefined;
     } catch {
       // Keep the plain response below.
     }
-    throw new Error(message || `${res.status} ${res.statusText}`);
+    throw Object.assign(
+      new Error(message || `${res.status} ${res.statusText}`),
+      {
+        status: res.status,
+        code,
+        reason,
+      },
+    );
   }
   return res.json() as Promise<T>;
 }

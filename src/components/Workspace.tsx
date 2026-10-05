@@ -9,6 +9,13 @@ import { cn } from "@/lib/utils";
 import { api, workspaceDownloadUrl } from "../api/client";
 import { usePreviewUrl } from "../api/previewUrl";
 import { useStore } from "../store/useStore";
+import {
+  dropDraft,
+  type EditorFileState,
+  saveEditorFile,
+  stashDraft,
+  takeDraft,
+} from "./workspace/editorDrafts";
 import FileEditor from "./workspace/FileEditor";
 import {
   editability,
@@ -74,13 +81,23 @@ export default function Workspace() {
   const [tree, setTree] = useState<TreeNode[]>([]);
   const [expanded, setExpanded] = useState<Set<string>>(new Set([""]));
   const expandedRef = useRef<Set<string>>(expanded);
-  const [activeFile, setActiveFile] = useState<{
-    path: string;
-    content: string;
-  } | null>(null);
+  const [activeFile, setActiveFile] = useState<EditorFileState | null>(null);
   // Черновик редактора живёт отдельно от загруженного содержимого: их
   // расхождение и есть признак несохранённых правок.
   const [draft, setDraft] = useState("");
+  // Последнее зафиксированное состояние редактора и поколение открытия файла:
+  // смена чата откладывает черновик прошлой сессии, а поздний ответ readFile
+  // от прежнего чата или прежнего клика не подменяет текущий файл.
+  const editorSnapshot = useRef<{
+    sessionId: string | null;
+    file: EditorFileState | null;
+    draft: string;
+  }>({ sessionId: null, file: null, draft: "" });
+  const openGeneration = useRef(0);
+  useEffect(() => {
+    editorSnapshot.current.file = activeFile;
+    editorSnapshot.current.draft = draft;
+  }, [activeFile, draft]);
   const [viewMode, setViewMode] = useState<ViewMode>("code");
   const [workspaceView, setWorkspaceView] = useState<"files" | "editor">(
     "files",
@@ -420,9 +437,17 @@ export default function Workspace() {
 
   // Смена чата = другой изолированный воркспейс. Открытый редактор обязательно
   // закрываем: сохранение берёт currentID на момент записи, поэтому файл,
-  // открытый в прошлом чате, ушёл бы в воркспейс нового.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: currentID здесь — триггер сброса, а не читаемое значение; убрать его из списка значит отработать один раз при монтировании и оставить дерево прошлого чата на экране
+  // открытый в прошлом чате, ушёл бы в воркспейс нового. Несохранённый
+  // черновик прошлого чата при этом откладывается, а не теряется.
   useEffect(() => {
+    const previous = editorSnapshot.current;
+    stashDraft(previous.sessionId, previous.file, previous.draft);
+    editorSnapshot.current = {
+      sessionId: currentID ?? null,
+      file: null,
+      draft: "",
+    };
+    openGeneration.current += 1;
     setExpanded(new Set([""]));
     setActiveFile(null);
     setWorkspaceView("files");
@@ -462,11 +487,24 @@ export default function Workspace() {
 
   const openFile = useCallback(
     async (path: string) => {
+      const generation = ++openGeneration.current;
+      const shown = editorSnapshot.current;
+      stashDraft(currentID, shown.file, shown.draft);
       try {
         const res = await api.readFile(path, currentID);
+        if (generation !== openGeneration.current) return;
         const content = res.content ?? res.text ?? "";
-        setActiveFile({ path, content });
-        setDraft(content);
+        const restored = takeDraft(currentID, path);
+        setActiveFile({ path, content, version: res.version });
+        setDraft(restored ? restored.draft : content);
+        if (restored) {
+          toast(
+            "info",
+            restored.base === content
+              ? t("workspace.vosstanovleny_nesohranennye_pravki")
+              : t("workspace.vosstanovleny_pravki_fayl_izmenilsya"),
+          );
+        }
         // Text files open as code; binary media keeps its meaningful viewer.
         // Page preview is available independently from the top bar.
         const kind = previewKind(path);
@@ -531,20 +569,32 @@ export default function Workspace() {
       });
       if (!ok) return;
     }
+    dropDraft(currentID, activeFile?.path);
     setActiveFile(null);
     setDraft("");
     setWorkspaceView("files");
-  }, [dirty, askConfirm]);
+  }, [dirty, askConfirm, currentID, activeFile?.path]);
 
   const saveActiveFile = useCallback(async () => {
     if (!activeFile || !workspaceOperable(currentID)) return;
     if (!isEditablePath(activeFile.path)) return;
     setSaving(true);
     try {
-      await api.writeFile(activeFile.path, draft, currentID);
-      // Сохранённый черновик становится новым эталоном, иначе файл остался бы
-      // помеченным как изменённый сразу после успешной записи.
-      setActiveFile({ path: activeFile.path, content: draft });
+      const outcome = await saveEditorFile(activeFile, draft, currentID, () =>
+        askConfirm({
+          title: t("workspace.fayl_izmenilsya"),
+          description: t("workspace.fayl_izmenili_posle_otkrytiya"),
+          confirmLabel: t("workspace.perezapisat_moey_versiey"),
+          destructive: true,
+        }),
+      );
+      // Сохранённый черновик (или, при отказе перезаписывать, свежая версия
+      // файла) становится новым эталоном редактора.
+      setActiveFile(outcome.file);
+      if (outcome.kind === "kept") {
+        toast("info", t("workspace.pravki_ostalis_v_redaktore"));
+        return;
+      }
       toast(
         "success",
         tf("workspace.sohraneno_0", [toRelPath(activeFile.path)]),
@@ -559,7 +609,7 @@ export default function Workspace() {
     } finally {
       setSaving(false);
     }
-  }, [activeFile, currentID, draft, loadGit, autoRefresh]);
+  }, [activeFile, currentID, draft, loadGit, autoRefresh, askConfirm]);
 
   // Ctrl/Cmd+S внутри открытого файла — сохранение вместо диалога браузера.
   useEffect(() => {

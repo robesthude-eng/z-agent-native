@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { sendJson } from '../native/json.mjs';
-import { safeWorkspacePath } from '../native/security.mjs';
+import { openWorkspaceFile, readFd } from '../native/workspace-fs.mjs';
 import { workspaceFor, ownsChat } from '../native/store.mjs';
 import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
 import { rewritePreviewHtml } from '../native/preview-document.mjs';
@@ -66,28 +66,25 @@ export function servePreviewFile(req, res, psid, rawRelative) {
     return;
   }
   let full;
-  try {
-    full = safeWorkspacePath(workspaceFor(psid), relative, { allowMissing: false });
-  } catch (err) {
-    sendJson(res, err?.statusCode || 403, { error: err?.message || 'Forbidden' });
-    return;
-  }
   let st;
+  let fd;
   try {
-    st = fs.statSync(full);
-  } catch {
-    sendJson(res, 404, { error: 'Not found' });
-    return;
-  }
-  if (!st.isFile()) {
-    sendJson(res, 404, { error: 'Not a file' });
+    // Дескриптор открывается без перехода по symlink на любом компоненте пути
+    // и дальше отдаётся именно он: подмена файла после проверки не выведет
+    // превью за пределы workspace.
+    ({ fd, full, stat: st } = openWorkspaceFile(workspaceFor(psid), relative));
+  } catch (err) {
+    if (err?.code === 'ENOENT') sendJson(res, 404, { error: 'Not found' });
+    else if (err?.message === 'Path is not a file') sendJson(res, 404, { error: 'Not a file' });
+    else sendJson(res, err?.statusCode || 403, { error: err?.message || 'Forbidden' });
     return;
   }
 
   if (/\.html?$/i.test(full) && st.size > 0 && st.size <= PREVIEW_HTML_REWRITE_LIMIT) {
     let rewritten = null;
-    try { rewritten = Buffer.from(rewritePreviewHtml(fs.readFileSync(full, 'utf8')), 'utf8'); } catch { rewritten = null; }
+    try { rewritten = Buffer.from(rewritePreviewHtml(readFd(fd, st.size).toString('utf8')), 'utf8'); } catch { rewritten = null; }
     if (rewritten) {
+      fs.closeSync(fd);
       res.writeHead(200, {
         'content-type': mimeFor(full),
         'content-length': rewritten.length,
@@ -111,7 +108,7 @@ export function servePreviewFile(req, res, psid, rawRelative) {
     'referrer-policy': 'no-referrer',
     'cache-control': 'no-store',
   });
-  fs.createReadStream(full).pipe(res);
+  fs.createReadStream(null, { fd, start: 0, autoClose: true }).pipe(res);
 }
 
 export function handleTokenPreview(req, res, p) {

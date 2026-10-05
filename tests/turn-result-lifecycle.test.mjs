@@ -89,3 +89,37 @@ test.after(() => {
   try { store.closeStore(); } catch {}
   fs.rmSync(root, { recursive: true, force: true });
 });
+
+test('a turn in a workspace without Git records why no snapshot exists', () => {
+  const ownerId = 'turn-result-nogit@example.com';
+  const sessionId = 'ses_LifecycleNoGit1';
+  const assistantId = 'msg_LifecycleNoGit1';
+
+  store.createUser(ownerId, 'test-hash');
+  store.createChat(sessionId, ownerId, 'No git result');
+  const workspace = store.workspaceFor(sessionId);
+  fs.rmSync(path.join(workspace, '.git'), { recursive: true, force: true });
+  store.setTurn(sessionId, { turnId: 'turn_LifecycleNoGit1', lifecycle: 'running', verdict: null, reason: 'test', since: Date.now() });
+  events.emit(sessionId, 'session.status', { status: 'busy' });
+  fs.writeFileSync(path.join(workspace, 'notes.txt'), 'created without git\n');
+  const completed = Date.now();
+  store.putMessage({
+    id: assistantId,
+    role: 'assistant',
+    sessionID: sessionId,
+    parts: [{ id: 'prt_LifecycleNoGit1', type: 'text', text: 'Готово' }],
+    time: { created: completed - 10, completed },
+    info: { role: 'assistant', finish: 'stop' },
+  });
+  events.emit(sessionId, 'session.status', { status: 'idle' });
+
+  assert.throws(() => results.getTurnResult(sessionId, assistantId), (err) => {
+    assert.equal(err.statusCode, 404);
+    assert.equal(err.code, 'TURN_RESULT_UNAVAILABLE');
+    assert.equal(err.reason, 'not_git');
+    assert.match(err.message, /не является Git-репозиторием/);
+    return true;
+  });
+  // A message that never had a snapshot stays distinguishable from a failed capture.
+  assert.throws(() => results.getTurnResult(sessionId, 'msg_LifecycleNoGitMissing'), (err) => err.statusCode === 404);
+});

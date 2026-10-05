@@ -259,6 +259,10 @@ const applyPartDelta: EventHandler = ({ set, get }, sid, p) => {
   const field = p.field as string | undefined;
   const delta = p.delta;
   if (!sid || !messageID || !partID || !field || delta === undefined) return;
+  let offset =
+    typeof p.offset === "number" && Number.isFinite(p.offset) && p.offset >= 0
+      ? p.offset
+      : undefined;
 
   if (typeof delta === "string") {
     // Разделитель — NUL-escape, а не буквальный байт: он не встречается в
@@ -266,11 +270,25 @@ const applyPartDelta: EventHandler = ({ set, get }, sid, p) => {
     // и тот же ключ для разных частей.
     const key = `${sid}\u0000${messageID}\u0000${partID}\u0000${field}`;
     const buf = get()._deltaBuffer;
-    const buffered = buf.get(key);
+    let buffered = buf.get(key);
+    let text: string = delta;
+    if (buffered && offset !== undefined && buffered.offset !== undefined) {
+      const next = buffered.offset + buffered.text.length;
+      if (offset < next) {
+        // Повтор уже буферизованного куска после переподключения.
+        text = text.slice(next - offset);
+        offset = next;
+        if (!text) return;
+      } else if (offset > next) {
+        // Разрыв: применяем накопленное, новый кусок начнёт свой буфер.
+        get().flushStreamDeltas();
+        buffered = undefined;
+      }
+    }
     if (buffered) {
-      buffered.text += delta;
+      buffered.text += text;
     } else {
-      buf.set(key, { sid, messageID, partID, field, text: delta });
+      buf.set(key, { sid, messageID, partID, field, text, offset });
     }
     if (!get()._flushTimer) {
       const timer = setTimeout(() => {
@@ -290,6 +308,7 @@ const applyPartDelta: EventHandler = ({ set, get }, sid, p) => {
       partID,
       field,
       delta,
+      offset,
     );
     return { messages: { ...s.messages, [sid]: updated } };
   });

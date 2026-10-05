@@ -156,6 +156,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
               d.partID,
               d.field,
               d.text,
+              d.offset,
             ),
           };
         }

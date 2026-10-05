@@ -205,6 +205,7 @@ function applyFieldDelta(
   target: Record<string, unknown>,
   field: string,
   delta: unknown,
+  offset?: number,
 ): void {
   const keys = field.split(".");
   let obj = target;
@@ -222,6 +223,16 @@ function applyFieldDelta(
   if (typeof cur === "string" || typeof delta === "string") {
     const next = String(delta);
     const prev = typeof cur === "string" ? cur : "";
+    if (offset !== undefined) {
+      // Сервер сообщает, с какой позиции начинается дельта: уже применённую
+      // часть (повтор после переподключения) пропускаем точно, без эвристик.
+      if (offset + next.length <= prev.length) return;
+      obj[leaf] =
+        offset < prev.length
+          ? prev + next.slice(prev.length - offset)
+          : prev + next;
+      return;
+    }
     // Повтор длинной SSE-дельты после реконнекта: короткий токен вроде «с»
     // всё равно дописываем, иначе стрим встанет. Пропускаем только кусок,
     // который уже есть как суффикс или как начало текущего текста.
@@ -239,6 +250,7 @@ export function patchPartDelta(
   partID: string,
   field: string,
   delta: unknown,
+  offset?: number,
 ): Message[] {
   if (!messageID || !partID || !field || delta === undefined) return messages;
   const exists = messages.some((m) => m.id === messageID);
@@ -250,7 +262,7 @@ export function patchPartDelta(
       id: partID,
       type: field === "text" ? "text" : "stub",
     };
-    applyFieldDelta(stubPart, field, delta);
+    applyFieldDelta(stubPart, field, delta, offset);
     return [
       ...messages,
       {
@@ -268,7 +280,7 @@ export function patchPartDelta(
         id: partID,
         type: field === "text" ? "text" : "stub",
       };
-      applyFieldDelta(newPart, field, delta);
+      applyFieldDelta(newPart, field, delta, offset);
       return { ...m, parts: [...m.parts, normalizePartTool(newPart as Part)] };
     }
     const parts = m.parts.slice();
@@ -278,11 +290,11 @@ export function patchPartDelta(
         id: partID,
         type: field === "text" ? "text" : "stub",
       };
-      applyFieldDelta(newPart, field, delta);
+      applyFieldDelta(newPart, field, delta, offset);
       return { ...m, parts: [...m.parts, normalizePartTool(newPart as Part)] };
     }
     const target = { ...existingPart } as Record<string, unknown>;
-    applyFieldDelta(target, field, delta);
+    applyFieldDelta(target, field, delta, offset);
     parts[idx] = target as Part;
     return { ...m, parts };
   });

@@ -36,6 +36,7 @@ export interface AuthSlice {
   register: (
     email: string,
     pass: string,
+    inviteCode?: string,
   ) => Promise<{ ok: boolean; error?: string }>;
   logout: () => Promise<void>;
   checkCurrentUser: () => Promise<void>;
@@ -186,6 +187,9 @@ export interface MessagesSlice {
       partID: string;
       field: string;
       text: string;
+      // Смещение первой буферизованной дельты в тексте части (если сервер
+      // его прислал): по нему повтор после переподключения не дублирует текст.
+      offset?: number | undefined;
     }
   >;
   _flushTimer: ReturnType<typeof setTimeout> | null;

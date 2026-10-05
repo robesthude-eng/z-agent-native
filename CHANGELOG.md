@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Workspace boundary, editor safety and honest verification
+
+- File tools, the editor, search and preview now open workspace files through a descriptor chain without following symlinks at any path component, and read or write that descriptor. A file or directory swapped for a symlink after validation can no longer redirect the API process outside the workspace.
+- Registration forwards the invite code, so a production deployment with `Z_AGENT_INVITE_CODE` can register users from the login form. The code is compared in constant time; auth errors are announced to assistive technology.
+- Editor saves are conditional on the version that was opened: a stale draft gets a 409 and an explicit overwrite-or-compare choice instead of silently replacing newer work. Unsaved drafts survive switching chats or opening another file, and late file reads from a previous chat are ignored.
+- Git commit/status and unrelated inline scripts no longer count as verification; Git state is reported separately in the turn summary.
+- The event ring stores immutable snapshots and text deltas carry offsets, so a reconnect no longer doubles streamed text. The result view states the real reason a turn has no snapshot (no Git, capture failure).
+- A final answer delivered through the reasoning channel is shown once; refused redirects name their target and the loop guard treats size-only refetches as repeats.
+
 ## Stable user message widths
 
 - Fixed short user messages such as “Привет” wrapping inside an excessively narrow bubble after the action row became icon-only. The width limit now resolves against the full message column, preserving the right-aligned compact style.

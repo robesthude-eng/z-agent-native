@@ -18,6 +18,7 @@ export function strategyInfo(strategy) {
     verificationAttempts: strategy.verificationAttempts,
     lastVerificationOk: strategy.lastVerificationOk,
     lastVerificationEvidence: strategy.lastVerificationEvidence || null,
+    gitEvidence: strategy.gitEvidence || null,
     toolErrors: strategy.toolErrors,
   };
 }

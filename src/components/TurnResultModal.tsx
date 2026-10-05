@@ -89,11 +89,17 @@ export default function TurnResultModal({
       const message =
         (e as Error)?.message ||
         t("turn_result_modal.ne_udalos_poluchit_rezultat_etogo_otveta");
+      const code = (e as { code?: string })?.code;
       setResult(null);
+      // Сервер знает настоящую причину (нет Git, сбой снимка) и сообщает её
+      // текстом; общий ответ остаётся только для ответа совсем без записи.
       setError(
-        /нет сохранённого результата workspace|404/i.test(message)
-          ? t("turn_result_modal.etot_otvet_sozdan_do_poyavleniya_snimkov")
-          : message,
+        code === "TURN_RESULT_UNAVAILABLE"
+          ? message
+          : code === "TURN_RESULT_MISSING" ||
+              /нет сохранённого результата workspace/i.test(message)
+            ? t("turn_result_modal.etot_otvet_sozdan_do_poyavleniya_snimkov")
+            : message,
       );
     } finally {
       setLoading(false);

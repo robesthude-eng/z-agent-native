@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPass, setConfirmPass] = useState("");
+  const [inviteCode, setInviteCode] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +43,7 @@ export default function LoginPage() {
 
     setLoading(true);
     const res = isRegistering
-      ? await register(cleanEmail, password)
+      ? await register(cleanEmail, password, inviteCode)
       : await login(cleanEmail, password);
     setLoading(false);
 
@@ -100,7 +101,11 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <div className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+            <div
+              id="auth-error"
+              role="alert"
+              className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400"
+            >
               {error}
             </div>
           )}
@@ -117,6 +122,8 @@ export default function LoginPage() {
                 required
                 autoFocus
                 autoComplete="email"
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "auth-error" : undefined}
               />
             </div>
 
@@ -132,6 +139,8 @@ export default function LoginPage() {
                 autoComplete={
                   isRegistering ? "new-password" : "current-password"
                 }
+                aria-invalid={error ? true : undefined}
+                aria-describedby={error ? "auth-error" : undefined}
               />
             </div>
 
@@ -148,6 +157,27 @@ export default function LoginPage() {
                   onChange={(e) => setConfirmPass(e.target.value)}
                   required
                   autoComplete="new-password"
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "auth-error" : undefined}
+                />
+              </div>
+            )}
+
+            {isRegistering && (
+              <div className="space-y-2">
+                <Label htmlFor="invite">
+                  {t("login_page.kod_priglasheniya")}
+                </Label>
+                <Input
+                  id="invite"
+                  type="text"
+                  placeholder={t("login_page.esli_vydan_administratorom")}
+                  value={inviteCode}
+                  onChange={(e) => setInviteCode(e.target.value)}
+                  autoComplete="off"
+                  spellCheck={false}
+                  aria-invalid={error ? true : undefined}
+                  aria-describedby={error ? "auth-error" : undefined}
                 />
               </div>
             )}

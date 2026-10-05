@@ -460,3 +460,34 @@ describe("patchPart/patchPartDelta Release 1 semantic guarantees", () => {
     expect(result[0]?.parts[0]?.type).toBe("text");
   });
 });
+
+describe("patchPartDelta() с offset от сервера", () => {
+  const base = (text: string): Message[] =>
+    [
+      {
+        id: "msg_r",
+        role: "assistant",
+        parts: [{ id: "p_r", type: "text", text } as Part],
+      },
+    ] as Message[];
+  const textOf = (messages: Message[]) =>
+    (messages[0]?.parts[0] as { text?: string } | undefined)?.text;
+
+  it("пропускает уже применённую дельту, пришедшую повторно после переподключения", () => {
+    const res = patchPartDelta(base("AB"), "msg_r", "p_r", "text", "A", 0);
+    expect(textOf(res)).toBe("AB");
+    // Короткие токены раньше дописывались повторно: эвристика смотрела только на ≥12 символов.
+    const again = patchPartDelta(res, "msg_r", "p_r", "text", "B", 1);
+    expect(textOf(again)).toBe("AB");
+  });
+
+  it("дописывает только новую часть при частичном перекрытии", () => {
+    const res = patchPartDelta(base("Hel"), "msg_r", "p_r", "text", "llo", 2);
+    expect(textOf(res)).toBe("Hello");
+  });
+
+  it("дописывает дельту, которая продолжает текст", () => {
+    const res = patchPartDelta(base("AB"), "msg_r", "p_r", "text", "C", 2);
+    expect(textOf(res)).toBe("ABC");
+  });
+});
