@@ -181,7 +181,13 @@ async function route(req, res) {
 
 const server = http.createServer((req, res) => {
   Promise.resolve(route(req, res)).catch((err) => {
-    console.error('[http]', req.method, req.url, err);
+    // Ожидаемые отказы клиента (401, 403, 404, 429...) — одна строка без стека:
+    // иначе каждая неверная попытка входа заливала лог трассировкой. В адресе
+    // оставляем только путь: в query могут быть токены предпросмотра.
+    const where = String(req.url || '').split('?')[0];
+    const status = Number(err?.statusCode) || 0;
+    if (status >= 400 && status < 500) console.warn('[http]', req.method, where, status, err?.message || '');
+    else console.error('[http]', req.method, where, err);
     errorResponse(res, err);
   });
 });
