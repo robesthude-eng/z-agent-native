@@ -8,6 +8,11 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Stable user message widths
+
+- Fixed short user messages such as “Привет” wrapping inside an excessively narrow bubble after the action row became icon-only. The width limit now resolves against the full message column, preserving the right-aligned compact style.
+- Added browser coverage for narrow screens, 200% text scaling, intentional newlines, long unbroken URLs and reloaded history.
+
 ## Live isolated tool output
 
 - Added bounded, throttled stdout/stderr snapshots over executor IPC, feeding running command, test and Git cards before execution completes. Legacy JSON and synchronous calls remain compatible.

@@ -36,7 +36,9 @@ function MessageItemComponent({
   if (isUser) {
     return (
       <div className="chat-user chat-message group oc-msg-in flex flex-col items-end gap-1 px-3 py-1 md:px-6">
-        <div className="flex min-w-0 flex-col gap-1 items-end max-w-full">
+        {/* Percentage bubble limits must resolve against the chat column, not
+            a shrink-to-content wrapper narrowed by icon-only actions. */}
+        <div className="flex w-full min-w-0 flex-col gap-1 items-end max-w-full">
           {msgArray.map((message, idx) => {
             const isEditing = editingId === message.id;
             return (
