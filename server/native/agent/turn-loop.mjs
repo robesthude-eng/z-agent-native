@@ -28,7 +28,7 @@ import {
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { framesWithDossier } from './dossier.mjs';
-import { emitPart, emitText, persistAssistant, promoteReasoningToText } from './message-parts.mjs';
+import { demoteDraftTextToReasoning, emitPart, emitText, persistAssistant, promoteReasoningToText } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
@@ -596,6 +596,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           const review = await runReview({ sessionId, assistant, runtime, goal, strategy, workspace, draft: response.text, signal: controller.signal });
           checkpointState(sessionId, runtime, strategy, { phase: 'review', reviewsDone: runtime.reviewsDone });
           if (review?.verdict === 'fix') {
+            demoteDraftTextToReasoning(assistant, streamed.parts, { putMessage, emit });
             frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
             frames.push({
               role: 'user',

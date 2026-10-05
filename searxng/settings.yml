@@ -27,3 +27,10 @@ engines:
     disabled: false
   - name: mojeek
     disabled: false
+  # From this server's IP these two answer with "too many requests" / CAPTCHA
+  # on nearly every query. Leaving them on only adds failed requests and
+  # warnings; google cse and yandex return the actual results.
+  - name: brave
+    disabled: true
+  - name: duckduckgo
+    disabled: true

@@ -56,6 +56,28 @@ export function promoteReasoningToText(assistant, streamedParts, text, { putMess
 }
 
 /**
+ * Fold a draft answer into the collapsed "thinking" card.
+ *
+ * When the independent reviewer sends the agent back to fix problems, the
+ * draft answer has already been streamed to the user. The agent then writes a
+ * new final answer, so the chat showed two near-identical summaries. Demoting
+ * the superseded draft keeps its text (nothing is lost if the turn later ends
+ * abnormally) but leaves exactly one visible reply.
+ *
+ * Returns the number of parts demoted.
+ */
+export function demoteDraftTextToReasoning(assistant, streamedParts, { putMessage, emit }) {
+  const drafts = (streamedParts || []).filter((part) => part?.type === 'text' && assistant.parts.includes(part) && String(part.text || '').trim());
+  if (drafts.length === 0) return 0;
+  for (const part of drafts) {
+    part.type = 'reasoning';
+    emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+  }
+  putMessage(assistant);
+  return drafts.length;
+}
+
+/**
  * Persist a finished text part exactly once.
  *
  * Tokens already reach the client over SSE while the provider streams, so the
