@@ -15,6 +15,7 @@ import { initTerminal } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { sweepOrphanSessionData } from './native/orphan-sweep.mjs';
 import { handleWorkspace } from './native/workspace.mjs';
+import { publicErrorInfo } from './native/public-error.mjs';
 import { closeAllWorkspaceWatchers } from './native/watcher.mjs';
 import { mintPreviewToken } from './native/preview-tokens.mjs';
 import { handleAuthRoutes } from './routes/auth.mjs';
@@ -85,9 +86,8 @@ function mimeFor(file) {
 }
 
 function errorResponse(res, err) {
-  const status = Number(err?.statusCode) || (err?.name === 'AbortError' ? 499 : 500);
-  const msg = err?.message || 'Internal Server Error';
-  sendJson(res, status, { error: msg, code: err?.code || undefined });
+  const { status, message, code } = publicErrorInfo(err);
+  sendJson(res, status, { error: message, code });
 }
 
 function appSecurityHeaders(req) {
