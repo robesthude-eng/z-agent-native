@@ -81,8 +81,25 @@ export function normalizeBashCommand(command) {
 
 export function normalizeToolArguments(name, args) {
   const tool = String(name || '').trim().toLowerCase();
-  if (tool !== 'bash' || !args || typeof args !== 'object') return args || {};
-  return { ...args, command: normalizeBashCommand(args.command) };
+  if (!args || typeof args !== 'object') return args || {};
+  if (tool === 'bash') return { ...args, command: normalizeBashCommand(args.command) };
+  // Лимит размера меняет только то, сколько текста вернётся, а не что
+  // запрошено: webfetch одного адреса с maxChars 12000, 15000 и 20000 — это
+  // одно и то же действие трижды, и защита от зацикливания должна это видеть.
+  if (tool === 'webfetch') return { url: normalizeFetchUrl(args.url) };
+  if (tool === 'websearch') return { query: String(args.query ?? '').trim().replace(/\s+/g, ' ').toLowerCase() };
+  return args;
+}
+
+function normalizeFetchUrl(value) {
+  const raw = String(value ?? '').trim();
+  try {
+    const url = new URL(raw);
+    url.hash = '';
+    return url.toString();
+  } catch {
+    return raw;
+  }
 }
 
 function callSignature(call) {

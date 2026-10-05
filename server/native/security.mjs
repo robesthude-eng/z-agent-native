@@ -177,6 +177,38 @@ export async function assertSafeExternalUrl(value) {
 }
 
 /**
+ * Error for a refused redirect that names where it points.
+ *
+ * Without the target the agent only saw "Redirects are not followed" and kept
+ * re-requesting the same URL (skills.sh → www.skills.sh three times in a row).
+ * The target is only reported: a request to it passes the full SSRF validation
+ * again, so naming it cannot widen what is reachable.
+ */
+export function redirectRefusedError(base, status, locationHeader) {
+  const location = redirectLocation(base, locationHeader);
+  const message = location
+    ? `Redirects are not followed (HTTP ${status} -> ${location}). Request that URL directly if it is the page you need.`
+    : `Redirects are not followed (HTTP ${status})`;
+  return Object.assign(new Error(message), { statusCode: 502, ...(location ? { location } : {}) });
+}
+
+function redirectLocation(base, header) {
+  const raw = Array.isArray(header) ? header[0] : header;
+  if (typeof raw !== 'string' || !raw.trim()) return '';
+  try {
+    const target = new URL(raw.trim(), base);
+    if (!['http:', 'https:'].includes(target.protocol)) return '';
+    target.username = '';
+    target.password = '';
+    target.hash = '';
+    const href = target.toString();
+    return href.length <= 2048 ? href : '';
+  } catch {
+    return '';
+  }
+}
+
+/**
  * GET an external resource with the destination address pinned to the one that
  * passed the SSRF checks, so a second DNS answer cannot redirect the socket to
  * an internal service. Redirects are refused, bodies are hard-bounded.
@@ -210,7 +242,7 @@ async function pinnedRequest({ url, address, family }, { headers = {}, signal, m
       const status = Number(res.statusCode) || 0;
       if (status >= 300 && status < 400) {
         res.destroy();
-        finish(reject, Object.assign(new Error(`Redirects are not followed (HTTP ${status})`), { statusCode: 502 }));
+        finish(reject, redirectRefusedError(url, status, res.headers.location));
         return;
       }
       let size = 0;

@@ -16,10 +16,14 @@ export function liveTextSink(assistant) {
   let current = null;
   let streamedText = false;
   let streamedReasoning = false;
+  // Части, открытые за этот шаг: финал хода может превратить стримнутые
+  // рассуждения в ответ, не печатая тот же текст второй раз.
+  const opened = [];
 
   const openPart = (type) => {
     const part = { id: partId(), type, text: '' };
     assistant.parts.push(part);
+    opened.push(part);
     emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
     return part;
   };
@@ -48,7 +52,7 @@ export function liveTextSink(assistant) {
       splitter.flush();
       sanitizeAssistantParts(assistant);
       if (current) putMessage(assistant);
-      return { text: streamedText, reasoning: streamedReasoning };
+      return { text: streamedText, reasoning: streamedReasoning, parts: opened.slice() };
     },
   };
 }

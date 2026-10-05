@@ -28,7 +28,7 @@ import {
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { framesWithDossier } from './dossier.mjs';
-import { emitPart, emitText, persistAssistant } from './message-parts.mjs';
+import { emitPart, emitText, persistAssistant, promoteReasoningToText } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
@@ -513,8 +513,8 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         frames.push({
           role: 'user',
           content: response.interrupted
-            ? '[Runtime] Your previous response was cut off by a dropped provider connection. Continue the task exactly from where you stopped. Do not repeat text you already wrote; call tools if the work is not finished.'
-            : '[Runtime] Your previous response hit the output token limit and was cut off. Continue exactly from where you stopped without repeating earlier text. Prefer smaller steps (for example, several smaller edits instead of one huge write).',
+            ? '[Runtime] Your previous response was cut off by a dropped provider connection. Continue the task exactly from where you stopped. Do not repeat text you already wrote and do not announce that you are continuing; call tools if the work is not finished.'
+            : '[Runtime] Your previous response hit the output token limit and was cut off. Continue exactly from where you stopped without repeating earlier text and without announcing that you are continuing. Prefer smaller steps (for example, several smaller edits instead of one huge write).',
         });
         checkpointState(sessionId, runtime, strategy, { phase: 'continuation' });
         continue;
@@ -594,14 +594,24 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
               signal: controller.signal,
             });
             finalText = String(summaryRes.text || '').trim();
-          } catch {}
+          } catch (err) {
+            if (!controller.signal.aborted) console.warn(`[turn] ${sessionId}: final summary request failed: ${String(err?.message || err).slice(0, 300)}`);
+          }
         }
-        if (!finalText && reasoningOnly) finalText = String(response.text || '').trim();
+        let promotedReasoning = false;
+        if (!finalText && reasoningOnly) {
+          finalText = String(response.text || '').trim();
+          // Ответ целиком пришёл в канале рассуждений и уже стоит на экране
+          // карточкой «мыслей». Раньше его печатали ещё раз текстом — и один
+          // и тот же итог показывался дважды. Теперь карточка сама становится
+          // ответом.
+          promotedReasoning = promoteReasoningToText(assistant, streamed.parts, finalText, { putMessage, emit });
+        }
         if (!finalText) {
           const outcome = classifyTaskOutcome({ strategy, kind: 'completed' });
           finalText = synthesizeTurnSummary({ strategy, outcome });
         }
-        if (!streamed.text) {
+        if (!streamed.text && !promotedReasoning) {
           const separated = splitReasoningFromContent(finalText);
           if (separated.reasoning && !streamed.reasoning) {
             await emitText(assistant, separated.reasoning, 'reasoning', { putMessage, emit });
