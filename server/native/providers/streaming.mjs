@@ -1,18 +1,33 @@
 import { createReasoningSplitter } from '../reasoning-stream.mjs';
 import { fetchJson, fetchSse, routedProviderTarget } from './transport.mjs';
 
+/**
+ * Some models emit stray NUL characters inside tool-call strings (for example
+ * "tail\u0000 -n 3\u0000"). NUL is never valid in a command, path or text
+ * argument and makes child_process reject the whole call, so the turn failed on
+ * a glitch the user could not see or fix. Drop them before dispatch.
+ */
+export function stripNulChars(value) {
+  if (typeof value === 'string') return value.includes('\u0000') ? value.replaceAll('\u0000', '') : value;
+  if (Array.isArray(value)) return value.map(stripNulChars);
+  if (value && typeof value === 'object') {
+    return Object.fromEntries(Object.entries(value).map(([k, v]) => [k, stripNulChars(v)]));
+  }
+  return value;
+}
+
 export function parseToolArguments(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     if (Object.hasOwn(raw, '_raw') && Object.keys(raw).length === 1) {
       return { ok: false, value: {}, raw: raw._raw };
     }
-    return { ok: true, value: raw };
+    return { ok: true, value: stripNulChars(raw) };
   }
   if (typeof raw !== 'string' || !raw.trim()) return { ok: true, value: {} };
   try {
     const value = JSON.parse(raw);
     if (!value || typeof value !== 'object' || Array.isArray(value)) return { ok: false, value: {}, raw };
-    return { ok: true, value };
+    return { ok: true, value: stripNulChars(value) };
   } catch {
     return { ok: false, value: {}, raw };
   }
