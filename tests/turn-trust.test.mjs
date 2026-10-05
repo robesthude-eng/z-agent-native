@@ -114,6 +114,8 @@ test('tool retry is limited to transient errors on idempotent tools', () => {
   assert.equal(shouldRetryToolCall({ name: 'bash' }, executorDown, 1), true);
   assert.equal(shouldRetryToolCall({ name: 'bash' }, executorDown, 2), false);
   assert.equal(shouldRetryToolCall({ name: 'write' }, executorDown, 0), false);
+  assert.equal(shouldRetryToolCall({ name: 'bash' }, { ...executorDown, executorAccepted: true }, 0), false);
+  assert.equal(shouldRetryToolCall({ name: 'read' }, { ...transient, executorAccepted: true }, 0), false);
 });
 
 test('task outcome distinguishes complete, partial and failed work', () => {

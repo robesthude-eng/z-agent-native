@@ -633,6 +633,7 @@ export const messages = {
   "tool_card.vopros": "Вопрос",
   "tool_card.zagruzhaet_stranicu": "Загружает страницу",
   "tool_group.pokazat_vyzovy_0": "{0}. Показать вызовы инструмента",
+  "tool_output_view.waiting_output": "Ожидаем вывод команды…",
   "tool_output_view.net_vyvoda": "(нет вывода)",
   "top_bar.chat_sohranen_v_markdown_fayl": "Чат сохранён в Markdown-файл",
   "top_bar.chat_z_agent": "Чат Z Agent",

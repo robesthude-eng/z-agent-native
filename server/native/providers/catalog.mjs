@@ -55,6 +55,12 @@ export async function fixtureResponse(request) {
       toolCalls: [{ id: 'fixture_run_tests', name: 'run_tests', arguments: { command: 'node --test hello.test.mjs' } }],
       finish: 'tool_calls',
     };
+  } else if (/FIXTURE_LIVE_TOOL_OUTPUT/i.test(prompt) && fixtureToolCount(frames, 'bash') === 0) {
+    response = {
+      text: 'Проверяю живой вывод команды.',
+      toolCalls: [{ id: 'fixture_stream_bash', name: 'bash', arguments: { command: 'sleep 1; printf "STREAM_FIRST\\n"; printf "STREAM_WARNING\\n" >&2; sleep 4; printf "STREAM_LAST\\n"' } }],
+      finish: 'tool_calls',
+    };
   } else {
     response = {
       text: 'Fixture task completed and verified: hello.js is covered by hello.test.mjs.',

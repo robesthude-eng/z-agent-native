@@ -138,7 +138,7 @@ async function runGit(root, identity, args, signal, timeoutMs, onOutput = null) 
   const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_GIT_TIMEOUT_MS, 1000), MAX_GIT_TIMEOUT_MS);
   if (identity?.isolated) {
     const remote = await executeInExecutor({
-      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env: gitEnv(root), timeoutMs: budget, signal,
+      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env: gitEnv(root), timeoutMs: budget, signal, onOutput,
     });
     if (remote) return { code: Number(remote.code) || 0, stdout: truncateGit(remote.stdout), stderr: truncateGit(remote.stderr) };
   }

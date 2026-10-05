@@ -52,11 +52,13 @@ export async function execBash(root, command, timeoutMs = DEFAULT_TOOL_TIMEOUT_M
   });
 
   if (identity?.isolated) {
-    const remote = await executeInExecutor({
+    const live = createLiveOutput(ctx?.onOutput);
+    let remote;
+    try { remote = await executeInExecutor({
       workspace: root, uid: identity.uid, gid: identity.gid,
       file: '/bin/bash', args: ['--noprofile', '--norc', '-c', command],
-      env, timeoutMs, signal,
-    });
+      env, timeoutMs, signal, onOutput: typeof ctx?.onOutput === 'function' ? (stdout, stderr) => live.push(stdout, stderr) : undefined,
+    }); } finally { live.stop(); }
     if (remote) return remote;
   }
 

@@ -75,7 +75,9 @@ export function ToolOutputView({ part }: ToolOutputViewProps) {
         </pre>
       ) : (
         <span className="text-[11px] text-muted-foreground italic">
-          {t("tool_output_view.net_vyvoda")}
+          {isStreaming
+            ? t("tool_output_view.waiting_output")
+            : t("tool_output_view.net_vyvoda")}
         </span>
       )}
     </div>

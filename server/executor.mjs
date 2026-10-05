@@ -236,10 +236,39 @@ async function execRequest(req, res, input) {
 
   let stdout = '';
   let stderr = '';
+  const streaming = input.streamOutput === true;
+  let liveTimer = null;
+  let dirty = false;
+  let backpressured = false;
+  if (streaming) {
+    res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
+    res.flushHeaders();
+    res.on('drain', () => {
+      backpressured = false;
+      if (dirty && !liveTimer) { liveTimer = setTimeout(flushLive, 250); liveTimer.unref?.(); }
+    });
+  }
+  const frame = (value) => {
+    if (res.destroyed || res.writableEnded) return;
+    backpressured = !res.write(`${JSON.stringify(value)}\n`);
+  };
+  const flushLive = () => {
+    liveTimer = null;
+    if (!dirty || backpressured || res.destroyed || res.writableEnded) return;
+    dirty = false;
+    const tail = (text) => text.length > 4000 ? `[…показан только конец вывода]\n${text.slice(-4000)}` : text;
+    frame({ type: 'output', stdout: tail(stdout), stderr: tail(stderr) });
+  };
   const append = (current, chunk) => {
-    const next = current + Buffer.from(chunk).toString('utf8');
+    const next = current + chunk;
+    if (streaming) {
+      dirty = true;
+      if (!liveTimer) { liveTimer = setTimeout(flushLive, 250); liveTimer.unref?.(); }
+    }
     return next.length > MAX_OUTPUT ? `[truncated]\n${next.slice(-MAX_OUTPUT)}` : next;
   };
+  child.stdout.setEncoding('utf8');
+  child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
   if (input.stdin) child.stdin.end(String(input.stdin)); else child.stdin.end();
@@ -255,15 +284,23 @@ async function execRequest(req, res, input) {
   timer.unref?.();
   const disconnected = () => terminate();
   req.once('aborted', disconnected);
-  req.once('close', () => { if (!res.writableEnded) disconnected(); });
+  res.once('close', () => { if (!res.writableEnded) disconnected(); });
 
   child.once('error', (error) => {
     clearTimeout(timer);
-    if (!res.writableEnded) json(res, 500, { error: error?.message || String(error), code: 'SPAWN_FAILED' });
+    if (liveTimer) clearTimeout(liveTimer);
+    if (res.destroyed || res.writableEnded) return;
+    const failure = { error: error?.message || String(error), code: 'SPAWN_FAILED' };
+    if (streaming) { frame({ type: 'error', ...failure }); res.end(); }
+    else json(res, 500, failure);
   });
   child.once('close', (code, signal) => {
     clearTimeout(timer);
-    if (!res.writableEnded) json(res, 200, { code: code ?? (signal ? 130 : 1), signal: signal || null, stdout, stderr });
+    if (liveTimer) clearTimeout(liveTimer);
+    if (res.destroyed || res.writableEnded) return;
+    const result = { code: code ?? (signal ? 130 : 1), signal: signal || null, stdout, stderr };
+    if (streaming) { flushLive(); frame({ type: 'result', result }); res.end(); }
+    else json(res, 200, result);
   });
 }
 

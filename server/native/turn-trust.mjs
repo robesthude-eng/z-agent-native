@@ -219,6 +219,8 @@ export function isExecutorUnavailableError(error) {
 }
 
 export function shouldRetryToolCall(call, error, attempt = 0) {
+  // Lost IPC after acceptance is ambiguous: the command may have mutated files.
+  if (error?.executorAccepted) return false;
   const name = String(call?.name || '').trim().toLowerCase();
   const message = `${error?.name || ''} ${error?.code || ''} ${error?.message || String(error || '')}`;
   // A brief executor-socket drop during compose restart used to surface as

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createExecutorStreamParser } from './executor-stream.mjs';
 
 const SOCKET_PATH = process.env.Z_AGENT_EXECUTOR_SOCKET || '/run/z-agent-executor/executor.sock';
 const REQUIRED = process.env.Z_AGENT_EXECUTOR_REQUIRED === '1';
@@ -23,14 +24,16 @@ async function waitForExecutorSocket(timeoutMs = 2500) {
   return executorAvailable();
 }
 
-function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000 } = {}) {
+function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000, onOutput } = {}) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify(payload || {}));
     let settled = false;
+    let accepted = false;
     const finish = (fn, value) => {
       if (settled) return;
       settled = true;
       signal?.removeEventListener('abort', abort);
+      if (fn === reject && accepted && value && typeof value === 'object') value.executorAccepted = true;
       fn(value);
     };
     const req = http.request({
@@ -39,20 +42,27 @@ function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000 } = {})
       method: 'POST',
       headers: { 'content-type': 'application/json', 'content-length': String(body.length) },
     }, (res) => {
+      accepted = (res.statusCode || 500) < 400;
+      const streaming = accepted && String(res.headers['content-type'] || '').includes('application/x-ndjson');
+      const parser = streaming ? createExecutorStreamParser(onOutput) : null;
       const chunks = [];
       let size = 0;
       res.on('data', (chunk) => {
-        size += chunk.length;
-        if (size > 4 * 1024 * 1024) {
-          req.destroy(new Error('Executor response exceeded 4 MiB'));
-          return;
-        }
-        chunks.push(chunk);
+        if (settled) return;
+        try {
+          if (parser) return parser.push(chunk);
+          size += chunk.length;
+          if (size > 4 * 1024 * 1024) throw new Error('Executor response exceeded 4 MiB');
+          chunks.push(chunk);
+        } catch (error) { finish(reject, error); req.destroy(error); }
       });
+      res.on('error', (error) => finish(reject, error));
+      res.on('aborted', () => finish(reject, new Error('Executor response disconnected')));
       res.on('end', () => {
-        let parsed = null;
-        try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-        catch { return finish(reject, new Error('Executor returned invalid JSON')); }
+        if (settled) return;
+        let parsed;
+        try { parsed = parser ? parser.finish() : JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
+        catch (error) { return finish(reject, error); }
         if ((res.statusCode || 500) >= 400) {
           const error = new Error(parsed?.error || `Executor HTTP ${res.statusCode}`);
           error.code = parsed?.code || 'EXECUTOR_ERROR';
@@ -72,7 +82,7 @@ function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000 } = {})
   });
 }
 
-export async function executeInExecutor({ workspace, uid, gid = uid, file, args = [], env = {}, stdin = '', timeoutMs, signal }) {
+export async function executeInExecutor({ workspace, uid, gid = uid, file, args = [], env = {}, stdin = '', timeoutMs, signal, onOutput }) {
   if (!executorAvailable()) {
     await waitForExecutorSocket(2500);
   }
@@ -93,10 +103,11 @@ export async function executeInExecutor({ workspace, uid, gid = uid, file, args 
         env,
         stdin,
         timeoutMs,
-      }, { signal, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 600_000, 5_000) + 10_000, 1_810_000) });
+        streamOutput: typeof onOutput === 'function',
+      }, { signal, onOutput, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 600_000, 5_000) + 10_000, 1_810_000) });
     } catch (err) {
       lastErr = err;
-      if (err?.code === 'ECONNREFUSED' || err?.code === 'ENOENT' || err?.message?.includes('socket') || err?.message?.includes('connect')) {
+      if (!err?.executorAccepted && (err?.code === 'ECONNREFUSED' || err?.code === 'ENOENT' || err?.message?.includes('socket') || err?.message?.includes('connect'))) {
         await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
         continue;
       }

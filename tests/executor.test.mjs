@@ -70,6 +70,22 @@ describeExec('executor IPC runs autonomous commands as the requested sandbox uid
   assert.equal(fs.readFileSync(path.join(workspace, 'proof.txt'), 'utf8'), 'isolated');
 });
 
+describeExec('real isolated executor streams stdout/stderr before command completion', async () => {
+  const frames = [];
+  let finished = false;
+  const result = await client.executeInExecutor({
+    workspace, uid: 20000, gid: 20000, file: '/bin/bash',
+    args: ['-c', 'printf "first\\n"; printf "warning\\n" >&2; sleep 0.8; printf "last\\n"'],
+    env: { PATH: process.env.PATH || '/usr/bin:/bin', HOME: workspace }, timeoutMs: 5000,
+    onOutput: (stdout, stderr) => { assert.equal(finished, false); frames.push({ stdout, stderr }); },
+  });
+  finished = true;
+  assert.equal(result.code, 0);
+  assert.ok(frames.some(frame => frame.stdout.includes('first') && !frame.stdout.includes('last')));
+  assert.ok(frames.some(frame => frame.stderr.includes('warning')));
+  assert.match(result.stdout, /last/);
+});
+
 describeExec('executor never exposes privileged launcher to tool-controlled loader environment', async (t) => {
   const compiler = spawnSync('cc', ['--version'], { stdio: 'ignore' });
   if (compiler.status !== 0) return t.skip('C compiler unavailable for LD_PRELOAD regression probe');

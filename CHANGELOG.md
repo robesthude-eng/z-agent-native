@@ -8,6 +8,12 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Live isolated tool output
+
+- Added bounded, throttled stdout/stderr snapshots over executor IPC, feeding running command, test and Git cards before execution completes. Legacy JSON and synchronous calls remain compatible.
+- Running empty cards now say they are waiting for output rather than claiming there is none. Captured output inside shell command substitution still becomes available only when the shell prints it.
+- Added streaming, UTF-8, cancellation, disconnect, output-bound and card regressions. Accepted commands are not retried after an IPC disconnect.
+
 ## Preserve normal research replies
 
 - Fixed normal assistant replies being replaced with a model-unavailable notice when they contain OpenCode URLs, model JSON examples or quoted error text. Provider-error sanitization now stays within structured errors. Existing saved answers are preserved.
