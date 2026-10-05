@@ -67,7 +67,7 @@ const SAFE_MD_COMPONENTS = {
         children?: string | string[];
       }>;
       const className = child?.props?.className || "";
-      const match = className.match(/language-(\w+)/);
+      const match = className.match(/language-([\w+#.-]+)/);
       if (match) {
         language = match[1] ?? "plaintext";
       }
@@ -85,13 +85,10 @@ const SAFE_MD_COMPONENTS = {
               <FileText className="h-3.5 w-3.5" />
             </span>
             <span className="text-[11px] font-mono text-muted-foreground truncate max-w-[200px]">
-              {language}_block
+              {language}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-muted-foreground/60 px-1.5 py-0.5 rounded bg-background/50 border border-border">
-              {language}
-            </span>
             <CopyButton
               text={codeText || nodeToText(children)}
               title={t("part_view.kopirovat_kod")}

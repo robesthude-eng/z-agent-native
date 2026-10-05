@@ -20,6 +20,15 @@ import {
 } from "../prefsSync";
 import type { Slice, State, UiSlice } from "../types";
 
+/** Узкий экран (телефон), где боковые панели открываются поверх чата. */
+export function isNarrowViewport(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    typeof window.matchMedia === "function" &&
+    window.matchMedia("(max-width: 767px)").matches
+  );
+}
+
 export const createUiSlice: Slice<UiSlice> = (set, get) => {
   /**
    * Записать настройку локально, отметить время и отправить на сервер.
@@ -198,8 +207,17 @@ export const createUiSlice: Slice<UiSlice> = (set, get) => {
       );
 
       if (Object.keys(apply).length > 0) {
+        // На телефоне панель файлов занимает весь экран и закрывает ввод
+        // сообщения. Синхронизируемое «открыто» с ноутбука не должно
+        // встречать пользователя таким экраном: на узком экране оставляем
+        // панель закрытой (метка времени не трогаем — на сервере выбор
+        // остаётся прежним, а вручную панель открывается по кнопке).
+        const nextApply = { ...apply };
+        if (nextApply.workspaceOpen && isNarrowViewport()) {
+          nextApply.workspaceOpen = false;
+        }
         set((s) => ({
-          ...apply,
+          ...nextApply,
           prefsUpdatedAt: { ...s.prefsUpdatedAt, ...timestamps },
         }));
         // Тема меняет DOM, а не только стор, — применяем её отдельно.
