@@ -46,13 +46,19 @@ describe("syncUserPrefsFromServer / workspaceOpen", () => {
 describe("восстановление сохранённых настроек / workspaceOpen", () => {
   it("на узком экране не открывает сохранённую панель файлов", () => {
     mockViewport(true);
-    const merged = mergePersistedState({ workspaceOpen: true }, useStore.getState());
+    const merged = mergePersistedState(
+      { workspaceOpen: true },
+      useStore.getState(),
+    );
     expect(merged.workspaceOpen).toBe(false);
   });
 
   it("на широком экране сохранённая панель остаётся открытой", () => {
     mockViewport(false);
-    const merged = mergePersistedState({ workspaceOpen: true }, useStore.getState());
+    const merged = mergePersistedState(
+      { workspaceOpen: true },
+      useStore.getState(),
+    );
     expect(merged.workspaceOpen).toBe(true);
   });
 });
