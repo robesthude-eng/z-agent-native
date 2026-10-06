@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Starts the z-agent-native runtime inside a Codespace.
 #
-# Runs as postStartCommand and postAttachCommand, so it must be idempotent:
-# if the server already answers /health it does nothing.
+# Invoked from postStartCommand, postAttachCommand and a folderOpen VS Code
+# task, so it must be idempotent: if /health already answers, it does nothing.
 
 set -uo pipefail
 
@@ -11,13 +11,21 @@ cd "$REPO_ROOT"
 
 PORT="${PORT:-3000}"
 LOG="${Z_AGENT_START_LOG:-/tmp/z-agent-server.log}"
+TRACE="${Z_AGENT_START_TRACE:-$HOME/.z-agent-start.log}"
+
+trace() {
+  printf '%s  %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*" >>"$TRACE" 2>/dev/null || true
+}
 
 healthy() {
   curl -fsS --max-time 3 "http://127.0.0.1:${PORT}/health" >/dev/null 2>&1
 }
 
+trace "start.sh invoked (caller=${Z_AGENT_START_CALLER:-unknown})"
+
 if healthy; then
   echo "[start] z-agent already running on :${PORT}"
+  trace "already healthy, nothing to do"
 else
   # postStartCommand can fire while postCreateCommand (setup.sh) is still
   # installing dependencies, so wait for the environment instead of giving up.
@@ -31,13 +39,17 @@ else
 
   if [ ! -f .env ]; then
     echo "[start] .env still missing — run: bash .devcontainer/setup.sh"
+    trace "aborted: no .env"
     exit 0
   fi
 
   [ -d dist ] || npm run build
 
   echo "[start] starting z-agent (log: ${LOG})"
-  nohup npm start >"$LOG" 2>&1 &
+  # setsid detaches the server from the lifecycle command's process group:
+  # a plain background job can be killed as soon as the hook shell exits.
+  setsid nohup npm start >"$LOG" 2>&1 </dev/null &
+  disown 2>/dev/null || true
 
   for _ in $(seq 1 45); do
     sleep 1
@@ -46,9 +58,11 @@ else
 
   if healthy; then
     echo "[start] z-agent is up on port ${PORT}"
+    trace "server started and healthy"
   else
     echo "[start] WARN: health check did not pass in 45s; last log lines:"
     tail -20 "$LOG" 2>/dev/null || true
+    trace "WARN: health check failed"
   fi
 fi
 

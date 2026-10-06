@@ -30,6 +30,6 @@
     }
   },
   "postCreateCommand": "bash .devcontainer/setup.sh",
-  "postStartCommand": "bash .devcontainer/start.sh",
-  "postAttachCommand": "bash .devcontainer/start.sh"
+  "postStartCommand": "Z_AGENT_START_CALLER=postStart bash .devcontainer/start.sh",
+  "postAttachCommand": "Z_AGENT_START_CALLER=postAttach bash .devcontainer/start.sh"
 }
