@@ -1,0 +1,20 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "z-agent: start runtime",
+      "type": "shell",
+      "command": "bash .devcontainer/start.sh",
+      "options": { "cwd": "${workspaceFolder}" },
+      "env": { "Z_AGENT_START_CALLER": "vscode-folder-open" },
+      "runOptions": { "runOn": "folderOpen" },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "close": true,
+        "echo": false
+      },
+      "problemMatcher": []
+    }
+  ]
+}
