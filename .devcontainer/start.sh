@@ -19,10 +19,21 @@ healthy() {
 if healthy; then
   echo "[start] z-agent already running on :${PORT}"
 else
+  # postStartCommand can fire while postCreateCommand (setup.sh) is still
+  # installing dependencies, so wait for the environment instead of giving up.
   if [ ! -f .env ]; then
-    echo "[start] .env missing — run: bash .devcontainer/setup.sh"
+    echo "[start] environment not provisioned yet — waiting for setup to finish..."
+    for _ in $(seq 1 60); do
+      [ -f .env ] && break
+      sleep 5
+    done
+  fi
+
+  if [ ! -f .env ]; then
+    echo "[start] .env still missing — run: bash .devcontainer/setup.sh"
     exit 0
   fi
+
   [ -d dist ] || npm run build
 
   echo "[start] starting z-agent (log: ${LOG})"
