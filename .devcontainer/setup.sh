@@ -52,6 +52,19 @@ set_env() {
 set_env Z_AGENT_ALLOW_UNISOLATED_SHELL 1
 set_env Z_AGENT_TERMINAL_ENABLED 1
 
+# Codespaces secrets (repository settings -> Secrets and variables ->
+# Codespaces) arrive as environment variables and win over .env when the
+# runtime starts -- but only for processes started by the lifecycle hooks.
+# A terminal or a manual `npm start` sees .env instead, which would silently
+# use a different invite code and different encryption keys. Mirror the
+# secrets into .env so every path agrees.
+for key in Z_AGENT_SECRET_KEY Z_AGENT_AUDIT_KEY Z_AGENT_INVITE_CODE; do
+  value="${!key:-}"
+  if [ -n "$value" ]; then
+    set_env "$key" "$value"
+  fi
+done
+
 # Invite code is required for registration, including the first account.
 if [ -z "$(read_env Z_AGENT_INVITE_CODE)" ]; then
   INVITE="$(openssl rand -hex 12 2>/dev/null \

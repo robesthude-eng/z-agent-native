@@ -66,7 +66,9 @@ else
   fi
 fi
 
-INVITE="$(sed -n 's/^Z_AGENT_INVITE_CODE=//p' .env 2>/dev/null | tail -1)"
+# The environment wins over .env at runtime, so report what the process
+# actually uses rather than what the file says.
+INVITE="${Z_AGENT_INVITE_CODE:-$(sed -n 's/^Z_AGENT_INVITE_CODE=//p' .env 2>/dev/null | tail -1)}"
 cat <<EOF
 
   Open the UI:  Ports tab -> 3000 -> Open in Browser
