@@ -104,7 +104,8 @@ export async function initTerminal(httpServer) {
     const child = spawn(launch.file, launch.args, { cwd, env, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
     child.stdout.on('data', (d) => socket.emit('data', d.toString('utf8')));
     child.stderr.on('data', (d) => socket.emit('data', d.toString('utf8')));
-    socket.on('data', (data) => child.stdin.write(String(data)));
+    child.stdin.on('error', () => {});
+    socket.on('data', (data) => { if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(String(data)); });
     socket.on('disconnect', () => child.kill('SIGTERM'));
     child.on('close', () => socket.disconnect(true));
   });

@@ -271,6 +271,11 @@ async function execRequest(req, res, input) {
   child.stderr.setEncoding('utf8');
   child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
   child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
+  // A command that exits (or fails to start) without reading its stdin makes the
+  // write fail with EPIPE. That error is emitted on the stream; unhandled, it
+  // reaches the process-level uncaughtException handler, which kills the whole
+  // executor and every other session's running command with it.
+  for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on('error', () => {});
   if (input.stdin) child.stdin.end(String(input.stdin)); else child.stdin.end();
 
   let terminated = false;

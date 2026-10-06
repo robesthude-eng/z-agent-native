@@ -212,6 +212,9 @@ export async function applyGitPatch(root, patchText, signal, ctx) {
       if (code === 0) resolve({ stdout, stderr });
       else reject(new Error(stderr || stdout || `git apply exited ${code}`));
     });
+    // git may exit before reading the whole patch; the resulting EPIPE must not
+    // become an uncaught exception in the API process.
+    child.stdin.on('error', () => {});
     child.stdin.end(String(patchText || ''));
   });
 }

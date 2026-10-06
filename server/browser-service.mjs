@@ -99,6 +99,10 @@ function startWorker(sessionId, uid) {
   });
   const state = { sessionId, uid, child, home, pending: new Map(), lastUsed: Date.now(), stopping: false, stderr: '' };
   workers.set(sessionId, state);
+  // A worker that dies between requests makes the next stdin write fail with
+  // EPIPE. The write callback already rejects the request; without a listener
+  // the same error would also crash this service for every other session.
+  child.stdin.on('error', () => {});
   const lines = readline.createInterface({ input: child.stdout, crlfDelay: Infinity });
   lines.on('line', (line) => {
     if (!line.startsWith(RESPONSE_PREFIX)) return;

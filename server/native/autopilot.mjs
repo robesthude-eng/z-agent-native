@@ -276,9 +276,19 @@ async function expandedPlan(ownerId, plan) {
   };
 }
 
+/**
+ * A user pressing Stop aborts the request with an AbortError. That says nothing
+ * about the model, so it must not count as a failure (it used to lower the
+ * model's rank in Auto mode). Provider-side timeouts surface as TimeoutError.
+ */
+export function shouldRecordHealth(attempt) {
+  return attempt?.ok || attempt?.error?.name !== 'AbortError';
+}
+
 function healthRecorder(ownerId) {
   return {
     onAttempt(attempt) {
+      if (!shouldRecordHealth(attempt)) return;
       recordHealth(ownerId, attempt.model, attempt.ok, attempt.latencyMs, attempt.error);
     },
   };

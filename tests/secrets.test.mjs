@@ -95,3 +95,12 @@ test('production external-key policy rejects data-volume fallback and accepts a 
   fs.chmodSync(secretFile, 0o600);
   delete process.env.Z_AGENT_REQUIRE_EXTERNAL_KEYS;
 });
+
+test('a truncated GCM authentication tag is rejected', () => {
+  const context = 'provider:alice@example.test:openai:api_key';
+  const parts = secrets.encryptSecret('sk-top-secret', context).split(':');
+  // parts: enc, v2, keyId, iv, tag, ciphertext. The first 4 bytes of the real
+  // tag used to pass verification because no tag length was enforced.
+  parts[4] = Buffer.from(parts[4], 'base64url').subarray(0, 4).toString('base64url');
+  assert.throws(() => secrets.decryptSecret(parts.join(':'), context), /authentication failed/);
+});

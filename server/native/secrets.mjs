@@ -5,6 +5,9 @@ import { DATA_DIR } from './config.mjs';
 
 const KEY_FILE = path.join(DATA_DIR, 'master.key');
 let cachedRing = null;
+// Without an explicit length Node accepts GCM tags truncated to 4 bytes, which
+// weakens authentication of the stored envelope. Our tags are always 16 bytes.
+const GCM_DECIPHER_OPTIONS = Object.freeze({ authTagLength: 16 });
 
 function parseKeyMaterial(value, { strict = false } = {}) {
   const raw = String(value || '').trim();
@@ -105,7 +108,7 @@ function decryptV1(parts) {
   let lastError = null;
   for (const entry of keyRing().entries) {
     try {
-      const decipher = crypto.createDecipheriv('aes-256-gcm', entry.key, Buffer.from(ivText, 'base64url'));
+      const decipher = crypto.createDecipheriv('aes-256-gcm', entry.key, Buffer.from(ivText, 'base64url'), GCM_DECIPHER_OPTIONS);
       decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
       return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64url')), decipher.final()]).toString('utf8');
     } catch (error) { lastError = error; }
@@ -135,7 +138,7 @@ export function decryptSecret(value, context = '') {
   const entry = keyRing().entries.find((candidate) => candidate.id === id);
   if (!entry) throw new Error(`Secret key ${id} is not present in the configured keyring`);
   try {
-    const decipher = crypto.createDecipheriv('aes-256-gcm', entry.key, Buffer.from(ivText, 'base64url'));
+    const decipher = crypto.createDecipheriv('aes-256-gcm', entry.key, Buffer.from(ivText, 'base64url'), GCM_DECIPHER_OPTIONS);
     decipher.setAAD(aadFor(context));
     decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
     return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64url')), decipher.final()]).toString('utf8');

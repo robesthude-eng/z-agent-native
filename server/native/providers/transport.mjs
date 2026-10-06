@@ -2,6 +2,7 @@ import { PROVIDER_STREAM_HARD_MS, PROVIDER_STREAM_IDLE_MS } from '../config.mjs'
 import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from '../security.mjs';
 
 const reqTimeout = 30_000;
+const MAX_SSE_BUFFER_CHARS = 32 * 1024 * 1024;
 
 export function normalizeRelayBase(raw) {
   const value = String(raw || '').trim().replace(/\/+$/, '');
@@ -334,15 +335,19 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
       const decoder = new TextDecoder();
       let buffer = '';
       let eventData = [];
+      let eventBytes = 0;
       const flush = () => {
         if (eventData.length === 0) return;
         const raw = eventData.join('\n');
         eventData = [];
+        eventBytes = 0;
         if (raw === '[DONE]') return;
         try {
           const event = JSON.parse(raw);
-          received += 1;
+          // Counted only after the handler accepted it: an in-stream error
+          // event is not delivered content, so it must stay retryable.
           onEvent(event);
+          received += 1;
         } catch (err) {
           if (err instanceof SyntaxError) return;
           throw err;
@@ -352,13 +357,20 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
         const { value, done } = await reader.read();
         if (value?.byteLength) t.touch();
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+        // A provider that never sends a newline / blank line must not be able
+        // to grow these buffers without bound.
+        if (buffer.length > MAX_SSE_BUFFER_CHARS) throw Object.assign(new Error('Provider stream line exceeds the size limit'), { code: 'ESTREAMSIZE' });
         let idx;
         while ((idx = buffer.indexOf('\n')) >= 0) {
           let line = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 1);
           if (line.endsWith('\r')) line = line.slice(0, -1);
           if (!line) { flush(); continue; }
-          if (line.startsWith('data:')) eventData.push(line.slice(5).trimStart());
+          if (line.startsWith('data:')) {
+            eventBytes += line.length;
+            if (eventBytes > MAX_SSE_BUFFER_CHARS) throw Object.assign(new Error('Provider stream event exceeds the size limit'), { code: 'ESTREAMSIZE' });
+            eventData.push(line.slice(5).trimStart());
+          }
         }
         if (done) break;
       }

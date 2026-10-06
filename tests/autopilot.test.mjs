@@ -12,6 +12,7 @@ import {
   promoteModelPlan,
   rankModelCandidates,
   runFallbackPlan,
+  shouldRecordHealth,
   taskStepBudget,
 } from '../server/native/autopilot.mjs';
 import { formatProjectContext, workspaceFingerprint } from '../server/native/project-context.mjs';
@@ -288,4 +289,13 @@ test('замок модели соблюдается во всей цепочк�
   assert.match(agentSource, /mode: modelLocked \? 'locked' : 'auto'/, 'в ленте виден режим выбора модели');
   assert.match(providersSource, /err\?\.publicMessage/, 'готовое объяснение не маскируется');
   assert.match(durableSource, /locked: Boolean\(plan\.locked\)/, 'замок выживает перезапуск');
+});
+
+test('a user abort is not recorded as a model failure, a provider timeout is', () => {
+  const abort = Object.assign(new Error('Request aborted'), { name: 'AbortError' });
+  const timeout = Object.assign(new Error('Provider stream timed out'), { name: 'TimeoutError' });
+  assert.equal(shouldRecordHealth({ ok: false, error: abort }), false);
+  assert.equal(shouldRecordHealth({ ok: false, error: timeout }), true);
+  assert.equal(shouldRecordHealth({ ok: false, error: new Error('HTTP 500') }), true);
+  assert.equal(shouldRecordHealth({ ok: true }), true);
 });

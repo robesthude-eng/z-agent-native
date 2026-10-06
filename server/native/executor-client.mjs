@@ -24,6 +24,8 @@ async function waitForExecutorSocket(timeoutMs = 2500) {
   return executorAvailable();
 }
 
+const CONNECT_FAILURE_CODES = new Set(['ECONNREFUSED', 'ENOENT', 'EAGAIN']);
+
 function requestExecutor(pathname, payload, { signal, timeoutMs = 10_000, onOutput } = {}) {
   return new Promise((resolve, reject) => {
     const body = Buffer.from(JSON.stringify(payload || {}));
@@ -107,7 +109,11 @@ export async function executeInExecutor({ workspace, uid, gid = uid, file, args 
       }, { signal, onOutput, timeoutMs: Math.min(Math.max(Number(timeoutMs) || 600_000, 5_000) + 10_000, 1_810_000) });
     } catch (err) {
       lastErr = err;
-      if (!err?.executorAccepted && (err?.code === 'ECONNREFUSED' || err?.code === 'ENOENT' || err?.message?.includes('socket') || err?.message?.includes('connect'))) {
+      // Retry only when the connection itself could not be established. A
+      // dropped connection ("socket hang up", ECONNRESET) can happen after the
+      // executor already started the command, and re-sending would run a
+      // possibly mutating command twice.
+      if (!err?.executorAccepted && CONNECT_FAILURE_CODES.has(err?.code)) {
         await new Promise((r) => setTimeout(r, 200 * (attempt + 1)));
         continue;
       }

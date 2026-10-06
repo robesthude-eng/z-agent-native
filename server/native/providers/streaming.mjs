@@ -16,6 +16,29 @@ export function stripNulChars(value) {
   return value;
 }
 
+const STREAM_ERROR_TYPE_STATUS = { overloaded_error: 529, rate_limit_error: 429, api_error: 500 };
+
+/**
+ * Providers can answer HTTP 200 and then report a failure inside the stream
+ * (OpenRouter `{"error":{...}}`, Anthropic `{"type":"error",...}`). Ignoring
+ * those events made a failed call look like a short, successful answer.
+ * Returns an Error shaped like a normal provider failure so the usual
+ * retry / interrupted-stream handling applies, or null for ordinary events.
+ */
+export function streamEventError(event) {
+  if (!event || typeof event !== 'object') return null;
+  const raw = event.type === 'error' ? (event.error ?? event) : event.error;
+  if (!raw || (typeof raw !== 'object' && typeof raw !== 'string')) return null;
+  const message = typeof raw === 'string' ? raw : String(raw.message || raw.type || 'Provider stream error');
+  const err = new Error(message.slice(0, 500));
+  err.providerResponse = true;
+  err.body = event;
+  const code = typeof raw === 'object' ? Number(raw.code ?? raw.status) : 0;
+  if (Number.isInteger(code) && code >= 400 && code < 600) err.statusCode = code;
+  else if (typeof raw === 'object' && STREAM_ERROR_TYPE_STATUS[raw.type]) err.statusCode = STREAM_ERROR_TYPE_STATUS[raw.type];
+  return err;
+}
+
 export function parseToolArguments(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     if (Object.hasOwn(raw, '_raw') && Object.keys(raw).length === 1) {
@@ -150,6 +173,8 @@ async function callOpenAIOnce(resolved, { system, frames, tools, signal, onTextD
   let finish = null;
   const calls = new Map();
   const sse = await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+    const streamError = streamEventError(event);
+    if (streamError) throw streamError;
     if (event?.usage) usage = event.usage;
     const choice = event?.choices?.[0];
     if (!choice) return;
@@ -230,6 +255,8 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
   let finish = null;
   const calls = new Map();
   const sse = await fetchSse(target, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify({ ...request, stream: true }) }, signal, (event) => {
+    const streamError = streamEventError(event);
+    if (streamError) throw streamError;
     if (event?.type === 'message_start' && event.message?.usage) usage = event.message.usage;
     if (event?.type === 'message_delta') {
       if (event.delta?.stop_reason) finish = event.delta.stop_reason;
@@ -306,6 +333,8 @@ export async function callGoogle(resolved, { system, frames, tools, signal, onTe
   const sseUrl = `${target.url}${target.url.includes('?') ? '&' : '?'}alt=sse`;
   const sseTarget = { ...target, url: sseUrl, fallback: target.fallback ? { ...target.fallback, url: `${target.fallback.url}${target.fallback.url.includes('?') ? '&' : '?'}alt=sse` } : null };
   const sse = await fetchSse(sseTarget, { method: 'POST', headers: { ...headers, accept: 'text/event-stream' }, body: JSON.stringify(request) }, signal, (event) => {
+    const streamError = streamEventError(event);
+    if (streamError) throw streamError;
     if (event?.usageMetadata) usage = event.usageMetadata;
     const candidate = event?.candidates?.[0];
     if (candidate?.finishReason) finish = candidate.finishReason;

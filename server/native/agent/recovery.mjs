@@ -7,7 +7,7 @@ import { recordTurnCapacityRejection } from '../metrics.mjs';
 import { toolCallFromPart, toolCallSignature, toolMayHaveSideEffects } from '../agent-parts.mjs';
 import { persistAssistant } from './message-parts.mjs';
 import { activeActions, activeTurns, MAX_ACTIVE_TURNS, MAX_ACTIVE_TURNS_PER_OWNER, TURN_CAPACITY_TTL_MS } from './state.mjs';
-import { executeTurnLifecycle, updateTurn } from './turn-loop.mjs';
+import { executeTurnLifecycle, notifyTurnIdle, updateTurn } from './turn-loop.mjs';
 
 export function completedAssistant(message) {
   return Boolean(message?.time?.completed || message?.info?.time?.completed || message?.info?.finish);
@@ -79,6 +79,46 @@ export async function resumeDurableJob(job, controller, assistant) {
   });
 }
 
+/**
+ * executeTurnLifecycle only cleans up after itself once its main try-block is
+ * entered. A failure in its setup (before that point) would leave the session
+ * registered as active, its capacity/cluster lock held and the turn stuck in
+ * "running": every later message would get 409 until the process restarted.
+ * Mirrors the cleanup runTurn already does for fresh turns.
+ */
+export function settleFailedRecovery(job, assistant, err) {
+  // Only touch state this recovery still owns: a normal exit already cleaned up
+  // and a newer turn may have taken over the session since.
+  const owned = activeTurns.get(job.sessionId);
+  if (owned && owned.turnId === job.turnId) {
+    activeTurns.delete(job.sessionId);
+    notifyTurnIdle(job.sessionId);
+  }
+  try {
+    if (assistant && !completedAssistant(assistant)) {
+      const now = Date.now();
+      assistant.time = { ...(assistant.time || {}), completed: now };
+      assistant.info = {
+        ...(assistant.info || {}),
+        finish: 'error',
+        error: { message: String(err?.message || err || 'Recovery failed').slice(0, 500), name: err?.name || 'Error' },
+        time: { ...(assistant.info?.time || {}), completed: now },
+      };
+      persistAssistant(assistant, { putMessage, emit });
+    }
+    const current = getTurn(job.sessionId);
+    if (current?.turnId === job.turnId && !['failed', 'cancelled', 'completed'].includes(String(current?.lifecycle || ''))) {
+      const next = { turnId: job.turnId, lifecycle: 'failed', verdict: 'failed', reason: 'recovery_failed', since: Date.now() };
+      assertTurnTransition(current, next);
+      setTurn(job.sessionId, next);
+      emit(job.sessionId, 'session.status', { status: 'error', lifecycle: 'failed', turnID: job.turnId, waiting: false });
+      emit(job.sessionId, 'session.idle', { reason: 'recovery_failed' });
+    }
+  } catch (cleanupErr) {
+    console.error('[durable-recovery] cleanup failed', job.sessionId, cleanupErr);
+  }
+}
+
 export function startDurableRecovery() {
   let started = 0;
   for (const job of listDurableJobs()) {
@@ -121,6 +161,7 @@ export function startDurableRecovery() {
         if (job.actionId) failAction(job.sessionId, job.actionId, err);
         clearDurableJob(job.sessionId);
         console.error('[durable-recovery]', job.sessionId, err);
+        settleFailedRecovery(job, assistant, err);
         return null;
       })
       .finally(() => {
