@@ -1,0 +1,54 @@
+#cloud-config
+# z-agent-native first-boot provisioning.
+#
+# Paste this file into "Advanced -> Custom data" when creating the VM.
+# On first boot it installs Docker, clones the repo and runs azure/provision.sh.
+#
+# Edit the variables below before pasting. Leave Z_AGENT_DOMAIN empty to derive
+# a TLS hostname from the VM's public IP via sslip.io (no domain purchase needed).
+
+package_update: true
+package_upgrade: false
+
+packages:
+  - ca-certificates
+  - curl
+  - git
+
+write_files:
+  - path: /etc/z-agent-bootstrap.env
+    permissions: '0600'
+    content: |
+      Z_AGENT_REPO=https://github.com/robesthude-eng/z-agent-native.git
+      # use deploy/azure until this branch is merged into main
+      Z_AGENT_REF=main
+      Z_AGENT_DIR=/opt/z-agent-native
+      Z_AGENT_PROFILE=trusted
+      Z_AGENT_DOMAIN=
+      Z_AGENT_SWAP_MB=2048
+
+  - path: /usr/local/bin/z-agent-bootstrap
+    permissions: '0755'
+    content: |
+      #!/usr/bin/env bash
+      set -euo pipefail
+      set -a
+      # shellcheck disable=SC1091
+      . /etc/z-agent-bootstrap.env
+      set +a
+
+      export Z_AGENT_REPO Z_AGENT_DIR Z_AGENT_PROFILE Z_AGENT_DOMAIN Z_AGENT_SWAP_MB
+
+      if [ ! -d "${Z_AGENT_DIR}/.git" ]; then
+        git clone --depth 1 --branch "${Z_AGENT_REF}" \
+          "${Z_AGENT_REPO}" "${Z_AGENT_DIR}"
+      fi
+
+      bash "${Z_AGENT_DIR}/azure/provision.sh"
+
+runcmd:
+  - [ bash, -lc, "/usr/local/bin/z-agent-bootstrap > /var/log/z-agent-provision.log 2>&1" ]
+
+final_message: >-
+  z-agent-native provisioning finished. Details: /root/z-agent-info.txt,
+  full log: /var/log/z-agent-provision.log
