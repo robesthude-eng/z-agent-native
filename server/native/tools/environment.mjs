@@ -6,7 +6,7 @@ import {
 } from '../environment.mjs';
 import { executorRequired } from '../executor-client.mjs';
 import { ensureManagedHome } from '../sandbox.mjs';
-import { EXTENDED_TOOLCHAIN_KINDS, prepareToolchainRequirement } from '../toolchains.mjs';
+import { prepareToolchainRequirement } from '../toolchains.mjs';
 import { agentNetworkPolicy } from '../workspace-policy.mjs';
 
 const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];

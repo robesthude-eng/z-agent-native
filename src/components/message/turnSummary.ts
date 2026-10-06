@@ -1,4 +1,4 @@
-import { t, tf } from "@/i18n";
+import { tf } from "@/i18n";
 import { isAbortedError } from "../../api/eventGuards";
 import type { Message, ToolPart } from "../../api/types";
 import { wasStoppedByUser } from "../../lib/stopUx";

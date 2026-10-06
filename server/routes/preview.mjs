@@ -3,7 +3,7 @@ import path from 'node:path';
 import { sendJson } from '../native/json.mjs';
 import { openWorkspaceFile, readFd } from '../native/workspace-fs.mjs';
 import { workspaceFor, ownsChat } from '../native/store.mjs';
-import { mintPreviewToken, resolvePreviewToken } from '../native/preview-tokens.mjs';
+import { resolvePreviewToken } from '../native/preview-tokens.mjs';
 import { rewritePreviewHtml } from '../native/preview-document.mjs';
 
 const MIME_TYPES = {

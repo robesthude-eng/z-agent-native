@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { Worker } from 'node:worker_threads';
 import { DEFAULT_TOOL_TIMEOUT_MS, GREP_TIMEOUT_MS } from '../config.mjs';
-import { executeInExecutor, executorRequired } from '../executor-client.mjs';
+import { executeInExecutor, } from '../executor-client.mjs';
 import { ensureManagedHome, sandboxCommand, syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
 import { openWorkspaceFile, readFd, replaceFdContent, writeWorkspaceFile } from '../workspace-fs.mjs';

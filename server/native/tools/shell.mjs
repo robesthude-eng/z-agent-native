@@ -1,12 +1,11 @@
 import { spawn } from 'node:child_process';
-import path from 'node:path';
 import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
 import { managedShellEnvironment } from '../environment.mjs';
 import { EXTENDED_TOOLCHAIN_KINDS, suggestToolchainForCommand } from '../toolchains.mjs';
 import { classifyBash } from '../context.mjs';
 import { compareWorkspaceSnapshots, snapshotWorkspace } from '../workspace-changes.mjs';
 import {
-  ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, shellSandboxAvailable, syncSandboxOwnership,
+  ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, 
 } from '../sandbox.mjs';
 import { executeInExecutor } from '../executor-client.mjs';
 import { assertShellCommandAllowed, shellNetworkPolicy } from '../workspace-policy.mjs';

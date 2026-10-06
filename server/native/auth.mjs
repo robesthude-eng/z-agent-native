@@ -181,10 +181,20 @@ export function registerUser(email, password, inviteCode = '') {
   return getUser(clean);
 }
 
+// Verified against when the account does not exist, so a login for an unknown
+// email costs the same scrypt work as one for a real account. Without it the
+// response time alone reveals which emails are registered.
+let decoyPasswordHash = null;
+
 export function loginUser(email, password) {
   const clean = String(email || '').trim().toLowerCase();
   const user = getUser(clean);
-  if (!user || !verifyPassword(password || '', user.password_hash)) throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
+  if (!user) {
+    decoyPasswordHash ??= hashPassword(crypto.randomBytes(18).toString('base64url'));
+    verifyPassword(password || '', decoyPasswordHash);
+    throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
+  }
+  if (!verifyPassword(password || '', user.password_hash)) throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
   // Opportunistic rehash keeps long-lived self-hosted accounts on the current
   // password KDF without forcing a fleet-wide reset. Verification happens
   // first, so only the legitimate password can trigger migration.

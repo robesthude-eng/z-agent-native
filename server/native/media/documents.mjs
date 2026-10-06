@@ -1,5 +1,4 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import { safeWorkspacePath } from '../security.mjs';
 import { mediaMimeType, clampNumber } from './formats.mjs';
 

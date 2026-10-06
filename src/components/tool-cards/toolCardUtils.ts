@@ -1,5 +1,5 @@
 import { toolPhase } from "@/lib/toolStatus";
-import { isRecord, strField } from "../../api/eventGuards";
+import { strField } from "../../api/eventGuards";
 import type { ToolPart, ToolState } from "../../api/types";
 
 // Подпись переехала в lib: её просят и нижний индикатор, и шапка группы, а

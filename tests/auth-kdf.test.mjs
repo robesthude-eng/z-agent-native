@@ -13,7 +13,7 @@ process.env.Z_AGENT_WORKSPACES_DIR = path.join(root, 'workspaces');
 process.env.Z_AGENT_SECRET_KEY = Buffer.alloc(32, 0x41).toString('hex');
 process.env.Z_AGENT_AUDIT_KEY = Buffer.alloc(32, 0x42).toString('hex');
 
-const { hashPassword, passwordHashNeedsUpgrade, verifyPassword } = await import('../server/native/auth.mjs');
+const { hashPassword, loginUser, passwordHashNeedsUpgrade, verifyPassword } = await import('../server/native/auth.mjs');
 
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
@@ -41,4 +41,11 @@ test('malformed or resource-amplifying password hashes fail closed', () => {
   assert.equal(verifyPassword('x', 'scrypt$v2$1048576$32$16$AA$AA'), false);
   assert.equal(verifyPassword('x', 'scrypt$v2$32768$8$1$not-base64$not-base64'), false);
   assert.equal(verifyPassword('x', 'argon2$whatever'), false);
+});
+
+test('login for an unknown email fails with the same error as a wrong password', () => {
+  assert.throws(
+    () => loginUser('nobody@example.invalid', 'whatever password 123'),
+    (err) => err.statusCode === 401 && /Неверный email или пароль/.test(err.message),
+  );
 });

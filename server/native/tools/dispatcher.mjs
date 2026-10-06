@@ -16,7 +16,7 @@ import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, e
 } from './filesystem.mjs';
 import { executeMediaAction, isMediaTool } from './media.mjs';
 import {
-  execBash, executeBashTool, externalSpawnIdentity, missingCommandHint, sandboxUidHint,
+  execBash, executeBashTool, externalSpawnIdentity, 
 } from './shell.mjs';
 import { ToolArgumentsError, validateToolInput } from './validate.mjs';
 import { executeWebFetch, executeWebSearch } from './web.mjs';

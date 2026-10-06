@@ -25,7 +25,6 @@ import {
   clampNumber,
   DOCUMENT_FORMATS,
   IMAGE_FORMATS,
-  MEDIA_TYPES,
   mediaExtension,
   mediaKindForPath,
   mediaMimeType,
