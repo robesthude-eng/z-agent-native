@@ -27,6 +27,13 @@ write_files:
       Z_AGENT_DOMAIN=
       Z_AGENT_SWAP_MB=2048
 
+      # Agent internet. Left unset, the profile default applies (trusted => public:
+      # the agent may reach any public host). On a VM with a public IP prefer the
+      # allowlist: search, weather and Wikipedia keep working, arbitrary hosts are
+      # refused, so a prompt injection has nowhere to send your data.
+      # Z_AGENT_NETWORK_POLICY=allowlist
+      # Z_AGENT_NETWORK_ALLOWLIST=api.open-meteo.com,html.duckduckgo.com,api.duckduckgo.com,*.wikipedia.org
+
   - path: /usr/local/bin/z-agent-bootstrap
     permissions: '0755'
     content: |
@@ -38,6 +45,9 @@ write_files:
       set +a
 
       export Z_AGENT_REPO Z_AGENT_DIR Z_AGENT_PROFILE Z_AGENT_DOMAIN Z_AGENT_SWAP_MB
+      # Optional: empty when the commented lines above stay commented out.
+      export Z_AGENT_NETWORK_POLICY="${Z_AGENT_NETWORK_POLICY:-}"
+      export Z_AGENT_NETWORK_ALLOWLIST="${Z_AGENT_NETWORK_ALLOWLIST:-}"
 
       if [ ! -d "${Z_AGENT_DIR}/.git" ]; then
         git clone --depth 1 --branch "${Z_AGENT_REF}" \
