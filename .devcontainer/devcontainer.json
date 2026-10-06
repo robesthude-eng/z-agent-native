@@ -19,9 +19,7 @@
     "memory": "8gb",
     "storage": "32gb"
   },
-  "forwardPorts": [
-    3000
-  ],
+  "forwardPorts": [3000],
   "portsAttributes": {
     "3000": {
       "label": "Z Agent",
