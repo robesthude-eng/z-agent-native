@@ -52,6 +52,19 @@ set_env() {
 set_env Z_AGENT_ALLOW_UNISOLATED_SHELL 1
 set_env Z_AGENT_TERMINAL_ENABLED 1
 
+# The shipped template disables model-selected network egress, so the agent
+# answers "Internet: disabled for this instance" and refuses to browse or fetch
+# pages. That is the right default for an Internet-facing server and the wrong
+# one for a private codespace, so enable the documented "trusted" profile here.
+# Set Z_AGENT_STRICT_NETWORK=1 to keep the hardened defaults instead.
+if [ "${Z_AGENT_STRICT_NETWORK:-0}" != "1" ]; then
+  set_env Z_AGENT_NETWORK_POLICY public
+  set_env Z_AGENT_ALLOW_PUBLIC_WEB 1
+  set_env Z_AGENT_SHELL_NETWORK_POLICY open
+  set_env Z_AGENT_ALLOW_NETWORKED_INSTALLERS 1
+  set_env Z_AGENT_ALLOW_PRODUCTION_TERMINAL 1
+fi
+
 # Codespaces secrets (repository settings -> Secrets and variables ->
 # Codespaces) arrive as environment variables and win over .env when the
 # runtime starts -- but only for processes started by the lifecycle hooks.
@@ -92,6 +105,27 @@ fi
 if [ ! -d dist ]; then
   echo "[setup] building frontend..."
   npm run build || echo "[setup] WARN: build failed"
+fi
+
+# ------------------------------------------------------- browser tool support
+# The agent's browser tool drives a real Chromium through playwright. Without a
+# downloaded build plus its system libraries the tool fails with "Executable
+# doesn't exist" or crashes at launch, which looks like a policy problem and is
+# not. This step is skipped once the browser is present.
+# Set Z_AGENT_SKIP_BROWSER=1 to skip it (saves ~150 MB and a minute of setup).
+if [ "${Z_AGENT_SKIP_BROWSER:-0}" != "1" ]; then
+  BROWSERS_DIR="${PLAYWRIGHT_BROWSERS_PATH:-$HOME/.cache/ms-playwright}"
+  if [ -z "$(ls -A "$BROWSERS_DIR" 2>/dev/null)" ]; then
+    echo "[setup] installing Chromium for the agent browser tool (~150 MB)..."
+    npx playwright-core install chromium >/dev/null 2>&1 \
+      || echo "[setup] WARN: Chromium download failed; run: npx playwright-core install chromium"
+    # System libraries (libnss3, xvfb and friends) are not in the base image.
+    NPX_BIN="$(command -v npx || true)"
+    if [ -n "$NPX_BIN" ]; then
+      sudo env "PATH=$PATH" "$NPX_BIN" playwright-core install-deps chromium >/dev/null 2>&1 \
+        || echo "[setup] WARN: Chromium system dependencies failed; run: sudo npx playwright-core install-deps chromium"
+    fi
+  fi
 fi
 
 cat <<EOF
