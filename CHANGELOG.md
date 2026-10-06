@@ -8,6 +8,15 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Live streaming of agent actions
+
+- Tool cards are drawn while the model is still writing the call: the card, its path/command and the tail of the file body (`write`, `edit`, `apply_patch`) update as the arguments stream in (OpenAI, Anthropic and Google adapters; display only, the executed call is always the final parsed one). When the response completes, every call of the step is shown as queued before the first tool starts, and a call keeps one card from first token to result.
+- Live command output is delivered on the leading edge and at most every 80–100 ms (was a fixed 250 ms wait in both the executor and the server).
+- The typing animation that held text 140–900 ms behind the stream is off by default; tool output is shown as it arrives and follows the end of the output while the tool runs (unless the user scrolled up).
+- A running card opens on its own only when there is something to show, so instant tools no longer flash open and shut; queued cards stay collapsed.
+- New `message.part.removed` event drops cards of a discarded attempt; cards still queued/running when a turn ends are settled instead of spinning forever.
+
+
 ## Live agent test fixes: checks, web pages, errors and browser testing
 
 - The verification gate recognises common test and lint runners (`python -m unittest`/`pytest`, `npx vitest`/`jest`/`tsc`, `deno test`, `go vet`, `cargo clippy`, `dotnet test`, `make test`, `bash -n` and others). Package installs no longer count as checks, and a check whose exit code is hidden by `;`, `|` or `||` fails when its output shows failures. Read-only Git (`git -C … status`), `--version` and package listing commands no longer trigger re-verification.

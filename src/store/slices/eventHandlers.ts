@@ -146,6 +146,27 @@ const removeMessage: EventHandler = ({ set }, sid, p) => {
   }));
 };
 
+/**
+ * Убрать часть, которую движок нарисовал по ходу стрима и потом отбросил
+ * (вызов инструмента, обрезанный при сбое провайдера или заменённый при
+ * повторе шага). Иначе карточка осталась бы «работающей» навсегда.
+ */
+const removePart: EventHandler = ({ set }, sid, p) => {
+  const messageID = eventMessageId(p);
+  const partID = eventPartId(p);
+  if (!sid || !messageID || !partID) return;
+  set((s: State) => ({
+    messages: {
+      ...s.messages,
+      [sid]: (s.messages[sid] ?? []).map((m) =>
+        m.id === messageID
+          ? { ...m, parts: m.parts.filter((part) => part.id !== partID) }
+          : m,
+      ),
+    },
+  }));
+};
+
 const updateMessage: EventHandler = ({ set }, sid, p) => {
   if (!sid) return;
   const msg = p.message as Message | undefined;
@@ -381,6 +402,7 @@ export const EVENT_HANDLERS: Readonly<Record<string, EventHandler>> = {
   "session.idle": applySessionIdle,
   "message.removed": removeMessage,
   "message.updated": updateMessage,
+  "message.part.removed": removePart,
   "message.part.updated": updatePart,
   "message.part.delta": applyPartDelta,
   "stream.corrupted": streamCorrupted,

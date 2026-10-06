@@ -32,8 +32,25 @@ export function assistantHasProgress(assistant, strategy) {
   return false;
 }
 
-export async function executeCall(sessionId, assistant, call, controller, runtime, updateTurn = null) {
-  const part = toolPart(call);
+/**
+ * Cards of a step are drawn while the model streams (see tool-stream.mjs) and
+ * stay `pending` until their turn. Starting a call turns its card into a
+ * running one in place, so the user sees one continuous card per call.
+ */
+function startPart(call, livePart) {
+  if (!livePart) return toolPart(call);
+  livePart.callID = call.id;
+  livePart.state = {
+    status: 'running',
+    input: call.arguments || {},
+    title: livePart.state?.title || call.name,
+    time: { start: Date.now() },
+  };
+  return livePart;
+}
+
+export async function executeCall(sessionId, assistant, call, controller, runtime, updateTurn = null, livePart = null) {
+  const part = startPart(call, livePart);
   emitPart(assistant, part, { putMessage, emit });
   if (isIncompleteToolCall(call)) {
     const output = 'Аргументы инструмента обрезаны или не являются JSON. Вызов не выполнен. Повторите его с полными аргументами.';

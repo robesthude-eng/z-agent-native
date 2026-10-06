@@ -42,7 +42,10 @@ export function interruptedToolParts(assistant) {
     const state = part.state && typeof part.state === 'object' ? part.state : {};
     if (!['running', 'pending'].includes(String(state.status || ''))) continue;
     const call = toolCallFromPart(part);
-    const sideEffects = toolMayHaveSideEffects(call.name);
+    // A card that was still queued or only being typed by the model never started
+    // executing, so nothing could have been partially applied.
+    const neverStarted = String(state.status) === 'pending' || Boolean(state.metadata?.streamingArgs);
+    const sideEffects = !neverStarted && toolMayHaveSideEffects(call.name);
     const output = sideEffects
       ? 'Runtime restarted while this action was in flight. It was not automatically repeated because it may have partially completed. Inspect the current workspace/environment state before deciding whether a new action is needed.'
       : 'Runtime restarted before this tool result was durably confirmed. The previous call was not automatically repeated; retry it only if it is still needed.';

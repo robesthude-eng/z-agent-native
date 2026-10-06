@@ -86,6 +86,7 @@ const ACTIVITY_EVENT_TYPES = new Set([
   "message.updated",
   "message.part.updated",
   "message.part.delta",
+  "message.part.removed",
   "message.removed",
   "permission.asked",
   "permission.responded",

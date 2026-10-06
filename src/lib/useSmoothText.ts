@@ -3,6 +3,12 @@ import { useEffect, useRef, useState } from "react";
 /**
  * Плавный вывод стримящегося текста.
  *
+ * ВЫКЛЮЧЕНО по умолчанию (`smooth: true` включает). Анимация догоняла текст
+ * на 140–900 мс позади того, что уже пришло с сервера, а пользователь хочет
+ * видеть вывод агента в прямом эфире, без искусственной задержки. Дельты
+ * и так батчатся раз в кадр (см. eventHandlers), этого достаточно для
+ * плавности.
+ *
  * Провайдеры присылают текст пачками неравномерно: то несколько символов
  * подряд, то крупный кусок раз в секунду. Хук показывает текст с темпом,
  * подстроенным под средний интервал между пачками, — чтобы очередная пачка
@@ -25,6 +31,8 @@ export function useSmoothStreamingText(
     drainMs?: number;
     frameMs?: number;
     hardLimit?: number;
+    /** Включить анимацию догонки (по умолчанию текст показывается сразу). */
+    smooth?: boolean;
   },
 ): string {
   const minCatchUpMs = opts?.minCatchUpMs ?? 140;
@@ -32,6 +40,7 @@ export function useSmoothStreamingText(
   const drainMs = opts?.drainMs ?? 260;
   const frameMs = opts?.frameMs ?? 16;
   const hardLimit = opts?.hardLimit ?? 40000;
+  const smooth = opts?.smooth === true;
 
   const [shown, setShown] = useState(text);
   const [animating, setAnimating] = useState(false);
@@ -70,6 +79,7 @@ export function useSmoothStreamingText(
 
     // История, редактирование, сброс текста, огромные ответы — без анимации.
     if (
+      !smooth ||
       reducedMotion ||
       (!streaming && !wasStreamingRef.current) ||
       !text.startsWith(prev.slice(0, lenRef.current)) ||
@@ -149,6 +159,7 @@ export function useSmoothStreamingText(
   }, [
     text,
     streaming,
+    smooth,
     reducedMotion,
     hardLimit,
     minCatchUpMs,
@@ -164,5 +175,5 @@ export function useSmoothStreamingText(
     [],
   );
 
-  return (streaming || animating) && !reducedMotion ? shown : text;
+  return smooth && (streaming || animating) && !reducedMotion ? shown : text;
 }

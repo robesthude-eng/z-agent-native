@@ -19,6 +19,7 @@ const DEFAULT_NAMED_TYPES: readonly string[] = [
   "message.updated",
   "message.part.updated",
   "message.part.delta",
+  "message.part.removed",
   "message.removed",
   "session.status",
   "session.idle",

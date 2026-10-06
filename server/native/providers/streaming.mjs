@@ -39,6 +39,16 @@ export function streamEventError(event) {
   return err;
 }
 
+/**
+ * Report a tool call that is still being assembled so the UI can show its
+ * card (name, path, the file body so far) while the model is writing it. This
+ * is display-only: a failure here must never break the provider stream.
+ */
+function reportToolCall(onToolCall, payload) {
+  if (typeof onToolCall !== 'function') return;
+  try { onToolCall(payload); } catch { /* display aid only */ }
+}
+
 export function parseToolArguments(raw) {
   if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
     if (Object.hasOwn(raw, '_raw') && Object.keys(raw).length === 1) {
@@ -141,7 +151,7 @@ export async function callOpenAI(resolved, opts) {
   }
 }
 
-async function callOpenAIOnce(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }, maxTokens = 0) {
+async function callOpenAIOnce(resolved, { system, frames, tools, signal, onTextDelta, onToolCall, failFastRateLimit = false }, maxTokens = 0) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/chat/completions`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = {
@@ -191,6 +201,7 @@ async function callOpenAIOnce(resolved, { system, frames, tools, signal, onTextD
       if (piece.function?.name) current.name += piece.function.name;
       if (piece.function?.arguments) current.arguments += piece.function.arguments;
       calls.set(index, current);
+      if (current.name) reportToolCall(onToolCall, { key: index, id: current.id, name: current.name, args: current.arguments });
     }
   }, { failFastRateLimit });
   splitter.flush();
@@ -233,7 +244,7 @@ export function anthropicMessages(frames) {
   return out;
 }
 
-export async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
+export async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta, onToolCall, failFastRateLimit = false }) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
   const request = { model: resolved.modelId, max_tokens: 8192, system, messages: anthropicMessages(frames), tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })) };
@@ -263,7 +274,9 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
       if (event.usage) usage = { ...(usage || {}), ...event.usage };
     }
     if (event?.type === 'content_block_start' && event.content_block?.type === 'tool_use') {
-      calls.set(event.index, { id: event.content_block.id, name: event.content_block.name, baseInput: event.content_block.input || {}, partial: '' });
+      const started = { id: event.content_block.id, name: event.content_block.name, baseInput: event.content_block.input || {}, partial: '' };
+      calls.set(event.index, started);
+      if (started.name) reportToolCall(onToolCall, { key: event.index, id: started.id, name: started.name, args: started.baseInput });
     }
     if (event?.type === 'content_block_delta') {
       if (event.delta?.type === 'text_delta' && event.delta.text) splitter.push(event.delta.text, 'text');
@@ -272,6 +285,7 @@ export async function callAnthropic(resolved, { system, frames, tools, signal, o
         const current = calls.get(event.index) || { id: `call_${Date.now()}_${event.index}`, name: '', baseInput: {}, partial: '' };
         current.partial += event.delta.partial_json || '';
         calls.set(event.index, current);
+        if (current.name) reportToolCall(onToolCall, { key: event.index, id: current.id, name: current.name, args: current.partial || current.baseInput });
       }
     }
   }, { failFastRateLimit });
@@ -306,7 +320,7 @@ export function googleContents(frames) {
   return contents;
 }
 
-export async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta, failFastRateLimit = false }) {
+export async function callGoogle(resolved, { system, frames, tools, signal, onTextDelta, onToolCall, failFastRateLimit = false }) {
   const action = typeof onTextDelta === 'function' ? 'streamGenerateContent' : 'generateContent';
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/models/${resolved.modelId}:${action}`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
@@ -340,7 +354,11 @@ export async function callGoogle(resolved, { system, frames, tools, signal, onTe
     if (candidate?.finishReason) finish = candidate.finishReason;
     for (const p of candidate?.content?.parts || []) {
       if (p.text) splitter.push(p.text, 'text');
-      if (p.functionCall) toolCalls.push(toolCallFromParsed(`call_${Date.now()}_${toolCalls.length}`, p.functionCall.name, p.functionCall.args));
+      if (p.functionCall) {
+        const call = toolCallFromParsed(`call_${Date.now()}_${toolCalls.length}`, p.functionCall.name, p.functionCall.args);
+        toolCalls.push(call);
+        if (call.name) reportToolCall(onToolCall, { key: toolCalls.length - 1, id: call.id, name: call.name, args: call.arguments });
+      }
     }
   }, { failFastRateLimit });
   splitter.flush();

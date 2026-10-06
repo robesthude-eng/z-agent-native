@@ -28,7 +28,7 @@ import {
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { framesWithDossier } from './dossier.mjs';
-import { demoteDraftTextToReasoning, emitPart, emitText, persistAssistant, promoteReasoningToText } from './message-parts.mjs';
+import { demoteDraftTextToReasoning, emitPart, emitText, persistAssistant, promoteReasoningToText, settleOpenToolParts } from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
@@ -137,6 +137,7 @@ function planContinuationGate(strategy) {
 
 import { liveTextSink } from './streaming.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
+import { createToolCallSink } from './tool-stream.mjs';
 
 export function notifyTurnIdle(sessionId) {
   if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
@@ -190,6 +191,7 @@ export async function finalizeAssistant({ sessionId, assistant, strategy, usage,
     changed: Boolean(strategy?.changed),
     summary: textParts(assistant).slice(-2_000),
   });
+  settleOpenToolParts(assistant, { putMessage, emit });
   persistAssistant(assistant, { putMessage, emit });
   if (assistant.info.telemetry) emit(sessionId, 'turn.telemetry', { telemetry: assistant.info.telemetry });
   try { markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed }); } catch {}
@@ -472,6 +474,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       runtime.stepsUsed = step;
       checkpointState(sessionId, runtime, strategy, { phase: 'before_model', stepsUsed: step });
       const live = liveTextSink(assistant);
+      const toolSink = createToolCallSink(assistant, { emit, persist: (a) => putMessage(a) });
       const budgetKey = (runtime.modelPlan?.candidates || []).map(modelKey).join('|');
       if (!runtime.contextBudget && learnedContextBudget.has(budgetKey)) runtime.contextBudget = learnedContextBudget.get(budgetKey);
       const providerFrames = compactFrames(frames, runtime.contextBudget ? { maxChars: runtime.contextBudget } : {});
@@ -484,8 +487,11 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           tools: turnTools(),
           signal: controller.signal,
           onTextDelta: (delta, type = null) => live.push(delta, type),
+          onToolCall: (call) => toolSink.onToolCall(call),
+          onToolCallsReset: () => toolSink.discard(),
         });
       } catch (err) {
+        toolSink.discard();
         if (err?.name === 'AbortError' || controller.signal.aborted) throw err;
         if (overflowError(err) && (runtime.overflowRetries || 0) < MAX_OVERFLOW_RETRIES) {
           const sent = contextWeight(providerFrames);
@@ -528,6 +534,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       runtime.stepsUsed = step + 1;
       checkpointState(sessionId, runtime, strategy, { phase: 'after_model', stepsUsed: step + 1, lastUsage });
       const calls = response.toolCalls || [];
+      if (calls.length === 0) toolSink.discard();
       // Ответ оборван (обрыв стрима или лимит токенов) и не содержит вызовов
       // инструментов: это не финал. Сохраняем полученную часть в контексте и
       // просим модель продолжить с места обрыва, а не закрываем ход.
@@ -669,10 +676,12 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         }
       }
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
+      // Every card of this step is on screen (queued) before the first tool starts.
+      const stepParts = toolSink.bind(calls);
       const stepMedia = [];
-      for (const call of calls) {
+      for (const [callIndex, call] of calls.entries()) {
         const toolStartedAt = Date.now();
-        const result = await executeCall(sessionId, assistant, call, controller, runtime, updateTurn);
+        const result = await executeCall(sessionId, assistant, call, controller, runtime, updateTurn, stepParts[callIndex]);
         recordToolCall(runtime.telemetry, { call, result, latencyMs: Date.now() - toolStartedAt });
         observeTool(strategy, call, result);
         if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;

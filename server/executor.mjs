@@ -8,6 +8,7 @@ const SOCKET_PATH = process.env.Z_AGENT_EXECUTOR_SOCKET || '/run/z-agent-executo
 const WORKSPACES_DIR = path.resolve(process.env.Z_AGENT_WORKSPACES_DIR || '/workspaces');
 const MAX_BODY = 2 * 1024 * 1024;
 const MAX_OUTPUT = 256 * 1024;
+const LIVE_FRAME_MS = 80;
 const PRLIMIT = ['/usr/bin/prlimit', '/bin/prlimit'].find((candidate) => fs.existsSync(candidate)) || null;
 const SETPRIV = ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv'].find((candidate) => fs.existsSync(candidate)) || null;
 const ENV = ['/usr/bin/env', '/bin/env'].find((candidate) => fs.existsSync(candidate)) || null;
@@ -239,23 +240,32 @@ async function execRequest(req, res, input) {
   const streaming = input.streamOutput === true;
   let liveTimer = null;
   let dirty = false;
+  let lastLive = 0;
   let backpressured = false;
   if (streaming) {
     res.writeHead(200, { 'content-type': 'application/x-ndjson', 'cache-control': 'no-store' });
     res.flushHeaders();
     res.on('drain', () => {
       backpressured = false;
-      if (dirty && !liveTimer) { liveTimer = setTimeout(flushLive, 250); liveTimer.unref?.(); }
+      if (dirty) scheduleLive();
     });
   }
   const frame = (value) => {
     if (res.destroyed || res.writableEnded) return;
     backpressured = !res.write(`${JSON.stringify(value)}\n`);
   };
+  // Leading edge: the first chunk after a quiet period goes out at once (next
+  // tick), later ones are batched to at most one frame per LIVE_FRAME_MS.
+  const scheduleLive = () => {
+    if (liveTimer) return;
+    liveTimer = setTimeout(flushLive, Math.max(0, LIVE_FRAME_MS - (Date.now() - lastLive)));
+    liveTimer.unref?.();
+  };
   const flushLive = () => {
     liveTimer = null;
     if (!dirty || backpressured || res.destroyed || res.writableEnded) return;
     dirty = false;
+    lastLive = Date.now();
     const tail = (text) => text.length > 4000 ? `[…показан только конец вывода]\n${text.slice(-4000)}` : text;
     frame({ type: 'output', stdout: tail(stdout), stderr: tail(stderr) });
   };
@@ -263,7 +273,7 @@ async function execRequest(req, res, input) {
     const next = current + chunk;
     if (streaming) {
       dirty = true;
-      if (!liveTimer) { liveTimer = setTimeout(flushLive, 250); liveTimer.unref?.(); }
+      scheduleLive();
     }
     return next.length > MAX_OUTPUT ? `[truncated]\n${next.slice(-MAX_OUTPUT)}` : next;
   };

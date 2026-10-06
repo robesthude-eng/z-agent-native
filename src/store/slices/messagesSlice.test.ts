@@ -184,6 +184,34 @@ describe("messagesSlice streaming event reducer", () => {
     expect(store.messages[sid]).toEqual([]);
   });
 
+  test("drops a tool card the engine discarded mid-stream", () => {
+    const tool = (id: string) => ({
+      id,
+      type: "tool",
+      tool: "write",
+      state: { status: "running" },
+    });
+    for (const id of ["tool_a", "tool_b"]) {
+      store.applyEvent(
+        event("message.part.updated", {
+          sessionID: sid,
+          messageID: "msg_1",
+          part: tool(id),
+        }),
+      );
+    }
+    store.applyEvent(
+      event("message.part.removed", {
+        sessionID: sid,
+        messageID: "msg_1",
+        partID: "tool_a",
+      }),
+    );
+    const parts = store.messages[sid]?.find((m) => m.id === "msg_1")?.parts;
+    expect(parts?.map((p) => p.id)).not.toContain("tool_a");
+    expect(parts?.map((p) => p.id)).toContain("tool_b");
+  });
+
   test("removes session state when an SSE removal arrives during streaming", () => {
     store.status[sid] = "busy";
     store.applyEvent(event("session.removed", { sessionID: sid }));

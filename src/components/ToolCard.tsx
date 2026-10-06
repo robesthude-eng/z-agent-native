@@ -5,6 +5,7 @@ import {
   isInterruptionBarEnabled,
 } from "../api/interruptions";
 import type { ToolPart } from "../api/types";
+import { rawToolStatus } from "../lib/toolStatus";
 import MediaArtifact, { readMediaArtifact } from "./MediaArtifact";
 import { QuestionCard, QuestionTrace } from "./tool-cards/QuestionCard";
 import { ToolHeader } from "./tool-cards/ToolHeader";
@@ -19,6 +20,17 @@ import {
 import { Collapse } from "./ui/Collapse";
 
 export { friendlyToolLabel } from "./tool-cards/toolCardUtils";
+
+/** Инструменты, чей вывод идёт по мере работы: карточка открыта с самого начала. */
+const LONG_RUNNING_TOOLS = new Set([
+  "bash",
+  "shell",
+  "task",
+  "git",
+  "ssh_tool",
+  "run_tests",
+  "diagnostics",
+]);
 
 interface ToolCardProps {
   part: ToolPart;
@@ -40,7 +52,18 @@ function ToolCardComponent({ part }: ToolCardProps) {
     ToolGroup).
   */
   const [manuallyToggled, setManuallyToggled] = useState<boolean | null>(null);
-  const open = manuallyToggled ?? (state === "running" || state === "error");
+  // Работающая карточка раскрывается, когда есть что показать: вывод,
+  // тело записываемого файла или заглушка «ждём вывод» у команд. У мгновенных
+  // инструментов (read, grep …) пустая раскрытая карточка мигала бы: открылась
+  // и тут же закрылась. Вызов в очереди (`pending`) раскрывается, только когда
+  // дойдёт до выполнения.
+  const queued = rawToolStatus(part) === "pending";
+  const open =
+    manuallyToggled ??
+    ((state === "running" &&
+      !queued &&
+      (output.length > 0 || LONG_RUNNING_TOOLS.has(toolName))) ||
+      state === "error");
 
   // 1. Question Tool Card or Interruption Trace
   if (toolName === "question") {

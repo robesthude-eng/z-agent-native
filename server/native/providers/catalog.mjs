@@ -78,6 +78,16 @@ export async function fixtureResponse(request) {
   }
 
   if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text, 'text');
+  // Like a real provider, report each tool call while its arguments "stream" in.
+  if (typeof request?.onToolCall === 'function') {
+    (response.toolCalls || []).forEach((call, key) => {
+      const raw = JSON.stringify(call.arguments || {});
+      const step = Math.max(1, Math.ceil(raw.length / 3));
+      for (let end = step; end < raw.length + step; end += step) {
+        request.onToolCall({ key, id: call.id, name: call.name, args: raw.slice(0, Math.min(end, raw.length)) });
+      }
+    });
+  }
   return { ...response, usage: { prompt_tokens: 16, completion_tokens: 12 }, streamed: typeof request?.onTextDelta === 'function' };
 }
 

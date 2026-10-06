@@ -22,7 +22,7 @@ import { ToolArgumentsError, validateToolInput } from './validate.mjs';
 import { executeWebFetch, executeWebSearch } from './web.mjs';
 
 const MAX_TOOL_OUTPUT = 512 * 1024;
-const LIVE_OUTPUT_INTERVAL_MS = 250;
+const LIVE_OUTPUT_INTERVAL_MS = 100;
 const LIVE_OUTPUT_TAIL = 4000;
 
 function rel(root, full) {
@@ -48,30 +48,39 @@ function liveTail(text) {
   return `[…показан только конец вывода]\n${s.slice(-LIVE_OUTPUT_TAIL)}`;
 }
 
-export function createLiveOutput(onOutput) {
+export function createLiveOutput(onOutput, { intervalMs = LIVE_OUTPUT_INTERVAL_MS, now = Date.now } = {}) {
   if (typeof onOutput !== 'function') return { push() {}, stop() {} };
   let timer = null;
   let pending = null;
   let sent = null;
+  let lastSent = 0;
+  let stopped = false;
   const flush = () => {
-    timer = null;
+    if (timer) { clearTimeout(timer); timer = null; }
     const text = pending;
     pending = null;
-    if (text == null || text === sent) return;
+    if (stopped || text == null || text === sent) return;
     sent = text;
+    lastSent = now();
     try { onOutput(text); } catch {}
   };
   return {
+    // Leading edge: the first chunk after a quiet period is shown immediately;
+    // a burst afterwards is coalesced into at most one update per interval and
+    // the last state is always delivered (trailing edge).
     push(stdout, stderr) {
       pending = [
         stdout && `stdout:\n${liveTail(stdout)}`,
         stderr && `stderr:\n${liveTail(stderr)}`,
       ].filter(Boolean).join('\n');
       if (timer) return;
-      timer = setTimeout(flush, LIVE_OUTPUT_INTERVAL_MS);
+      const wait = intervalMs - (now() - lastSent);
+      if (wait <= 0) { flush(); return; }
+      timer = setTimeout(flush, wait);
       timer.unref?.();
     },
     stop() {
+      stopped = true;
       if (timer) clearTimeout(timer);
       timer = null;
       pending = null;

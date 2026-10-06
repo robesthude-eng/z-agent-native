@@ -242,6 +242,8 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       return { ...response, model: candidate, attempts };
     } catch (error) {
       lastError = error;
+      // Cards drawn from a failed attempt's partial tool calls must not leak into the next model's answer.
+      try { request?.onToolCallsReset?.(); } catch { /* display aid only */ }
       const attempt = { model: candidate, ok: false, latencyMs: Date.now() - startedAt, error };
       attempts.push(attempt);
       options.onAttempt?.(attempt);

@@ -48,4 +48,42 @@ describe("tool output lifecycle", () => {
     expect(container.textContent).toContain("last");
     expect(container.textContent).toContain("exit=0");
   });
+
+  it("follows the end of the output while running, unless the user scrolled up", () => {
+    const heights = vi
+      .spyOn(HTMLElement.prototype, "scrollHeight", "get")
+      .mockReturnValue(500);
+    const make = (output: string, status = "running") => (
+      <ToolOutputView
+        part={{
+          type: "tool",
+          tool: "bash",
+          state: { status, metadata: { output } },
+        }}
+      />
+    );
+    const { container, rerender } = render(make("one"));
+    const pre = container.querySelector("pre") as HTMLElement;
+    expect(pre.scrollTop).toBe(500);
+    pre.scrollTop = 0;
+    pre.dispatchEvent(new Event("scroll", { bubbles: true }));
+    rerender(make("one\ntwo"));
+    expect(pre.scrollTop).toBe(0);
+    heights.mockRestore();
+  });
+  it("shows streamed output at once, without a typing delay", () => {
+    const { container } = render(
+      <ToolOutputView
+        part={{
+          type: "tool",
+          tool: "write",
+          state: {
+            status: "running",
+            metadata: { output: "x".repeat(3000), streamingArgs: true },
+          },
+        }}
+      />,
+    );
+    expect(container.textContent).toContain("x".repeat(3000));
+  });
 });

@@ -9,6 +9,31 @@ export function persistAssistant(assistant, { putMessage, emit }) {
   emit(assistant.sessionID, 'message.updated', { message: assistant });
 }
 
+/**
+ * A finished turn cannot have tool cards that are still queued or running (the
+ * rest of a step is skipped on cancel, loop stop or error). Left as they are
+ * they would spin forever in the chat. Returns the number of cards settled.
+ */
+export function settleOpenToolParts(assistant, { putMessage, emit }) {
+  let settled = 0;
+  for (const part of assistant?.parts || []) {
+    if (part?.type !== 'tool') continue;
+    const status = String(part.state?.status || '');
+    if (status !== 'pending' && status !== 'running') continue;
+    const never = status === 'pending' || part.state?.metadata?.streamingArgs;
+    part.state = {
+      ...part.state,
+      status: 'error',
+      output: never ? 'Не выполнено: ход завершён раньше.' : 'Выполнение прервано: ход завершён.',
+      time: { ...(part.state?.time || {}), end: Date.now() },
+    };
+    emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
+    settled += 1;
+  }
+  if (settled) putMessage(assistant);
+  return settled;
+}
+
 export function emitPart(assistant, part, { putMessage, emit }) {
   const i = assistant.parts.findIndex((p) => p.id === part.id);
   if (i === -1) assistant.parts.push(part);

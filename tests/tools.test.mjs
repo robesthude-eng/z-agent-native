@@ -120,21 +120,25 @@ test('живой вывод держит интервал, не дублируе
   const tick = () => new Promise((r) => setTimeout(r, 400));
 
   live.push('a\n', '');
+  // Первый чанк после тишины показывается сразу, без ожидания интервала.
+  assert.deepEqual(frames, ['stdout:\na\n']);
   live.push('a\nb\n', '');
+  live.push('a\nb\nc\n', '');
   await tick();
-  // Два чанка внутри одного интервала — один кадр с последним состоянием.
-  assert.deepEqual(frames, ['stdout:\na\nb\n']);
+  // Чанки внутри одного интервала — один кадр с последним состоянием.
+  assert.deepEqual(frames, ['stdout:\na\n', 'stdout:\na\nb\nc\n']);
 
-  live.push('a\nb\n', '');
+  live.push('a\nb\nc\n', '');
   await tick();
-  assert.equal(frames.length, 1, 'тот же текст не должен шёл вторым событием');
-
-  live.push('a\nb\n', 'oops\n');
-  await tick();
-  assert.equal(frames[1], 'stdout:\na\nb\n\nstderr:\noops\n');
+  assert.equal(frames.length, 2, 'тот же текст не должен шёл вторым событием');
 
   live.push('a\nb\nc\n', 'oops\n');
+  await tick();
+  assert.equal(frames[2], 'stdout:\na\nb\nc\n\nstderr:\noops\n');
+
+  live.push('a\nb\nc\nd\n', 'oops\n');
+  live.push('a\nb\nc\nd\ne\n', 'oops\n');
   live.stop();
   await tick();
-  assert.equal(frames.length, 2, 'stop обязан отменить придержанный кадр');
+  assert.equal(frames.length, 4, 'stop обязан отменить придержанный кадр');
 });
