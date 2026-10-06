@@ -16,6 +16,12 @@
 #   Z_AGENT_DIR      install directory (default: /opt/z-agent-native)
 #   Z_AGENT_PROFILE  hardened | trusted | unrestricted (default: trusted, single-user host)
 #   Z_AGENT_SWAP_MB  swap to add on small hosts (default: 2048, 0 disables)
+#   Z_AGENT_NETWORK_POLICY   off | allowlist | public. Overrides the profile default.
+#                            On a host with a public IP use allowlist: the agent keeps
+#                            search, webfetch and the browser, but only for the hosts
+#                            you name instead of any public address.
+#   Z_AGENT_NETWORK_ALLOWLIST  comma-separated hosts for allowlist mode, e.g.
+#                            "api.open-meteo.com,html.duckduckgo.com,*.wikipedia.org"
 
 set -euo pipefail
 
@@ -133,6 +139,42 @@ if [ -n "$DOMAIN" ]; then
   fi
 else
   warn "no public hostname available; keeping Z_AGENT_DOMAIN=localhost (secure cookies will be off)"
+fi
+
+# ------------------------------------------------- 5b. agent network policy
+if [ -n "${Z_AGENT_NETWORK_POLICY:-}" ]; then
+  case "$Z_AGENT_NETWORK_POLICY" in
+    off|allowlist|public) ;;
+    *) warn "unknown Z_AGENT_NETWORK_POLICY=${Z_AGENT_NETWORK_POLICY}; keeping the profile default"; Z_AGENT_NETWORK_POLICY="" ;;
+  esac
+fi
+
+if [ -n "${Z_AGENT_NETWORK_POLICY:-}" ]; then
+  log "agent network policy: ${Z_AGENT_NETWORK_POLICY}"
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "[dry-run] set Z_AGENT_NETWORK_POLICY=${Z_AGENT_NETWORK_POLICY} in $DIR/.env"
+  else
+    root sed -i "s|^Z_AGENT_NETWORK_POLICY=.*|Z_AGENT_NETWORK_POLICY=${Z_AGENT_NETWORK_POLICY}|" .env
+    # The second opt-in only exists for public egress: keep it honest either way.
+    if [ "$Z_AGENT_NETWORK_POLICY" = "public" ]; then
+      root sed -i "s|^Z_AGENT_ALLOW_PUBLIC_WEB=.*|Z_AGENT_ALLOW_PUBLIC_WEB=1|" .env
+    else
+      root sed -i "s|^Z_AGENT_ALLOW_PUBLIC_WEB=.*|Z_AGENT_ALLOW_PUBLIC_WEB=0|" .env
+    fi
+  fi
+fi
+
+if [ -n "${Z_AGENT_NETWORK_ALLOWLIST:-}" ]; then
+  log "agent network allowlist: ${Z_AGENT_NETWORK_ALLOWLIST}"
+  if [ "$DRY_RUN" = "1" ]; then
+    echo "[dry-run] set Z_AGENT_NETWORK_ALLOWLIST in $DIR/.env"
+  else
+    root sed -i "s|^Z_AGENT_NETWORK_ALLOWLIST=.*|Z_AGENT_NETWORK_ALLOWLIST=${Z_AGENT_NETWORK_ALLOWLIST}|" .env
+  fi
+fi
+
+if [ "${Z_AGENT_NETWORK_POLICY:-}" = "allowlist" ] && [ -z "${Z_AGENT_NETWORK_ALLOWLIST:-}" ]; then
+  warn "allowlist mode without Z_AGENT_NETWORK_ALLOWLIST: the agent will refuse every host"
 fi
 
 # ----------------------------------------------------------------- 6. firewall
