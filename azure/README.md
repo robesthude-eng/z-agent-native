@@ -123,6 +123,42 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite   # backup SQLite + audit 
 installers for a **single-user** host — appropriate for your own test stand. Use `hardened` if the
 machine is ever shared with other people.
 
+## Сеть агента на публичном хосте
+
+`Z_AGENT_PROFILE=trusted` (умолчание провижинера) ставит `Z_AGENT_NETWORK_POLICY=public`: агент ходит
+на любой хост. Для однопользовательской машины это удобно, но у публичного IP есть обратная
+сторона — агент исполняет код, и открытая сеть работает каналом для выноса данных. Компромисс без
+потери функций — `allowlist`: агент ходит только на перечисленные хосты, поиск и чтение страниц
+остаются.
+
+```bash
+cd /opt/z-agent-native
+sudo sed -i 's|^Z_AGENT_NETWORK_POLICY=.*|Z_AGENT_NETWORK_POLICY=allowlist|' .env
+sudo sed -i 's|^Z_AGENT_NETWORK_ALLOWLIST=.*|Z_AGENT_NETWORK_ALLOWLIST=api.open-meteo.com,html.duckduckgo.com,api.duckduckgo.com,*.wikipedia.org|' .env
+sudo docker compose up -d --remove-orphans     # пересоздаёт контейнер с новым .env
+curl -fsS "https://$(grep -E '^Z_AGENT_DOMAIN=' .env | cut -d= -f2)/health"
+```
+
+Проверить, что агент это видит, можно из логов или так:
+
+```bash
+sudo docker compose exec z-agent node --input-type=module -e \
+  'import { runtimeCapabilityPrompt } from "/app/server/native/workspace-policy.mjs"; console.log(runtimeCapabilityPrompt())'
+# ожидаем: "Internet: limited to these hosts: api.open-meteo.com, ..."
+```
+
+Что стоит знать про этот режим:
+
+- Хост в списке — точное совпадение; поддомены нужно разрешать явно (`*.wikipedia.org`).
+- Если в стеке есть SearXNG (`Z_AGENT_SEARXNG_URL`, контейнер `z-agent-search`), поиск идёт через
+  него первым — это внутренний сервис, и внешние хосты в списке ему не нужны. Внешние источники
+  добавляйте тогда, когда нужен именно `webfetch` или браузер.
+- Браузер подчиняется тому же списку: открыть произвольный сайт в allowlist-режиме нельзя,
+  инструмент вернёт отказ политики, а не ошибку браузера.
+- Оболочка (`Z_AGENT_SHELL_NETWORK_POLICY`) — отдельный переключатель; в профиле `hardened`
+  автономный исполнитель вообще без сети, что и есть граница изоляции.
+- Вернуться к полному доступу: `Z_AGENT_NETWORK_POLICY=public` + `Z_AGENT_ALLOW_PUBLIC_WEB=1`.
+
 ## Fallbacks when there is no school email
 
 | Option | Cost | Card | Notes |
