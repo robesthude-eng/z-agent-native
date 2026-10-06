@@ -468,7 +468,7 @@ export const api = {
     systemInstruction?: string,
     signal?: AbortSignal,
     actionId?: string,
-    toolOptions?: { webSearch: boolean },
+    toolOptions?: { webSearch: boolean; bashFirst?: boolean },
   ) =>
     req<Message>(
       `/session/${id}/message`,

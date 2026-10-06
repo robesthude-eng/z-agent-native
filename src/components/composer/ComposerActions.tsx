@@ -6,13 +6,19 @@ import {
   ImagePlus,
   Plus,
   Sparkles,
+  Terminal,
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { api } from "@/api/client";
 import { parseRuntimeCapabilities } from "@/api/runtimeCapabilities";
 import { t } from "@/i18n";
-import { setWebSearchPreference, webSearchPreference } from "@/lib/chatTools";
+import {
+  bashFirstPreference,
+  setBashFirstPreference,
+  setWebSearchPreference,
+  webSearchPreference,
+} from "@/lib/chatTools";
 import { useStore } from "@/store/useStore";
 import { SendIcon, StopIcon } from "../icons";
 
@@ -42,11 +48,16 @@ export function ComposerActions({
     webSearchPreference(owner, session),
   );
   const [searchAvailable, setSearchAvailable] = useState<boolean | null>(null);
+  const [bashFirst, setBashFirst] = useState(() =>
+    bashFirstPreference(owner, session),
+  );
+  const [bashAvailable, setBashAvailable] = useState<boolean | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const menu = useRef<HTMLDivElement>(null);
   useEffect(() => {
     setSearch(webSearchPreference(owner, session));
+    setBashFirst(bashFirstPreference(owner, session));
     setOpen(false);
   }, [owner, session]);
   useEffect(() => {
@@ -54,10 +65,10 @@ export function ComposerActions({
     api
       .runtimeCapabilities()
       .then((raw) => {
-        if (!disposed)
-          setSearchAvailable(
-            parseRuntimeCapabilities(raw)?.tools.includes("websearch") || false,
-          );
+        if (disposed) return;
+        const tools = parseRuntimeCapabilities(raw)?.tools || [];
+        setSearchAvailable(tools.includes("websearch"));
+        setBashAvailable(tools.includes("bash"));
       })
       .catch(() => {});
     return () => {
@@ -108,6 +119,13 @@ export function ComposerActions({
     const next = !search;
     setSearch(next);
     setWebSearchPreference(owner, session, next);
+    setOpen(false);
+    trigger.current?.focus();
+  };
+  const toggleBashFirst = () => {
+    const next = !bashFirst;
+    setBashFirst(next);
+    setBashFirstPreference(owner, session, next);
     setOpen(false);
     trigger.current?.focus();
   };
@@ -183,6 +201,28 @@ export function ComposerActions({
                 aria-hidden="true"
               />
             </button>
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={bashFirst && bashAvailable === true}
+              disabled={busy || bashAvailable !== true}
+              title={
+                bashAvailable === false
+                  ? "Оболочка недоступна на этом сервере"
+                  : bashAvailable === null
+                    ? "Проверяем доступность оболочки"
+                    : "Агент работает через команды shell вместо read/grep/glob. Применяется к следующим запросам этого чата"
+              }
+              onClick={toggleBashFirst}
+            >
+              <Terminal size={18} />
+              <span>Bash-first</span>
+              <span
+                className="composer-switch"
+                data-checked={bashFirst && bashAvailable === true}
+                aria-hidden="true"
+              />
+            </button>
             <hr className="composer-menu-separator" />
             <button
               type="button"
@@ -213,6 +253,21 @@ export function ComposerActions({
             aria-label="Включить веб-поиск"
             disabled={busy}
             onClick={toggleSearch}
+          >
+            <X size={14} />
+          </button>
+        </span>
+      )}
+      {bashFirst && bashAvailable && (
+        <span className="composer-tool-chip">
+          <Terminal size={14} />
+          Bash-first
+          <button
+            type="button"
+            className="h-11 w-11 flex items-center justify-center"
+            aria-label="Выключить Bash-first"
+            disabled={busy}
+            onClick={toggleBashFirst}
           >
             <X size={14} />
           </button>

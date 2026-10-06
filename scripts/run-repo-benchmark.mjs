@@ -127,6 +127,10 @@ const manifest = validateBenchmarkManifest(
   JSON.parse(fs.readFileSync(manifestPath, "utf8")),
 );
 const model = modelSpec(cli.model || process.env.Z_AGENT_EVAL_MODEL);
+// --bash-first runs the same cases with the shell-centred toolset, so the two
+// modes can be compared on pass rate, tool calls, tokens and duration
+// (see scripts/compare-benchmark-reports.mjs).
+const bashFirst = Boolean(cli["bash-first"]);
 const repetitions = Math.min(
   Math.max(
     Number(cli.repetitions || process.env.Z_AGENT_BENCHMARK_REPETITIONS || 3),
@@ -257,6 +261,9 @@ for (const [caseIndex, item] of cases.entries()) {
         ownerId,
         parts: [{ type: "text", text: String(item.prompt || "") }],
         model,
+        ...(bashFirst
+          ? { toolOptions: { webSearch: true, bashFirst: true } }
+          : {}),
         system:
           "Benchmark mode: solve the repository task autonomously. External web access is disabled. Inspect the repository, make the smallest correct change, and run relevant executable verification before finishing.",
       });
@@ -301,6 +308,11 @@ for (const [caseIndex, item] of cases.entries()) {
       verify,
       regressions,
       tools,
+      tokens: {
+        input: Number(message?.info?.telemetry?.tokens?.input) || 0,
+        output: Number(message?.info?.telemetry?.tokens?.output) || 0,
+        modelCalls: Number(message?.info?.telemetry?.modelCalls) || 0,
+      },
       final: finalText(message).slice(0, 4000),
       source: sourceInfo,
     });
@@ -323,6 +335,20 @@ for (const [caseIndex, item] of cases.entries()) {
     meanToolCalls: Number(
       (
         runs.reduce((sum, r) => sum + Number(r.tools?.calls || 0), 0) /
+        runs.length
+      ).toFixed(2),
+    ),
+    meanInputTokens: Math.round(
+      runs.reduce((sum, r) => sum + Number(r.tokens?.input || 0), 0) /
+        runs.length,
+    ),
+    meanOutputTokens: Math.round(
+      runs.reduce((sum, r) => sum + Number(r.tokens?.output || 0), 0) /
+        runs.length,
+    ),
+    meanModelCalls: Number(
+      (
+        runs.reduce((sum, r) => sum + Number(r.tokens?.modelCalls || 0), 0) /
         runs.length
       ).toFixed(2),
     ),
@@ -414,6 +440,7 @@ const report = {
   generatedAt: new Date().toISOString(),
   manifest: manifestPath,
   model: `${model.providerID}/${model.modelID}`,
+  bashFirst,
   cases: reportCases,
   totalRuns,
   passedRuns,

@@ -421,6 +421,28 @@ function noteVerification(state, { ok, tool, detail = '' }) {
   }
 }
 
+const CONTENT_READ_RE = /(?:^|[\s;&|(])(?:cat|sed|head|tail|nl|bat|less|more|grep|rg|awk|diff|git\s+(?:diff|show))\b/;
+
+function commandMentionsPath(command, filePath) {
+  if (!CONTENT_READ_RE.test(String(command || ''))) return false;
+  const target = String(filePath || '').replace(/^\.\//, '');
+  if (!target) return false;
+  return String(command || '').includes(target);
+}
+
+/** All changed files were read back: close the readback requirement. */
+function settleReadbacks(state, tool) {
+  if (!state.needsVerification || state.pendingReadbacks.length !== 0) return;
+  if (!shellSandboxAvailable()) {
+    state.needsVerification = false;
+    state.verificationUnavailable = true;
+    state.verificationEpoch = state.mutationEpoch;
+    state.lastVerificationEvidence = { tool, detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
+  } else if (staticAssetsVerified(state)) {
+    noteVerification(state, { ok: true, tool, detail: 'static assets read back after the latest change' });
+  }
+}
+
 export function observeTool(strategy, call, result) {
   const state = normalizeStrategyEvidence(strategy);
   const name = String(call?.name || '').toLowerCase();
@@ -450,16 +472,7 @@ export function observeTool(strategy, call, result) {
   if (name === 'read' && !result?.isError) {
     const readPath = String(call?.arguments?.path || '').trim();
     state.pendingReadbacks = state.pendingReadbacks.filter((changedPath) => changedPath !== readPath);
-    if (state.needsVerification && state.pendingReadbacks.length === 0) {
-      if (!shellSandboxAvailable()) {
-        state.needsVerification = false;
-        state.verificationUnavailable = true;
-        state.verificationEpoch = state.mutationEpoch;
-        state.lastVerificationEvidence = { tool: 'read', detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
-      } else if (staticAssetsVerified(state)) {
-        noteVerification(state, { ok: true, tool: 'read', detail: 'static assets read back after the latest change' });
-      }
-    }
+    settleReadbacks(state, 'read');
     return state;
   }
 
@@ -477,6 +490,13 @@ export function observeTool(strategy, call, result) {
       // nor prove it, so verification state stays exactly as it was.
       if (toolExitOk(result)) noteGitEvidence(state, { action: 'commit', detail: command });
       return state;
+    }
+    // Bash-first chats have no `read` tool: reading a changed file back with
+    // cat/sed/head/grep counts the same as `read`.
+    if (effect === 'read_only' && !result?.isError && state.pendingReadbacks.length > 0) {
+      const before = state.pendingReadbacks.length;
+      state.pendingReadbacks = state.pendingReadbacks.filter((changedPath) => !commandMentionsPath(command, changedPath));
+      if (state.pendingReadbacks.length < before) settleReadbacks(state, 'bash');
     }
     const observed = result?.metadata?.workspaceChanges;
     const changed = observed?.paths?.length > 0 || (!observed?.complete && effect === 'may_mutate');

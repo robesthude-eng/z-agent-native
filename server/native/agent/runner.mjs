@@ -49,6 +49,16 @@ export function submitTurn(args) {
   return promise;
 }
 
+// The options the user picked for the chat's latest turn, so an automatic
+// continuation (a finished background job) keeps the same toolset instead of
+// silently falling back to the defaults.
+const lastToolOptions = new Map();
+function rememberToolOptions(sessionId, options) {
+  lastToolOptions.delete(sessionId);
+  lastToolOptions.set(sessionId, options);
+  if (lastToolOptions.size > 2000) lastToolOptions.delete(lastToolOptions.keys().next().value);
+}
+
 export async function runTurn(...params) {
   const args = params[0];
   const { sessionId, ownerId, parts, model = null, system = '', actionId = '', toolOptions: rawToolOptions = null } =
@@ -62,6 +72,7 @@ export async function runTurn(...params) {
     };
 
   const toolOptions = normalizeChatToolOptions(rawToolOptions);
+  rememberToolOptions(sessionId, toolOptions);
   if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
   if (isClustered() && !acquireTurnLock(sessionId).ok) {
     throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409, holder: turnLockHolder(sessionId)?.instanceId || null });
@@ -217,7 +228,7 @@ configureBackgroundJobHooks({
   isTurnActive: (sessionId) => activeTurns.has(sessionId),
   submit: async ({ sessionId, ownerId, model, text }) => {
     if (!agentFeatures(ownerId).autoResume) return;
-    submitTurn({ sessionId, ownerId, parts: [{ type: 'text', text }], model, system: '', actionId: '' })
+    submitTurn({ sessionId, ownerId, parts: [{ type: 'text', text }], model, system: '', actionId: '', toolOptions: lastToolOptions.get(sessionId) || null })
       .catch((err) => console.warn(`[background-jobs] auto-resume ${sessionId}: ${err?.message || err}`));
   },
 });

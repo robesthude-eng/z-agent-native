@@ -33,6 +33,7 @@
     "quality:quick": "npm run typecheck && npm run architecture:check && npm run lint:ci && npm run format:check && npm test && npm run docs:check && npm run eval:validate && npm run eval:benchmark:validate",
     "quality": "npm run quality:quick && npm run test:native && npm run build:web",
     "eval:benchmark": "node --env-file-if-exists=.env scripts/run-repo-benchmark.mjs",
+    "eval:benchmark:compare": "node scripts/compare-benchmark-reports.mjs",
     "eval:benchmark:validate": "node scripts/validate-repo-benchmark.mjs",
     "db:migrate": "node --env-file-if-exists=.env server/migrate.mjs",
     "db:backup": "node --env-file-if-exists=.env server/backup.mjs",

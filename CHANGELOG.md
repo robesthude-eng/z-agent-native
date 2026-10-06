@@ -8,6 +8,16 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Optional bash-first mode
+
+- New per-chat switch "Bash-first" in the composer menu (off by default; sent as `toolOptions.bashFirst`). The agent keeps `bash`, `write`/`edit`/`apply_patch`, `git`, `ensure_environment`, `task`, `todowrite`, `question`, web and media tools, and does exploration and verification with shell commands instead of `read`, `list`, `glob`, `grep`, `repo_map`, `run_tests`, `diagnostics`, `environment_status`. A call to a hidden tool returns the equivalent shell command.
+- A short prompt section (`server/system-instruction-bash-first.txt`) explains the shell conventions and overrides the general "prefer read/grep/glob" guidance. It is only used when `bash` is actually available; without a shell sandbox the normal toolset stays.
+- Reading a changed file back with `cat`/`sed`/`head`/`grep` now counts as the readback required before finishing (previously only `read` did).
+- The choice survives an automatic continuation after a background job. `ripgrep` is installed in the image.
+- Read-only subagents keep their structured tools; they never get `bash`.
+- `npm run eval:benchmark -- --bash-first` runs the production benchmark with the mode on and records tokens and model calls; `npm run eval:benchmark:compare -- a.json b.json` compares two reports.
+
+
 ## Live progress for tools without process output
 
 - `task`: the card shows a live timeline of the subagent (model waits with elapsed time, what the model says, each tool it calls with its result) instead of an empty spinner until the final report.

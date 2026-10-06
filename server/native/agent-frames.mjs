@@ -7,6 +7,7 @@ import { safeWorkspacePath } from './security.mjs';
 const SYSTEM_FILE = new URL('../system-instruction.txt', import.meta.url);
 const SSH_FILE = new URL('../system-instruction-ssh.txt', import.meta.url);
 const TOOLCHAINS_FILE = new URL('../system-instruction-toolchains.txt', import.meta.url);
+const BASH_FIRST_FILE = new URL('../system-instruction-bash-first.txt', import.meta.url);
 
 const cache = new Map();
 function readPromptFile(url) {
@@ -25,13 +26,15 @@ const TOOLCHAIN_TOPIC = /android|gradle|flutter|kotlin|\bapk\b|\baab\b|\bjdk\b|\
  * бы инструмент, которого нет), подробности Android/облачных CLI — если
  * задача или проект о них.
  */
-export function systemPrompt({ toolNames = null, goal = '', projectContext = '' } = {}) {
+export function systemPrompt({ toolNames = null, goal = '', projectContext = '', bashFirst = false } = {}) {
   const parts = [readPromptFile(SYSTEM_FILE)];
   const available = (name) => !toolNames || toolNames.includes(name);
   if (available('ssh_tool')) parts.push(readPromptFile(SSH_FILE));
   if (available('ensure_environment') && TOOLCHAIN_TOPIC.test(`${goal}\n${projectContext}`)) {
     parts.push(readPromptFile(TOOLCHAINS_FILE));
   }
+  // Last, so it overrides the general "prefer read/grep/glob" guidance above.
+  if (bashFirst && available('bash')) parts.push(readPromptFile(BASH_FIRST_FILE));
   return parts.filter(Boolean).join('\n\n');
 }
 

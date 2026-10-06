@@ -19,7 +19,7 @@ WORKDIR /app
 # generated code runs inside this image and must not find a ready made
 # lateral-movement kit next to it.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    bash git openssh-client rsync curl ca-certificates unzip zip xz-utils util-linux file jq \
+    bash git ripgrep openssh-client rsync curl ca-certificates unzip zip xz-utils util-linux file jq \
     python3 python3-venv python3-pip python3-dev python3-paramiko python3-requests python3-yaml \
     build-essential cmake ninja-build pkg-config libffi-dev libssl-dev \
     openjdk-17-jdk-headless \

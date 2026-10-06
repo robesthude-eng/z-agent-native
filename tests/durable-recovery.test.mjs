@@ -304,4 +304,17 @@ test('per-chat search restriction survives durable checkpoints', () => {
   durable.clearDurableJob(sid);
 });
 
+test('bash-first choice survives durable checkpoints and stays absent when off', () => {
+  const sid = 'ses_bashfirstcheckpoint';
+  store.createChat(sid, ownerId, 'Bash first checkpoint');
+  durable.createDurableJob({ sessionId: sid, ownerId, toolOptions: { webSearch: true, bashFirst: true } });
+  assert.deepEqual(durable.getDurableJob(sid).checkpoint.toolOptions, { webSearch: true, bashFirst: true });
+  durable.checkpointDurableJob(sid, { phase: 'running', stepsUsed: 1 });
+  assert.deepEqual(durable.getDurableJob(sid).checkpoint.toolOptions, { webSearch: true, bashFirst: true });
+  durable.clearDurableJob(sid);
+  durable.createDurableJob({ sessionId: sid, ownerId, toolOptions: { webSearch: true, bashFirst: false } });
+  assert.deepEqual(durable.getDurableJob(sid).checkpoint.toolOptions, { webSearch: true });
+  durable.clearDurableJob(sid);
+});
+
 test.after(() => providers.setProviderTransportForTests(null));

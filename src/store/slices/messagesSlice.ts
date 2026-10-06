@@ -1,5 +1,5 @@
 import { t, tf } from "@/i18n";
-import { webSearchPreference } from "@/lib/chatTools";
+import { bashFirstPreference, webSearchPreference } from "@/lib/chatTools";
 import { sessionSignal } from "../../api/abortRegistry";
 import { api, SessionGoneError } from "../../api/client";
 import { eventSessionId } from "../../api/eventGuards";
@@ -268,6 +268,7 @@ export const createMessagesSlice: Slice<MessagesSlice> = (set, get) => {
       const sidStr = sid as string;
       const toolOptions = {
         webSearch: webSearchPreference(get().currentUser?.email || "", sidStr),
+        bashFirst: bashFirstPreference(get().currentUser?.email || "", sidStr),
       };
       // Новый ход стирает маркер «Стоп» прошлого: иначе ярлык
       // «Остановлено пользователем» прилипал к следующему ответу, который

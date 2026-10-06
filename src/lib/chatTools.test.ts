@@ -1,5 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
+  bashFirstPreference,
+  setBashFirstPreference,
   setWebSearchPreference,
   transferChatTools,
   webSearchPreference,
@@ -31,5 +33,18 @@ describe("per-chat tool restrictions", () => {
     } finally {
       spy.mockRestore();
     }
+  });
+  it("keeps bash-first off unless the user turns it on, per chat", () => {
+    expect(bashFirstPreference("fresh-owner", null)).toBe(false);
+    setBashFirstPreference("rob", "chat-bf", true);
+    expect(bashFirstPreference("rob", "chat-bf")).toBe(true);
+    expect(bashFirstPreference("rob", "chat-other")).toBe(false);
+    expect(bashFirstPreference("other", "chat-bf")).toBe(false);
+  });
+  it("transfers the bash-first choice from a draft to the real session", () => {
+    setBashFirstPreference("draft-bf", null, true);
+    transferChatTools("draft-bf", null, "temp-bf");
+    transferChatTools("draft-bf", "temp-bf", "real-bf");
+    expect(bashFirstPreference("draft-bf", "real-bf")).toBe(true);
   });
 });

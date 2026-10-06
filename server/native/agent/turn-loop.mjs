@@ -4,7 +4,7 @@ import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance
 import {
   buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
 } from '../autopilot.mjs';
-import { filterChatTools, normalizeChatToolOptions } from '../chat-tool-options.mjs';
+import { effectiveToolOptions, filterChatTools, normalizeChatToolOptions } from '../chat-tool-options.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
 import { MAX_AGENT_STEPS_CEILING } from '../config.mjs';
 import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
@@ -375,7 +375,7 @@ async function runReview({ sessionId, assistant, runtime, goal, strategy, worksp
 }
 
 export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, toolOptions: requestedToolOptions = null, goal, controller, resume = false, job = null }) {
-  const toolOptions = normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions);
+  const toolOptions = effectiveToolOptions(normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions), availableToolDefinitions());
   const turnTools = () => filterChatTools(availableToolDefinitions(), toolOptions);
   // Описание среды для модели опирается на ответ самого executor о его сети.
   if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
@@ -482,7 +482,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       let response;
       try {
         response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-          system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext, bashFirst: toolOptions.bashFirst }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
           frames: providerFrames,
           tools: turnTools(),
           signal: controller.signal,
