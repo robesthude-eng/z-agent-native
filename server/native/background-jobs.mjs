@@ -18,6 +18,7 @@ const JOBS_REL = '.agent-home/jobs';
 const MAX_JOBS_PER_CHAT = 30;
 const MAX_RUNNING_PER_CHAT = 4;
 const WATCH_INTERVAL_MS = 10_000;
+const WAIT_POLL_MS = 500;
 const LIVENESS_EVERY_MS = 60_000;
 const JOB_ID_RE = /^job_[A-Za-z0-9_-]{6,32}$/;
 
@@ -243,12 +244,22 @@ export async function executeBackgroundTool(root, input, ctx = {}) {
     const timeoutMs = Math.min(1800, Math.max(5, Number(input?.timeoutSec) || 600)) * 1000;
     const deadline = Date.now() + timeoutMs;
     let lastLiveness = Date.now();
+    const waitStarted = Date.now();
+    let lastShown = '';
     let job = jobState(root, meta);
     while (job.status === 'running' && Date.now() < deadline) {
       if (ctx.signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
-      await new Promise((resolve) => setTimeout(resolve, 2_000));
+      await new Promise((resolve) => setTimeout(resolve, WAIT_POLL_MS));
+      // Live tail of the job log: refreshed twice a second and only when it
+      // changed, with a header that shows the job is alive even when it is quiet.
       if (typeof ctx.onOutput === 'function') {
-        try { ctx.onOutput(`stdout:\n${tailFile(path.join(dir, 'output.log'), 15)}`); } catch {}
+        const tail = tailFile(path.join(dir, 'output.log'), 30);
+        const text = `${meta.name || id}: работает ${formatDuration(Date.now() - waitStarted)}${tail ? `\n${tail}` : '\n(пока нет вывода)'}`;
+        const key = `${tail.length}:${tail.slice(-200)}:${Math.floor((Date.now() - waitStarted) / 1000)}`;
+        if (key !== lastShown) {
+          lastShown = key;
+          try { ctx.onOutput(text); } catch {}
+        }
       }
       job = jobState(root, readMeta(dir) || meta);
       if (job.status === 'running' && Date.now() - lastLiveness > LIVENESS_EVERY_MS) {

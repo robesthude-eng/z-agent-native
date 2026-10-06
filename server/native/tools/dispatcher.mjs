@@ -9,6 +9,7 @@ import { executeMemoryTool, executeSkillTool } from '../agent-memory.mjs';
 import { executeBackgroundTool } from '../background-jobs.mjs';
 import { executeBrowserAction, executeVisualCheck } from './browser.mjs';
 import { TOOL_DEFINITIONS } from './definitions.mjs';
+import { createProgressLog } from './progress.mjs';
 import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
 import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
 import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, executeListFiles, 
@@ -98,6 +99,19 @@ export function assertValidToolInput(name, input) {
   return value;
 }
 
+/**
+ * Run a tool that has no process output of its own with a status timeline
+ * (`ctx.progress`) wired to the live-output channel of its card.
+ */
+async function withProgress(ctx, run) {
+  const progress = createProgressLog(ctx?.onOutput);
+  try {
+    return await run({ ...ctx, progress });
+  } finally {
+    progress.stop();
+  }
+}
+
 export async function executeTool(name, input, ctx = {}) {
   const root = ctx.workspace;
   if (!root) throw new Error('Workspace directory is required for tool execution');
@@ -146,18 +160,19 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'environment_status') return executeEnvironmentStatus(root, input);
   if (tool === 'bash') return await executeBashTool(root, input, ctx);
   if (tool === 'background') return await executeBackgroundTool(root, input, ctx);
-  if (tool === 'visual_check') return await executeVisualCheck(root, input, ctx);
+  if (tool === 'visual_check') return await withProgress(ctx, (c) => executeVisualCheck(root, input, c));
   if (tool === 'memory') return executeMemoryTool(input, ctx);
   if (tool === 'skill') return executeSkillTool(input, ctx);
-  if (tool === 'websearch') return await executeWebSearch(input, ctx.signal);
+  if (tool === 'websearch') return await withProgress(ctx, (c) => executeWebSearch(input, ctx.signal, c.progress));
   if (tool === 'cloud_sandbox') {
-    return await executeCloudSandbox(root, input || {}, {
+    return await withProgress(ctx, (c) => executeCloudSandbox(root, input || {}, {
       sessionId: ctx.sessionId,
       signal: ctx.signal,
+      progress: c.progress,
       chownToSession: ctx.sessionId ? (target) => syncSandboxOwnership(ctx.sessionId, root, target) : null,
-    });
+    }));
   }
-  if (tool === 'webfetch') return await executeWebFetch(input, ctx.signal);
+  if (tool === 'webfetch') return await withProgress(ctx, (c) => executeWebFetch(input, ctx.signal, c.progress));
 
   if (tool === 'git') {
     // clone/fetch/pull идут десятками секунд и раньше не показывали ничего до самого
@@ -202,7 +217,7 @@ export async function executeTool(name, input, ctx = {}) {
 
   if (tool === 'run_tests') return await executeRunTests(root, input, ctx, execBash);
   if (tool === 'diagnostics') return await executeDiagnostics(root, input, ctx, execBash);
-  if (tool === 'browser') return await executeBrowserAction(root, input, ctx);
+  if (tool === 'browser') return await withProgress(ctx, (c) => executeBrowserAction(root, input, c));
 
   if (isMediaTool(tool)) {
     return await executeMediaAction(tool, root, input, ctx, execBash);

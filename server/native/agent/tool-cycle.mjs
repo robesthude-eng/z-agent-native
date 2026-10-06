@@ -5,6 +5,7 @@ import { isIncompleteToolCall } from '../providers.mjs';
 import { putMessage, workspaceFor } from '../store.mjs';
 import { runSubagent } from '../subagent-runner.mjs';
 import { assertValidToolInput, executeTool, toolOutputText } from '../tools.mjs';
+import { createProgressLog } from '../tools/progress.mjs';
 import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
 import { emitPart } from './message-parts.mjs';
 import { askQuestion } from './questions.mjs';
@@ -93,15 +94,24 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     };
     let result;
     if (String(call.name || '').toLowerCase() === 'task') {
-      const subagent = await runSubagent({
-        ownerId: runtime.ownerId,
-        modelPlan: runtime.modelPlan,
-        input: assertValidToolInput('task', call.arguments || {}),
-        workspace,
-        signal: controller.signal,
-        projectContext: runtime.projectContext,
-        sessionId,
-      });
+      // The subagent works for minutes without producing process output; its
+      // steps (model calls, tools it runs) are shown as a live timeline.
+      const progress = createProgressLog(emitLiveOutput);
+      let subagent;
+      try {
+        subagent = await runSubagent({
+          ownerId: runtime.ownerId,
+          modelPlan: runtime.modelPlan,
+          input: assertValidToolInput('task', call.arguments || {}),
+          workspace,
+          signal: controller.signal,
+          projectContext: runtime.projectContext,
+          sessionId,
+          progress,
+        });
+      } finally {
+        progress.stop();
+      }
       result = {
         output: subagent.report,
         title: call.arguments?.description || `${subagent.kind} subagent report`,

@@ -3,31 +3,44 @@ import { safeExternalRequest } from '../security.mjs';
 import { runWebSearch } from '../websearch.mjs';
 import { assertAgentNetworkHost, assertAgentNetworkUrl } from '../workspace-policy.mjs';
 
-export async function executeWebSearch(input, signal) {
+export async function executeWebSearch(input, signal, progress = null) {
   const apiKey = String(process.env.BRAVE_SEARCH_API_KEY || '').trim();
   assertAgentNetworkHost(apiKey ? 'api.search.brave.com' : 'api.duckduckgo.com', { tool: 'websearch' });
-  return await runWebSearch({
+  const done = progress?.ticker(`Ищу в интернете: «${String(input?.query || '').slice(0, 120)}»`);
+  try {
+    return await runWebSearch({
     query: input?.query,
     count: input?.count,
     signal,
     apiKey,
     searxngUrl: process.env.Z_AGENT_SEARXNG_URL,
-  });
+    });
+  } finally {
+    done?.();
+  }
 }
 
-export async function executeWebFetch(input, signal) {
+export async function executeWebFetch(input, signal, progress = null) {
   assertAgentNetworkUrl(input?.url, { tool: 'webfetch' });
   const maxChars = Math.min(Math.max(Number(input?.maxChars) || 50000, 1000), 200000);
-  const res = await safeExternalRequest(input?.url, {
-    headers: { 'user-agent': 'Z-Agent-Native/1.0', accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.5' },
-    signal,
-    maxBytes: Math.max(maxChars * 4, 1024 * 1024),
-  });
+  const done = progress?.ticker(`Загружаю ${String(input?.url || '').slice(0, 160)}`);
+  let res;
+  try {
+    res = await safeExternalRequest(input?.url, {
+      headers: { 'user-agent': 'Z-Agent-Native/1.0', accept: 'text/plain,text/html,application/json;q=0.9,*/*;q=0.5' },
+      signal,
+      maxBytes: Math.max(maxChars * 4, 1024 * 1024),
+    });
+  } finally {
+    done?.();
+  }
+  progress?.step(`Получен ответ HTTP ${res.status} · ${Math.max(1, Math.round(String(res.text || '').length / 1024))} КБ`);
   if (res.status < 200 || res.status >= 300) throw new Error(`HTTP ${res.status}: ${res.text.slice(0, 500)}`);
   const contentType = headerValue(res.headers, 'content-type');
   if (input?.format === 'html' || !looksLikeHtml(contentType, res.text)) {
     return { output: res.text.slice(0, maxChars), title: String(res.url) };
   }
+  progress?.step('Извлекаю читаемый текст страницы');
   const page = htmlToReadableText(res.text, { baseUrl: String(res.url) });
   const parts = [page.title ? `# ${page.title}` : '', page.description ? `> ${page.description}` : '', page.text].filter(Boolean);
   let output = parts.join('\n\n');

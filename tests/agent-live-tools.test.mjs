@@ -126,3 +126,51 @@ test('a call cut off by a dropped stream ends as a failed card, never as a spinn
     agent.resetAgentStateForTests();
   }
 });
+
+test('a task card shows the subagent timeline while it works', async () => {
+  agent.resetAgentStateForTests();
+  const sid = 'ses_livetools3';
+  store.createChat(sid, ownerId, 'Live task');
+  const frames = [];
+  const unsubscribe = events.subscribe(sid, (frame) => frames.push(frame.event));
+  const original = globalThis.fetch;
+  let subagentCalls = 0;
+  let mainCalls = 0;
+  const json = (message, finish) => new Response(JSON.stringify({ choices: [{ message, finish_reason: finish }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  globalThis.fetch = async (_url, init) => {
+    const body = JSON.parse(init.body);
+    if (!body.stream) {
+      subagentCalls += 1;
+      await new Promise((r) => setTimeout(r, 150));
+      if (subagentCalls === 1) {
+        return json({ content: 'Сначала посмотрю файлы.', tool_calls: [{ id: 'sub_list', type: 'function', function: { name: 'list', arguments: '{}' } }] }, 'tool_calls');
+      }
+      return json({ content: 'Отчёт подагента: всё найдено.' }, 'stop');
+    }
+    mainCalls += 1;
+    if (mainCalls === 1) {
+      const args = JSON.stringify({ description: 'Inspect', prompt: 'Посмотри структуру.' });
+      return sse([toolDelta(0, { name: 'task', arguments: args }, 'call_task'), { choices: [{ delta: {}, finish_reason: 'tool_calls' }] }, '[DONE]']);
+    }
+    return sse([{ choices: [{ delta: { content: 'Готово.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
+  };
+  try {
+    const assistant = await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'Изучи' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '' });
+    const task = assistant.parts.find((p) => p.type === 'tool' && p.tool === 'task');
+    assert.equal(task.state.status, 'completed');
+    const timeline = frames
+      .filter((e) => e.type === 'message.part.updated' && e.properties.part?.id === task.id && e.properties.part.state.status === 'running')
+      .map((e) => e.properties.part.state.metadata?.output)
+      .filter(Boolean);
+    assert.ok(timeline.length >= 2, `expected live timeline updates, got ${timeline.length}`);
+    const last = timeline.at(-1);
+    assert.match(last, /Подагент «[^»]+» запущен/);
+    assert.match(last, /→ list/);
+    assert.match(last, /Модель: Сначала посмотрю файлы/);
+    assert.match(task.state.output, /Отчёт подагента/);
+  } finally {
+    unsubscribe();
+    globalThis.fetch = original;
+    agent.resetAgentStateForTests();
+  }
+});

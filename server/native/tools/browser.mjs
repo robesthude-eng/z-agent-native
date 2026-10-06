@@ -6,6 +6,25 @@ import { sandboxIdentity, syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
 import { agentNetworkPolicy, assertAgentNetworkUrl } from '../workspace-policy.mjs';
 
+/** One-line description of a browser action for the card's status timeline. */
+export function describeBrowserAction(action, payload = {}) {
+  const target = String(payload.selector || payload.text || '').trim();
+  switch (action) {
+    case 'open': return `Открываю ${String(payload.url || 'страницу').slice(0, 160)}`;
+    case 'snapshot': return 'Читаю текст страницы и интерактивные элементы';
+    case 'click': return `Кликаю: ${target || 'элемент'}`;
+    case 'fill': return `Заполняю поле ${target || ''}`.trim();
+    case 'type': return `Печатаю в поле ${target || ''}`.trim();
+    case 'press': return `Нажимаю ${String(payload.key || payload.value || 'клавишу')}${target ? ` в ${target}` : ''}`;
+    case 'wait': return target ? `Жду появления: ${target}` : `Жду ${Math.round((Number(payload.timeoutMs) || 0) / 100) / 10 || ''} с`.trim();
+    case 'screenshot': return `Снимаю скриншот${payload.width ? ` (ширина ${payload.width}px)` : ''}`;
+    case 'pdf': return 'Сохраняю страницу в PDF';
+    case 'console': return 'Читаю консоль и неудачные запросы страницы';
+    case 'close': return 'Закрываю браузер';
+    default: return `Браузер: ${action || 'действие'}`;
+  }
+}
+
 export async function executeBrowserAction(root, input, ctx = {}) {
   const action = String(input?.action || '').trim().toLowerCase();
   let payload = input && typeof input === 'object' ? { ...input } : {};
@@ -31,12 +50,18 @@ export async function executeBrowserAction(root, input, ctx = {}) {
     }
   }
   const identity = sandboxIdentity(ctx.sessionId);
-  const result = await executeBrowserTool({
-    sessionId: ctx.sessionId,
-    uid: identity?.isolated ? identity.uid : null,
-    input: payload,
-    signal: ctx.signal,
-  });
+  const done = ctx.progress?.ticker(describeBrowserAction(action, input || {}));
+  let result;
+  try {
+    result = await executeBrowserTool({
+      sessionId: ctx.sessionId,
+      uid: identity?.isolated ? identity.uid : null,
+      input: payload,
+      signal: ctx.signal,
+    });
+  } finally {
+    done?.();
+  }
   if (action === 'screenshot' && result?.data) return saveScreenshot(root, input, result, ctx);
   return result;
 }

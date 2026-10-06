@@ -85,11 +85,13 @@ function sandboxName(sessionId) {
   return `zagent-${crypto.createHash('sha256').update(String(sessionId)).digest('hex').slice(0, 16)}`;
 }
 
-async function waitStarted(id, signal, timeoutMs = 900_000) {
+async function waitStarted(id, signal, timeoutMs = 900_000, onState = null) {
   const until = Date.now() + timeoutMs;
+  let reported = '';
   for (;;) {
     const sb = await api('GET', `/sandbox/${id}`, { signal });
     if (!sb) throw new Error('Daytona sandbox disappeared');
+    if (onState && sb.state !== reported && sb.state !== 'started') { reported = sb.state; try { onState(sb.state); } catch { /* display only */ } }
     if (sb.state === 'started') return sb;
     // pending_build / building_snapshot / creating / starting: keep waiting
     if (['error', 'build_failed', 'destroyed'].includes(sb.state)) throw new Error(`Daytona sandbox state: ${sb.state} ${sb.errorReason || ''}`.trim());
@@ -99,7 +101,7 @@ async function waitStarted(id, signal, timeoutMs = 900_000) {
   }
 }
 
-async function ensureSandbox(sessionId, opts, signal) {
+async function ensureSandbox(sessionId, opts, signal, onState = null) {
   let entry = sessions.get(sessionId);
   const name = sandboxName(sessionId);
   let sb = await api('GET', `/sandbox/${entry?.id || name}`, { signal });
@@ -121,7 +123,7 @@ async function ensureSandbox(sessionId, opts, signal) {
     });
     entry = null;
   }
-  sb = await waitStarted(sb.id, signal);
+  sb = await waitStarted(sb.id, signal, 900_000, onState);
   let toolbox = sb.toolboxProxyUrl;
   if (!toolbox) toolbox = (await api('GET', `/sandbox/${sb.id}/toolbox-proxy-url`, { signal }))?.url;
   if (!toolbox) throw new Error('Daytona did not return a toolbox URL');
@@ -371,13 +373,27 @@ export async function executeCloudSandbox(root, input = {}, ctx = {}) {
   if (!command) throw new Error('command must not be empty');
   const timeoutSec = Math.min(Math.max(Number(input.timeoutSec) || 600, 10), 3600);
 
-  const entry = await ensureSandbox(ctx.sessionId, input, signal);
-  const push = await pushLocal(root, entry, signal);
+  const progress = ctx.progress;
+  let stage = progress?.ticker('Подключаю облачную машину (создаю или запускаю)');
+  let entry;
+  try {
+    entry = await ensureSandbox(ctx.sessionId, input, signal, (state) => progress?.step(`Состояние машины: ${state}`));
+    stage?.(`Облачная машина готова · ${entry.cpu} vCPU / ${entry.memory} ГБ`);
+  } catch (err) { stage?.(`Не удалось подключить облачную машину: ${err?.message || err}`); throw err; }
+  stage = progress?.ticker('Синхронизирую файлы проекта на машину');
+  let push;
+  try { push = await pushLocal(root, entry, signal); } finally { stage?.(); }
+  progress?.step(`Загружено файлов: ${push.uploaded}${push.removed ? `, удалено: ${push.removed}` : ''}`);
   const before = await remoteManifest(entry, signal);
   const started = Date.now();
-  const run = await exec(entry, command, { timeoutSec, signal });
+  stage = progress?.ticker(`Выполняю на машине: ${command.slice(0, 120)}`);
+  let run;
+  try { run = await exec(entry, command, { timeoutSec, signal }); } finally { stage?.(); }
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
-  const pull = await pullRemote(root, entry, before, signal, ctx.chownToSession);
+  progress?.step(`Команда завершена с кодом ${run.code} за ${seconds} с`);
+  stage = progress?.ticker('Забираю изменённые файлы обратно');
+  let pull;
+  try { pull = await pullRemote(root, entry, before, signal, ctx.chownToSession); } finally { stage?.(); }
   entry.synced = localManifest(root);
 
   const notes = [];

@@ -1,4 +1,5 @@
 import { callModelAutopilot, modelKey, promoteModelPlan, subagentStepBudget } from './autopilot.mjs';
+import { previewTitle } from './agent/tool-stream.mjs';
 import { compactFrames } from './context.mjs';
 import { getSubagentProfile, subagentToolNames, subagentWrites } from './subagents.mjs';
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
@@ -13,7 +14,7 @@ function toolsFor(profile) {
  * child loop so the parent turn state machine does not also own capability
  * policy, child context compaction and child tool execution.
  */
-export async function runSubagent({ ownerId, modelPlan, input, workspace, signal, projectContext = '', sessionId = '' }) {
+export async function runSubagent({ ownerId, modelPlan, input, workspace, signal, projectContext = '', sessionId = '', progress = null }) {
   const prompt = String(input?.prompt || '').trim();
   if (!prompt) throw new Error('Subagent prompt must not be empty');
   const profile = getSubagentProfile(input?.agent);
@@ -25,10 +26,12 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   let repositorySnapshot = '';
 
   if (!projectContext) {
+    const mapDone = progress?.ticker('Собираю карту репозитория');
     try {
       const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
       repositorySnapshot = toolOutputText(map).slice(0, 60_000);
     } catch { /* repository map is an accelerator, not a hard dependency */ }
+    mapDone?.('Карта репозитория готова');
   }
 
   const frames = [{
@@ -39,15 +42,22 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   let plan = modelPlan;
   let selectedModel = plan?.candidates?.[0] || null;
   let continuations = 0;
+  progress?.step(`Подагент «${profile.name}» запущен (до ${maxSteps} шагов)`);
 
   for (let step = 0; step < maxSteps; step++) {
     if (signal?.aborted) throw Object.assign(new Error('Turn cancelled'), { name: 'AbortError' });
-    const response = await callModelAutopilot(ownerId, plan, {
-      system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
-      frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
-      tools,
-      signal,
-    });
+    const modelDone = progress?.ticker(`Шаг ${step + 1}: жду ответ модели`);
+    let response;
+    try {
+      response = await callModelAutopilot(ownerId, plan, {
+        system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
+        frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),
+        tools,
+        signal,
+      });
+    } finally {
+      modelDone?.();
+    }
     selectedModel = response.model || selectedModel;
     plan = promoteModelPlan(plan, selectedModel);
     const calls = response.toolCalls || [];
@@ -59,7 +69,9 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
       frames.push({ role: 'user', content: '[Runtime] Your previous response was cut off. Continue exactly from where you stopped without repeating earlier text.' });
       continue;
     }
+    if (response.text && calls.length > 0) progress?.step(`Модель: ${response.text}`);
     if (calls.length === 0) {
+      progress?.step('Подагент закончил, пишет отчёт родительскому агенту');
       return {
         report: response.text || `${profile.name} subagent completed without a written report.`,
         kind: profile.name,
@@ -76,12 +88,16 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Tool ${call.name} is not available to the ${profile.name} subagent.`, isError: true });
         continue;
       }
+      const toolDone = progress?.ticker(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})}`);
       try {
         const result = await executeTool(call.name, call.arguments || {}, toolContext);
         for (const mutated of result?.mutatedPaths || []) mutatedPaths.add(mutated);
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: toolOutputText(result), isError: false });
+        const content = toolOutputText(result);
+        frames.push({ role: 'tool', callId: call.id, name: call.name, content, isError: false });
+        toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✓ ${content.length} симв.`);
       } catch (err) {
         frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Error: ${err?.message || String(err)}`, isError: true });
+        toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✗ ${String(err?.message || err).split('\n')[0]}`);
       }
     }
   }
@@ -89,6 +105,7 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   // Лимит шагов исчерпан. Без итогового отчёта родительский ход терял всё,
   // что субагент успел выяснить, и повторял работу заново.
   let finalReport = '';
+  const limitDone = progress?.ticker(`Лимит в ${maxSteps} шагов исчерпан, пишу итоговый отчёт`);
   try {
     if (!signal?.aborted) {
       frames.push({ role: 'user', content: '[Runtime] Step limit reached. Do not call tools. Write your report now: what you found or changed (with file paths), what is verified, and what remains unfinished.' });
@@ -102,6 +119,8 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     }
   } catch (err) {
     if (err?.name === 'AbortError' || signal?.aborted) throw err;
+  } finally {
+    limitDone?.();
   }
 
   return {

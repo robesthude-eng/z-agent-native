@@ -8,6 +8,14 @@ All notable changes to this project are documented here. The format follows
 made on top of it.
 
 
+## Live progress for tools without process output
+
+- `task`: the card shows a live timeline of the subagent (model waits with elapsed time, what the model says, each tool it calls with its result) instead of an empty spinner until the final report.
+- `browser`, `visual_check`, `webfetch`, `websearch`, `cloud_sandbox`: status lines as the tool works ("Открываю …", "Снимаю скриншот …", "Загружаю …", sandbox state, sync up/down, command run with a running timer). Built on a shared `createProgressLog` that reuses the existing live-output channel.
+- `background wait`: the log tail refreshes twice a second (was every 2 s), shows 30 lines (was 15), skips identical frames, and has a header that proves the job is alive when it is quiet.
+- The cloud sandbox command itself is still a single request to the provider, so its output arrives at the end; only the stages around it are live.
+
+
 ## Live streaming of agent actions
 
 - Tool cards are drawn while the model is still writing the call: the card, its path/command and the tail of the file body (`write`, `edit`, `apply_patch`) update as the arguments stream in (OpenAI, Anthropic and Google adapters; display only, the executed call is always the final parsed one). When the response completes, every call of the step is shown as queued before the first tool starts, and a call keeps one card from first token to result.
