@@ -153,13 +153,32 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 
 Что именно проверяется (видно в `server/native/workspace-policy.mjs`):
 
-| Переменная | Закрыто (по умолчанию) | Открыто (доверенный хост) |
-|---|---|---|
-| `Z_AGENT_NETWORK_POLICY` | `off` | `public` |
-| `Z_AGENT_ALLOW_PUBLIC_WEB` | `0` | `1` — обязательное подтверждение |
-| `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `open` (curl, wget, git, пакеты) |
-| `Z_AGENT_ALLOW_NETWORKED_INSTALLERS` | `0` | `1` (npm/pip внутри сессии) |
-| `Z_AGENT_ALLOW_PRODUCTION_TERMINAL` | `0` | `1` — нужен, если включён терминал |
+| Переменная | Закрыто (по умолчанию) | Список хостов | Открыто (доверенный хост) |
+|---|---|---|---|
+| `Z_AGENT_NETWORK_POLICY` | `off` | `allowlist` | `public` |
+| `Z_AGENT_NETWORK_ALLOWLIST` | — | `api.open-meteo.com,*.wikipedia.org` | — (весь публичный веб) |
+| `Z_AGENT_ALLOW_PUBLIC_WEB` | `0` | `0` | `1` — обязательное подтверждение |
+| `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `guarded` | `open` (curl, wget, git, пакеты) |
+| `Z_AGENT_ALLOW_NETWORKED_INSTALLERS` | `0` | `0` | `1` (npm/pip внутри сессии) |
+| `Z_AGENT_ALLOW_PRODUCTION_TERMINAL` | `0` | `0` | `1` — нужен, если включён терминал |
+
+**Три режима — выбирайте по тому, кто может дотянуться до хоста.**
+
+- `off` — по умолчанию, для чужих и многопользовательских стендов.
+- `allowlist` — **рекомендуемый режим для сервера с публичным IP.** Агент ходит только на
+  перечисленные хосты (`*.example.com` разрешает поддомены, голый `example.com` — только сам хост),
+  всё остальное отклоняется политикой. Данные некуда слить, а поиск и чтение страниц работают.
+  Готовый набор для обычных задач:
+
+  ```
+  Z_AGENT_NETWORK_POLICY=allowlist
+  Z_AGENT_NETWORK_ALLOWLIST=api.open-meteo.com,html.duckduckgo.com,api.duckduckgo.com,*.wikipedia.org
+  ```
+
+  Сообщение агента в этом режиме: «Internet: limited to these hosts: … Other hosts are refused by
+  policy, not by you» — то есть он не соврёт, что интернета нет, и не будет обещать открыть любой сайт.
+- `public` — любой публичный хост. Только для однопользовательской машины, куда снаружи не
+  дотянуться; на публичном хосте агент исполняет код, и открытая сеть становится каналом утечки.
 
 После правки `.env` перезапустите рантайм. Проверить, что агент действительно видит интернет:
 
@@ -167,7 +186,9 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 node --env-file-if-exists=.env --input-type=module -e \
   'import { runtimeCapabilityPrompt } from "./server/native/workspace-policy.mjs"; console.log(runtimeCapabilityPrompt())' \
   | grep -i internet
-# ожидаем: "Internet: enabled. websearch, webfetch and browser reach any public host."
+# public:    "Internet: enabled. websearch, webfetch and browser reach any public host."
+# allowlist: "Internet: limited to these hosts: <список>."
+# off:       "Internet: disabled for this instance."
 ```
 
 **Браузерный инструмент — отдельная история.** Ему нужен настоящий Chromium, которого нет в базовом
@@ -182,8 +203,10 @@ sudo env "PATH=$PATH" "$(command -v npx)" playwright-core install-deps chromium
 `Target page, context or browser has been closed` при запуске. `websearch` и `webfetch` браузера не
 требуют: они ходят напрямую (DuckDuckGo HTML, либо ваш `Z_AGENT_SEARXNG_URL`).
 
-⚠️ Открывайте сеть только на доверенном одиночном хосте. Агент исполняет код, поэтому сетевой
-доступ — это канал утечки: на сервере, доступном из интернета, оставляйте `off`.
+⚠️ Сеть — это канал утечки: агент исполняет код, поэтому на хосте с публичным IP выбирайте
+`allowlist`, а не `public`. Профиль `trusted` из `scripts/init-production-env.mjs` включает именно
+`public` — он для однопользовательской машины за закрытым периметром. Инструкция по замене профиля
+после установки — в `azure/README.md`, раздел «Сеть агента на публичном хосте».
 
 ---
 
