@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { api } from "../api/client";
-import { useStore } from "./useStore";
+import { mergePersistedState, useStore } from "./useStore";
 
 /**
  * Панель файлов, открытая на ноутбуке, синхронизируется на все устройства.
@@ -40,5 +40,19 @@ describe("syncUserPrefsFromServer / workspaceOpen", () => {
     vi.spyOn(api, "saveUserPrefs").mockResolvedValue(undefined as never);
     await useStore.getState().syncUserPrefsFromServer();
     expect(useStore.getState().workspaceOpen).toBe(true);
+  });
+});
+
+describe("восстановление сохранённых настроек / workspaceOpen", () => {
+  it("на узком экране не открывает сохранённую панель файлов", () => {
+    mockViewport(true);
+    const merged = mergePersistedState({ workspaceOpen: true }, useStore.getState());
+    expect(merged.workspaceOpen).toBe(false);
+  });
+
+  it("на широком экране сохранённая панель остаётся открытой", () => {
+    mockViewport(false);
+    const merged = mergePersistedState({ workspaceOpen: true }, useStore.getState());
+    expect(merged.workspaceOpen).toBe(true);
   });
 });

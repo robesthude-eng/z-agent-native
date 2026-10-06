@@ -6,7 +6,7 @@ import { createAuthSlice } from "./slices/authSlice";
 import { createMessagesSlice } from "./slices/messagesSlice";
 import { createModelsSlice } from "./slices/modelsSlice";
 import { createSessionsSlice } from "./slices/sessionsSlice";
-import { createUiSlice } from "./slices/uiSlice";
+import { createUiSlice, isNarrowViewport } from "./slices/uiSlice";
 import type { ModelEntry, State } from "./types";
 
 export type { ModelEntry, State };
@@ -45,6 +45,17 @@ function makeStorage() {
   }));
 }
 
+/**
+ * Восстановление сохранённых настроек. Панель файлов на телефоне занимает весь
+ * экран и закрывает поле ввода, поэтому сохранённое «открыто» (например, с
+ * широкого окна или с прошлого визита) на узком экране не применяем.
+ */
+export function mergePersistedState(persisted: unknown, current: State): State {
+  const merged = { ...current, ...(persisted as Partial<State>) } as State;
+  if (merged.workspaceOpen && isNarrowViewport()) merged.workspaceOpen = false;
+  return merged;
+}
+
 export const useStore = create<State>()(
   persist(
     (...a) => ({
@@ -61,6 +72,7 @@ export const useStore = create<State>()(
       // ещё один раз перекрыл бы серверное имя чата при первой загрузке после
       // обновления — ровно тот баг, который эта версия чинит.
       version: 2,
+      merge: mergePersistedState,
       migrate: (persisted, version) => {
         if (version >= 2) return persisted as Partial<State>;
         const { sessionTitleOverrides: _dropped, ...rest } = (persisted ??
