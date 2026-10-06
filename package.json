@@ -101,5 +101,8 @@
     "typescript": "7.0.2",
     "vite": "^8.1.5",
     "vitest": "4.1.11"
+  },
+  "overrides": {
+    "postcss-selector-parser": "^7.1.6"
   }
 }
