@@ -319,7 +319,10 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
   // Without html/url, render the page the session already has open (the
   // natural "open → screenshot" sequence) instead of failing the call.
   const currentUrl = (() => { try { return page.url(); } catch { return ''; } })();
-  const useCurrent = !html && !target && /^https?:/i.test(currentUrl);
+  // A workspace document is loaded with setContent, so its URL stays
+  // about:blank; remember that a real document is open so open → screenshot
+  // and visual_check can render it.
+  const useCurrent = !html && !target && (/^https?:/i.test(currentUrl) || (state.workspaceDocOpen === true && currentUrl === 'about:blank'));
   if (!html && !target && !useCurrent) throw new Error(`${action} requires html or url (or open a page first)`);
 
   if (useCurrent) {
@@ -328,12 +331,14 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
     // `load` вместо `domcontentloaded`: документ с картинками иначе успевает
     // напечататься с пустыми местами вместо иллюстраций.
     await page.setContent(html, { timeout, waitUntil: 'load' });
+    state.workspaceDocOpen = true;
     } else {
       assertNotLocalBrowserTarget(target);
       assertAgentNetworkUrl(target, { tool: 'browser' });
       const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
       if (!proxyServer) await assertSafeExternalUrl(target);
       await page.goto(target, { timeout, waitUntil: 'load' });
+      state.workspaceDocOpen = false;
     }
 
   let buffer;
@@ -426,6 +431,7 @@ export async function executeBrowserTool({ sessionId, input: rawInput = {}, sign
     const target = String(input.url || '').trim();
     if (html) {
       await page.setContent(html, { timeout, waitUntil: 'domcontentloaded' });
+      state.workspaceDocOpen = true;
       extra.push(`workspace document: ${target || 'inline'}`);
     } else {
       if (!target) throw new Error('open requires url');
@@ -439,6 +445,7 @@ export async function executeBrowserTool({ sessionId, input: rawInput = {}, sign
         await assertSafeExternalUrl(target);
       }
       const response = await page.goto(target, { timeout, waitUntil: 'domcontentloaded' });
+      state.workspaceDocOpen = false;
       extra.push(`http status: ${response ? response.status() : 'unknown'}`);
     }
   } else if (action === 'click') {

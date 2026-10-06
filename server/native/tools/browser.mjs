@@ -22,6 +22,14 @@ export async function executeBrowserAction(root, input, ctx = {}) {
       payload = { ...payload, html: local.html, url: local.href };
     }
   }
+  if ((action === 'screenshot' || action === 'pdf') && !String(payload.html || '').trim()) {
+    // Workspace-relative path (e.g. "pomodoro/index.html") — inline it the same way `open` does.
+    const target = String(payload.url || '').trim();
+    if (target && !isPublicHttpUrl(target) && !/^https?:/i.test(target)) {
+      const local = readWorkspaceBrowserDocument(root, target);
+      payload = { ...payload, html: local.html, url: local.href };
+    }
+  }
   const identity = sandboxIdentity(ctx.sessionId);
   const result = await executeBrowserTool({
     sessionId: ctx.sessionId,
