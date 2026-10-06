@@ -2,7 +2,21 @@
   "name": "z-agent-native",
   "image": "mcr.microsoft.com/devcontainers/base:ubuntu-24.04",
   "features": {
-    "ghcr.io/devcontainers/features/node:1": { "version": "24" }
+    "ghcr.io/devcontainers/features/node:1": { "version": "24" },
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {
+      "version": "latest",
+      "moby": true,
+      "dockerDashComposeVersion": "v2"
+    }
+  },
+  "hostRequirements": { "cpus": 2, "memory": "8gb", "storage": "32gb" },
+  "forwardPorts": [3000],
+  "portsAttributes": {
+    "3000": {
+      "label": "Z Agent",
+      "onAutoForward": "notify",
+      "visibility": "private"
+    }
   },
   "postCreateCommand": "bash .devcontainer/setup.sh"
 }
