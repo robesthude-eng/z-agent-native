@@ -145,7 +145,49 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 
 ---
 
-## 6. Работа с телефона
+## 6. Интернет и браузер у агента
+
+Установка по умолчанию идёт в «закрытом» профиле: агенту запрещён выбор адресов в сети. Тогда на
+просьбу посмотреть погоду или открыть страницу он честно отвечает, что интернета нет —
+это политика, а не поломка. В Codespace она уже открыта; на сервере включайте осознанно.
+
+Что именно проверяется (видно в `server/native/workspace-policy.mjs`):
+
+| Переменная | Закрыто (по умолчанию) | Открыто (доверенный хост) |
+|---|---|---|
+| `Z_AGENT_NETWORK_POLICY` | `off` | `public` |
+| `Z_AGENT_ALLOW_PUBLIC_WEB` | `0` | `1` — обязательное подтверждение |
+| `Z_AGENT_SHELL_NETWORK_POLICY` | `guarded` | `open` (curl, wget, git, пакеты) |
+| `Z_AGENT_ALLOW_NETWORKED_INSTALLERS` | `0` | `1` (npm/pip внутри сессии) |
+| `Z_AGENT_ALLOW_PRODUCTION_TERMINAL` | `0` | `1` — нужен, если включён терминал |
+
+После правки `.env` перезапустите рантайм. Проверить, что агент действительно видит интернет:
+
+```bash
+node --env-file-if-exists=.env --input-type=module -e \
+  'import { runtimeCapabilityPrompt } from "./server/native/workspace-policy.mjs"; console.log(runtimeCapabilityPrompt())' \
+  | grep -i internet
+# ожидаем: "Internet: enabled. websearch, webfetch and browser reach any public host."
+```
+
+**Браузерный инструмент — отдельная история.** Ему нужен настоящий Chromium, которого нет в базовом
+образе. В Codespace это ставится автоматически при настройке; вручную:
+
+```bash
+npx playwright-core install chromium
+sudo env "PATH=$PATH" "$(command -v npx)" playwright-core install-deps chromium
+```
+
+Симптом отсутствия браузера — `Executable doesn't exist at .../chrome-headless-shell` или
+`Target page, context or browser has been closed` при запуске. `websearch` и `webfetch` браузера не
+требуют: они ходят напрямую (DuckDuckGo HTML, либо ваш `Z_AGENT_SEARXNG_URL`).
+
+⚠️ Открывайте сеть только на доверенном одиночном хосте. Агент исполняет код, поэтому сетевой
+доступ — это канал утечки: на сервере, доступном из интернета, оставляйте `off`.
+
+---
+
+## 7. Работа с телефона
 
 - **Редактор и терминал** — прямо в браузере, ссылка `https://<codespace>.github.dev`.
 - **UI приложения** — вкладка Ports → 3000 (или публичная ссылка, если вы её открыли:
@@ -157,7 +199,7 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 
 ---
 
-## 7. Карта проекта
+## 8. Карта проекта
 
 | Каталог | Что внутри |
 |---|---|
@@ -177,7 +219,7 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 
 ---
 
-## 8. Шпаргалка
+## 9. Шпаргалка
 
 ```bash
 # запуск/остановка
