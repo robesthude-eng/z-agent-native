@@ -30,7 +30,9 @@ const read = (file) => fs.readFileSync(new URL(file, root), "utf8");
 const problems = [];
 
 function walk(dir, ext, out = []) {
-  for (const entry of fs.readdirSync(new URL(dir, root), { withFileTypes: true })) {
+  for (const entry of fs.readdirSync(new URL(dir, root), {
+    withFileTypes: true,
+  })) {
     const rel = `${dir}${entry.name}`;
     if (entry.isDirectory()) walk(`${rel}/`, ext, out);
     else if (ext.some((e) => entry.name.endsWith(e))) out.push(rel);
@@ -139,7 +141,9 @@ function checkDefaults() {
     .join("\n");
   const lines = code.split("\n");
   const rows = [
-    ...read("README.md").matchAll(/^\| `([A-Z][A-Z0-9_]+)` \| `([0-9_]+)` \|/gm),
+    ...read("README.md").matchAll(
+      /^\| `([A-Z][A-Z0-9_]+)` \| `([0-9_]+)` \|/gm,
+    ),
   ];
   const evalProduct = (expr) => {
     try {
@@ -155,7 +159,8 @@ function checkDefaults() {
   };
   const literalsOf = (line) => {
     const out = new Set();
-    for (const m of line.matchAll(/\b\d[\d_]*\b/g)) out.add(m[0].replace(/_/g, ""));
+    for (const m of line.matchAll(/\b\d[\d_]*\b/g))
+      out.add(m[0].replace(/_/g, ""));
     for (const m of line.matchAll(/(\d[\d_]*(?:\s*\*\s*\d[\d_]*)+)/g)) {
       out.add(evalProduct(m[1]));
     }
@@ -187,7 +192,12 @@ function checkDefaults() {
 function checkEndpoints() {
   const serverCode = walk("server/", [".mjs"]).map(read).join("\n");
   // Historical documents legitimately mention removed endpoints.
-  const files = ["README.md", "ARCHITECTURE.md", "SECURITY.md", "OPERATIONS.md"];
+  const files = [
+    "README.md",
+    "ARCHITECTURE.md",
+    "SECURITY.md",
+    "OPERATIONS.md",
+  ];
   for (const file of files) {
     const text = read(file);
     for (const m of text.matchAll(
@@ -199,7 +209,9 @@ function checkEndpoints() {
         .join("/")
         .replace(/\/+$/, "");
       if (endpoint && !serverCode.includes(endpoint)) {
-        problems.push(`${file}: documented endpoint ${m[1]} is not present in server/`);
+        problems.push(
+          `${file}: documented endpoint ${m[1]} is not present in server/`,
+        );
       }
     }
   }
