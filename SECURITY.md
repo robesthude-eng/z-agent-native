@@ -8,7 +8,7 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 - Provider secrets use an `enc:v2` AES-256-GCM envelope with key ID and AAD binding to owner/provider/field. Production requires an external 256-bit `Z_AGENT_SECRET_KEY` or `Z_AGENT_SECRET_KEY_FILE`; `Z_AGENT_SECRET_KEYS_JSON` supplies old keys only for rotation/rewrap. The runtime-generated `data/master.key` fallback is development-only and is rejected by the supplied production profile.
 - A separate external `Z_AGENT_AUDIT_KEY`/`Z_AGENT_AUDIT_KEY_FILE` authenticates the append-only audit chain and backup manifests; do not store it on the same `/data` volume it protects.
 - Provider keys and runtime secrets are never injected into tool/terminal environments.
-- Unexpected errors are logged in full (with stack) to the server log only. The HTTP response carries the error message with quoted absolute filesystem paths replaced by `<path>` (`server/native/public-error.mjs`); filesystem errors such as `ENOENT` are mapped to fixed messages. The runtime does not generate request IDs.
+- Unexpected errors are logged in full (with stack) to the server log only. An unexpected HTTP 500 returns a fixed message plus a random request ID (`requestId` in the JSON body), which is also printed in the log line; deliberate errors with their own status code keep their message, and filesystem errors such as `ENOENT` are mapped to fixed messages (`server/native/public-error.mjs`).
 
 ## Authentication
 
@@ -119,7 +119,7 @@ For production:
 - `db:restore-verify` proves SQLite/foreign-key integrity, schema compatibility, provider-secret decryptability and audit-chain integrity; `db:drill` performs an isolated snapshot + verification drill.
 - CI follows build-once/deploy-by-digest: production images are tested/booted before publication, pushed to GHCR with provenance attestations, and their immutable `@sha256:` references are recorded for operator-driven deployment instead of rebuilding on the server. Remote GitHub Actions are themselves pinned to full commit SHAs.
 - There is no separate liveness endpoint: `/health` and `/health/ready` are the same readiness check, which performs a rollback-only DB write probe, checks schema compatibility, external-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. During graceful shutdown it immediately becomes unready while active turns receive a bounded drain window. Raw readiness exceptions are not returned to unauthenticated health callers.
-- `/metrics` is disabled unless `Z_AGENT_METRICS_BEARER_TOKEN` is set (the runtime does not read `Z_AGENT_METRICS_TOKEN`, which `prod:env:init` writes); when enabled it requires a bearer token and exports only low-cardinality aggregate labels. The supplied public Caddy vhost blocks `/metrics` entirely.
+- `/metrics` is disabled unless `Z_AGENT_METRICS_TOKEN` (or the legacy `Z_AGENT_METRICS_BEARER_TOKEN`) is set; when enabled it requires a bearer token and exports only low-cardinality aggregate labels. The supplied public Caddy vhost blocks `/metrics` entirely.
 
 ## Multi-user exposure
 

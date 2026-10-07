@@ -19,7 +19,9 @@ export function handleAdminSystemRoutes(req, res, p, auth) {
 
 export async function handleSystemRoutes(req, res, p, { draining, startedAt, isDraining }) {
   if (p === '/metrics' && req.method === 'GET') {
-    const expected = String(process.env.Z_AGENT_METRICS_BEARER_TOKEN || '').trim();
+    // Z_AGENT_METRICS_TOKEN is the name documented in .env.example and written by
+    // prod:env:init; Z_AGENT_METRICS_BEARER_TOKEN is the legacy name and still works.
+    const expected = String(process.env.Z_AGENT_METRICS_TOKEN || process.env.Z_AGENT_METRICS_BEARER_TOKEN || '').trim();
     if (!expected) {
       sendJson(res, 404, { error: 'Not found' });
       return true;

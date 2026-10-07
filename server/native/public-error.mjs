@@ -16,11 +16,14 @@ export function redactPaths(message) {
   return String(message || '').replace(/(['"`])\/[^'"`\n]*\1/g, '$1<path>$1');
 }
 
-export function publicErrorInfo(err) {
+export function publicErrorInfo(err, { requestId = '' } = {}) {
   const explicit = Number(err?.statusCode);
   if (explicit) return { status: explicit, message: err?.message || 'Internal Server Error', code: err?.code || undefined };
   if (err?.name === 'AbortError') return { status: 499, message: err?.message || 'Aborted', code: err?.code || undefined };
   const mapped = FS_STATUS[err?.code];
   if (mapped) return { status: mapped[0], message: mapped[1], code: err.code };
+  // With a request ID the internal message is withheld from the client; the
+  // full error is in the server log under the same ID.
+  if (requestId) return { status: 500, message: `Внутренняя ошибка сервера. Код запроса: ${requestId}`, code: undefined, requestId };
   return { status: 500, message: redactPaths(err?.message) || 'Internal Server Error', code: err?.code || undefined };
 }

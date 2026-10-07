@@ -1,3 +1,4 @@
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
@@ -85,9 +86,9 @@ function mimeFor(file) {
   return MIME_TYPES[ext] || 'application/octet-stream';
 }
 
-function errorResponse(res, err) {
-  const { status, message, code } = publicErrorInfo(err);
-  sendJson(res, status, { error: message, code });
+function errorResponse(res, err, requestId = '') {
+  const { status, message, code, requestId: id } = publicErrorInfo(err, { requestId });
+  sendJson(res, status, { error: message, code, ...(id ? { requestId: id } : {}) });
 }
 
 function appSecurityHeaders(req) {
@@ -186,9 +187,10 @@ const server = http.createServer((req, res) => {
     // оставляем только путь: в query могут быть токены предпросмотра.
     const where = String(req.url || '').split('?')[0];
     const status = Number(err?.statusCode) || 0;
+    const requestId = crypto.randomBytes(5).toString('hex');
     if (status >= 400 && status < 500) console.warn('[http]', req.method, where, status, err?.message || '');
-    else console.error('[http]', req.method, where, err);
-    errorResponse(res, err);
+    else console.error('[http]', requestId, req.method, where, err);
+    errorResponse(res, err, requestId);
   });
 });
 

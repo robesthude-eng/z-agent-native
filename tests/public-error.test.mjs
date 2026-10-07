@@ -22,3 +22,12 @@ test('other failures stay 500 with absolute paths redacted', () => {
   assert.equal(redactPaths('plain text'), 'plain text');
   assert.equal(publicErrorInfo(new Error('')).message, 'Internal Server Error');
 });
+
+test('with a request ID an unexpected 500 hides the internal message', () => {
+  const info = publicErrorInfo(new Error("boom reading '/root/secret/file'"), { requestId: 'abc123' });
+  assert.equal(info.status, 500);
+  assert.equal(info.requestId, 'abc123');
+  assert.match(info.message, /abc123/);
+  assert.doesNotMatch(info.message, /boom|secret/);
+  assert.equal(publicErrorInfo(Object.assign(new Error('Конфликт'), { statusCode: 409 }), { requestId: 'abc123' }).message, 'Конфликт');
+});
