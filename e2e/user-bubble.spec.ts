@@ -76,7 +76,7 @@ test('user bubbles keep short words intact, wrap long text and preserve newlines
   const multiline = await send('Первая строка\nВторая строка');
   await expect(multiline.locator('.chat-user-text')).toHaveCSS('white-space', 'pre-wrap');
   await expect(page.getByRole('button', { name: 'Отправить сообщение' })).toBeVisible({ timeout: 25000 });
-  const long = await send('https://example.com/' + 'abcdefghij'.repeat(35));
+  const long = await send(`https://example.com/${'abcdefghij'.repeat(35)}`);
   await expect(page.getByRole('button', { name: 'Отправить сообщение' })).toBeVisible({ timeout: 25000 });
   expect(await long.locator('.chat-user-bubble').evaluate(el => {
     const rect = el.getBoundingClientRect(); return rect.left >= 0 && rect.right <= innerWidth && el.scrollWidth <= el.clientWidth;

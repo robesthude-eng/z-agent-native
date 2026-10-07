@@ -460,6 +460,7 @@ export default function ChangesPanel() {
                         <pre className="max-h-[52vh] overflow-auto border-t border-border/60 bg-background/55 py-2 text-[10.5px] leading-[1.55]">
                           {diff.patch.split("\n").map((line, index) => (
                             <div
+                              // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are a static, never-reordered list; duplicates are possible so the line text alone is not unique
                               key={`${index}:${line.slice(0, 24)}`}
                               className={`min-w-max px-3 font-mono ${diffLineClass(line)}`}
                             >

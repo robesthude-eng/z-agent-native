@@ -23,10 +23,7 @@ interface TurnSummaryCardProps {
  * Файлы открывает сам `WorkspaceFileChip`. Проп `onSelectFile` карточка
  * получала, но никуда не передавала — цепочка обрывалась молча.
  */
-export function TurnSummaryCard({
-  summary,
-  strategyMutated,
-}: TurnSummaryCardProps) {
+export function TurnSummaryCard({ summary }: TurnSummaryCardProps) {
   const explicit = summary.outcomeStatus;
   const statusLabel =
     explicit === "completed"

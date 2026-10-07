@@ -16,6 +16,7 @@ function StatusDot({ model }: { model: ModelEntry }) {
   const stale = model.status === "cache";
   return (
     <span
+      role="img"
       className={cn(
         "h-2 w-2 shrink-0 rounded-full",
         stale ? "bg-amber-500" : "bg-emerald-500",
@@ -204,12 +205,14 @@ export default function ModelSelector() {
         <span className="flex min-w-0 items-center gap-2">
           {automatic ? (
             <span
+              role="img"
               className="h-2 w-2 shrink-0 rounded-full bg-primary"
               title={t("model_selector.autopilot_vybiraet_model_na_servere")}
               aria-label={t("model_selector.autopilot_vklyuchen")}
             />
           ) : missing ? (
             <span
+              role="img"
               className="h-2 w-2 shrink-0 rounded-full bg-amber-500"
               title={MISSING_MODEL_TITLE}
               aria-label={t("model_selector.modeli_net_v_kataloge_provaydera")}

@@ -135,7 +135,11 @@ export function QuestionTrace({ part }: { part: ToolPart }) {
             const chosen = answers[i];
             const line = lines[i];
             return (
-              <div key={`${i}-${q.prompt}`} className="space-y-1.5">
+              <div
+                // biome-ignore lint/suspicious/noArrayIndexKey: questions are a static list from the tool call and prompts may repeat
+                key={`${i}-${q.prompt}`}
+                className="space-y-1.5"
+              >
                 {q.prompt && (
                   <div className="text-[13px] text-foreground/90">
                     {q.prompt}
@@ -147,6 +151,7 @@ export function QuestionTrace({ part }: { part: ToolPart }) {
                       const picked = !!chosen?.includes(o.label);
                       return (
                         <li
+                          // biome-ignore lint/suspicious/noArrayIndexKey: options are a static list from the tool call and values may repeat
                           key={`${oi}-${o.value}`}
                           className={cn(
                             "flex items-start gap-2 rounded-lg border px-2.5 py-1.5 text-[12.5px]",

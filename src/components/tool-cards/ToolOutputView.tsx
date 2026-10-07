@@ -74,7 +74,12 @@ export function ToolOutputView({ part }: ToolOutputViewProps) {
           </div>
         )}
         {edits.map((e, idx) => (
-          <DiffView key={idx} oldText={e.oldText} newText={e.newText} />
+          <DiffView
+            // biome-ignore lint/suspicious/noArrayIndexKey: edits are a static list from the tool call and have no stable id
+            key={idx}
+            oldText={e.oldText}
+            newText={e.newText}
+          />
         ))}
       </div>
     );

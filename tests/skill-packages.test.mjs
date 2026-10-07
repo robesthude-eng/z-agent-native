@@ -56,7 +56,7 @@ test('discovery lists individual skills, installation preserves bundled resource
 test('installed package updates require explicit replacement; names and downloads are owner-isolated', async () => {
   await assert.rejects(installer.discoverSkills(other, { source: preview.source }), /expired/);
   assert.equal(store.listSkills(other).length, 0);
-  const changed = await installer.discoverSkills(owner, { filename: 'SKILL.md', contentBase64: Buffer.from(doc('demo-skill') + '\nUpdated').toString('base64') });
+  const changed = await installer.discoverSkills(owner, { filename: 'SKILL.md', contentBase64: Buffer.from(`${doc('demo-skill')}\nUpdated`).toString('base64') });
   await assert.rejects(lib.installSkill(owner, { source: changed.source }), /already exists/);
   assert.equal((await lib.installSkill(owner, { source: changed.source, replace: true })).name, 'demo-skill');
   assert.throws(() => executeSkillTool({ action: 'save', name: 'demo-skill', content: 'overwrite', description: 'overwrite' }, { ownerId: owner }), /cannot be overwritten/);
@@ -129,7 +129,7 @@ test('GitHub uses pinned selective file downloads, not the entire repository', a
     ] });
     if (url.endsWith('SKILL.md')) return new Response(content);
     if (url.endsWith('guide.md')) return new Response('guide');
-    throw new Error('Unexpected download: ' + url);
+    throw new Error(`Unexpected download: ${url}`);
   });
   const discovered = await installer.discoverSkills(owner, { source: 'https://github.com/example/skills' });
   const installed = await lib.installSkill(owner, { source: discovered.source, path: 'skills/github-test' });

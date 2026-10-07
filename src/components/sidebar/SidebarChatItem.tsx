@@ -24,7 +24,6 @@ export interface SidebarChatItemProps {
 }
 
 export function SidebarChatItem({
-  session,
   isActive,
   displayTitle,
   isPinned,

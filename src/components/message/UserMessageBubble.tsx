@@ -29,7 +29,6 @@ export function UserMessageBubble({
   onStartEditing,
   onCancelEditing,
   onSaveAndResend,
-  isLatest,
 }: UserMessageBubbleProps) {
   /*
     Фокус в поле правки ставится один раз за сеанс редактирования.

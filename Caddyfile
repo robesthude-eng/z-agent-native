@@ -37,6 +37,7 @@
 	@sse path /api/event*
 	handle @sse {
 		reverse_proxy z-agent:3000 {
+			header_up X-Request-ID {http.request.uuid}
 			flush_interval -1
 			transport http {
 				read_timeout 0
@@ -48,6 +49,7 @@
 	@socket path /socket.io*
 	handle @socket {
 		reverse_proxy z-agent:3000 {
+			header_up X-Request-ID {http.request.uuid}
 			flush_interval -1
 			transport http {
 				read_timeout 0
@@ -58,6 +60,7 @@
 
 	handle {
 		reverse_proxy z-agent:3000 {
+			header_up X-Request-ID {http.request.uuid}
 			flush_interval -1
 		}
 	}

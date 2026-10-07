@@ -355,6 +355,7 @@ export default function TurnResultModal({
                         <pre className="max-h-[52dvh] overflow-auto border-t border-border/60 bg-black/15 py-2 font-mono text-[11px] leading-[1.55]">
                           {diff.patch.split("\n").map((line, index) => (
                             <div
+                              // biome-ignore lint/suspicious/noArrayIndexKey: diff lines are a static, never-reordered list; duplicates are possible so the line text alone is not unique
                               key={`${index}:${line.slice(0, 32)}`}
                               className={`min-w-max whitespace-pre px-3 ${lineClass(line)}`}
                             >
