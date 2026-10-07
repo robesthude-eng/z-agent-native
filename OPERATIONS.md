@@ -21,7 +21,7 @@ docker compose up -d
 curl -fsS http://127.0.0.1:3002/health/ready
 ```
 
-The default `COMPOSE_FILE` includes `docker-compose.override.yml`, which publishes the API only on `127.0.0.1:3002` (public traffic goes through Caddy on 80/443). Port 3000 is published only when you run `docker-compose.yml` without the override. `/health` is an alias of `/health/ready`; there is no separate liveness endpoint, and during SIGTERM drain it answers 503 `draining`.
+The default `COMPOSE_FILE` includes `docker-compose.override.yml`, which publishes the API only on `127.0.0.1:3002` (public traffic goes through Caddy on 80/443). Port 3000 is published only when you run `docker-compose.yml` without the override. `/health` is an alias of `/health/ready` and during SIGTERM drain it answers 503 `draining`. `/health/live` is a cheap liveness probe (always 200 while the process answers, including during drain, with no DB/disk checks); use it for "restart if hung" and `/health/ready` for "send traffic".
 
 The default command is the hardened profile: autonomous execution remains in
 the networkless executor and terminal, SSH, public web and networked installers
@@ -131,7 +131,7 @@ For an incident, preserve at minimum:
 
 - release SHA and exact image digests;
 - `/health/ready` status;
-- application logs (`docker compose logs z-agent`) and the request ID (`Код запроса` / `requestId`) the client saw for any unexpected 500;
+- application logs (`docker compose logs z-agent`) and the request ID (`Код запроса` / `requestId` in the body, or the `x-request-id` response header) the client saw: error log lines carry it, so `docker compose logs z-agent | grep <id>` finds the failure;
 - turn telemetry;
 - `audit:verify` result;
 - an integrity-checked database snapshot + manifest before destructive intervention.

@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process';
 import { DEFAULT_TOOL_TIMEOUT_MS } from '../config.mjs';
 import { managedShellEnvironment } from '../environment.mjs';
-import { EXTENDED_TOOLCHAIN_KINDS, suggestToolchainForCommand } from '../toolchains.mjs';
+import { suggestToolchainForCommand } from '../toolchains.mjs';
 import { classifyBash } from '../context.mjs';
 import { compareWorkspaceSnapshots, snapshotWorkspace } from '../workspace-changes.mjs';
 import {
@@ -11,8 +11,6 @@ import { executeInExecutor } from '../executor-client.mjs';
 import { assertShellCommandAllowed, shellNetworkPolicy } from '../workspace-policy.mjs';
 import { createLiveOutput, truncate } from './dispatcher.mjs';
 
-const BASE_ENVIRONMENT_KINDS = ['python', 'java', 'gradle', 'android'];
-const ENVIRONMENT_KINDS = [...BASE_ENVIRONMENT_KINDS, ...EXTENDED_TOOLCHAIN_KINDS];
 
 export function externalSpawnIdentity(ctx, root) {
   if (ctx?.sessionId) return prepareWorkspaceSandbox(ctx.sessionId, root);
@@ -96,7 +94,7 @@ export async function execBash(root, command, timeoutMs = DEFAULT_TOOL_TIMEOUT_M
     let timeout = null;
     if (timeoutMs) {
       timeout = setTimeout(() => {
-        stderr = truncate(`${stderr ? stderr + '\n' : ''}Command exceeded limit of ${timeoutMs} ms and was terminated.`);
+        stderr = truncate(`${stderr ? `${stderr}\n` : ''}Command exceeded limit of ${timeoutMs} ms and was terminated.`);
         abort();
       }, timeoutMs);
       timeout.unref?.();

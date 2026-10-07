@@ -7,7 +7,7 @@ on:
       - main
 
 # A superseded PR run has no value and only delays the queue. Never cancel main:
-# the Deploy workflow keys off a completed CI run for a specific SHA.
+# release images and their digests are recorded per main commit.
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -17,8 +17,8 @@ permissions:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # Blocking gates. Deploy runs on `workflow_run: CI completed && success`, so
-  # every job below is a real production gate; there are no advisory jobs left.
+  # Blocking gates. Every job below must pass before a commit is considered
+  # releasable; there are no advisory jobs left.
   # ---------------------------------------------------------------------------
 
   native:
@@ -265,8 +265,7 @@ jobs:
 
   # Promoted from advisory to blocking: correctness lint and formatting are the
   # last non-gating checks in this workflow. Run `npm run lint:ci` and
-  # `npm run format:check` locally before pushing — a red result now stops the
-  # deploy instead of only annotating the run.
+  # `npm run format:check` locally before pushing — a red result fails the run.
   quality:
     name: Lint and formatting
     runs-on: ubuntu-latest

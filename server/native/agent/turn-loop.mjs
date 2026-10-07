@@ -340,7 +340,7 @@ export function uiFilesChanged(strategy) {
 }
 
 /** Ревью показывается в чате отдельной карточкой «review» и не идёт в историю модели. */
-async function runReview({ sessionId, assistant, runtime, goal, strategy, workspace, draft, signal }) {
+async function runReview({ assistant, runtime, goal, strategy, workspace, draft, signal }) {
   const part = {
     id: partId(),
     type: 'tool',
@@ -600,7 +600,7 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         }
         if (!reasoningOnly && shouldReview(strategy, { enabled: features.review, reviewsDone: runtime.reviewsDone, waitingForUser })) {
           runtime.reviewsDone += 1;
-          const review = await runReview({ sessionId, assistant, runtime, goal, strategy, workspace, draft: response.text, signal: controller.signal });
+          const review = await runReview({ assistant, runtime, goal, strategy, workspace, draft: response.text, signal: controller.signal });
           checkpointState(sessionId, runtime, strategy, { phase: 'review', reviewsDone: runtime.reviewsDone });
           if (review?.verdict === 'fix') {
             demoteDraftTextToReasoning(assistant, streamed.parts, { putMessage, emit });

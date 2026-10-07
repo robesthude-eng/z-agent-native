@@ -202,7 +202,7 @@ async function remoteManifest(entry, signal) {
 
 function tarLocal(root, files) {
   const list = path.join(os.tmpdir(), `zcs-${crypto.randomUUID()}.lst`);
-  fs.writeFileSync(list, files.join('\n') + '\n');
+  fs.writeFileSync(list, `${files.join('\n')}\n`);
   try {
     const r = spawnSync('tar', ['-czf', '-', '-C', root, '--no-recursion', '-T', list], { maxBuffer: MAX_SYNC_BYTES + 1024 * 1024 });
     if (r.status !== 0) throw new Error(`tar failed: ${String(r.stderr || '').slice(0, 300)}`);
@@ -318,7 +318,7 @@ async function pullRemote(root, entry, before, signal, owner) {
     if (take.length) {
       const listPath = `/tmp/zcs-dl-${crypto.randomUUID()}`;
       const form = new FormData();
-      form.append('file', new Blob([take.join('\n') + '\n']), 'list');
+      form.append('file', new Blob([`${take.join('\n')}\n`]), 'list');
       await api('POST', `/files/upload-v2?path=${encodeURIComponent(`${listPath}.lst`)}`, { base: entry.base, body: form, signal });
       const r = await exec(entry, `cd ${REMOTE_ROOT} && tar -czf ${listPath}.tgz --no-recursion -T ${listPath}.lst`, { timeoutSec: 600, signal });
       if (r.code !== 0) throw new Error(`remote archive failed: ${r.output.slice(0, 300)}`);

@@ -83,7 +83,7 @@ export function executeSkillTool(input, ctx = {}) {
   if (action === 'enable' || action === 'disable') {
     const settings = chatSkillSettings(ownerId, ctx.sessionId);
     const skill = getSkill(ownerId, input.name);
-    if (!skill || !skill.enabled) throw new Error('Skill is missing or disabled in the library');
+    if (!skill?.enabled) throw new Error('Skill is missing or disabled in the library');
     if (action === 'enable' && !skill.autoUse && !settings.selected.includes(skill.name)) throw new Error('This is a manual-only skill; ask the user to select it in the chat skill picker');
     const selected = settings.selected.filter((n) => n !== skill.name);
     const excluded = settings.excluded.filter((n) => n !== skill.name);

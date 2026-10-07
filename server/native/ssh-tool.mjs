@@ -172,7 +172,7 @@ export function buildSshArgs(root, action, input = {}) {
   throw new Error(`Unsupported ssh_tool action "${action}". Use one of: ${SSH_ACTIONS.join(', ')}`);
 }
 
-function sshEnv(root, home, password) {
+function sshEnv(home, password) {
   const env = {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: home,
@@ -203,7 +203,7 @@ async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
   return await new Promise((resolve, reject) => {
     const child = spawn(launch.file, launch.args, {
       cwd: root,
-      env: sshEnv(root, home, plan.password),
+      env: sshEnv(home, plan.password),
       stdio: ['pipe', 'pipe', 'pipe'],
       ...launch.options,
     });

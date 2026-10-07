@@ -35,25 +35,31 @@ function configuredAuditKey() {
 function auditKey() {
   if (cachedKey) return cachedKey;
   const configured = configuredAuditKey();
-  if (configured) return (cachedKey = configured.key);
+  if (configured) {
+    cachedKey = configured.key;
+    return cachedKey;
+  }
   fs.mkdirSync(DATA_DIR, { recursive: true, mode: 0o700 });
   try {
     const existing = fs.readFileSync(AUDIT_KEY_FILE);
     if (existing.length !== 32) throw new Error('audit.key must contain exactly 32 bytes');
     try { fs.chmodSync(AUDIT_KEY_FILE, 0o600); } catch {}
-    return (cachedKey = existing);
+    cachedKey = existing;
+    return cachedKey;
   } catch (error) {
     if (error?.code && error.code !== 'ENOENT') throw error;
   }
   const generated = crypto.randomBytes(32);
   try {
     fs.writeFileSync(AUDIT_KEY_FILE, generated, { flag: 'wx', mode: 0o600 });
-    return (cachedKey = generated);
+    cachedKey = generated;
+    return cachedKey;
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
     const existing = fs.readFileSync(AUDIT_KEY_FILE);
     if (existing.length !== 32) throw new Error('audit.key must contain exactly 32 bytes');
-    return (cachedKey = existing);
+    cachedKey = existing;
+    return cachedKey;
   }
 }
 

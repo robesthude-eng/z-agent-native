@@ -27,6 +27,7 @@ db.exec(`
 `);
 
 function cleanName(value) {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are deliberately stripped from user-supplied names
   const name = String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().replace(/\s+/g, ' ');
   if (!name || name.length > 80) throw Object.assign(new Error('Название провайдера должно содержать от 1 до 80 символов'), { statusCode: 400 });
   return name;

@@ -35,8 +35,7 @@ export default {
     const slash = rest.indexOf("/");
     const host = slash === -1 ? rest : rest.slice(0, slash);
     if (
-      !host ||
-      !host.includes(".") ||
+      !host?.includes(".") ||
       !HOST_RE.test(host) ||
       /^\d+(\.\d+){3}$/.test(host) ||
       BLOCKED.test(host)

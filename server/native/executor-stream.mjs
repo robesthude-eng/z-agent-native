@@ -10,8 +10,7 @@ export function createExecutorStreamParser(onOutput) {
   let terminal = null;
   const read = (text) => {
     pending += text;
-    let newline;
-    while ((newline = pending.indexOf('\n')) >= 0) {
+    for (let newline = pending.indexOf('\n'); newline >= 0; newline = pending.indexOf('\n')) {
       const line = pending.slice(0, newline);
       pending = pending.slice(newline + 1);
       if (!line.trim()) continue;

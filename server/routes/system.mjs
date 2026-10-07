@@ -17,7 +17,7 @@ export function handleAdminSystemRoutes(req, res, p, auth) {
   return true;
 }
 
-export async function handleSystemRoutes(req, res, p, { draining, startedAt, isDraining }) {
+export async function handleSystemRoutes(req, res, p, { startedAt, isDraining }) {
   if (p === '/metrics' && req.method === 'GET') {
     // Z_AGENT_METRICS_TOKEN is the name documented in .env.example and written by
     // prod:env:init; Z_AGENT_METRICS_BEARER_TOKEN is the legacy name and still works.
@@ -41,6 +41,20 @@ export async function handleSystemRoutes(req, res, p, { draining, startedAt, isD
       'cache-control': 'no-store',
     });
     res.end(body);
+    return true;
+  }
+
+  // Liveness: the process is up and the event loop answers. Deliberately no DB/disk
+  // checks and still 200 while draining, so an orchestrator restarts only a hung
+  // process and never one that is merely finishing its turns. Use /health/ready
+  // (or /health) to decide whether to route traffic to the instance.
+  if (p === '/health/live' && (req.method === 'GET' || req.method === 'HEAD')) {
+    sendJson(res, 200, {
+      status: isDraining() ? 'draining' : 'alive',
+      runtime: 'z-agent-native',
+      version: '1.0.0',
+      uptime: Math.floor((Date.now() - startedAt) / 1000),
+    }, { 'cache-control': 'no-store' });
     return true;
   }
 

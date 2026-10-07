@@ -22,6 +22,7 @@ function inlineMarkdown(text) {
   out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
   out = out.replace(/(^|[^*])\*([^*\n]+)\*/g, '$1<em>$2</em>');
   out = out.replace(/~~([^~]+)~~/g, '<del>$1</del>');
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: NUL is used as an internal placeholder delimiter for code spans
   out = out.replace(/\u0000CODE(\d+)\u0000/g, (_m, index) => `<code>${codeSpans[Number(index)]}</code>`);
   return out;
 }

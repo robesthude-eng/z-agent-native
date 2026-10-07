@@ -49,7 +49,7 @@ Detailed internals: [ARCHITECTURE.md](ARCHITECTURE.md). Deployment/security boun
 
 ## Subagent capability matrix
 
-The table below is generated from the same registry the runtime uses (`server/native/subagents.mjs`). `npm run docs:check` fails CI if it drifts. *Max steps* is the profile's base value; the actual per-run budget is derived from it and the task complexity (`subagentStepBudget`: base × 2 + complexity × 4, capped at 80), or pinned with `Z_AGENT_SUBAGENT_STEPS` (2–120).
+The table below is generated from the same registry the runtime uses (`server/native/subagents.mjs`). `npm run docs:check` fails CI if it drifts (the same command also guards environment variables, documented defaults, endpoints and the eval-case count). *Max steps* is the profile's base value; the actual per-run budget is derived from it and the task complexity (`subagentStepBudget`: base × 2 + complexity × 4, capped at 80), or pinned with `Z_AGENT_SUBAGENT_STEPS` (2–120).
 
 <!-- BEGIN GENERATED SUBAGENT CAPABILITIES -->
 | Profile | Writes workspace | Max steps | Tools |
@@ -330,6 +330,30 @@ Use `Z_AGENT_TELEMETRY_FILE` and `Z_AGENT_TELEMETRY_MAX_BYTES` to relocate/bound
 | `Z_AGENT_GREP_TIMEOUT_MS` | `5000` | Deadline for `grep`; literal and regex scans run in a worker thread and are cancelled at the deadline. |
 | `Z_AGENT_DURABLE_JOB_TTL_MS` | `86400000` | After this age a crashed durable turn can be taken over instead of blocking the session. |
 | `Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES` | `536870912` | Maximum aggregate body size of one folder-upload request. |
+
+### Advanced, tooling and internal variables
+
+These are normally set by `docker-compose.yml`, the Dockerfiles or the tooling itself; set them manually only for development, evals or non-standard layouts. `npm run docs:check` fails when code reads a variable that is neither in `.env.example`, nor in this README, nor in another Markdown file.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `Z_AGENT_DB_PATH` | `$Z_AGENT_DATA_DIR/z-agent.sqlite` | SQLite file used by the standalone `db:migrate`, `db:backup` and audit-verify scripts. |
+| `Z_AGENT_DIST_DIR` | `./dist` (`/app/dist` in the image) | Directory the server serves the built web UI from. |
+| `Z_AGENT_BROWSER_PROXY` | empty | Egress proxy (`http://host:port`) that the isolated browser must use; set by Compose to the `z-agent-browser-egress` service. |
+| `Z_AGENT_BROWSER_EGRESS_HOST` / `Z_AGENT_BROWSER_EGRESS_PORT` | `0.0.0.0` / `8080` | Listen address of the browser egress proxy. |
+| `Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE` | `1` | Whether the executor must attest `network: none`; `docker-compose.trusted.yml` sets `0`. |
+| `Z_AGENT_ALLOW_ROOT_SHELL` | `0` | `1` lets the agent shell run as root when `setpriv` isolation is unavailable. Every session can then read `data/master.key` and other workspaces; do not use on shared hosts. |
+| `Z_AGENT_ENABLE_FIXTURE_PROVIDER` | `0` | `1` enables the deterministic fixture provider used by evals/E2E. Never enable in production. |
+| `Z_AGENT_RESTORE_REQUIRE_MANIFEST` | `0` | `1` makes `db:restore-verify` fail without a valid backup manifest (see `OPERATIONS.md`). |
+| `DAYTONA_API_URL` / `DAYTONA_BASE_IMAGE` | `https://app.daytona.io/api` / `daytonaio/sandbox:0.9.0` | Cloud-sandbox (Daytona) endpoint and base image. |
+| `Z_AGENT_EVAL_BASE_URL` / `Z_AGENT_EVAL_API_KEY` / `Z_AGENT_EVAL_MODEL` / `Z_AGENT_EVAL_PROTOCOL` | empty / empty / empty / `openai` | Provider settings for `npm run eval:run` (equivalents of `--base-url`, `--model`, `--protocol`). |
+| `Z_AGENT_BENCHMARK_MANIFEST` / `Z_AGENT_BENCHMARK_SOURCE_ROOT` | `evals/production-benchmark.example.json` / repo root | Manifest and source root for `npm run eval:benchmark`. |
+| `Z_AGENT_BENCHMARK_REPETITIONS` | `3` | Runs per benchmark case. |
+| `Z_AGENT_BENCHMARK_MIN_PASS_RATE` | `0.8` | Minimum overall pass rate. |
+| `Z_AGENT_BENCHMARK_BASELINE` | empty | Baseline report to compare against. |
+| `Z_AGENT_BENCHMARK_MAX_PASS_RATE_REGRESSION` / `Z_AGENT_BENCHMARK_MAX_TOOL_REGRESSION` / `Z_AGENT_BENCHMARK_MAX_DURATION_REGRESSION` | `0.1` / `0.25` / `0.35` | Allowed regression against the baseline (pass rate / tool calls / duration). |
+| `Z_AGENT_BENCHMARK_UNSAFE_LOCAL_EXECUTOR` | `0` | Same as `--unsafe-local-executor`: trusted fixture development only, not a release mode. |
+| `Z_AGENT_SSH_PASSWORD`, `PLAYWRIGHT_BROWSERS_PATH`, `GIT_*`, `HOME`, `LANG`, `LC_ALL`, `PATH` | n/a | Internal: passed to child processes (ssh helper, browser service, git) by the server itself. Not configuration. |
 
 See `SECURITY.md` for the trust boundaries and `OPERATIONS.md` for production bootstrap, backup/restore, key rotation, benchmarks and release operations.
 

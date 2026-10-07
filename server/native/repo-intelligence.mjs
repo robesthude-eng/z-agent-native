@@ -195,8 +195,7 @@ function symbolNames(text, ext) {
     patterns.push(['type', /(?:^|\n)\s*(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait)\s+([A-Za-z_]\w*)/g]);
   }
   for (const [kind, rx] of patterns) {
-    let match;
-    while ((match = rx.exec(text)) && out.length < 30) add(kind, match[1]);
+    for (let match = rx.exec(text); match && out.length < 30; match = rx.exec(text)) add(kind, match[1]);
   }
   return out;
 }
@@ -238,9 +237,9 @@ function importHubs(root, files) {
     const specs = [];
     const importRx = /(?:import|export)\s+(?:[^'";]+?\s+from\s+)?['"]([^'"]+)['"]/g;
     const requireRx = /require\(\s*['"]([^'"]+)['"]\s*\)/g;
-    let match;
-    while ((match = importRx.exec(text))) specs.push(match[1]);
-    while ((match = requireRx.exec(text))) specs.push(match[1]);
+    for (const rx of [importRx, requireRx]) {
+      for (let match = rx.exec(text); match; match = rx.exec(text)) specs.push(match[1]);
+    }
     for (const spec of specs) {
       const target = resolveRelativeImport(root, file.path, spec, fileSet);
       if (target) inbound.set(target, (inbound.get(target) || 0) + 1);

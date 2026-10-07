@@ -312,7 +312,7 @@ export function notificationText(job, log) {
   return [
     `🔔 Фоновая задача «${job.name}» ${ok ? 'завершилась успешно' : job.status === 'lost' ? 'прервалась (процесс пропал)' : `завершилась с ошибкой (код ${job.exitCode})`} за ${formatDuration(job.durationMs)}.`,
     log ? `\nПоследние строки вывода:\n\`\`\`\n${log.slice(-3000)}\n\`\`\`` : '',
-    '\nПродолжи исходную задачу с учётом этого результата. Полный лог: `' + `${JOBS_REL}/${job.id}/output.log` + '`.',
+    `\nПродолжи исходную задачу с учётом этого результата. Полный лог: \`${JOBS_REL}/${job.id}/output.log\`.`,
   ].join('\n');
 }
 
@@ -321,7 +321,7 @@ async function tick() {
     let dir;
     try { dir = jobDir(w.root, w.id); } catch { watched.delete(key); continue; }
     const meta = readMeta(dir);
-    if (!meta || !meta.notify || meta.notified || meta.acknowledged) { watched.delete(key); continue; }
+    if (!meta?.notify || meta.notified || meta.acknowledged) { watched.delete(key); continue; }
     const job = jobState(w.root, meta);
     if (job.status === 'running') continue;
     if (hooks.isTurnActive(w.sessionId)) continue; // агент ещё работает — он может забрать результат сам

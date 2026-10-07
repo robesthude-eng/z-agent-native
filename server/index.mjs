@@ -130,7 +130,7 @@ async function route(req, res) {
   const url = new URL(req.url, `http://${req.headers.host || 'localhost'}`);
   const p = url.pathname;
 
-  if (await handleSystemRoutes(req, res, p, { draining: DRAINING, startedAt: STARTED_AT, isDraining: () => DRAINING })) return;
+  if (await handleSystemRoutes(req, res, p, { startedAt: STARTED_AT, isDraining: () => DRAINING })) return;
   if (await handleAuthRoutes(req, res, p)) return;
   if (handleTokenPreview(req, res, p)) return;
   if (handlePublicShareRoutes(req, res, p)) return;
@@ -180,15 +180,25 @@ async function route(req, res) {
   return sendJson(res, 404, { error: `Unknown route: ${req.method} ${p}` });
 }
 
+// One ID per request: returned in the `x-request-id` response header, in the JSON body
+// of failures, and in every error log line, so a user-reported ID finds the log entry.
+// A well-formed ID from a trusted proxy is kept; anything else is replaced.
+const REQUEST_ID_RE = /^[A-Za-z0-9._-]{8,64}$/;
+function requestIdFor(req) {
+  const inbound = String(req.headers['x-request-id'] || '');
+  return REQUEST_ID_RE.test(inbound) ? inbound : crypto.randomBytes(5).toString('hex');
+}
+
 const server = http.createServer((req, res) => {
+  const requestId = requestIdFor(req);
+  res.setHeader('x-request-id', requestId);
   Promise.resolve(route(req, res)).catch((err) => {
     // Ожидаемые отказы клиента (401, 403, 404, 429...) — одна строка без стека:
     // иначе каждая неверная попытка входа заливала лог трассировкой. В адресе
     // оставляем только путь: в query могут быть токены предпросмотра.
     const where = String(req.url || '').split('?')[0];
     const status = Number(err?.statusCode) || 0;
-    const requestId = crypto.randomBytes(5).toString('hex');
-    if (status >= 400 && status < 500) console.warn('[http]', req.method, where, status, err?.message || '');
+    if (status >= 400 && status < 500) console.warn('[http]', requestId, req.method, where, status, err?.message || '');
     else console.error('[http]', requestId, req.method, where, err);
     errorResponse(res, err, requestId);
   });

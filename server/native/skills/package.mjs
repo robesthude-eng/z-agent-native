@@ -13,6 +13,7 @@ export const skillError = (message, statusCode = 400) => Object.assign(new Error
 
 export function safePackagePath(raw) {
   const value = String(raw);
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are deliberately rejected in archive paths
   if (!value || value.length > 500 || /[\\\x00-\x1f]/.test(value) || value.startsWith('/') || /^[A-Za-z]:/.test(value) || value.split('/').some((s) => s === '..' || s === '.')) throw skillError(`Unsafe skill file path: ${value.slice(0, 100)}`);
   return value;
 }

@@ -360,8 +360,7 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
         // A provider that never sends a newline / blank line must not be able
         // to grow these buffers without bound.
         if (buffer.length > MAX_SSE_BUFFER_CHARS) throw Object.assign(new Error('Provider stream line exceeds the size limit'), { code: 'ESTREAMSIZE' });
-        let idx;
-        while ((idx = buffer.indexOf('\n')) >= 0) {
+        for (let idx = buffer.indexOf('\n'); idx >= 0; idx = buffer.indexOf('\n')) {
           let line = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 1);
           if (line.endsWith('\r')) line = line.slice(0, -1);

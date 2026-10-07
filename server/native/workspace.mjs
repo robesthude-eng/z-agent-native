@@ -41,6 +41,7 @@ function listDir(root, relative) {
 function uniqueUploadPath(root, name) {
   const uploads = safeWorkspacePath(root, 'uploads');
   fs.mkdirSync(uploads, { recursive: true });
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are deliberately stripped from uploaded file names
   const clean = path.basename(name || 'file').replace(/[\u0000-\u001f]/g, '_');
   const ext = path.extname(clean);
   const stem = path.basename(clean, ext) || 'file';
