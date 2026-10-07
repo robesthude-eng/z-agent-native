@@ -8,7 +8,7 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 - Provider secrets use an `enc:v2` AES-256-GCM envelope with key ID and AAD binding to owner/provider/field. Production requires an external 256-bit `Z_AGENT_SECRET_KEY` or `Z_AGENT_SECRET_KEY_FILE`; `Z_AGENT_SECRET_KEYS_JSON` supplies old keys only for rotation/rewrap. The runtime-generated `data/master.key` fallback is development-only and is rejected by the supplied production profile.
 - A separate external `Z_AGENT_AUDIT_KEY`/`Z_AGENT_AUDIT_KEY_FILE` authenticates the append-only audit chain and backup manifests; do not store it on the same `/data` volume it protects.
 - Provider keys and runtime secrets are never injected into tool/terminal environments.
-- HTTP 5xx responses return a request ID instead of internal exception details.
+- Unexpected errors are logged in full (with stack) to the server log only. The HTTP response carries the error message with quoted absolute filesystem paths replaced by `<path>` (`server/native/public-error.mjs`); filesystem errors such as `ENOENT` are mapped to fixed messages. The runtime does not generate request IDs.
 
 ## Authentication
 
@@ -90,7 +90,7 @@ For production:
 
 ## Container and deployment hardening
 
-- The API service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002`). Executor/browser expose no host TCP ports; IPC is Unix-socket-only. The browser proxy listens only on an unexposed dedicated Docker network. Public exposure and TLS belong to the reverse proxy.
+- The API service publishes on loopback only (`127.0.0.1:3000` and `127.0.0.1:3002` in `docker-compose.yml`; the default `docker-compose.override.yml` narrows this to `127.0.0.1:3002`). Executor/browser expose no host TCP ports; IPC is Unix-socket-only. The browser proxy listens only on an unexposed dedicated Docker network. Public exposure and TLS belong to the reverse proxy.
 - Compose explicitly pins `Z_AGENT_DATA_DIR=/data` and `Z_AGENT_WORKSPACES_DIR=/workspaces` so bare-metal relative paths from `.env` cannot bypass persistent volumes.
 - `no-new-privileges` is enabled. Each service drops all capabilities and adds back only the minimum it needs: the API needs workspace ownership/identity capabilities; executor/browser controllers need only identity switching and process termination. Untrusted children are launched with supplementary groups cleared.
 - `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and ulimits bound runaway services; the executor additionally applies per-command RLIMITs and global/per-UID concurrency caps. Browser workers/proxy connections and shared model turns also have bounded global/per-owner/session capacity. Caps must fit the host.
@@ -118,7 +118,7 @@ For production:
 - Take an online SQLite snapshot (`db:backup`) before candidate code can migrate the database. The sidecar manifest authenticates snapshot name/size/SHA-256/schema with an HMAC under the independent audit key. Same-volume snapshots are rollback aids, not a substitute for off-host data/workspace/key backups; no retention policy is enforced by the repository.
 - `db:restore-verify` proves SQLite/foreign-key integrity, schema compatibility, provider-secret decryptability and audit-chain integrity; `db:drill` performs an isolated snapshot + verification drill.
 - CI follows build-once/deploy-by-digest: production images are tested/booted before publication, pushed to GHCR with provenance attestations, and their immutable `@sha256:` references are recorded for operator-driven deployment instead of rebuilding on the server. Remote GitHub Actions are themselves pinned to full commit SHAs.
-- `/health/live` is process-only. `/health/ready` performs a rollback-only DB write probe, checks schema compatibility, external-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. During graceful shutdown it immediately becomes unready while active turns receive a bounded drain window. Raw readiness exceptions are not returned to unauthenticated health callers.
+- There is no separate liveness endpoint: `/health` and `/health/ready` are the same readiness check, which performs a rollback-only DB write probe, checks schema compatibility, external-key state, both persistent-volume writes plus a minimum free-space floor, executor IPC/network attestation and browser/proxy IPC. During graceful shutdown it immediately becomes unready while active turns receive a bounded drain window. Raw readiness exceptions are not returned to unauthenticated health callers.
 - `/metrics` is disabled unless `Z_AGENT_METRICS_BEARER_TOKEN` is set (the runtime does not read `Z_AGENT_METRICS_TOKEN`, which `prod:env:init` writes); when enabled it requires a bearer token and exports only low-cardinality aggregate labels. The supplied public Caddy vhost blocks `/metrics` entirely.
 
 ## Multi-user exposure

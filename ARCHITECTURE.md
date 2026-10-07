@@ -89,9 +89,9 @@ Tool schemas live in `server/native/tools/definitions.mjs` (media tools in `serv
 
 | Group | Tools | Notes |
 | --- | --- | --- |
-| Workspace files | `read`, `list`, `glob`, `grep`, `repo_map`, `write`, `edit`, `apply_patch` | Run in the trusted runtime behind the workspace boundary. |
-| Planning / dialogue | `todowrite`, `question`, `task` | `question` suspends the turn; `task` starts a subagent. |
-| Execution (needs a shell sandbox) | `bash`, `background`, `run_tests`, `diagnostics`, `git`, `environment_status`, `visual_check`, `browser`, `ensure_environment` | Hidden when no secure shell sandbox is available. |
+| Workspace files | `read`, `list`, `glob`, `grep`, `repo_map`, `write`, `edit` | Run in the trusted runtime behind the workspace boundary. |
+| Planning / dialogue / status | `todowrite`, `question`, `task`, `environment_status` | `question` suspends the turn; `task` starts a subagent. |
+| Execution (needs a shell sandbox) | `apply_patch`, `bash`, `background`, `run_tests`, `diagnostics`, `git`, `visual_check`, `browser`, `ensure_environment` | Hidden when no secure shell sandbox is available. |
 | Network (policy-gated) | `webfetch`, `websearch` | Hidden while `Z_AGENT_NETWORK_POLICY=off`. |
 | Remote | `ssh_tool`, `cloud_sandbox` | `ssh_tool` is hidden while `Z_AGENT_SSH_POLICY=off` and also needs the shell sandbox; `cloud_sandbox` only appears when `DAYTONA_API_KEY` is set. |
 | Memory / skills | `memory`, `skill` | Owner-scoped, see [docs/SKILLS.md](docs/SKILLS.md). |
@@ -163,7 +163,7 @@ SQLite schema evolution is explicit and versioned in `server/native/migrations.m
 
 Production secrets are external-key-first: provider keys use a key-ID/AAD-bound AES-GCM envelope with old-key rewrap support, while a separate audit key authenticates audit events and backup manifests. Production rejects `/data`-resident key fallback.
 
-CI follows build-once/deploy-by-digest: the exact production images are built, boot-tested and then published to GHCR with their digests recorded; deployment (operator-owned — the repository no longer ships a Deploy workflow) is expected to start those immutable digests via `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` without a server rebuild. `/health/live` proves only process liveness. `/health/ready` proves a rollback-only database write, schema compatibility, external-key availability, data/workspace volume writes plus a configurable free-space floor, executor IPC plus no-network attestation, and browser/proxy IPC. During SIGTERM drain readiness becomes false immediately while existing turns get a bounded grace period. Public readiness output deliberately omits raw exception/path details.
+CI follows build-once/deploy-by-digest: the exact production images are built, boot-tested and then published to GHCR with their digests recorded; deployment (operator-owned — the repository no longer ships a Deploy workflow) is expected to start those immutable digests via `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` without a server rebuild. There is no separate liveness endpoint: `/health` and `/health/ready` are the same readiness check, and it proves a rollback-only database write, schema compatibility, external-key availability, data/workspace volume writes plus a configurable free-space floor, executor IPC plus no-network attestation, and browser/proxy IPC. During SIGTERM drain readiness becomes false immediately while existing turns get a bounded grace period. Public readiness output deliberately omits raw exception/path details.
 
 ## Provider layer
 

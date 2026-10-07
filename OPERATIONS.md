@@ -18,9 +18,10 @@ Keep `.env` outside backups of `/data`, or move the keys into a secret manager a
 ```bash
 docker compose build
 docker compose up -d
-curl -fsS http://127.0.0.1:3000/health/live
-curl -fsS http://127.0.0.1:3000/health/ready
+curl -fsS http://127.0.0.1:3002/health/ready
 ```
+
+The default `COMPOSE_FILE` includes `docker-compose.override.yml`, which publishes the API only on `127.0.0.1:3002` (public traffic goes through Caddy on 80/443). Port 3000 is published only when you run `docker-compose.yml` without the override. `/health` is an alias of `/health/ready`; there is no separate liveness endpoint, and during SIGTERM drain it answers 503 `draining`.
 
 The default command is the hardened profile: autonomous execution remains in
 the networkless executor and terminal, SSH, public web and networked installers
@@ -130,7 +131,7 @@ For an incident, preserve at minimum:
 
 - release SHA and exact image digests;
 - `/health/ready` status;
-- application logs/request IDs;
+- application logs (`docker compose logs z-agent`; the runtime does not generate request IDs);
 - turn telemetry;
 - `audit:verify` result;
 - an integrity-checked database snapshot + manifest before destructive intervention.
