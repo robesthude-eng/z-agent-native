@@ -1,5 +1,7 @@
 # Z Agent Native — production hardening report
 
+> **Status note (documentation audit).** This file is a dated hand-off report, not a live description of the repository. Since it was written: the Deploy workflow it mentions was removed (`ccf1525`; CI now only builds, boot-tests, publishes digests and attests images), the eval manifest has 33 cases, formatting and lint are blocking CI gates (job *Lint and formatting*), Compose also runs the `z-agent-search` (SearXNG) service and the Caddy proxy, and the test counts under "Verification performed" are historical. See `README.md`, `OPERATIONS.md` and `SECURITY.md` for current behaviour.
+
 This bundle is the production-hardening continuation of the Z Agent Native handoff. The target is a **production-grade single-host Docker/self-hosted deployment** that treats model-selected repository code as untrusted, preserves durable agent state across crashes, fails closed when isolation services are missing, and makes releases observable and rollback-aware.
 
 “10/10” in this report means the documented production profile satisfies the repository's current engineering/security/release checklist. It is not a claim of mathematical perfection, hyperscale architecture, or immunity to a compromised host kernel/root account.

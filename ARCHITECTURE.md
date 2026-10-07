@@ -83,6 +83,22 @@ The context manager runs on every model step, including nested subagents with pr
 
 The live turn strategy is injected separately from conversation history, so the current user goal and `todowrite` plan do not disappear merely because old observations are compacted.
 
+## Tool surface
+
+Tool schemas live in `server/native/tools/definitions.mjs` (media tools in `server/native/media/definitions.mjs`); handlers are in `server/native/tools/`. Availability is computed per runtime by `availableToolDefinitions()`.
+
+| Group | Tools | Notes |
+| --- | --- | --- |
+| Workspace files | `read`, `list`, `glob`, `grep`, `repo_map`, `write`, `edit`, `apply_patch` | Run in the trusted runtime behind the workspace boundary. |
+| Planning / dialogue | `todowrite`, `question`, `task` | `question` suspends the turn; `task` starts a subagent. |
+| Execution (needs a shell sandbox) | `bash`, `background`, `run_tests`, `diagnostics`, `git`, `environment_status`, `visual_check`, `browser`, `ensure_environment` | Hidden when no secure shell sandbox is available. |
+| Network (policy-gated) | `webfetch`, `websearch` | Hidden while `Z_AGENT_NETWORK_POLICY=off`. |
+| Remote | `ssh_tool`, `cloud_sandbox` | `ssh_tool` is hidden while `Z_AGENT_SSH_POLICY=off` and also needs the shell sandbox; `cloud_sandbox` only appears when `DAYTONA_API_KEY` is set. |
+| Memory / skills | `memory`, `skill` | Owner-scoped, see [docs/SKILLS.md](docs/SKILLS.md). |
+| Media | `generate_image`, `generate_speech`, `render_document`, `render_video`, `convert_media`, `media_info`, `view_media` | See [docs/MEDIA.md](docs/MEDIA.md). `render_video`, `convert_media` and `media_info` need the shell sandbox. |
+
+`ensure_environment` is offered only when `Z_AGENT_NETWORK_POLICY=public` **and** either the executor is not required or `Z_AGENT_ALLOW_NETWORKED_INSTALLERS=1`; in the default hardened profile it is hidden. The "Bash-first" per-chat option hides the structured exploration tools and returns the equivalent shell command instead.
+
 ## Attachments
 
 Attachments are typed message parts containing verified workspace-relative metadata. The visible user text remains separate. The runtime adds attachment paths to model-only context and can load bounded image/PDF data for providers that support multimodal input.
@@ -94,9 +110,11 @@ SSE is used for deterministic session events such as:
 - `message.updated`
 - `message.part.updated`
 - `message.part.delta`
+- `message.part.removed` (drops cards of a discarded attempt)
+- `session.created` / `session.updated` / `session.removed`
 - `session.status`
 - `session.idle`
-- `question.asked` / `question.replied`
+- `question.asked` / `question.replied` / `question.rejected`
 - `file.edited`
 - `file.watcher.updated`
 - `turn.telemetry` (completed-turn counters/timings; no prompt/tool output bodies)
@@ -116,10 +134,8 @@ First-party file tools still execute in the trusted runtime, but every path is r
 
 ## Media pipeline
 
-`media.mjs` owns the media tool surface: schemas, ffmpeg/ffprobe argument
-builders, the Markdown→HTML renderer, a dependency-free PDF writer and the
-executor that ties them together. `media-generation.mjs` holds the provider side
-(image and speech requests, payload parsing, variant naming) and reaches the
+`media.mjs` is a thin facade over `server/native/media/`: `definitions.mjs` (tool schemas), `ffmpeg.mjs` (ffmpeg/ffprobe argument builders), `documents.mjs` (Markdown→HTML renderer and the dependency-free PDF writer), `formats.mjs` (format/MIME tables and path helpers), `view.mjs` (the `view_media` tool) and `executor.mjs` (ties them together); `tools/media.mjs` plugs them into the tool dispatcher. `media-generation.mjs` holds the provider side
+(image and speech requests, payload parsing, variant naming) on top of `providers/media.mjs`, and reaches the
 configured provider through the same credential store, SSRF filter and relay
 routing as model calls — media traffic never gets its own key path. Provider
 responses are streamed with a hard byte ceiling and a request timeout.
@@ -139,15 +155,15 @@ text actions.
 
 ## Turn telemetry
 
-`turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. Shared SQLite turn-capacity leases bound global/per-owner model concurrency and expire after crash; executor/browser/egress layers apply their own lower-level resource budgets. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records. Bearer-protected `/metrics` exposes low-cardinality Prometheus aggregates without user/session/turn labels.
+`turn-telemetry.mjs` records one bounded JSONL summary when a turn finalizes: duration, model/tool counts and latency, provider fallbacks, tool retries, reported token usage, maximum compacted context size, tool errors, completion-gate reminders, verification attempts and final outcome. Shared SQLite turn-capacity leases bound global/per-owner model concurrency and expire after crash; executor/browser/egress layers apply their own lower-level resource budgets. If the operator supplies `Z_AGENT_MODEL_PRICING_JSON`, the record also includes a token-based estimated USD cost; no vendor prices are hard-coded. It does not persist prompt text, tool output or file contents. The same summary is attached to the final assistant message and emitted as `turn.telemetry`; `scripts/summarize-turn-telemetry.mjs` aggregates recent records. Bearer-protected `/metrics` (enabled by `Z_AGENT_METRICS_BEARER_TOKEN`) exposes low-cardinality Prometheus aggregates without user/session/turn labels.
 
 ## Persistence and readiness
 
-SQLite schema evolution is explicit and versioned in `server/native/migrations.mjs`; released migration IDs are immutable and each migration is transactional. Every migration declares `minReaderVersion`; the release-wide `SCHEMA_MIN_READER_VERSION` is persisted in `schema_compatibility`, older code fails closed on an unknown future schema unless that contract permits it, and migration code never lowers `PRAGMA user_version`. Deploy records the currently running schema reader and rejects a candidate whose minimum compatible reader would make automatic image rollback unsafe; incompatible changes require a maintenance-only deployment procedure. `server/backup.mjs` refuses missing/empty/corrupt source databases, creates an online `VACUUM INTO` snapshot, verifies `PRAGMA quick_check`, and writes an HMAC-authenticated manifest containing size/SHA-256/schema. Restore verification additionally proves foreign keys, secret decryptability and the tamper-evident audit chain.
+SQLite schema evolution is explicit and versioned in `server/native/migrations.mjs`; released migration IDs are immutable and each migration is transactional. Every migration declares `minReaderVersion`; the release-wide `SCHEMA_MIN_READER_VERSION` is persisted in `schema_compatibility`, older code fails closed on an unknown future schema unless that contract permits it, and migration code never lowers `PRAGMA user_version`. Operators should compare the candidate's `SCHEMA_MIN_READER_VERSION` with the running release before promoting an image; a candidate whose minimum compatible reader would make image rollback unsafe needs a maintenance-only deployment procedure (this check is not automated in the repository). `server/backup.mjs` refuses missing/empty/corrupt source databases, creates an online `VACUUM INTO` snapshot, verifies `PRAGMA quick_check`, and writes an HMAC-authenticated manifest containing size/SHA-256/schema. Restore verification additionally proves foreign keys, secret decryptability and the tamper-evident audit chain.
 
 Production secrets are external-key-first: provider keys use a key-ID/AAD-bound AES-GCM envelope with old-key rewrap support, while a separate audit key authenticates audit events and backup manifests. Production rejects `/data`-resident key fallback.
 
-CI follows build-once/deploy-by-digest: the exact production images are built, boot-tested and then published; Deploy starts those immutable registry digests without a server rebuild and verifies the running image identities. `/health/live` proves only process liveness. `/health/ready` proves a rollback-only database write, schema compatibility, external-key availability, data/workspace volume writes plus a configurable free-space floor, executor IPC plus no-network attestation, and browser/proxy IPC. During SIGTERM drain readiness becomes false immediately while existing turns get a bounded grace period. Public readiness output deliberately omits raw exception/path details.
+CI follows build-once/deploy-by-digest: the exact production images are built, boot-tested and then published to GHCR with their digests recorded; deployment (operator-owned — the repository no longer ships a Deploy workflow) is expected to start those immutable digests via `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` without a server rebuild. `/health/live` proves only process liveness. `/health/ready` proves a rollback-only database write, schema compatibility, external-key availability, data/workspace volume writes plus a configurable free-space floor, executor IPC plus no-network attestation, and browser/proxy IPC. During SIGTERM drain readiness becomes false immediately while existing turns get a bounded grace period. Public readiness output deliberately omits raw exception/path details.
 
 ## Provider layer
 
@@ -161,7 +177,7 @@ Provider adapters normalize text, tool calls, usage and finish reasons into the 
 
 ## Specialized subagents
 
-`task` creates a nested model loop with a profile-specific tool set. `explore`, `debug`, and `review` are read-only and cannot use shell/network tools or ask the user. `implement` is a scoped writer: it may edit the same workspace through the normal sandboxed mutation tools and is required to verify the resulting change. No subagent may recursively delegate or ask the user. Child context is independently bounded.
+`task` creates a nested model loop with a profile-specific tool set (`server/native/subagents.mjs`). `planner`, `explore`, `debug`, `review`, `security` and `tester` are read-only and cannot use shell/network tools or ask the user. `implement` is a scoped writer: it may edit the same workspace through the normal sandboxed mutation tools and is required to verify the resulting change. No subagent may recursively delegate or ask the user. Child context is independently bounded. The *Max steps* column is the profile's base budget; the effective budget is `min(80, base × 2 + complexity × 4)` unless `Z_AGENT_SUBAGENT_STEPS` pins it.
 
 <!-- BEGIN GENERATED SUBAGENT CAPABILITIES -->
 | Profile | Writes workspace | Max steps | Tools |

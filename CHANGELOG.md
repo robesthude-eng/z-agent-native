@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Documentation audit against the code
+
+- Removed descriptions of the Deploy workflow that no longer exists (`deploy.yml` was deleted in `ccf1525`): README, ARCHITECTURE, SECURITY, OPERATIONS and HARDENING_REPORT now say that CI publishes digests and promotion is an operator step; the schema-rollback comparison and 30-day snapshot retention are documented as manual, not automatic.
+- Documented the full Compose topology (six services including SearXNG and Caddy), the real `websearch` source order (Brave → SearXNG → DuckDuckGo HTML → Instant Answer + Wikipedia) and the allowlist hosts it requires.
+- Corrected defaults and limits: step ceiling (400, not 128), 33 eval cases (not 30), subagent step budgets, all seven subagent profiles, Node.js 24.19+.
+- Documented that the runtime reads `Z_AGENT_METRICS_BEARER_TOKEN`, while `prod:env:init` writes `Z_AGENT_METRICS_TOKEN` (not read) — `/metrics` stays disabled until the value is copied.
+- Added an agent tool-surface table (including `view_media`, `background`, `visual_check`, `cloud_sandbox`, `memory`, `skill`) and the `ensure_environment` availability rule to ARCHITECTURE; updated MEDIA, TOOLCHAINS (ffmpeg and sudo are in the image; the provisioning gate is auto-approved), SKILLS (real UI labels), DEVELOPMENT (login rate-limiting exists; branch protection facts; CI job names), Azure/Codespaces/host/Cloudflare READMEs (container backup commands, moved module paths, setup-script behaviour).
+
 
 ## Optional bash-first mode
 

@@ -9,7 +9,7 @@ npm run prod:env:init
 chmod 600 .env
 ```
 
-`prod:env:init` refuses to overwrite an existing file and generates separate 256-bit provider-encryption and audit/backup-integrity keys plus a metrics token. Review registration and model-selected web policy before exposure. Production Compose forces the isolation services, external-key requirement, Secure `__Host-` cookies, disabled interactive terminal and absolute persistent paths; the runtime refuses to start when those invariants are weakened.
+`prod:env:init` refuses to overwrite an existing file and generates separate 256-bit provider-encryption and audit/backup-integrity keys, a SearXNG secret, a registration invite code and a metrics token (see §9 for the `/metrics` variable name). Review registration and model-selected web policy before exposure. Production Compose forces the isolation services, external-key requirement, Secure `__Host-` cookies, disabled interactive terminal and absolute persistent paths; the runtime refuses to start when those invariants are weakened.
 
 Keep `.env` outside backups of `/data`, or move the keys into a secret manager and use `Z_AGENT_SECRET_KEY_FILE` / `Z_AGENT_AUDIT_KEY_FILE`. Never commit `.env`.
 
@@ -46,7 +46,7 @@ npm run eval:benchmark -- \
 
 The deterministic smoke proves runtime wiring, not model intelligence. The private real-repository corpus is the release-quality model gate. Maintain pinned repository commits and an external oracle/regression command per task.
 
-CI is the authority for release artifacts: it builds and boots the production topology, records immutable registry digests, emits SBOM/provenance material and passes those digests to Deploy. Production deployment must not rebuild the application image.
+CI is the authority for release artifacts: it builds and boots the production topology, records immutable registry digests, emits SBOM/provenance material and publishes those digests (job *Production container contract*). The repository has no Deploy workflow any more (removed in `ccf1525`), so promotion is an operator step: set `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` (and `Z_AGENT_RELEASE_SHA`) to the published digests and run `docker compose up -d --no-build`. Production deployment must not rebuild the application image.
 
 ## 4. Backups and restore drills
 
@@ -63,6 +63,17 @@ Create and verify a snapshot:
 npm run db:backup -- /safe/off-host/staging/z-agent.sqlite
 Z_AGENT_RESTORE_REQUIRE_MANIFEST=1 npm run db:restore-verify -- /safe/off-host/staging/z-agent.sqlite
 ```
+
+In the Docker deployment the application image ships only `server/` (not `scripts/`), and the host usually has no Node.js. Run the same tools inside the API container, where `Z_AGENT_DATA_DIR=/data` and the production keys are already present, then copy the snapshot off the host:
+
+```bash
+docker compose exec z-agent node server/backup.mjs /data/backups/z-agent.sqlite
+docker compose exec -e Z_AGENT_RESTORE_REQUIRE_MANIFEST=1 z-agent node server/restore-verify.mjs /data/backups/z-agent.sqlite
+docker compose cp z-agent:/data/backups/z-agent.sqlite ./z-agent.sqlite
+docker compose cp z-agent:/data/backups/z-agent.sqlite.manifest.json ./
+```
+
+`npm run db:drill`, `prod:env:init` and the `eval:*` scripts need a source checkout. Without a target argument `db:backup` writes to `<data dir>/backups/z-agent-<timestamp>.sqlite`. The `deploy/host/z-agent-backup` helper automates this flow on the reference host (restic over rclone).
 
 The sidecar manifest authenticates size, SHA-256 and schema with the audit key. Restore verification also checks SQLite/foreign-key integrity, schema compatibility, provider-secret decryptability and the HMAC audit chain.
 
@@ -109,11 +120,11 @@ A 429 capacity response is load shedding, not a reason to disable the limits glo
 
 SIGTERM puts the API into drain mode: readiness immediately becomes false, new traffic should stop, and active turns receive `Z_AGENT_SHUTDOWN_GRACE_MS` to finish before durable recovery becomes necessary. Compose waits longer than the configured runtime grace.
 
-Automatic deployment refuses schema changes that would make the previous image unable to read the resulting database. There is no automatic bypass. A breaking migration requires a maintenance procedure with an explicit data backup/restore and rollback plan.
+Before promoting a candidate, compare its `SCHEMA_MIN_READER_VERSION` (`server/native/migrations.mjs`) with the running release; do not promote a schema that would make the previous image unable to read the resulting database. This check is manual — no script in the repository enforces it. A breaking migration requires a maintenance procedure with an explicit data backup/restore and rollback plan.
 
 ## 9. Metrics and incident triage
 
-Set `Z_AGENT_METRICS_TOKEN` and scrape the private runtime endpoint with a bearer token. Keep the public proxy rule that blocks `/metrics`. Completed-turn JSONL telemetry intentionally excludes prompt/tool/file bodies.
+Set `Z_AGENT_METRICS_BEARER_TOKEN` and scrape the private runtime endpoint with `Authorization: Bearer <token>`. The runtime reads this name; `prod:env:init` currently writes its generated token to `Z_AGENT_METRICS_TOKEN`, which is **not** read, so copy the value across (otherwise `/metrics` answers 404). Keep the public proxy rule that blocks `/metrics`. Completed-turn JSONL telemetry intentionally excludes prompt/tool/file bodies.
 
 For an incident, preserve at minimum:
 

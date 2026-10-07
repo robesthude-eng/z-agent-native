@@ -70,16 +70,17 @@ GitHub напечатает в ответ ссылку вида `…/pull/new/fe
 
 ## 2. Правила ветки main
 
-`main` защищена — это не мешает, а помогает:
+На `main` включены ограничения истории (проверено через GitHub API на момент ревизии документа):
 
 | Правило | Что значит на практике |
 |---|---|
 | **Линейная история** | только `Squash` или `Rebase and merge`. Кнопка «Create a merge commit» не сработает |
 | Запрет force-push | историю нельзя перезаписать — то, что попало в main, остаётся |
 | Запрет удаления | ветку main нельзя снести |
-| CI (7 проверок) | гоняются на каждый PR: lint, формат, typecheck, тесты, e2e, безопасность зависимостей, контракт контейнера |
+| CI (7 заданий в `.github/workflows/ci.yml`) | запускаются на каждый PR и push в `main`: Native runtime tests, Frontend gate, End-to-end, Runtime dependency security, Production container contract, Dependency inventory (SBOM), Lint and formatting |
+| Обязательные проверки и PR-ревью | **не настроены**: GitHub не блокирует merge красным CI и не требует PR — дисциплина «PR + зелёный CI» держится на вас. Включить можно в Settings → Branches |
 
-Прямой пуш в `main` администратором технически возможен, но лучше не привыкать: PR + CI — это
+Прямой пуш в `main` технически возможен (`enforce_admins` выключен, обязательных проверок нет), но лучше не привыкать: PR + CI — это
 то, что защищает рабочий стенд от случайной поломки.
 
 ---
@@ -90,7 +91,7 @@ GitHub напечатает в ответ ссылку вида `…/pull/new/fe
 |---|---|---|
 | `.env` (ключи шифрования, invite-код) | корень проекта | ❌ в `.gitignore` |
 | `data/` (SQLite: аккаунты, чаты, история) | `data/z-agent.sqlite` | ❌ в `.gitignore` |
-| Ключи провайдеров моделей | шифруются в `data/`, задаются в UI → Settings → Providers | ❌ |
+| Ключи провайдеров моделей | шифруются в `data/`, задаются в UI → Настройки → «Модели и API-ключи» | ❌ |
 | Codespaces-секреты | настройки репозитория → Secrets and variables → Codespaces | ❌ |
 
 **Никогда не коммитьте** `.env` и `data/`. Если случайно закоммитили ключ — он уже в истории,
@@ -134,11 +135,14 @@ sudo docker compose ps
 sudo Z_AGENT_DIR=/opt/z-agent-native bash azure/provision.sh
 ```
 
-Перед обновлением:
+Перед обновлением (на хосте обычно нет Node.js, поэтому бэкап делаем внутри контейнера; путь — внутри контейнера):
 
 ```bash
-npm run db:backup -- /root/z-agent-$(date +%F).sqlite
+sudo docker compose exec z-agent node server/backup.mjs /data/backups/z-agent-$(date +%F).sqlite
+sudo docker compose cp z-agent:/data/backups/z-agent-$(date +%F).sqlite /root/   # копия на хост
 ```
+
+Этот путь (`git pull` + сборка на сервере) подходит для одиночной VM. Для релизов из CI по неизменяемым дайджестам образов см. `OPERATIONS.md`, раздел 3.
 
 Откат к предыдущему состоянию: `git log --oneline`, затем `git checkout <коммит>` и снова
 `docker compose up --build -d`.
@@ -149,7 +153,7 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite
 
 Установка по умолчанию идёт в «закрытом» профиле: агенту запрещён выбор адресов в сети. Тогда на
 просьбу посмотреть погоду или открыть страницу он честно отвечает, что интернета нет —
-это политика, а не поломка. В Codespace она уже открыта; на сервере включайте осознанно.
+это политика, а не поломка. В Codespace её открывает `.devcontainer/setup.sh` (`public`, shell `open`, установщики и терминал включены; чтобы оставить закрытый профиль, задайте `Z_AGENT_STRICT_NETWORK=1` до первого запуска setup). На сервере включайте осознанно.
 
 Что именно проверяется (видно в `server/native/workspace-policy.mjs`):
 
@@ -216,8 +220,9 @@ sudo env "PATH=$PATH" "$(command -v npx)" playwright-core install-deps chromium
 - **UI приложения** — вкладка Ports → 3000 (или публичная ссылка, если вы её открыли:
   `gh codespace ports visibility 3000:public -c <имя>`; вернуть — `…:private`).
 - **SSH с телефона** — Termius/Termux; хост и ключ выдаёт `gh codespace ssh --config`.
-- Учтите: открытый порт = страница входа доступна всем, кому известна ссылка. В приложении
-  нет защиты от перебора пароля, поэтому пароль должен быть длинным. Закрыть регистрацию:
+- Учтите: открытый порт = страница входа доступна всем, кому известна ссылка. Неудачные попытки входа
+  ограничиваются (счётчики по адресу и по аккаунту в таблице `auth_rate_limits`), но это не замена
+  длинному паролю (минимум 12 символов) и инвайт-коду. Закрыть регистрацию:
   убрать переменную `Z_AGENT_INVITE_CODE` (тогда новые аккаунты не создаются).
 
 ---
@@ -232,13 +237,14 @@ sudo env "PATH=$PATH" "$(command -v npx)" playwright-core install-deps chromium
 | `tests/` | юнит- и интеграционные тесты (`npm test`, `npm run test:native`) |
 | `e2e/` | Playwright-сценарии (`npm run test:e2e`) |
 | `evals/` | оценка качества агента (`npm run eval:run`) |
-| `docs/` | документация по инструментам, медиа, скиллам |
+| `docs/` | документация: разработка, медиа, скиллы, тулчейны, блокировка выбранной модели |
 | `scripts/` | служебные скрипты: миграции, проверки, бенчмарки |
 | `.devcontainer/` | окружение разработки (этот Codespace) |
 | `azure/`, `deploy/` | развёртывание: провижининг VM, хостовые сервисы |
 
 Ключевые документы: `README.md` (обзор), `ARCHITECTURE.md` (внутренности),
-`SECURITY.md` (границы доверия), `OPERATIONS.md` (эксплуатация).
+`SECURITY.md` (границы доверия), `OPERATIONS.md` (эксплуатация), `CHANGELOG.md` (изменения),
+`deploy/codespaces/README.md` (Codespaces), `azure/README.md` (VM), `HARDENING_REPORT.md` и `FIXES.md` (исторические отчёты).
 
 ---
 

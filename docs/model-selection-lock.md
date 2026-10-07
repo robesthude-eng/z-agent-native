@@ -25,8 +25,8 @@
 | Файл | Изменение |
 | --- | --- |
 | `server/native/autopilot.mjs` | Явный выбор → `{ locked: true, expandOnFailure: false }`. `runFallbackPlan()` при `locked` не переходит к следующему кандидату, а помечает ошибку `modelLocked` и готовит текст `publicMessage`. `callModelAutopilot()` не расширяет план при `locked`. `promoteModelPlan()` сохраняет замок и не наращивает список кандидатов. Новые хелперы `modelFailureReason()` и `lockedModelMessage()`. |
-| `server/native/providers.mjs` | `publicProviderErrorMessage()` отдаёт готовый `err.publicMessage` вместо generic-маски. Текст `PUBLIC_MODEL_UNAVAILABLE` больше не обещает «агент возьмёт другую». |
-| `server/native/agent.mjs` | Отказ закреплённой модели уходит в чат как есть (без префикса «Ошибка агента»). `info.autopilot` теперь честный: `enabled: !locked`, `mode: 'locked' \| 'auto'`, `requested`. |
+| `server/native/providers/transport.mjs` (фасад `providers.mjs`) | `publicProviderErrorMessage()` отдаёт готовый `err.publicMessage` вместо generic-маски. Текст `PUBLIC_MODEL_UNAVAILABLE` больше не обещает «агент возьмёт другую». |
+| `server/native/agent/turn-loop.mjs` (раньше `agent.mjs`, теперь тонкий фасад над `agent/`) | Отказ закреплённой модели уходит в чат как есть (без префикса «Ошибка агента»). `info.autopilot` теперь честный: `enabled: !locked`, `mode: 'locked' \| 'auto'`, `requested`. |
 | `server/native/durable-jobs.mjs` | `locked` сохраняется в файле задания, поэтому восстановленный после перезапуска ход тоже не подменит модель. |
 | `src/store/slices/modelsSlice.ts`, `src/store/types.ts` | Выбор больше не сбрасывается на «Авто». Появился флаг `selectedModelMissing`. «Авто» ставится только когда выбора не было вообще. |
 | `src/components/ModelSelector.tsx` | Пропавшая из каталога модель показывается сама (жёлтая точка + «нет в каталоге»), а не «Выбрать модель»/«Авто». В меню добавлено пояснение про ручной режим. |
@@ -62,5 +62,6 @@
 `src/store/slices/modelsSlice.test.ts`: выбор не подменяется при пропаже модели из
 каталога (выставляется `selectedModelMissing`), «Авто» ставится только при отсутствии выбора.
 
-Запуск: `node --test tests/*.test.mjs` (316 тестов, все проходят) и `npx vitest run`
-для фронтенда (нужны установленные `node_modules`).
+Запуск: `npm run test:native` (`node --test --test-concurrency=1 tests/*.test.mjs`) и `npm test`
+(`vitest run`) для фронтенда; нужны установленные `node_modules`. Число тестов не фиксируется здесь,
+чтобы не устаревать.

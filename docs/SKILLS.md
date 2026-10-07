@@ -4,7 +4,7 @@ ZetaAgent supports the open [Agent Skills](https://agentskills.io/specification)
 
 ## User interface
 
-Open **Settings → Память и навыки → Скиллы**. You can:
+Open **Settings → Память и навыки** (the **Скиллы** section at the bottom of that tab). You can:
 
 - Inspect a public GitHub repository/subdirectory, an HTTPS `SKILL.md`, ZIP URL, or an article with source links.
 - Upload `SKILL.md` or a ZIP (up to 16 MB through the UI).
@@ -13,11 +13,11 @@ Open **Settings → Память и навыки → Скиллы**. You can:
 - Inspect source, immutable GitHub revision, compatibility notes and file count.
 - Check a source again and explicitly replace an installed skill. Conflicting names are never silently overwritten by installation.
 
-Above the message composer, **Скиллы** controls the current chat:
+In the composer, the **+** menu ("Добавить файлы, скиллы и инструменты") → **Скиллы этого чата** opens the per-chat settings:
 
-- **Auto:** the agent sees enabled, implicitly invocable skills, plus explicitly pinned skills.
-- **Manual:** only the selected skills are available.
-- **Off:** skill reading/discovery/installation is disabled through the agent tool.
+- **Агент выбирает сам** (`auto`): the agent sees enabled, implicitly invocable skills, plus explicitly pinned skills.
+- **Только выбранные** (`manual`): only the selected skills are available.
+- **Не использовать скиллы** (`off`): skill reading/discovery/installation is disabled through the agent tool.
 - Pin up to eight skills; exclude particular skills from auto mode.
 - Allow or prohibit the agent from installing skills in this chat. The agent is instructed to install only when the user requests installation/study/selection of skills for a task.
 
@@ -47,7 +47,7 @@ External content is untrusted guidance. Existing tools and deployment isolation 
 
 Public HTTPS sources only in this release. Private GitHub authentication and full marketplace/plugin installations are not supported. GitHub API rate limits are reported rather than bypassed.
 
-Limits: 500 installed skills per owner; 1,500 files and 16 MB per package; 4 MB per resource; 96 KB per `SKILL.md`; generic source downloads 64 MB. A source exceeding these limits requires a narrower package. No secrets/credential files or symlinks are imported. Updates require explicit replacement; they are not scheduled automatically.
+Limits: 500 installed skills per owner (and at most 500 skills discovered in one source); 1,500 files and 16 MB per package; 4 MB per resource; 96 KB per `SKILL.md`; generic source downloads 64 MB. A source exceeding these limits requires a narrower package. No secrets/credential files or symlinks are imported. Updates require explicit replacement; they are not scheduled automatically.
 
 ## API
 

@@ -2,6 +2,8 @@
 
 `ensure_environment` gives an agent a self-service development environment without granting `sudo`, host root, a Docker socket, or access to another chat workspace.
 
+> **Availability.** `ensure_environment` is a networked installer, so it is hidden from the model unless `Z_AGENT_NETWORK_POLICY=public` **and** either the executor is not required or `Z_AGENT_ALLOW_NETWORKED_INSTALLERS=1` (and the executor has outbound network). The default hardened Compose profile therefore does not offer it; the `trusted`/`unrestricted` profiles do. `environment_status` stays available.
+
 Managed installations live below the chat workspace's hidden `.agent-home/`. Their PATH entries are persisted in the existing environment manifest and are automatically inherited by later `bash` calls and by the interactive terminal.
 
 ## Built-in provisioners
@@ -32,7 +34,7 @@ A strong default flow is:
 1. Inspect the repository and determine the actual tool/runtime requirement.
 2. Use `environment_status` if command availability is unclear.
 3. Call `ensure_environment` for the smallest missing requirement.
-4. The existing permission gate shows the provisioning request to the user.
+4. The provisioning call is permission-gated, but the runtime approves that gate automatically (see `SECURITY.md`); the request is visible in the tool card rather than waiting for a click.
 5. Verify the installed command with `bash`.
 6. Continue the original task instead of ending with a generic "no root" response.
 7. Build/test locally and verify requested artifacts before reporting them.
@@ -88,11 +90,11 @@ An explicit current official checksum may be supplied with `sha256` when desired
 
 ## Base image
 
-The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js 24; Bash, Git, OpenSSH client, rsync and curl; CA certificates; unzip/zip/xz, util-linux, `file` and `jq`; Python with venv, pip and development headers; build-essential, CMake, Ninja, pkg-config, libffi and OpenSSL development headers; OpenJDK 17; and the SQLite client.
+The runtime image intentionally carries a bounded substrate useful across many tasks: Node.js 24; Bash, Git, OpenSSH client, rsync and curl; CA certificates; unzip/zip/xz, util-linux, `file` and `jq`; Python with venv, pip, development headers and the `paramiko`, `requests` and `yaml` packages (apt); ripgrep; ffmpeg/ffprobe and Cyrillic-capable fonts (used by the media tools); build-essential, CMake, Ninja, pkg-config, libffi and OpenSSL development headers; OpenJDK 17; and the SQLite client.
 
 Network reconnaissance tools (`netcat`, `ping`, `dig`), the PostgreSQL client,
-`ffmpeg`, `procps`, `lsof`, GnuPG, `groff` and `less` are deliberately not part
-of the supplied image. Install task-specific user-space tooling through a
+`procps`, `lsof`, GnuPG, `groff` and `less` are deliberately not part
+of the supplied image. A `sudo` binary with a passwordless rule is present but inert: the hardened profile runs with `no-new-privs`, and only the `unrestricted` overlay (`Z_AGENT_ALLOW_SUDO=1`) can make it effective. Install task-specific user-space tooling through a
 managed provisioner when appropriate.
 
 System packages that genuinely require host/container administration are still not available to model shell commands. If a task depends on a kernel feature, privileged device, system daemon, unsupported architecture, or unavailable secret, the agent must report that concrete limitation rather than asking for unrestricted root.

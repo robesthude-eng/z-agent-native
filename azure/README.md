@@ -65,7 +65,7 @@ Android, Termux (`pkg install openssh`) works fine.
 ## 3. Wait ~5 minutes
 
 The VM boots, cloud-init installs Docker, clones the repo, generates keys, opens the firewall,
-builds the images and starts five containers. Then:
+builds the images and starts six containers (runtime, executor, browser, browser egress proxy, SearXNG and Caddy). Then:
 
 ```bash
 ssh azureuser@<public-ip>
@@ -82,7 +82,7 @@ TLS certificate is live.
 1. Open `https://<Z_AGENT_DOMAIN>`.
 2. Register with the **invite code** from `/root/z-agent-info.txt` — the first account becomes
    administrator.
-3. **Settings → Providers** → add a model provider key. Free options without a card:
+3. **Настройки → «Модели и API-ключи»** (Settings → Models) → add a model provider key. Free options without a card:
    Google AI Studio (Gemini, 1 500 req/day), Groq (14 400 req/day), OpenRouter (`:free` models).
    Keys are stored encrypted in `data/`, never in `.env`.
 
@@ -108,7 +108,7 @@ cd /opt/z-agent-native
 sudo docker compose ps                       # what is running
 sudo docker compose logs -f z-agent          # runtime logs
 sudo bash azure/provision.sh                 # re-run: update + restart, keys are preserved
-npm run db:backup -- /root/z-agent-$(date +%F).sqlite   # backup SQLite + audit chain
+sudo docker compose exec z-agent node server/backup.mjs /data/backups/z-agent-$(date +%F).sqlite   # SQLite snapshot + signed manifest (the host has no npm)
 ```
 
 ## What the provisioner deliberately does not do
@@ -119,7 +119,7 @@ npm run db:backup -- /root/z-agent-$(date +%F).sqlite   # backup SQLite + audit 
   Docker executor is the isolation boundary — keep it that way.
 - It does not open `/metrics`; the Caddyfile answers 404 there on purpose.
 
-`Z_AGENT_PROFILE=trusted` (the default here) enables the terminal, outbound agent network and
+`Z_AGENT_PROFILE=trusted` (the default here) enables the terminal, outbound agent network, SSH and
 installers for a **single-user** host — appropriate for your own test stand. Use `hardened` if the
 machine is ever shared with other people.
 
@@ -150,9 +150,11 @@ sudo docker compose exec z-agent node --input-type=module -e \
 Что стоит знать про этот режим:
 
 - Хост в списке — точное совпадение; поддомены нужно разрешать явно (`*.wikipedia.org`).
-- Если в стеке есть SearXNG (`Z_AGENT_SEARXNG_URL`, контейнер `z-agent-search`), поиск идёт через
-  него первым — это внутренний сервис, и внешние хосты в списке ему не нужны. Внешние источники
-  добавляйте тогда, когда нужен именно `webfetch` или браузер.
+- Если в стеке есть SearXNG (`Z_AGENT_SEARXNG_URL`, контейнер `z-agent-search`), `websearch` идёт через
+  него раньше DuckDuckGo (порядок: Brave при наличии ключа → SearXNG → DuckDuckGo HTML → Instant Answer + Wikipedia),
+  и сам SearXNG — внутренний сервис, ему хосты из списка не нужны. Но входная проверка `websearch` всё равно
+  требует, чтобы в списке был `api.duckduckgo.com` (или `api.search.brave.com`, если задан `BRAVE_SEARCH_API_KEY`) —
+  поэтому он есть в рекомендованном наборе выше. Остальные хосты добавляйте, когда нужны `webfetch` или браузер.
 - Браузер подчиняется тому же списку: открыть произвольный сайт в allowlist-режиме нельзя,
   инструмент вернёт отказ политики, а не ошибку браузера.
 - Оболочка (`Z_AGENT_SHELL_NETWORK_POLICY`) — отдельный переключатель; в профиле `hardened`

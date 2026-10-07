@@ -20,6 +20,8 @@ profile works inside the Codespace.
 Use this for UI work and for running the agent loop itself. The isolated executor and
 browser services are not started, so shell/terminal fall back to the local runtime.
 
+In a Codespace you normally do not need the commands below: `.devcontainer/setup.sh` (postCreate) already creates `.env`, generates the keys and an invite code (saved to `~/.z-agent-invite`), enables the unisolated shell/terminal fallback and the open network profile (set `Z_AGENT_STRICT_NETWORK=1` before the first setup to keep the hardened defaults), and `.devcontainer/start.sh` starts the runtime on every start/attach (log: `/tmp/z-agent-server.log`, trace: `~/.z-agent-start.log`). The manual steps are for any other machine:
+
 ```bash
 cp .env.example .env
 # required for the local fallback, never do this on a public host:
