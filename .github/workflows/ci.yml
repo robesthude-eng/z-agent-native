@@ -66,7 +66,9 @@ jobs:
         run: |
           set -o pipefail
           sudo -E env "PATH=$PATH" node --test --test-concurrency=1 tests/executor.test.mjs tests/sandbox.test.mjs | tee isolation.log
-          if grep -E '^# skipped [1-9]|^ℹ skipped [1-9]' isolation.log; then
+          # One test is skipped by design when isolation IS available (the inverse
+          # "unavailable" case); any other skip means the environment is wrong.
+          if grep '# SKIP' isolation.log | grep -v 'secure mode refuses shell when UID isolation is unavailable'; then
             echo '::error::isolation tests were skipped; the root environment is not what the tests expect'
             exit 1
           fi
