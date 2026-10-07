@@ -14,7 +14,7 @@ const uiMessages = source('src/i18n/ru.ts');
 function renderUi(code) {
   return code.replace(/\bt\("([a-z0-9_.]+)"\)/g, (match, key) => {
     const entry = uiMessages.match(
-      new RegExp('"' + key.replace(/\./g, '\\.') + '":\\s*"([^"]*)"'),
+      new RegExp(`"${key.replace(/\./g, '\\.')}":\\s*"([^"]*)"`),
     );
     return entry ? entry[1] : match;
   });

@@ -129,6 +129,7 @@ export default function FileEditor({
           aria-label={t("file_editor.zakryt_fayl")}
         />
       )}
+      {/* biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is set dynamically (region/dialog), both support aria-label */}
       <div
         role={embedded ? "region" : "dialog"}
         aria-modal={embedded ? undefined : true}

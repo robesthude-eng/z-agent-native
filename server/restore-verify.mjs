@@ -6,6 +6,13 @@ import { verifyAuditRows, verifyIntegrityPayload } from './native/audit.mjs';
 import { LATEST_SCHEMA_VERSION } from './native/migrations.mjs';
 import { decryptSecret } from './native/secrets.mjs';
 
+// A failed verification is an expected outcome of this tool, not a crash: print one
+// machine-readable line and exit non-zero instead of dumping a Node stack trace.
+process.on('uncaughtException', (error) => {
+  console.error(JSON.stringify({ ok: false, error: String(error?.message || error) }));
+  process.exit(1);
+});
+
 function sha256File(file) {
   const hash = crypto.createHash('sha256');
   const fd = fs.openSync(file, 'r');

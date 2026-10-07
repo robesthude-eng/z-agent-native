@@ -135,7 +135,7 @@ export default function CodeView({
   // предел на 21 пиксель раньше, и подсветка последней строки съезжает.
   // Замерено: scrollHeight 8006 против 7985 на файле в 400 строк.
   const code = html ? (
-    // biome-ignore lint/security/noDangerouslySetInnerHtml: см. комментарий выше — источник разметки контролируется hljs, вход экранирован
+    // Безопасно: см. комментарий выше — источник разметки контролируется hljs, вход экранирован
     <code dangerouslySetInnerHTML={{ __html: `${html}\n` }} />
   ) : (
     <code>{`${value}\n`}</code>

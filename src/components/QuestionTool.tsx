@@ -380,6 +380,7 @@ export function QuestionTool({
         {kind !== "text" &&
           activeQuestion.options &&
           activeQuestion.options.length > 0 && (
+            // biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is set dynamically (group/radiogroup), both support aria-label
             <div
               className="space-y-1.5 pt-0.5"
               role={kind === "multi" ? "group" : "radiogroup"}
@@ -390,6 +391,7 @@ export function QuestionTool({
                 const badgeLetter = optionBadge(idx);
 
                 return (
+                  // biome-ignore lint/a11y/useAriaPropsSupportedByRole: role is set dynamically (checkbox/radio), both support aria-checked
                   <button
                     key={opt.id || `${opt.label}-${idx}`}
                     type="button"

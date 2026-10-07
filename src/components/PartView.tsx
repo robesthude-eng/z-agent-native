@@ -302,6 +302,7 @@ function ReasoningCard({
   const displayText = useSmoothStreamingText(text, !!streaming);
   const scrollRef = useRef<HTMLDivElement | null>(null);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `displayText` is a deliberate trigger: keep the stream pinned to the bottom as text arrives
   useEffect(() => {
     if (streaming && scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;

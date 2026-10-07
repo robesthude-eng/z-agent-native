@@ -157,6 +157,7 @@ export default function ChatView() {
     resetNewAnswers();
   }, [resetNewAnswers]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `currentID` is a deliberate trigger: re-run the reset when the user switches chat
   useEffect(() => {
     atBottomRef.current = true;
     lastTopRef.current = 0;
@@ -252,6 +253,7 @@ export default function ChatView() {
     rAF внутри обязателен: правка scrollTop прямо в колбэке даёт
     «ResizeObserver loop completed with undelivered notifications».
   */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `currentID` is a deliberate trigger: re-attach the observer when the user switches chat
   useEffect(() => {
     if (typeof ResizeObserver === "undefined") return;
     const node = contentRef.current;
@@ -336,6 +338,7 @@ export default function ChatView() {
     setWindowSize((s) => s + 40);
   }, []);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `windowSize` is a deliberate trigger: restore the scroll anchor after the rendered window grows
   useLayoutEffect(() => {
     const root = scrollRef.current;
     const anchor = pendingAnchorRef.current;
@@ -353,6 +356,7 @@ export default function ChatView() {
    * висит над первой группой, и окно растёт за 600px до края — пока
    * старые сообщения ещё не нужны глазу.
    */
+  // biome-ignore lint/correctness/useExhaustiveDependencies: `windowSize` is a deliberate trigger: re-attach the sentinel observer after the window grows
   useEffect(() => {
     if (!isWindowed) return;
     if (typeof IntersectionObserver === "undefined") return;

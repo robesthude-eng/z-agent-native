@@ -46,7 +46,7 @@ async function call(method, pathname, body, ownerId) {
     body === undefined ? { method } : jsonRequest(method, body),
     res,
     ownerId,
-    new URL("http://localhost" + pathname),
+    new URL(`http://localhost${pathname}`),
   );
   return { handled, status: res.status, body: res.body ? JSON.parse(res.body) : null };
 }
