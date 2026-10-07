@@ -46,8 +46,8 @@ try {
   executorReady = true;
 } catch (error) {
   // Work-mode and other restricted CI sandboxes may forbid Unix-domain socket
-  // listeners entirely. Skip this integration fixture there; production CI
-  // still exercises it inside the Compose topology.
+  // listeners entirely. Skip this integration fixture there; the `isolation`
+  // job in .github/workflows/ci.yml runs it as root on a normal runner.
   if (!/listen EPERM|operation not permitted/i.test(String(error?.message || error))) throw error;
 }
 const describeExec = canIsolate && executorReady ? test : test.skip;

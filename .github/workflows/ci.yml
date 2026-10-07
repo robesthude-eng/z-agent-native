@@ -47,6 +47,30 @@ jobs:
       - name: Native runtime tests
         run: npm run test:native
 
+  # The executor/sandbox isolation tests need uid 0 (setpriv, chown, per-session
+  # uids) and are skipped as an unprivileged user, so `native` above never runs
+  # them. Run exactly those files as root so a regression in the shell sandbox
+  # fails CI instead of being silently skipped.
+  isolation:
+    name: Executor isolation tests (root)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+      - run: npm ci
+      - name: Run isolation tests as root and fail if any were skipped
+        run: |
+          set -o pipefail
+          sudo -E env "PATH=$PATH" node --test --test-concurrency=1 tests/executor.test.mjs tests/sandbox.test.mjs | tee isolation.log
+          if grep -E '^# skipped [1-9]|^ℹ skipped [1-9]' isolation.log; then
+            echo '::error::isolation tests were skipped; the root environment is not what the tests expect'
+            exit 1
+          fi
+
   frontend:
     name: Frontend gate
     runs-on: ubuntu-latest
