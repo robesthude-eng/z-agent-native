@@ -7,6 +7,11 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Light observer model and optional model council
+
+- The instincts observer now runs on a light model: a cheap model of the **same provider** as the chat picked by name (mini/nano/lite/flash/haiku/small/instant/3–8B; reasoning, "pro/opus/sonnet/large", image/audio/embedding models excluded), with the chat model as fallback. `Z_AGENT_LIGHT_MODEL=provider/model` overrides it, `off` disables it. Providers publish no price tier, so this is a documented heuristic.
+- New `council` tool (off by default; enabled by the "Совет моделей" setting or an explicit request such as "созови совет моделей"): 2–3 members (different models in Auto mode; the locked model in different roles otherwise) vote on a hard decision; runtime tallies and returns advice with dissent and risks. Max 2 per turn, no tools for members, context redacted. Tests: `tests/council.test.mjs`, `tests/light-model.test.mjs`.
+
 ## Faster and safer tool loop
 
 - Independent read-only tool calls of one model step now run in parallel (≤4; also in subagents). Mutating tools still run one at a time in the model's order, and results are processed in call order, so behaviour is unchanged except for speed.

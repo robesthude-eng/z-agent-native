@@ -91,6 +91,7 @@ test('feature flags default to on and respect settings', () => {
     dossier: true,
     memory: true,
     instincts: true,
+    council: false,
   });
   assert.equal(agentFeatureFlags({ agentReview: false }).review, false);
 });

@@ -166,6 +166,7 @@ function planContinuationGate(strategy) {
 }
 
 import { liveTextSink } from './streaming.mjs';
+import { councilPrompt, councilRequested } from './council.mjs';
 import { planBatches, runBatch } from './parallel.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
 import { createToolCallSink } from './tool-stream.mjs';
@@ -476,7 +477,9 @@ export async function executeTurnLifecycle({
     normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions),
     availableToolDefinitions(),
   );
-  const turnTools = () => filterChatTools(availableToolDefinitions(), toolOptions);
+  // Совет моделей: по умолчанию выключен; включается настройкой или прямой просьбой в запросе.
+  const councilOn = Boolean(agentFeatures(ownerId).council) || councilRequested(goal);
+  const turnTools = () => filterChatTools(availableToolDefinitions(), toolOptions).filter((tool) => tool.name !== 'council' || councilOn);
   // Описание среды для модели опирается на ответ самого executor о его сети.
   if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
   const mediaPrompt = turnTools().some((t) => t.name === 'generate_image' || t.name === 'generate_speech')
@@ -500,6 +503,7 @@ export async function executeTurnLifecycle({
     userSettingsPrompt(ownerId),
     features.memory ? memoryPrompt(ownerId, sessionId, { includeSkills: false }) : '',
     features.instincts ? instinctsPrompt(ownerId, sessionId) : '',
+    councilOn ? councilPrompt() : '',
     skillsPrompt(ownerId, sessionId, workspaceFor(sessionId)),
   ]
     .filter(Boolean)
@@ -518,6 +522,8 @@ export async function executeTurnLifecycle({
     runtime = {
       ownerId,
       toolOptions,
+      councilOn,
+      councilCalls: 0,
       modelPlan: job?.modelPlan?.candidates?.length ? job.modelPlan : await buildModelPlan(ownerId, requestedModel, goal),
       projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
       stepsUsed: Math.max(0, Number(job?.checkpoint?.stepsUsed) || 0),

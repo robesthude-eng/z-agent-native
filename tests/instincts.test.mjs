@@ -592,3 +592,35 @@ test('the real agent loop learns from a correction in the background and uses it
     agent.resetAgentStateForTests();
   }
 });
+
+test('the observer runs on the light plan (cheap model first, chat model as fallback), not on the chat plan', async () => {
+  obs.resetObserverStateForTests();
+  const o = 'inst-light@example.com';
+  store.createUser(o, 'hash');
+  store.createChat('ses_light', o, 'light');
+  const chatPlan = { candidates: [{ providerID: 'p', modelID: 'big' }], locked: true };
+  const lightPlan = {
+    candidates: [
+      { providerID: 'p', modelID: 'small-mini' },
+      { providerID: 'p', modelID: 'big' },
+    ],
+    locked: false,
+  };
+  let used = null;
+  await obs.observeTurn({
+    ownerId: o,
+    sessionId: 'ses_light',
+    goal: 'нет, не так',
+    ...turn(),
+    modelPlan: chatPlan,
+    planFor: async (_o, p) => {
+      assert.equal(p, chatPlan);
+      return lightPlan;
+    },
+    call: async (_o, plan) => {
+      used = plan;
+      return { text: '{}' };
+    },
+  });
+  assert.equal(used, lightPlan);
+});

@@ -7,6 +7,7 @@ import { runSubagent } from '../subagent-runner.mjs';
 import { assertValidToolInput, executeTool, toolOutputText } from '../tools.mjs';
 import { createProgressLog } from '../tools/progress.mjs';
 import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
+import { COUNCIL_MAX_PER_TURN, runCouncil } from './council.mjs';
 import { observeFileTool, overwriteGate } from './file-awareness.mjs';
 import { emitPart } from './message-parts.mjs';
 import { askQuestion } from './questions.mjs';
@@ -108,7 +109,25 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
       emit(assistant.sessionID, 'message.part.updated', { messageID: assistant.id, part });
     };
     let result;
-    if (String(call.name || '').toLowerCase() === 'task') {
+    if (String(call.name || '').toLowerCase() === 'council') {
+      if (!runtime?.councilOn)
+        throw new Error('The model council is switched off. The owner can enable it in Settings → Agent or ask for it explicitly.');
+      if ((runtime.councilCalls || 0) >= COUNCIL_MAX_PER_TURN)
+        throw new Error(`The council was already convened ${COUNCIL_MAX_PER_TURN} times in this task; decide on your own.`);
+      runtime.councilCalls = (runtime.councilCalls || 0) + 1;
+      const progress = createProgressLog(emitLiveOutput);
+      progress.step('Совет моделей обсуждает развилку…');
+      try {
+        result = await runCouncil({
+          ownerId: runtime.ownerId,
+          modelPlan: runtime.modelPlan,
+          input: assertValidToolInput('council', call.arguments || {}),
+          signal: controller.signal,
+        });
+      } finally {
+        progress.stop();
+      }
+    } else if (String(call.name || '').toLowerCase() === 'task') {
       // The subagent works for minutes without producing process output; its
       // steps (model calls, tools it runs) are shown as a live timeline.
       const progress = createProgressLog(emitLiveOutput);

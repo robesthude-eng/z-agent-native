@@ -165,6 +165,10 @@ export async function executeTool(name, input, ctx = {}) {
     throw new Error('task is executed by the agent runtime, not the generic tool executor');
   }
 
+  if (tool === 'council') {
+    throw new Error('council is executed by the agent runtime, not the generic tool executor');
+  }
+
   if (tool === 'ensure_environment') return await executeEnsureEnvironment(root, input, ctx, execBash);
   if (tool === 'environment_status') return executeEnvironmentStatus(root, input);
   if (tool === 'bash') return await executeBashTool(root, input, ctx);

@@ -5,6 +5,7 @@
 // Подход (инстинкты, шкала уверенности, scope project/global) — из ECC continuous-learning-v2
 // (MIT); реализация независимая и осторожнее: по умолчанию правило живёт в одном чате.
 import { callModelAutopilot } from './autopilot.mjs';
+import { lightModelPlan } from './light-model.mjs';
 import {
   addInstinct,
   confirmInstinct,
@@ -264,6 +265,7 @@ export async function observeTurn({
   strategy,
   modelPlan,
   call = callModelAutopilot,
+  planFor = lightModelPlan,
   now = Date.now(),
 }) {
   try {
@@ -279,7 +281,8 @@ export async function observeTurn({
     try {
       const existing = listInstincts(ownerId, { sessionId }).slice(0, 30);
       const content = buildObservation({ sessionId, goal, assistant, strategy, existing });
-      const response = await call(ownerId, modelPlan, {
+      // Наблюдение — фоновая работа: лёгкая модель того же провайдера, чат-модель как запасная.
+      const response = await call(ownerId, await planFor(ownerId, modelPlan), {
         system: OBSERVER_SYSTEM,
         frames: [{ role: 'user', content }],
         tools: [],
