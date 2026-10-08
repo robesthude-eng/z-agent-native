@@ -30,7 +30,7 @@ test('native file tools read/write/edit/grep/list inside one workspace', async (
 test('bash runs in workspace with no provider secrets injected', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-bash-'));
   process.env.OPENAI_API_KEY = 'must-not-leak';
-  const result = await executeTool('bash', { command: 'pwd; printf "key=%s" "${OPENAI_API_KEY:-}"' }, { workspace: root, signal: new AbortController().signal });
+  const result = await executeTool('bash', { command: `pwd; printf "key=%s" "\${OPENAI_API_KEY:-}"` }, { workspace: root, signal: new AbortController().signal });
   assert.equal(result.metadata?.exit, 0);
   assert.match(result.output, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(result.output, /key=$/m);

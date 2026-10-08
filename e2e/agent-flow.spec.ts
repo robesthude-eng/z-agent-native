@@ -12,6 +12,16 @@ async function register(page: import("@playwright/test").Page) {
   await expect(page.locator("#password")).toHaveCount(0, { timeout: 15_000 });
 }
 
+type EvidencePart = { type: string; tool?: string; state?: { status?: string } };
+type EvidenceMessage = {
+  role: string;
+  parts?: EvidencePart[];
+  info?: {
+    telemetry?: { toolCalls?: number; outcome?: string };
+    strategy?: { lastVerificationOk?: boolean };
+  };
+};
+
 test.describe("native coding-agent flow", () => {
   test("browser -> agent -> tools -> verification -> SSE/UI -> workspace", async ({ page }) => {
     await register(page);
@@ -33,13 +43,13 @@ test.describe("native coding-agent flow", () => {
       const sessions = await fetch("/api/session", { credentials: "include" }).then((res) => res.json());
       const sid = sessions[0]?.id;
       if (!sid) throw new Error("no materialized session");
-      const messages = await fetch(`/api/session/${sid}/message`, { credentials: "include" }).then((res) => res.json());
-      const assistant = [...messages].reverse().find((message: any) => message.role === "assistant");
+      const messages: EvidenceMessage[] = await fetch(`/api/session/${sid}/message`, { credentials: "include" }).then((res) => res.json());
+      const assistant = [...messages].reverse().find((message) => message.role === "assistant");
       const file = await fetch(`/api/file/content?sessionId=${encodeURIComponent(sid)}&path=hello.js`, { credentials: "include" }).then((res) => res.json());
       return {
         sid,
         content: file.content,
-        tools: (assistant?.parts ?? []).filter((part: any) => part.type === "tool").map((part: any) => ({ tool: part.tool, status: part.state?.status })),
+        tools: (assistant?.parts ?? []).filter((part) => part.type === "tool").map((part) => ({ tool: part.tool, status: part.state?.status })),
         telemetry: assistant?.info?.telemetry ?? null,
         strategy: assistant?.info?.strategy ?? null,
       };
