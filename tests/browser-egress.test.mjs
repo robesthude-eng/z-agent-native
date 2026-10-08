@@ -20,6 +20,7 @@ test('browser egress is fail-closed by default and pins a public target only whe
     assert.equal(target.url.protocol, 'https:');
     await assert.rejects(resolveBrowserEgress('https://127.0.0.1/'), /Локальные|служебные/);
   } finally {
-    if (previous === undefined) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previous;
+    if (previous === undefined) delete process.env.Z_AGENT_NETWORK_POLICY;
+    else process.env.Z_AGENT_NETWORK_POLICY = previous;
   }
 });

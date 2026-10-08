@@ -27,22 +27,35 @@ db.exec(`
 `);
 
 function cleanName(value) {
-  // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are deliberately stripped from user-supplied names
-  const name = String(value || '').replace(/[\u0000-\u001f]/g, ' ').trim().replace(/\s+/g, ' ');
-  if (!name || name.length > 80) throw Object.assign(new Error('Название провайдера должно содержать от 1 до 80 символов'), { statusCode: 400 });
+  const name = String(value || '')
+    // biome-ignore lint/suspicious/noControlCharactersInRegex: control characters are deliberately stripped from user-supplied names
+    .replace(/[\u0000-\u001f]/g, ' ')
+    .trim()
+    .replace(/\s+/g, ' ');
+  if (!name || name.length > 80)
+    throw Object.assign(new Error('Название провайдера должно содержать от 1 до 80 символов'), { statusCode: 400 });
   return name;
 }
 
 function cleanProtocol(value) {
-  const protocol = String(value || '').trim().toLowerCase();
-  if (!PROVIDER_PROTOCOLS.includes(protocol)) throw Object.assign(new Error('Протокол должен быть openai, anthropic или google'), { statusCode: 400 });
+  const protocol = String(value || '')
+    .trim()
+    .toLowerCase();
+  if (!PROVIDER_PROTOCOLS.includes(protocol))
+    throw Object.assign(new Error('Протокол должен быть openai, anthropic или google'), { statusCode: 400 });
   return protocol;
 }
 
 export function normalizeProviderBaseUrl(value) {
-  const raw = String(value || '').trim().replace(/\/+$/, '');
+  const raw = String(value || '')
+    .trim()
+    .replace(/\/+$/, '');
   let url;
-  try { url = new URL(raw); } catch { throw Object.assign(new Error('Некорректный API Base URL'), { statusCode: 400 }); }
+  try {
+    url = new URL(raw);
+  } catch {
+    throw Object.assign(new Error('Некорректный API Base URL'), { statusCode: 400 });
+  }
   if (url.protocol !== 'https:' || url.username || url.password) {
     throw Object.assign(new Error('API Base URL должен быть HTTPS URL без логина/пароля'), { statusCode: 400 });
   }
@@ -51,16 +64,18 @@ export function normalizeProviderBaseUrl(value) {
 }
 
 function rowToConfig(row) {
-  return row ? {
-    id: row.provider_id,
-    name: row.name,
-    protocol: row.protocol,
-    baseURL: row.base_url,
-    enabled: Boolean(row.enabled),
-    custom: Boolean(row.is_custom),
-    createdAt: row.created_at,
-    updatedAt: row.updated_at,
-  } : null;
+  return row
+    ? {
+        id: row.provider_id,
+        name: row.name,
+        protocol: row.protocol,
+        baseURL: row.base_url,
+        enabled: Boolean(row.enabled),
+        custom: Boolean(row.is_custom),
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+      }
+    : null;
 }
 
 export function newCustomProviderId() {
@@ -87,8 +102,17 @@ export function upsertProviderConfig(ownerId, input, { custom = true } = {}) {
               VALUES(?,?,?,?,?,?,?,?,?)
               ON CONFLICT(owner_id,provider_id) DO UPDATE SET
                 name=excluded.name,protocol=excluded.protocol,base_url=excluded.base_url,
-                enabled=excluded.enabled,is_custom=excluded.is_custom,updated_at=excluded.updated_at`)
-    .run(ownerId, providerId, name, protocol, baseURL, enabled ? 1 : 0, custom ? 1 : 0, now, now);
+                enabled=excluded.enabled,is_custom=excluded.is_custom,updated_at=excluded.updated_at`).run(
+    ownerId,
+    providerId,
+    name,
+    protocol,
+    baseURL,
+    enabled ? 1 : 0,
+    custom ? 1 : 0,
+    now,
+    now,
+  );
   return getProviderConfig(ownerId, providerId);
 }
 
@@ -103,7 +127,9 @@ export function deleteProviderConfig(ownerId, providerId, { deleteData = false }
     }
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }

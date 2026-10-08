@@ -12,8 +12,51 @@ import { workspaceFor } from './store.mjs';
 import { getTurnResult, getTurnResultDiff, rollbackTurnResult } from './turn-results.mjs';
 import { collectWorkspaceTree } from './workspace-tree.mjs';
 
-const TEXT_EXTS = new Set(['.txt','.md','.json','.js','.jsx','.ts','.tsx','.css','.scss','.html','.xml','.yaml','.yml','.toml','.ini','.cfg','.conf','.py','.rb','.go','.rs','.java','.kt','.c','.cpp','.h','.hpp','.cs','.php','.swift','.sh','.bash','.zsh','.sql','.graphql','.vue','.svelte','.astro','.env','.csv','.tsv','.log']);
-const IMAGE_EXTS = new Set(['.jpg','.jpeg','.png','.gif','.webp','.bmp','.svg']);
+const TEXT_EXTS = new Set([
+  '.txt',
+  '.md',
+  '.json',
+  '.js',
+  '.jsx',
+  '.ts',
+  '.tsx',
+  '.css',
+  '.scss',
+  '.html',
+  '.xml',
+  '.yaml',
+  '.yml',
+  '.toml',
+  '.ini',
+  '.cfg',
+  '.conf',
+  '.py',
+  '.rb',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.c',
+  '.cpp',
+  '.h',
+  '.hpp',
+  '.cs',
+  '.php',
+  '.swift',
+  '.sh',
+  '.bash',
+  '.zsh',
+  '.sql',
+  '.graphql',
+  '.vue',
+  '.svelte',
+  '.astro',
+  '.env',
+  '.csv',
+  '.tsv',
+  '.log',
+]);
+const IMAGE_EXTS = new Set(['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.svg']);
 
 function kindOf(name) {
   const ext = path.extname(name).toLowerCase();
@@ -27,15 +70,25 @@ function kindOf(name) {
 export { parseMultipart } from './multipart.mjs';
 
 function node(root, full, st) {
-  return { path: path.relative(root, full).split(path.sep).join('/') || '.', name: path.basename(full), type: st.isDirectory() ? 'directory' : 'file', isDirectory: st.isDirectory(), size: st.isFile() ? st.size : undefined };
+  return {
+    path: path.relative(root, full).split(path.sep).join('/') || '.',
+    name: path.basename(full),
+    type: st.isDirectory() ? 'directory' : 'file',
+    isDirectory: st.isDirectory(),
+    size: st.isFile() ? st.size : undefined,
+  };
 }
 
 function listDir(root, relative) {
   const full = safeWorkspacePath(root, relative || '.', { allowMissing: false });
-  return fs.readdirSync(full, { withFileTypes: true }).filter((entry) => entry.name !== '.agent-home').sort((a,b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name)).map((entry) => {
-    const target = path.join(full, entry.name);
-    return node(root, target, fs.lstatSync(target));
-  });
+  return fs
+    .readdirSync(full, { withFileTypes: true })
+    .filter((entry) => entry.name !== '.agent-home')
+    .sort((a, b) => Number(b.isDirectory()) - Number(a.isDirectory()) || a.name.localeCompare(b.name))
+    .map((entry) => {
+      const target = path.join(full, entry.name);
+      return node(root, target, fs.lstatSync(target));
+    });
 }
 
 function uniqueUploadPath(root, name) {
@@ -46,7 +99,7 @@ function uniqueUploadPath(root, name) {
   const ext = path.extname(clean);
   const stem = path.basename(clean, ext) || 'file';
   let candidate = path.join(uploads, clean);
-  for (let i=2; fs.existsSync(candidate); i++) candidate = path.join(uploads, `${stem}-${i}${ext}`);
+  for (let i = 2; fs.existsSync(candidate); i++) candidate = path.join(uploads, `${stem}-${i}${ext}`);
   return candidate;
 }
 
@@ -99,7 +152,10 @@ function publicTurnResult(result) {
 // отдаёт ENOENT, хотя файл существует. Снимаем обёртку на входе HTTP-роутов,
 // чтобы открывались и старые сообщения из истории.
 function unwrapWorkspaceQueryPath(value) {
-  return String(value || '').trim().replace(/^["'`]+/, '').replace(/["'`]+$/, '');
+  return String(value || '')
+    .trim()
+    .replace(/^["'`]+/, '')
+    .replace(/["'`]+$/, '');
 }
 
 export async function handleWorkspace(req, res, sessionId, url) {
@@ -107,10 +163,14 @@ export async function handleWorkspace(req, res, sessionId, url) {
   const pathname = url.pathname;
 
   if (pathname === '/api/workspace/tree' && req.method === 'GET') {
-    try { return sendJson(res, 200, collectWorkspaceTree(root)); }
-    catch (err) { return workspaceError(res, err, 'Не удалось получить полное дерево файлов'); }
+    try {
+      return sendJson(res, 200, collectWorkspaceTree(root));
+    } catch (err) {
+      return workspaceError(res, err, 'Не удалось получить полное дерево файлов');
+    }
   }
-  if (pathname === '/api/file' && req.method === 'GET') return sendJson(res, 200, listDir(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')) || '.'));
+  if (pathname === '/api/file' && req.method === 'GET')
+    return sendJson(res, 200, listDir(root, unwrapWorkspaceQueryPath(url.searchParams.get('path')) || '.'));
   if (pathname === '/api/file/content' && req.method === 'GET') {
     let file;
     try {
@@ -123,7 +183,11 @@ export async function handleWorkspace(req, res, sessionId, url) {
     if (buf.includes(0)) return sendJson(res, 415, { error: 'Бинарный файл нельзя открыть как текст' });
     // version — хеш содержимого на момент чтения. Редактор присылает его при
     // сохранении, и запись поверх более свежей версии отклоняется с 409.
-    return sendJson(res, 200, { path: path.relative(root, file.full).split(path.sep).join('/'), content: buf.toString('utf8'), version: contentVersion(buf) });
+    return sendJson(res, 200, {
+      path: path.relative(root, file.full).split(path.sep).join('/'),
+      content: buf.toString('utf8'),
+      version: contentVersion(buf),
+    });
   }
   if (pathname === '/api/file/status' && req.method === 'GET') {
     try {
@@ -188,18 +252,22 @@ export async function handleWorkspace(req, res, sessionId, url) {
     // условная: если файл изменили после открытия (агент, другая вкладка),
     // сохранение старого черновика больше не затирает молча новую работу.
     const baseVersion = typeof body.baseVersion === 'string' && body.baseVersion ? body.baseVersion : null;
-    const guard = baseVersion && body.force !== true
-      ? (previous) => {
-          const current = previous == null ? null : contentVersion(previous);
-          if (current === baseVersion) return;
-          throw Object.assign(new Error(previous == null ? 'Файл удалён после открытия в редакторе' : 'Файл изменился после открытия в редакторе'), {
-            statusCode: 409,
-            code: 'WORKSPACE_FILE_CONFLICT',
-            currentVersion: current,
-            exists: previous != null,
-          });
-        }
-      : null;
+    const guard =
+      baseVersion && body.force !== true
+        ? (previous) => {
+            const current = previous == null ? null : contentVersion(previous);
+            if (current === baseVersion) return;
+            throw Object.assign(
+              new Error(previous == null ? 'Файл удалён после открытия в редакторе' : 'Файл изменился после открытия в редакторе'),
+              {
+                statusCode: 409,
+                code: 'WORKSPACE_FILE_CONFLICT',
+                currentVersion: current,
+                exists: previous != null,
+              },
+            );
+          }
+        : null;
     let written;
     try {
       written = writeWorkspaceFile(root, body.path, content, { mkdirs: true, guard });
@@ -283,7 +351,15 @@ export async function handleWorkspace(req, res, sessionId, url) {
     syncSandboxOwnership(sessionId, root, full);
     const workspacePath = path.relative(root, full).split(path.sep).join('/');
     emit(sessionId, 'file.edited', { paths: [workspacePath] });
-    return sendJson(res, 200, { ok: true, name: path.basename(full), path: workspacePath, workspacePath, agentPath: workspacePath, size: file.size, kind: kindOf(full) });
+    return sendJson(res, 200, {
+      ok: true,
+      name: path.basename(full),
+      path: workspacePath,
+      workspacePath,
+      agentPath: workspacePath,
+      size: file.size,
+      kind: kindOf(full),
+    });
   }
 
   if (pathname === '/api/workspace/upload-folder' && req.method === 'POST') {
@@ -313,7 +389,11 @@ export async function handleWorkspace(req, res, sessionId, url) {
     const full = safeWorkspacePath(root, p, { allowMissing: false });
     const st = fs.statSync(full);
     if (!st.isFile()) return sendJson(res, 400, { error: 'Скачивание каталогов пока не поддерживается' });
-    res.writeHead(200, { 'content-type': 'application/octet-stream', 'content-length': st.size, 'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(full))}` });
+    res.writeHead(200, {
+      'content-type': 'application/octet-stream',
+      'content-length': st.size,
+      'content-disposition': `attachment; filename*=UTF-8''${encodeURIComponent(path.basename(full))}`,
+    });
     fs.createReadStream(full).pipe(res);
     return;
   }

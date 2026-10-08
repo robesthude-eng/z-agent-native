@@ -15,7 +15,10 @@ const ENV = ['/usr/bin/env', '/bin/env'].find((candidate) => fs.existsSync(candi
 if (!PRLIMIT || !SETPRIV || !ENV) throw new Error('Secure executor requires util-linux setpriv/prlimit and env');
 const LIMIT_NPROC = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_NPROC) || 256, 32), 1024);
 const LIMIT_NOFILE = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_NOFILE) || 2048, 256), 8192);
-const LIMIT_FILE_BYTES = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_FILE_BYTES) || 512 * 1024 * 1024, 16 * 1024 * 1024), 2 * 1024 * 1024 * 1024);
+const LIMIT_FILE_BYTES = Math.min(
+  Math.max(Number(process.env.Z_AGENT_EXECUTOR_FILE_BYTES) || 512 * 1024 * 1024, 16 * 1024 * 1024),
+  2 * 1024 * 1024 * 1024,
+);
 const EXPECT_NETWORK_NONE = process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE === '1';
 const MAX_ACTIVE_GLOBAL = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE) || 8, 1), 64);
 const MAX_ACTIVE_PER_UID = Math.min(Math.max(Number(process.env.Z_AGENT_EXECUTOR_MAX_ACTIVE_PER_UID) || 2, 1), 8);
@@ -48,7 +51,6 @@ function ensureSudoIdentity(uid, gid) {
   }
 }
 
-
 // Файлы, которые процессы чата оставили во временной папке executor (кэши
 // npm/pip, сборки, HOME=/tmp у sudo-учёток). /tmp — tmpfs, то есть память:
 // без чистки удалённые чаты копили бы её до перезапуска контейнера.
@@ -57,7 +59,11 @@ function ensureSudoIdentity(uid, gid) {
 function killUidProcesses(uid, signal = 'SIGKILL') {
   let killed = 0;
   let entries = [];
-  try { entries = fs.readdirSync('/proc'); } catch { return 0; }
+  try {
+    entries = fs.readdirSync('/proc');
+  } catch {
+    return 0;
+  }
   for (const name of entries) {
     if (!/^\d+$/.test(name) || Number(name) === process.pid) continue;
     try {
@@ -75,13 +81,26 @@ function killUidProcesses(uid, signal = 'SIGKILL') {
 function purgeUidTemp(uid, root = os.tmpdir(), depth = 0) {
   let removed = 0;
   let entries = [];
-  try { entries = fs.readdirSync(root, { withFileTypes: true }); } catch { return 0; }
+  try {
+    entries = fs.readdirSync(root, { withFileTypes: true });
+  } catch {
+    return 0;
+  }
   for (const entry of entries) {
     const full = path.join(root, entry.name);
     let stat;
-    try { stat = fs.lstatSync(full); } catch { continue; }
+    try {
+      stat = fs.lstatSync(full);
+    } catch {
+      continue;
+    }
     if (stat.uid === uid) {
-      try { fs.rmSync(full, { recursive: true, force: true }); removed += 1; } catch { /* best effort */ }
+      try {
+        fs.rmSync(full, { recursive: true, force: true });
+        removed += 1;
+      } catch {
+        /* best effort */
+      }
     } else if (entry.isDirectory() && !entry.isSymbolicLink() && depth < 3) {
       removed += purgeUidTemp(uid, full, depth + 1);
     }
@@ -147,8 +166,11 @@ async function body(req) {
     if (size > MAX_BODY) throw Object.assign(new Error('Executor request too large'), { statusCode: 413 });
     chunks.push(chunk);
   }
-  try { return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-  catch { throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 }); }
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+  } catch {
+    throw Object.assign(new Error('Invalid JSON'), { statusCode: 400 });
+  }
 }
 
 function workspacePath(raw) {
@@ -187,8 +209,17 @@ function track(uid, child) {
 }
 
 function killChild(child, signal = 'SIGTERM') {
-  try { process.kill(-child.pid, signal); return true; }
-  catch { try { child.kill(signal); return true; } catch { return false; } }
+  try {
+    process.kill(-child.pid, signal);
+    return true;
+  } catch {
+    try {
+      child.kill(signal);
+      return true;
+    } catch {
+      return false;
+    }
+  }
 }
 
 async function execRequest(req, res, input) {
@@ -197,7 +228,10 @@ async function execRequest(req, res, input) {
   const gid = identity(input.gid ?? input.uid, 'gid');
   const owner = fs.statSync(workspace);
   if (owner.uid !== uid || owner.gid !== gid) {
-    throw Object.assign(new Error('Workspace ownership does not match executor identity'), { statusCode: 403, code: 'EXECUTOR_IDENTITY_MISMATCH' });
+    throw Object.assign(new Error('Workspace ownership does not match executor identity'), {
+      statusCode: 403,
+      code: 'EXECUTOR_IDENTITY_MISMATCH',
+    });
   }
   const file = safeFile(input.file);
   const args = Array.isArray(input.args) ? input.args.map((value) => String(value)).slice(0, 256) : [];
@@ -220,12 +254,22 @@ async function execRequest(req, res, input) {
   const launchFile = SETPRIV;
   ensureSudoIdentity(uid, gid);
   const launchArgs = [
-    '--clear-groups', ...(ALLOW_SUDO ? [] : ['--no-new-privs']), `--reuid=${uid}`, `--regid=${gid}`,
+    '--clear-groups',
+    ...(ALLOW_SUDO ? [] : ['--no-new-privs']),
+    `--reuid=${uid}`,
+    `--regid=${gid}`,
     PRLIMIT,
     `--nproc=${LIMIT_NPROC}:${LIMIT_NPROC}`,
     `--nofile=${LIMIT_NOFILE}:${LIMIT_NOFILE}`,
     `--fsize=${LIMIT_FILE_BYTES}:${LIMIT_FILE_BYTES}`,
-    '--core=0:0', '--', ENV, '-i', '--', ...envAssignments, file, ...args,
+    '--core=0:0',
+    '--',
+    ENV,
+    '-i',
+    '--',
+    ...envAssignments,
+    file,
+    ...args,
   ];
   const child = spawn(launchFile, launchArgs, {
     cwd: workspace,
@@ -266,7 +310,7 @@ async function execRequest(req, res, input) {
     if (!dirty || backpressured || res.destroyed || res.writableEnded) return;
     dirty = false;
     lastLive = Date.now();
-    const tail = (text) => text.length > 4000 ? `[…показан только конец вывода]\n${text.slice(-4000)}` : text;
+    const tail = (text) => (text.length > 4000 ? `[…показан только конец вывода]\n${text.slice(-4000)}` : text);
     frame({ type: 'output', stdout: tail(stdout), stderr: tail(stderr) });
   };
   const append = (current, chunk) => {
@@ -279,14 +323,19 @@ async function execRequest(req, res, input) {
   };
   child.stdout.setEncoding('utf8');
   child.stderr.setEncoding('utf8');
-  child.stdout.on('data', (chunk) => { stdout = append(stdout, chunk); });
-  child.stderr.on('data', (chunk) => { stderr = append(stderr, chunk); });
+  child.stdout.on('data', (chunk) => {
+    stdout = append(stdout, chunk);
+  });
+  child.stderr.on('data', (chunk) => {
+    stderr = append(stderr, chunk);
+  });
   // A command that exits (or fails to start) without reading its stdin makes the
   // write fail with EPIPE. That error is emitted on the stream; unhandled, it
   // reaches the process-level uncaughtException handler, which kills the whole
   // executor and every other session's running command with it.
   for (const stream of [child.stdin, child.stdout, child.stderr]) stream.on('error', () => {});
-  if (input.stdin) child.stdin.end(String(input.stdin)); else child.stdin.end();
+  if (input.stdin) child.stdin.end(String(input.stdin));
+  else child.stdin.end();
 
   let terminated = false;
   const terminate = () => {
@@ -299,23 +348,30 @@ async function execRequest(req, res, input) {
   timer.unref?.();
   const disconnected = () => terminate();
   req.once('aborted', disconnected);
-  res.once('close', () => { if (!res.writableEnded) disconnected(); });
+  res.once('close', () => {
+    if (!res.writableEnded) disconnected();
+  });
 
   child.once('error', (error) => {
     clearTimeout(timer);
     if (liveTimer) clearTimeout(liveTimer);
     if (res.destroyed || res.writableEnded) return;
     const failure = { error: error?.message || String(error), code: 'SPAWN_FAILED' };
-    if (streaming) { frame({ type: 'error', ...failure }); res.end(); }
-    else json(res, 500, failure);
+    if (streaming) {
+      frame({ type: 'error', ...failure });
+      res.end();
+    } else json(res, 500, failure);
   });
   child.once('close', (code, signal) => {
     clearTimeout(timer);
     if (liveTimer) clearTimeout(liveTimer);
     if (res.destroyed || res.writableEnded) return;
     const result = { code: code ?? (signal ? 130 : 1), signal: signal || null, stdout, stderr };
-    if (streaming) { flushLive(); frame({ type: 'result', result }); res.end(); }
-    else json(res, 200, result);
+    if (streaming) {
+      flushLive();
+      frame({ type: 'result', result });
+      res.end();
+    } else json(res, 200, result);
   });
 }
 
@@ -326,8 +382,13 @@ const server = http.createServer(async (req, res) => {
     if (req.url === '/health') {
       const network = networkBoundaryStatus();
       return json(res, network.ok ? 200 : 503, {
-        ok: network.ok, pid: process.pid, networkBoundary: network.ok && network.expectedNone ? 'verified-loopback-only' : (network.expectedNone ? 'network-interface-leak' : 'not-attested'),
-        network, privilegeDrop: 'setpriv-clear-groups-no-new-privs', privilegedEnv: 'fixed-before-drop',
+        ok: network.ok,
+        pid: process.pid,
+        networkBoundary:
+          network.ok && network.expectedNone ? 'verified-loopback-only' : network.expectedNone ? 'network-interface-leak' : 'not-attested',
+        network,
+        privilegeDrop: 'setpriv-clear-groups-no-new-privs',
+        privilegedEnv: 'fixed-before-drop',
         concurrency: { active: activeCount(), maxActive: MAX_ACTIVE_GLOBAL, maxPerUid: MAX_ACTIVE_PER_UID },
         rlimits: { nproc: LIMIT_NPROC, nofile: LIMIT_NOFILE, fileBytes: LIMIT_FILE_BYTES, enforced: true },
       });
@@ -354,7 +415,11 @@ const server = http.createServer(async (req, res) => {
 });
 
 fs.mkdirSync(path.dirname(SOCKET_PATH), { recursive: true });
-try { fs.unlinkSync(SOCKET_PATH); } catch (error) { if (error?.code !== 'ENOENT') throw error; }
+try {
+  fs.unlinkSync(SOCKET_PATH);
+} catch (error) {
+  if (error?.code !== 'ENOENT') throw error;
+}
 server.listen(SOCKET_PATH, () => {
   fs.chmodSync(path.dirname(SOCKET_PATH), 0o700);
   fs.chmodSync(SOCKET_PATH, 0o660);
@@ -375,24 +440,34 @@ for (const signal of ['SIGTERM', 'SIGINT']) {
 // fatal record so one log query covers every process in the deployment.
 function fatal(kind, cause) {
   try {
-    console.error(JSON.stringify({
-      level: 'fatal',
-      service: 'executor',
-      event: kind,
-      at: new Date().toISOString(),
-      activeUids: activeByUid.size,
-      message: String(cause?.message || cause),
-      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
-    }));
+    console.error(
+      JSON.stringify({
+        level: 'fatal',
+        service: 'executor',
+        event: kind,
+        at: new Date().toISOString(),
+        activeUids: activeByUid.size,
+        message: String(cause?.message || cause),
+        stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+      }),
+    );
   } catch {
     console.error('[executor]', kind, cause);
   }
   // Exiting non-zero has to survive the event loop draining on its own, so the
   // code is set up front and the timer only forces the issue if a handle hangs.
   process.exitCode = 1;
-  try { for (const set of activeByUid.values()) for (const child of set) killChild(child, 'SIGKILL'); } catch {}
-  try { server.close(); } catch {}
+  try {
+    for (const set of activeByUid.values()) for (const child of set) killChild(child, 'SIGKILL');
+  } catch {}
+  try {
+    server.close();
+  } catch {}
   setTimeout(() => process.exit(1), 250).unref?.();
 }
-process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
-process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });
+process.on('unhandledRejection', (reason) => {
+  fatal('unhandledRejection', reason);
+});
+process.on('uncaughtException', (error) => {
+  fatal('uncaughtException', error);
+});

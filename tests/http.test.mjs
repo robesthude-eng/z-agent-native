@@ -12,7 +12,7 @@ async function freePort() {
     srv.once('error', reject);
     srv.listen(0, '127.0.0.1', () => {
       const { port } = srv.address();
-      srv.close((err) => err ? reject(err) : resolve(port));
+      srv.close((err) => (err ? reject(err) : resolve(port)));
     });
   });
 }
@@ -36,12 +36,23 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   fs.writeFileSync(path.join(dist, 'index.html'), '<!doctype html><title>Z Agent test</title>');
   const child = spawn(process.execPath, ['server/index.mjs'], {
     cwd: path.resolve('.'),
-    env: { ...process.env, PORT: String(port), Z_AGENT_DATA_DIR: path.join(root, 'data'), Z_AGENT_WORKSPACES_DIR: path.join(root, 'workspaces'), Z_AGENT_DIST_DIR: dist, Z_AGENT_SECURE_COOKIES: '0' },
+    env: {
+      ...process.env,
+      PORT: String(port),
+      Z_AGENT_DATA_DIR: path.join(root, 'data'),
+      Z_AGENT_WORKSPACES_DIR: path.join(root, 'workspaces'),
+      Z_AGENT_DIST_DIR: dist,
+      Z_AGENT_SECURE_COOKIES: '0',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
-  child.stderr.on('data', (d) => { stderr += d; });
-  t.after(() => { child.kill('SIGTERM'); });
+  child.stderr.on('data', (d) => {
+    stderr += d;
+  });
+  t.after(() => {
+    child.kill('SIGTERM');
+  });
 
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 80; i++) {
@@ -57,7 +68,8 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   assert.equal(health.runtime, 'z-agent-native');
 
   const register = await fetch(`${base}/api/auth/register`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ email: 'admin@example.com', password: 'password12345' }),
   });
   assert.equal(register.status, 200);
@@ -83,7 +95,10 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   });
   assert.equal(write.status, 200, await write.text());
 
-  const file = await fetch(`${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent('project/hello.txt')}`, { headers: { cookie } });
+  const file = await fetch(
+    `${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent('project/hello.txt')}`,
+    { headers: { cookie } },
+  );
   assert.equal(file.status, 200);
   const loaded = await file.json();
   assert.equal(loaded.content, 'native workspace');
@@ -91,11 +106,12 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   // The editor saves conditionally: a draft based on an older version must not
   // silently overwrite work written after the file was opened.
   assert.match(loaded.version, /^sha256:[a-f0-9]{64}$/);
-  const putFile = (body) => fetch(`${base}/api/workspace/file?sessionId=${encodeURIComponent(session.id)}`, {
-    method: 'PUT',
-    headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
-    body: JSON.stringify({ path: 'project/hello.txt', ...body }),
-  });
+  const putFile = (body) =>
+    fetch(`${base}/api/workspace/file?sessionId=${encodeURIComponent(session.id)}`, {
+      method: 'PUT',
+      headers: { cookie, 'x-csrf-token': csrf, 'content-type': 'application/json' },
+      body: JSON.stringify({ path: 'project/hello.txt', ...body }),
+    });
   const agentWrite = await putFile({ content: 'newer work', baseVersion: loaded.version });
   assert.equal(agentWrite.status, 200, await agentWrite.clone().text());
   const newer = await agentWrite.json();
@@ -105,7 +121,11 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const conflict = await staleSave.json();
   assert.equal(conflict.code, 'WORKSPACE_FILE_CONFLICT');
   assert.equal(conflict.version, newer.version);
-  const afterConflict = await (await fetch(`${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent('project/hello.txt')}`, { headers: { cookie } })).json();
+  const afterConflict = await (
+    await fetch(`${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent('project/hello.txt')}`, {
+      headers: { cookie },
+    })
+  ).json();
   assert.equal(afterConflict.content, 'newer work');
   const forced = await putFile({ content: 'native workspace', baseVersion: loaded.version, force: true });
   assert.equal(forced.status, 200);
@@ -187,7 +207,10 @@ test('native HTTP runtime boots and owns auth/session/workspace without an exter
   const uploaded = uploadBody;
   assert.equal(uploaded.workspacePath, 'uploads/note.txt');
 
-  const uploadedRead = await fetch(`${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent(uploaded.workspacePath)}`, { headers: { cookie } });
+  const uploadedRead = await fetch(
+    `${base}/api/file/content?sessionId=${encodeURIComponent(session.id)}&path=${encodeURIComponent(uploaded.workspacePath)}`,
+    { headers: { cookie } },
+  );
   assert.equal(uploadedRead.status, 200);
   assert.equal((await uploadedRead.json()).content, 'attached through native runtime');
 

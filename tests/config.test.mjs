@@ -9,11 +9,7 @@ import path from 'node:path';
 // location before importing anything.
 process.env.Z_AGENT_DATA_DIR = fs.mkdtempSync(path.join(os.tmpdir(), 'z-config-'));
 
-const {
-  DEFAULT_TOOL_TIMEOUT_MS,
-  PROVIDER_STREAM_IDLE_MS,
-  PROVIDER_STREAM_HARD_MS,
-} = await import('../server/native/config.mjs');
+const { DEFAULT_TOOL_TIMEOUT_MS, PROVIDER_STREAM_IDLE_MS, PROVIDER_STREAM_HARD_MS } = await import('../server/native/config.mjs');
 const { LOCK_TTL_MS } = await import('../server/native/cluster.mjs');
 const { TOOL_DEFINITIONS } = await import('../server/native/tools.mjs');
 

@@ -17,7 +17,6 @@ function parseKey(value) {
   throw new Error('Z_AGENT_AUDIT_KEY must be 64 hex characters or base64 encoding exactly 32 bytes');
 }
 
-
 function configuredAuditKey() {
   const envKey = parseKey(process.env.Z_AGENT_AUDIT_KEY);
   const filePath = String(process.env.Z_AGENT_AUDIT_KEY_FILE || '').trim();
@@ -43,7 +42,9 @@ function auditKey() {
   try {
     const existing = fs.readFileSync(AUDIT_KEY_FILE);
     if (existing.length !== 32) throw new Error('audit.key must contain exactly 32 bytes');
-    try { fs.chmodSync(AUDIT_KEY_FILE, 0o600); } catch {}
+    try {
+      fs.chmodSync(AUDIT_KEY_FILE, 0o600);
+    } catch {}
     cachedKey = existing;
     return cachedKey;
   } catch (error) {
@@ -71,11 +72,16 @@ function stable(value) {
 }
 
 function hmac(label, value) {
-  return crypto.createHmac('sha256', auditKey()).update(`${label}\0${String(value ?? '')}`, 'utf8').digest('hex');
+  return crypto
+    .createHmac('sha256', auditKey())
+    .update(`${label}\0${String(value ?? '')}`, 'utf8')
+    .digest('hex');
 }
 
 export function auditIdentity(value) {
-  const normalized = String(value || '').trim().toLowerCase();
+  const normalized = String(value || '')
+    .trim()
+    .toLowerCase();
   return normalized ? `hmac256:${hmac('identity', normalized)}` : '';
 }
 
@@ -107,17 +113,19 @@ export function verifyAuditRows(rows) {
     const expected = signAuditEvent(row);
     const left = Buffer.from(String(row.event_hash || ''));
     const right = Buffer.from(expected);
-    if (left.length !== right.length || !crypto.timingSafeEqual(left, right)) return { ok: false, seq: Number(row.seq), reason: 'signature_mismatch' };
+    if (left.length !== right.length || !crypto.timingSafeEqual(left, right))
+      return { ok: false, seq: Number(row.seq), reason: 'signature_mismatch' };
     prev = String(row.event_hash || '');
   }
   return { ok: true, events: rows.length, head: prev };
 }
 
-
-
 export function signIntegrityPayload(label, payload) {
   const body = typeof payload === 'string' ? payload : stable(payload);
-  return `hmac256:${crypto.createHmac('sha256', auditKey()).update(`integrity\0${String(label || '')}\0${body}`, 'utf8').digest('hex')}`;
+  return `hmac256:${crypto
+    .createHmac('sha256', auditKey())
+    .update(`integrity\0${String(label || '')}\0${body}`, 'utf8')
+    .digest('hex')}`;
 }
 
 export function verifyIntegrityPayload(label, payload, signature) {
@@ -141,4 +149,6 @@ export function auditKeyReadinessCheck() {
   return { ok: true, source: configured?.source || 'data-file' };
 }
 
-export function resetAuditKeyCacheForTests() { cachedKey = null; }
+export function resetAuditKeyCacheForTests() {
+  cachedKey = null;
+}

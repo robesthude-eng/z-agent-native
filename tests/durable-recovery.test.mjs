@@ -36,11 +36,7 @@ function sse(events) {
 }
 
 function finalSse(text) {
-  return sse([
-    { choices: [{ delta: { content: text } }] },
-    { choices: [{ delta: {}, finish_reason: 'stop' }] },
-    '[DONE]',
-  ]);
+  return sse([{ choices: [{ delta: { content: text } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
 }
 
 function toolSse(id, name, args) {
@@ -116,9 +112,13 @@ test('durable checkpoint is atomic and an unfinished job cannot be overwritten',
     stepBudget: 52,
   });
   assert.equal(first.state, 'running');
-  durable.checkpointDurableJob(sid, { phase: 'after_tool', stepsUsed: 3, recoveryInspected: false }, {
-    modelPlan: { candidates: [{ providerID: providerId, modelID: 'gpt-durable' }], explicit: true },
-  });
+  durable.checkpointDurableJob(
+    sid,
+    { phase: 'after_tool', stepsUsed: 3, recoveryInspected: false },
+    {
+      modelPlan: { candidates: [{ providerID: providerId, modelID: 'gpt-durable' }], explicit: true },
+    },
+  );
   const saved = durable.getDurableJob(sid);
   assert.equal(saved.checkpoint.stepsUsed, 3);
   assert.equal(saved.modelPlan.candidates[0].modelID, 'gpt-durable');
@@ -133,19 +133,21 @@ test('restart resumes the same assistant and does not replay a completed side-ef
   const actionId = 'act_durablecomplete1';
   const turnId = 'turn_durablecomplete1';
   store.createChat(sid, ownerId, 'Completed checkpoint');
-  const { userId, assistantId } = seedMessages(sid, [{
-    id: 'part_env_done',
-    type: 'tool',
-    tool: 'ensure_environment',
-    callID: 'call_env_done',
-    state: {
-      status: 'completed',
-      input: { kind: 'python', version: '3.12' },
-      output: 'Python environment already provisioned once.',
-      metadata: { provisioned: true },
-      time: { start: Date.now() - 1200, end: Date.now() - 1100 },
+  const { userId, assistantId } = seedMessages(sid, [
+    {
+      id: 'part_env_done',
+      type: 'tool',
+      tool: 'ensure_environment',
+      callID: 'call_env_done',
+      state: {
+        status: 'completed',
+        input: { kind: 'python', version: '3.12' },
+        output: 'Python environment already provisioned once.',
+        metadata: { provisioned: true },
+        time: { start: Date.now() - 1200, end: Date.now() - 1100 },
+      },
     },
-  }]);
+  ]);
   seedJob({ sid, actionId, turnId, userId, assistantId });
 
   const original = globalThis.fetch;
@@ -188,18 +190,20 @@ test('an identical mutating call interrupted by restart is blocked until state i
   fs.writeFileSync(path.join(workspace, 'marker.txt'), 'once\n');
   fs.writeFileSync(path.join(workspace, 'check.js'), 'const value = 1;\n');
   const command = "printf 'once\\n' >> marker.txt";
-  const { userId, assistantId } = seedMessages(sid, [{
-    id: 'part_bash_running',
-    type: 'tool',
-    tool: 'bash',
-    callID: 'call_bash_running',
-    state: {
-      status: 'running',
-      input: { command },
-      output: '',
-      time: { start: Date.now() - 1200 },
+  const { userId, assistantId } = seedMessages(sid, [
+    {
+      id: 'part_bash_running',
+      type: 'tool',
+      tool: 'bash',
+      callID: 'call_bash_running',
+      state: {
+        status: 'running',
+        input: { command },
+        output: '',
+        time: { start: Date.now() - 1200 },
+      },
     },
-  }]);
+  ]);
   seedJob({ sid, actionId, turnId, userId, assistantId });
 
   const original = globalThis.fetch;
@@ -240,19 +244,21 @@ test('restart rehydrates a pending question and delivers the answer to the same 
   const questionId = 'que_durablequestion1';
   const questions = [{ header: 'Mode', question: 'Как продолжить?', options: [{ label: 'Авто' }] }];
   store.createChat(sid, ownerId, 'Pending question');
-  const { userId, assistantId } = seedMessages(sid, [{
-    id: 'part_question_running',
-    type: 'tool',
-    tool: 'question',
-    callID: 'call_question_running',
-    state: {
-      status: 'running',
-      input: { questions },
-      output: '',
-      metadata: { questionId },
-      time: { start: Date.now() - 1200 },
+  const { userId, assistantId } = seedMessages(sid, [
+    {
+      id: 'part_question_running',
+      type: 'tool',
+      tool: 'question',
+      callID: 'call_question_running',
+      state: {
+        status: 'running',
+        input: { questions },
+        output: '',
+        metadata: { questionId },
+        time: { start: Date.now() - 1200 },
+      },
     },
-  }]);
+  ]);
   store.createQuestion(questionId, sid, questions);
   store.setTurn(sid, { turnId, lifecycle: 'waiting_user_input', verdict: null, reason: 'question', since: Date.now() - 1000 });
   store.claimAction(sid, actionId);

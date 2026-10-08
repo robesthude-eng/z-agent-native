@@ -9,7 +9,19 @@ import { assertActionId, messageId, turnId } from '../ids.mjs';
 import { recordTurnCapacityRejection } from '../metrics.mjs';
 import { clearProjectContext } from '../project-context.mjs';
 import {
-  claimAction, completeAction, failAction, getAction, getChat, getTurn, putMessage, releaseTurnCapacity, renameChat, reserveTurnCapacity, resetAction, setTurn, workspaceFor,
+  claimAction,
+  completeAction,
+  failAction,
+  getAction,
+  getChat,
+  getTurn,
+  putMessage,
+  releaseTurnCapacity,
+  renameChat,
+  reserveTurnCapacity,
+  resetAction,
+  setTurn,
+  workspaceFor,
 } from '../store.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { agentFeatures } from '../user-settings-prompt.mjs';
@@ -17,7 +29,14 @@ import { clearDossier } from './dossier.mjs';
 import { persistAssistant } from './message-parts.mjs';
 import { startDurableRecovery as startDurableRecoveryImpl } from './recovery.mjs';
 import {
-  activeActions, activeTurns, idleWaiters, MAX_ACTIVE_TURNS, MAX_ACTIVE_TURNS_PER_OWNER, questionWaiters, resetRuntimeState, TURN_CAPACITY_TTL_MS,
+  activeActions,
+  activeTurns,
+  idleWaiters,
+  MAX_ACTIVE_TURNS,
+  MAX_ACTIVE_TURNS_PER_OWNER,
+  questionWaiters,
+  resetRuntimeState,
+  TURN_CAPACITY_TTL_MS,
 } from './state.mjs';
 import { executeTurnLifecycle, notifyTurnIdle, updateTurn } from './turn-loop.mjs';
 
@@ -61,27 +80,51 @@ function rememberToolOptions(sessionId, options) {
 
 export async function runTurn(...params) {
   const args = params[0];
-  const { sessionId, ownerId, parts, model = null, system = '', actionId = '', toolOptions: rawToolOptions = null } =
-    typeof args === 'object' && args !== null && 'sessionId' in args ? args : {
-      sessionId: params[0],
-      ownerId: params[1],
-      parts: params[2],
-      model: params[3],
-      system: params[4],
-      actionId: params[5] || '',
-    };
+  const {
+    sessionId,
+    ownerId,
+    parts,
+    model = null,
+    system = '',
+    actionId = '',
+    toolOptions: rawToolOptions = null,
+  } = typeof args === 'object' && args !== null && 'sessionId' in args
+    ? args
+    : {
+        sessionId: params[0],
+        ownerId: params[1],
+        parts: params[2],
+        model: params[3],
+        system: params[4],
+        actionId: params[5] || '',
+      };
 
   const toolOptions = normalizeChatToolOptions(rawToolOptions);
   rememberToolOptions(sessionId, toolOptions);
   if (activeTurns.has(sessionId)) throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409 });
   if (isClustered() && !acquireTurnLock(sessionId).ok) {
-    throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), { statusCode: 409, holder: turnLockHolder(sessionId)?.instanceId || null });
+    throw Object.assign(new Error('Агент уже выполняет задачу в этом чате'), {
+      statusCode: 409,
+      holder: turnLockHolder(sessionId)?.instanceId || null,
+    });
   }
-  const capacity = reserveTurnCapacity(sessionId, ownerId, { maxGlobal: MAX_ACTIVE_TURNS, maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER, ttlMs: TURN_CAPACITY_TTL_MS });
+  const capacity = reserveTurnCapacity(sessionId, ownerId, {
+    maxGlobal: MAX_ACTIVE_TURNS,
+    maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER,
+    ttlMs: TURN_CAPACITY_TTL_MS,
+  });
   if (!capacity.ok) {
-    if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
+    if (isClustered()) {
+      try {
+        releaseTurnLock(sessionId);
+      } catch {}
+    }
     recordTurnCapacityRejection(capacity.reason);
-    throw Object.assign(new Error('Лимит одновременных задач исчерпан. Повторите позже.'), { statusCode: 429, code: 'TURN_CAPACITY', reason: capacity.reason });
+    throw Object.assign(new Error('Лимит одновременных задач исчерпан. Повторите позже.'), {
+      statusCode: 429,
+      code: 'TURN_CAPACITY',
+      reason: capacity.reason,
+    });
   }
   const tId = turnId();
   const goal = promptText(parts);
@@ -102,8 +145,14 @@ export async function runTurn(...params) {
       toolOptions,
     });
   } catch (err) {
-    if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
-    try { releaseTurnCapacity(sessionId); } catch {}
+    if (isClustered()) {
+      try {
+        releaseTurnLock(sessionId);
+      } catch {}
+    }
+    try {
+      releaseTurnCapacity(sessionId);
+    } catch {}
     throw err;
   }
 
@@ -115,7 +164,9 @@ export async function runTurn(...params) {
 
     const workspace = workspaceFor(sessionId);
     const userMessage = {
-      id: userMessageId, role: 'user', sessionID: sessionId,
+      id: userMessageId,
+      role: 'user',
+      sessionID: sessionId,
       parts: userPartsFromPrompt(parts, workspace),
       time: { created: Date.now(), completed: Date.now() },
       info: { role: 'user', finish: 'stop', time: { created: Date.now(), completed: Date.now() } },
@@ -133,7 +184,10 @@ export async function runTurn(...params) {
     }
 
     const assistant = {
-      id: assistantMessageId, role: 'assistant', sessionID: sessionId, parts: [],
+      id: assistantMessageId,
+      role: 'assistant',
+      sessionID: sessionId,
+      parts: [],
       time: { created: Date.now() },
       info: { role: 'assistant', time: { created: Date.now() } },
     };
@@ -176,7 +230,8 @@ export function abortTurn(sessionId) {
   const active = activeTurns.get(sessionId);
   if (!active) return false;
   active.controller.abort();
-  for (const [_id, waiter] of questionWaiters) if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
+  for (const [_id, waiter] of questionWaiters)
+    if (waiter.sessionId === sessionId) waiter.reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
   return true;
 }
 
@@ -228,7 +283,14 @@ configureBackgroundJobHooks({
   isTurnActive: (sessionId) => activeTurns.has(sessionId),
   submit: async ({ sessionId, ownerId, model, text }) => {
     if (!agentFeatures(ownerId).autoResume) return;
-    submitTurn({ sessionId, ownerId, parts: [{ type: 'text', text }], model, system: '', actionId: '', toolOptions: lastToolOptions.get(sessionId) || null })
-      .catch((err) => console.warn(`[background-jobs] auto-resume ${sessionId}: ${err?.message || err}`));
+    submitTurn({
+      sessionId,
+      ownerId,
+      parts: [{ type: 'text', text }],
+      model,
+      system: '',
+      actionId: '',
+      toolOptions: lastToolOptions.get(sessionId) || null,
+    }).catch((err) => console.warn(`[background-jobs] auto-resume ${sessionId}: ${err?.message || err}`));
   },
 });

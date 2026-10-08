@@ -41,18 +41,34 @@ test('share link disappears with the chat', () => {
 
 test('public view exposes only text and tool names', () => {
   const chat = store.createChat('ses_share3', owner, 'Вид');
-  store.putMessage({ id: 'msg_1', sessionID: chat.id, role: 'user', parts: [{ type: 'text', text: 'привет' }, { type: 'text', text: 'скрыто', synthetic: true }] });
-  store.putMessage({ id: 'msg_2', sessionID: chat.id, role: 'assistant', parts: [
-    { type: 'reasoning', text: 'секретные мысли' },
-    { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'cat .env' }, output: 'API_KEY=xxx' } },
-    { type: 'text', text: 'готово' },
-  ] });
+  store.putMessage({
+    id: 'msg_1',
+    sessionID: chat.id,
+    role: 'user',
+    parts: [
+      { type: 'text', text: 'привет' },
+      { type: 'text', text: 'скрыто', synthetic: true },
+    ],
+  });
+  store.putMessage({
+    id: 'msg_2',
+    sessionID: chat.id,
+    role: 'assistant',
+    parts: [
+      { type: 'reasoning', text: 'секретные мысли' },
+      { type: 'tool', tool: 'bash', state: { status: 'completed', input: { command: 'cat .env' }, output: 'API_KEY=xxx' } },
+      { type: 'text', text: 'готово' },
+    ],
+  });
   const share = store.resolveChatShare(store.createChatShare(chat.id, owner).token);
   const view = publicChatView(share);
   const json = JSON.stringify(view);
   assert.equal(view.title, 'Вид');
   assert.equal(view.messages.length, 2);
-  assert.deepEqual(view.messages[1].parts, [{ type: 'tool', tool: 'bash', status: 'done' }, { type: 'text', text: 'готово' }]);
+  assert.deepEqual(view.messages[1].parts, [
+    { type: 'tool', tool: 'bash', status: 'done' },
+    { type: 'text', text: 'готово' },
+  ]);
   for (const leak of ['скрыто', 'секретные', 'cat .env', 'API_KEY']) assert.ok(!json.includes(leak), leak);
 });
 

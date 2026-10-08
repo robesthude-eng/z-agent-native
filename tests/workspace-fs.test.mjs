@@ -26,7 +26,9 @@ function hideSymlinksFromLstat(t) {
     if (!stat?.isSymbolicLink?.()) return stat;
     return Object.assign(Object.create(Object.getPrototypeOf(stat)), stat, { isSymbolicLink: () => false });
   };
-  t.after(() => { fs.lstatSync = original; });
+  t.after(() => {
+    fs.lstatSync = original;
+  });
 }
 
 test('read does not follow a file swapped for a symlink after validation', async (t) => {
@@ -74,13 +76,17 @@ test('workspace writes create parents and keep reporting overwrite details', (t)
 
 test('a write guard runs before the file is created or truncated', (t) => {
   const { root } = sandbox(t);
-  const conflict = () => { throw Object.assign(new Error('conflict'), { code: 'WORKSPACE_FILE_CONFLICT' }); };
+  const conflict = () => {
+    throw Object.assign(new Error('conflict'), { code: 'WORKSPACE_FILE_CONFLICT' });
+  };
   assert.throws(() => writeWorkspaceFile(root, 'new.txt', 'draft', { guard: conflict }), /conflict/);
   assert.equal(fs.existsSync(path.join(root, 'new.txt')), false);
 
   fs.writeFileSync(path.join(root, 'kept.txt'), 'fresh work');
   const stale = contentVersion('older text');
-  const guard = (previous) => { if (contentVersion(previous) !== stale) conflict(); };
+  const guard = (previous) => {
+    if (contentVersion(previous) !== stale) conflict();
+  };
   assert.throws(() => writeWorkspaceFile(root, 'kept.txt', 'stale draft', { guard }), /conflict/);
   assert.equal(fs.readFileSync(path.join(root, 'kept.txt'), 'utf8'), 'fresh work');
 });

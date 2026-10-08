@@ -20,16 +20,27 @@ function advertised(name, input) {
 
 test('SSH advertised fields and legacy aliases reach the Python CLI', () => {
   fs.writeFileSync(path.join(root, 'id_test'), 'test-key');
-  for (const fields of [{ keyPath: 'id_test', remotePath: '/srv/app.py' }, { key: 'id_test', path: '/srv/app.py' }]) {
+  for (const fields of [
+    { keyPath: 'id_test', remotePath: '/srv/app.py' },
+    { key: 'id_test', path: '/srv/app.py' },
+  ]) {
     const read = buildSshArgs(root, 'read', advertised('ssh_tool', { host: 'server', action: 'read', ...fields, offset: 3, limit: 7 }));
     assert.ok(read.args.includes(path.join(root, 'id_test')));
     assert.ok(read.args.includes('/srv/app.py'));
     assert.equal(read.args.at(-1), '7');
   }
-  const patch = buildSshArgs(root, 'patch', advertised('ssh_tool', { host: 'server', action: 'patch', remotePath: '/srv/a', oldText: 'before', newText: 'after' }));
+  const patch = buildSshArgs(
+    root,
+    'patch',
+    advertised('ssh_tool', { host: 'server', action: 'patch', remotePath: '/srv/a', oldText: 'before', newText: 'after' }),
+  );
   assert.deepEqual(patch.args.slice(-4), ['--old', 'before', '--new', 'after']);
   for (const action of ['reload', 'journal', 'logs']) {
-    const plan = buildSshArgs(root, 'service', advertised('ssh_tool', { host: 'server', action: 'service', service: 'nginx', serviceAction: action, lines: 17 }));
+    const plan = buildSshArgs(
+      root,
+      'service',
+      advertised('ssh_tool', { host: 'server', action: 'service', service: 'nginx', serviceAction: action, lines: 17 }),
+    );
     assert.ok(plan.args.includes(action === 'journal' ? 'logs' : action));
     if (action !== 'reload') assert.deepEqual(plan.args.slice(-2), ['--lines', '17']);
   }
@@ -42,9 +53,18 @@ test('Git advertised count/ref aliases affect the requested history', () => {
 });
 
 test('diagnostics kinds selects only the requested check', () => {
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({ scripts: { test: 'vitest run', typecheck: 'tsc --noEmit', lint: 'eslint .' } }));
-  assert.deepEqual(planDiagnostics(root, advertised('diagnostics', { kinds: ['lint'] })).map((p) => p.kind), ['lint']);
-  assert.deepEqual(planDiagnostics(root, { kinds: ['typecheck'] }).map((p) => p.kind), ['typecheck']);
+  fs.writeFileSync(
+    path.join(root, 'package.json'),
+    JSON.stringify({ scripts: { test: 'vitest run', typecheck: 'tsc --noEmit', lint: 'eslint .' } }),
+  );
+  assert.deepEqual(
+    planDiagnostics(root, advertised('diagnostics', { kinds: ['lint'] })).map((p) => p.kind),
+    ['lint'],
+  );
+  assert.deepEqual(
+    planDiagnostics(root, { kinds: ['typecheck'] }).map((p) => p.kind),
+    ['typecheck'],
+  );
   assert.equal(planDiagnostics(root, { kinds: ['lint', 'typecheck'] }).length, 2);
   assert.throws(() => planDiagnostics(root, { kinds: ['invalid'] }), /Unsupported/);
 });

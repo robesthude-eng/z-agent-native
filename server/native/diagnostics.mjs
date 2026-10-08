@@ -66,13 +66,21 @@ export function detectLintCommand(root) {
 }
 
 export function planDiagnostics(root, input = {}) {
-  const requested = [...new Set((Array.isArray(input.kinds) && input.kinds.length ? input.kinds : [input.kind || 'all']).map((kind) => String(kind).trim().toLowerCase()))];
+  const requested = [
+    ...new Set(
+      (Array.isArray(input.kinds) && input.kinds.length ? input.kinds : [input.kind || 'all']).map((kind) =>
+        String(kind).trim().toLowerCase(),
+      ),
+    ),
+  ];
   if (requested.some((kind) => !DIAGNOSTIC_KINDS.includes(kind))) {
     throw new Error(`Unsupported diagnostics kind "${requested.join(', ')}". Use one of: ${DIAGNOSTIC_KINDS.join(', ')}`);
   }
   const explicit = String(input.command || '').trim();
   if (explicit) {
-    return [{ kind: requested.length === 1 && requested[0] !== 'all' ? requested[0] : 'lint', command: explicit, source: 'explicit command' }];
+    return [
+      { kind: requested.length === 1 && requested[0] !== 'all' ? requested[0] : 'lint', command: explicit, source: 'explicit command' },
+    ];
   }
   const plans = [];
   if (requested.includes('all') || requested.includes('typecheck')) {
@@ -116,16 +124,24 @@ export function parseDiagnostics(text) {
   // tsc default: src/a.ts(12,5): error TS2345: message
   for (const match of body.matchAll(/^(\S+?)\((\d+),(\d+)\):\s*(error|warning)\s+(TS\d+):\s*(.+)$/gm)) {
     pushDiagnostic(diagnostics, seen, {
-      file: match[1], line: Number(match[2]), column: Number(match[3]),
-      severity: match[4], code: match[5], message: match[6],
+      file: match[1],
+      line: Number(match[2]),
+      column: Number(match[3]),
+      severity: match[4],
+      code: match[5],
+      message: match[6],
     });
   }
 
   // tsc pretty: src/a.ts:12:5 - error TS2345: message
   for (const match of body.matchAll(/^(\S+?):(\d+):(\d+)\s*-\s*(error|warning)\s+(TS\d+):\s*(.+)$/gm)) {
     pushDiagnostic(diagnostics, seen, {
-      file: match[1], line: Number(match[2]), column: Number(match[3]),
-      severity: match[4], code: match[5], message: match[6],
+      file: match[1],
+      line: Number(match[2]),
+      column: Number(match[3]),
+      severity: match[4],
+      code: match[5],
+      message: match[6],
     });
   }
 
@@ -133,16 +149,23 @@ export function parseDiagnostics(text) {
   for (const match of body.matchAll(/^(\S+?):(\d+):(\d+):\s*(error|warning|note)\s*:?\s*(.+)$/gm)) {
     if (match[4] === 'note') continue;
     pushDiagnostic(diagnostics, seen, {
-      file: match[1], line: Number(match[2]), column: Number(match[3]),
-      severity: match[4], message: match[5],
+      file: match[1],
+      line: Number(match[2]),
+      column: Number(match[3]),
+      severity: match[4],
+      message: match[5],
     });
   }
 
   // biome: path/file.ts:12:5 lint/suspicious/noExplicitAny
   for (const match of body.matchAll(/^(\S+?):(\d+):(\d+)\s+(lint\/\S+|parse|format)\s/gm)) {
     pushDiagnostic(diagnostics, seen, {
-      file: match[1], line: Number(match[2]), column: Number(match[3]),
-      severity: 'error', code: match[4], message: match[4],
+      file: match[1],
+      line: Number(match[2]),
+      column: Number(match[3]),
+      severity: 'error',
+      code: match[4],
+      message: match[4],
     });
   }
 
@@ -157,8 +180,12 @@ export function parseDiagnostics(text) {
     const row = rawLine.match(/^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)(?:\s\s+(\S+))?\s*$/);
     if (row && currentFile) {
       pushDiagnostic(diagnostics, seen, {
-        file: currentFile, line: Number(row[1]), column: Number(row[2]),
-        severity: row[3], code: row[5], message: row[4],
+        file: currentFile,
+        line: Number(row[1]),
+        column: Number(row[2]),
+        severity: row[3],
+        code: row[5],
+        message: row[4],
       });
     }
   }
@@ -193,7 +220,12 @@ export function formatDiagnosticsReport(runs) {
       // Distinguish "tool could not run" from "code is clean": a missing binary
       // must never be reported as a passing check.
       lines.push('  no diagnostics were parsed, so the checker itself may have failed to start');
-      lines.push(`  output tail:\n${tail(run.output, 30).split('\n').map((row) => `    ${row}`).join('\n')}`);
+      lines.push(
+        `  output tail:\n${tail(run.output, 30)
+          .split('\n')
+          .map((row) => `    ${row}`)
+          .join('\n')}`,
+      );
     }
     sections.push(lines.join('\n'));
   }

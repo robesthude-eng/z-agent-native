@@ -16,16 +16,24 @@ function stableValue(value) {
 }
 
 function stableString(value) {
-  try { return JSON.stringify(stableValue(value)); } catch { return String(value ?? ''); }
+  try {
+    return JSON.stringify(stableValue(value));
+  } catch {
+    return String(value ?? '');
+  }
 }
 
 export function toolCallSignature(call) {
-  const name = String(call?.name || '').trim().toLowerCase();
+  const name = String(call?.name || '')
+    .trim()
+    .toLowerCase();
   return `${name}:${stableString(normalizeToolArguments(name, call?.arguments || {}))}`;
 }
 
 export function toolMayHaveSideEffects(name) {
-  const normalized = String(name || '').trim().toLowerCase();
+  const normalized = String(name || '')
+    .trim()
+    .toLowerCase();
   return mutatesWorkspace(normalized) || normalized === 'ensure_environment';
 }
 
@@ -92,7 +100,9 @@ export function recoveryGuidance(recovery) {
     'Completed tool results already present in context are authoritative checkpoints. Do not repeat them merely to reconstruct state.',
   ];
   if (recovery.ambiguousSignatures.size && !recovery.inspected) {
-    lines.push('At least one mutating action was in flight when the process stopped. It may have partially completed. Inspect the current workspace/environment before retrying an equivalent mutating action. The runtime will block an identical retry until a successful inspection occurs.');
+    lines.push(
+      'At least one mutating action was in flight when the process stopped. It may have partially completed. Inspect the current workspace/environment before retrying an equivalent mutating action. The runtime will block an identical retry until a successful inspection occurs.',
+    );
   }
   return lines.join('\n');
 }

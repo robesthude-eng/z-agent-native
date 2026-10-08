@@ -64,7 +64,9 @@ export async function emitText(assistant, text, type = 'text', { putMessage, emi
  * Returns false when this step streamed no reasoning part to convert.
  */
 export function promoteReasoningToText(assistant, streamedParts, text, { putMessage, emit }) {
-  const answer = String(text || '').replace(/<\/?(?:think|thought|thinking)>/gi, '').trim();
+  const answer = String(text || '')
+    .replace(/<\/?(?:think|thought|thinking)>/gi, '')
+    .trim();
   const reasoning = (streamedParts || []).filter((part) => part?.type === 'reasoning' && assistant.parts.includes(part));
   if (!answer || reasoning.length === 0) return false;
   const target = reasoning[reasoning.length - 1];
@@ -92,7 +94,9 @@ export function promoteReasoningToText(assistant, streamedParts, text, { putMess
  * Returns the number of parts demoted.
  */
 export function demoteDraftTextToReasoning(assistant, streamedParts, { putMessage, emit }) {
-  const drafts = (streamedParts || []).filter((part) => part?.type === 'text' && assistant.parts.includes(part) && String(part.text || '').trim());
+  const drafts = (streamedParts || []).filter(
+    (part) => part?.type === 'text' && assistant.parts.includes(part) && String(part.text || '').trim(),
+  );
   if (drafts.length === 0) return 0;
   for (const part of drafts) {
     part.type = 'reasoning';

@@ -12,7 +12,13 @@ function run(args) {
 }
 
 function lastJsonLine(text) {
-  return JSON.parse(String(text).trim().split(/\r?\n/).filter((l) => l.startsWith('{')).at(-1));
+  return JSON.parse(
+    String(text)
+      .trim()
+      .split(/\r?\n/)
+      .filter((l) => l.startsWith('{'))
+      .at(-1),
+  );
 }
 
 test('restore-verify reports failures as one JSON line, exit 1, no stack trace', () => {

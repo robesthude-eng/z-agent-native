@@ -22,7 +22,8 @@ export async function handleSkillRoutes(req, res, p, ownerId) {
   }
   const chat = /^\/api\/session\/(ses_[A-Za-z0-9]+)\/skills$/.exec(p);
   if (chat && ['GET', 'PUT'].includes(req.method)) {
-    const result = req.method === 'GET' ? chatSkillSettings(ownerId, chat[1]) : setChatSkillSettings(ownerId, chat[1], await readJson(req, 32 * 1024));
+    const result =
+      req.method === 'GET' ? chatSkillSettings(ownerId, chat[1]) : setChatSkillSettings(ownerId, chat[1], await readJson(req, 32 * 1024));
     sendJson(res, 200, result);
     return true;
   }

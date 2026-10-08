@@ -1,25 +1,9 @@
 import { createHash } from 'node:crypto';
 import { classifyBash } from './context.mjs';
 
-const RETRY_SAFE_TOOLS = new Set([
-  'read',
-  'list',
-  'glob',
-  'grep',
-  'repo_map',
-  'environment_status',
-  'webfetch',
-  'websearch',
-]);
+const RETRY_SAFE_TOOLS = new Set(['read', 'list', 'glob', 'grep', 'repo_map', 'environment_status', 'webfetch', 'websearch']);
 
-const EXECUTOR_RETRY_TOOLS = new Set([
-  'bash',
-  'git',
-  'run_tests',
-  'diagnostics',
-  'browser',
-  'apply_patch',
-]);
+const EXECUTOR_RETRY_TOOLS = new Set(['bash', 'git', 'run_tests', 'diagnostics', 'browser', 'apply_patch']);
 
 const EXECUTOR_UNAVAILABLE_RE = /executor\.sock|Secure executor is required but unavailable|EXECUTOR_UNAVAILABLE/i;
 
@@ -66,11 +50,17 @@ function stableString(value) {
 }
 
 function digest(value) {
-  return createHash('sha256').update(String(value ?? '')).digest('hex').slice(0, 20);
+  return createHash('sha256')
+    .update(String(value ?? ''))
+    .digest('hex')
+    .slice(0, 20);
 }
 
 export function normalizeBashCommand(command) {
-  let value = String(command || '').replace(/\r\n/g, '\n').replace(/\s+/g, ' ').trim();
+  let value = String(command || '')
+    .replace(/\r\n/g, '\n')
+    .replace(/\s+/g, ' ')
+    .trim();
   value = value.replace(/\s*\|\s*(?:tail|head)\s+-n?\s*\d+\s*$/i, '');
   value = value.replace(/\s+2>&1\b/g, '');
   value = value.replace(/-newermt\s+'[^']+'/g, '-newermt TS');
@@ -80,14 +70,22 @@ export function normalizeBashCommand(command) {
 }
 
 export function normalizeToolArguments(name, args) {
-  const tool = String(name || '').trim().toLowerCase();
+  const tool = String(name || '')
+    .trim()
+    .toLowerCase();
   if (!args || typeof args !== 'object') return args || {};
   if (tool === 'bash') return { ...args, command: normalizeBashCommand(args.command) };
   // Лимит размера меняет только то, сколько текста вернётся, а не что
   // запрошено: webfetch одного адреса с maxChars 12000, 15000 и 20000 — это
   // одно и то же действие трижды, и защита от зацикливания должна это видеть.
   if (tool === 'webfetch') return { url: normalizeFetchUrl(args.url) };
-  if (tool === 'websearch') return { query: String(args.query ?? '').trim().replace(/\s+/g, ' ').toLowerCase() };
+  if (tool === 'websearch')
+    return {
+      query: String(args.query ?? '')
+        .trim()
+        .replace(/\s+/g, ' ')
+        .toLowerCase(),
+    };
   return args;
 }
 
@@ -103,7 +101,9 @@ function normalizeFetchUrl(value) {
 }
 
 function callSignature(call) {
-  const name = String(call?.name || '').trim().toLowerCase();
+  const name = String(call?.name || '')
+    .trim()
+    .toLowerCase();
   return `${name}:${stableString(normalizeToolArguments(name, call?.arguments || {}))}`;
 }
 
@@ -137,12 +137,23 @@ const WORKSPACE_MUTATING_TOOLS = new Set(['write', 'edit', 'apply_patch', 'ensur
 const STATEFUL_BROWSER_ACTIONS = new Set(['click', 'press', 'type', 'fill', 'select', 'check', 'uncheck', 'hover', 'scroll', 'wait']);
 
 function isStatefulBrowserCall(call) {
-  if (String(call?.name || '').trim().toLowerCase() !== 'browser') return false;
-  return STATEFUL_BROWSER_ACTIONS.has(String(call?.arguments?.action || '').trim().toLowerCase());
+  if (
+    String(call?.name || '')
+      .trim()
+      .toLowerCase() !== 'browser'
+  )
+    return false;
+  return STATEFUL_BROWSER_ACTIONS.has(
+    String(call?.arguments?.action || '')
+      .trim()
+      .toLowerCase(),
+  );
 }
 
 function callMutatesWorkspace(call, result) {
-  const name = String(call?.name || '').trim().toLowerCase();
+  const name = String(call?.name || '')
+    .trim()
+    .toLowerCase();
   if (WORKSPACE_MUTATING_TOOLS.has(name)) return true;
   if (name === 'bash') {
     const observed = result?.metadata?.workspaceChanges;
@@ -252,7 +263,9 @@ export function isExecutorUnavailableError(error) {
 export function shouldRetryToolCall(call, error, attempt = 0) {
   // Lost IPC after acceptance is ambiguous: the command may have mutated files.
   if (error?.executorAccepted) return false;
-  const name = String(call?.name || '').trim().toLowerCase();
+  const name = String(call?.name || '')
+    .trim()
+    .toLowerCase();
   const message = `${error?.name || ''} ${error?.code || ''} ${error?.message || String(error || '')}`;
   // A brief executor-socket drop during compose restart used to surface as
   // three identical bash errors and trip the loop guard mid-task.
@@ -263,7 +276,7 @@ export function shouldRetryToolCall(call, error, attempt = 0) {
 }
 
 export function retryDelayMs(attempt = 0) {
-  return Math.min(1_500, 350 * (2 ** Math.max(0, Number(attempt) || 0)));
+  return Math.min(1_500, 350 * 2 ** Math.max(0, Number(attempt) || 0));
 }
 
 function planCounts(strategy) {

@@ -22,7 +22,9 @@ test('workspace change tracking observes edits, removals and renames without rea
     await fs.rename(path.join(root, 'file.txt'), path.join(root, 'renamed.txt'));
     assert.deepEqual(compareWorkspaceSnapshots(before, await snapshotWorkspace(root)).paths.sort(), ['file.txt', 'renamed.txt']);
     assert.equal((await snapshotWorkspace(root, { maxEntries: 1 })).complete, false);
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('real bash edits still require verification while environment inspection does not', async () => {
@@ -63,5 +65,7 @@ test('dependency and build folders do not make the scan incomplete', async () =>
     assert.deepEqual(compareWorkspaceSnapshots(before, await snapshotWorkspace(root, { maxEntries: 20 })).paths, []);
     await fs.writeFile(path.join(root, 'index.js'), 'changed');
     assert.deepEqual(compareWorkspaceSnapshots(before, await snapshotWorkspace(root, { maxEntries: 20 })).paths, ['index.js']);
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });

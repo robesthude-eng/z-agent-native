@@ -27,11 +27,11 @@ test('guarded shell policy blocks direct egress and credential access', () => {
   assert.doesNotThrow(() => policy.assertShellCommandAllowed('node --test'));
   assert.doesNotThrow(() => policy.assertShellCommandAllowed('npm test'));
   assert.throws(() => policy.assertShellCommandAllowed('curl https://example.com'), /network egress/i);
-  assert.throws(() => policy.assertShellCommandAllowed("cat .env"), /credential-like/i);
+  assert.throws(() => policy.assertShellCommandAllowed('cat .env'), /credential-like/i);
   assert.throws(() => policy.assertShellCommandAllowed('cat /etc/passwd'), /outside the workspace/i);
   assert.throws(() => policy.assertShellCommandAllowed('head /etc/shadow'), /outside the workspace/i);
   assert.doesNotThrow(() => policy.assertShellCommandAllowed('cat docs/etc/passwd.md'));
-  assert.throws(() => policy.assertShellCommandAllowed("node -e 'fetch(\"https://example.com\")'"), /network egress/i);
+  assert.throws(() => policy.assertShellCommandAllowed('node -e \'fetch("https://example.com")\''), /network egress/i);
 });
 
 test('tool-only policy also blocks package-manager and remote git network paths', () => {
@@ -152,7 +152,6 @@ test('read and grep tools do not expose blocked secret file contents', async () 
   assert.match(safe.output, /safe\.txt/);
 });
 
-
 test('agent network allowlist restricts model-selected external hosts', () => {
   const previousPolicy = process.env.Z_AGENT_NETWORK_POLICY;
   const previousAllowlist = process.env.Z_AGENT_NETWORK_ALLOWLIST;
@@ -170,8 +169,10 @@ test('agent network allowlist restricts model-selected external hosts', () => {
     process.env.Z_AGENT_NETWORK_POLICY = 'off';
     assert.throws(() => policy.assertAgentNetworkUrl('https://example.org/', { tool: 'webfetch' }), /disabled/i);
   } finally {
-    if (previousPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousPolicy;
-    if (previousAllowlist == null) delete process.env.Z_AGENT_NETWORK_ALLOWLIST; else process.env.Z_AGENT_NETWORK_ALLOWLIST = previousAllowlist;
+    if (previousPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY;
+    else process.env.Z_AGENT_NETWORK_POLICY = previousPolicy;
+    if (previousAllowlist == null) delete process.env.Z_AGENT_NETWORK_ALLOWLIST;
+    else process.env.Z_AGENT_NETWORK_ALLOWLIST = previousAllowlist;
   }
 });
 
@@ -182,10 +183,10 @@ test('shell sensitive-file guard permits documented template env files', () => {
     assert.doesNotThrow(() => policy.assertShellCommandAllowed('cat .env.example'));
     assert.throws(() => policy.assertShellCommandAllowed('cat .env.production'), /credential/i);
   } finally {
-    if (previous == null) delete process.env.Z_AGENT_SHELL_NETWORK_POLICY; else process.env.Z_AGENT_SHELL_NETWORK_POLICY = previous;
+    if (previous == null) delete process.env.Z_AGENT_SHELL_NETWORK_POLICY;
+    else process.env.Z_AGENT_SHELL_NETWORK_POLICY = previous;
   }
 });
-
 
 test('strict agent network policy blocks network-capable tools before outbound work', async () => {
   const previousPolicy = process.env.Z_AGENT_NETWORK_POLICY;
@@ -197,8 +198,14 @@ test('strict agent network policy blocks network-capable tools before outbound w
     fs.mkdirSync(workspace, { recursive: true });
     await assert.rejects(() => tools.executeTool('webfetch', { url: 'https://example.com/' }, { workspace }), /disabled/i);
     await assert.rejects(() => tools.executeTool('websearch', { query: 'should not leave runtime' }, { workspace }), /disabled/i);
-    await assert.rejects(() => tools.executeTool('ensure_environment', { kind: 'python' }, { workspace }), /network_policy|network policy/i);
-    await assert.rejects(() => tools.executeTool('browser', { action: 'open', url: 'https://example.com/' }, { workspace, sessionId: 'ses_policystrict1' }), /disabled/i);
+    await assert.rejects(
+      () => tools.executeTool('ensure_environment', { kind: 'python' }, { workspace }),
+      /network_policy|network policy/i,
+    );
+    await assert.rejects(
+      () => tools.executeTool('browser', { action: 'open', url: 'https://example.com/' }, { workspace, sessionId: 'ses_policystrict1' }),
+      /disabled/i,
+    );
 
     fs.writeFileSync(path.join(workspace, 'index.html'), '<html><body>шашки</body></html>\n');
     try {
@@ -207,7 +214,9 @@ test('strict agent network policy blocks network-capable tools before outbound w
       assert.doesNotMatch(String(err?.message || err), /disabled|NETWORK_POLICY|AGENT_NETWORK_BLOCKED/i);
     }
   } finally {
-    if (previousPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousPolicy;
-    if (previousAllowlist == null) delete process.env.Z_AGENT_NETWORK_ALLOWLIST; else process.env.Z_AGENT_NETWORK_ALLOWLIST = previousAllowlist;
+    if (previousPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY;
+    else process.env.Z_AGENT_NETWORK_POLICY = previousPolicy;
+    if (previousAllowlist == null) delete process.env.Z_AGENT_NETWORK_ALLOWLIST;
+    else process.env.Z_AGENT_NETWORK_ALLOWLIST = previousAllowlist;
   }
 });

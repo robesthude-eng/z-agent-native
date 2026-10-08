@@ -25,7 +25,9 @@ export function createChatShare(sessionId, ownerId) {
     insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'chat.share', target: sessionId });
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
   return getChatShare(sessionId, ownerId);
@@ -39,20 +41,26 @@ export function deleteChatShare(sessionId, ownerId) {
     db.exec('COMMIT');
     return Boolean(changes);
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
 
 export function listChatShares(ownerId) {
-  return db.prepare(`SELECT s.token,s.session_id,s.created_at,c.title FROM chat_shares s
+  return db
+    .prepare(`SELECT s.token,s.session_id,s.created_at,c.title FROM chat_shares s
                      JOIN chats c ON c.id=s.session_id WHERE s.owner_id=? ORDER BY s.created_at DESC`)
-    .all(ownerId).map((row) => ({ ...shareRow(row), title: row.title }));
+    .all(ownerId)
+    .map((row) => ({ ...shareRow(row), title: row.title }));
 }
 
 export function resolveChatShare(token) {
   if (typeof token !== 'string' || !TOKEN_RE.test(token)) return null;
-  const row = db.prepare(`SELECT s.token,s.session_id,s.created_at,c.title,c.updated_at FROM chat_shares s
-                          JOIN chats c ON c.id=s.session_id WHERE s.token=?`).get(token);
+  const row = db
+    .prepare(`SELECT s.token,s.session_id,s.created_at,c.title,c.updated_at FROM chat_shares s
+                          JOIN chats c ON c.id=s.session_id WHERE s.token=?`)
+    .get(token);
   return row ? { sessionId: row.session_id, title: row.title, created: row.created_at, updated: row.updated_at } : null;
 }

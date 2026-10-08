@@ -117,10 +117,7 @@ test('every download is HTTPS and every artifact is integrity checked', (t) => {
 
     // Apache publishes .sha512 sidecars, so maven verifies with sha512sum, and
     // the AWS CLI ships a detached PGP signature instead of a digest.
-    const verified =
-      script.includes('sha256sum -c -') ||
-      script.includes('sha512sum -c -') ||
-      script.includes('gpg --batch --verify');
+    const verified = script.includes('sha256sum -c -') || script.includes('sha512sum -c -') || script.includes('gpg --batch --verify');
     assert.ok(verified, `${kind}: downloaded artifact is executed without a checksum or signature check`);
 
     assert.ok(!/\bsudo\b/.test(script), `${kind}: provisioning must never escalate privileges`);
@@ -132,16 +129,7 @@ test('every download is HTTPS and every artifact is integrity checked', (t) => {
 
 test('version input is validated before it reaches the shell', (t) => {
   if (!archSupported) return t.skip(`unsupported test arch ${process.arch}`);
-  const injections = [
-    'latest; id',
-    'latest && id',
-    'latest | id',
-    '$(id)',
-    '`id`',
-    "1.0'; id; '",
-    '../../etc/passwd',
-    'a'.repeat(200),
-  ];
+  const injections = ['latest; id', 'latest && id', 'latest | id', '$(id)', '`id`', "1.0'; id; '", '../../etc/passwd', 'a'.repeat(200)];
   for (const kind of ['go', 'rust', 'node', 'terraform']) {
     for (const version of injections) {
       assert.throws(
@@ -175,7 +163,8 @@ test('accepted versions stay on the documented allowlist', (t) => {
 
 test('portable mode refuses anything but a pinned HTTPS artifact', () => {
   const base = VALID_INPUT.portable;
-  const reject = (patch, expected) => assert.throws(() => prepareToolchainRequirement(root, { kind: 'portable', ...base, ...patch }), expected);
+  const reject = (patch, expected) =>
+    assert.throws(() => prepareToolchainRequirement(root, { kind: 'portable', ...base, ...patch }), expected);
 
   reject({ url: 'http://example.invalid/tool' }, /Portable URL must be an HTTPS URL/);
   reject({ url: 'file:///etc/passwd' }, /Portable URL must be an HTTPS URL/);
@@ -252,7 +241,21 @@ test('command hints map missing binaries to a provisioner that exists', () => {
   assert.equal(suggestToolchainForCommand(undefined), null);
 
   const provisionable = new Set([...EXTENDED_TOOLCHAIN_KINDS, 'java', 'gradle', 'python', 'android']);
-  for (const command of ['java', 'gradle', 'python3', 'adb', 'go', 'rustc', 'node', 'mvn', 'flutter', 'kubectl', 'terraform', 'aws', 'gcloud']) {
+  for (const command of [
+    'java',
+    'gradle',
+    'python3',
+    'adb',
+    'go',
+    'rustc',
+    'node',
+    'mvn',
+    'flutter',
+    'kubectl',
+    'terraform',
+    'aws',
+    'gcloud',
+  ]) {
     const hint = suggestToolchainForCommand(command);
     assert.ok(hint, `${command} should map to a provisioner`);
     assert.ok(provisionable.has(hint.kind), `${command} maps to unknown provisioner kind ${hint.kind}`);

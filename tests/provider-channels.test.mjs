@@ -25,8 +25,13 @@ function captureResponse() {
     status: null,
     headers: null,
     body: '',
-    writeHead(status, headers) { this.status = status; this.headers = headers; },
-    end(body = '') { this.body = String(body || ''); },
+    writeHead(status, headers) {
+      this.status = status;
+      this.headers = headers;
+    },
+    end(body = '') {
+      this.body = String(body || '');
+    },
   };
 }
 
@@ -36,7 +41,9 @@ function jsonRequest(method, body) {
   const payload = Buffer.from(JSON.stringify(body ?? {}), 'utf8');
   return {
     method,
-    async *[Symbol.asyncIterator]() { yield payload; },
+    async *[Symbol.asyncIterator]() {
+      yield payload;
+    },
   };
 }
 
@@ -54,7 +61,11 @@ async function call(method, pathname, body, ownerId) {
 function connectedChannel(ownerId, name, { key = 'secret-key', enabled = true } = {}) {
   const id = configs.newCustomProviderId();
   configs.upsertProviderConfig(ownerId, {
-    id, name, protocol: 'openai', baseURL: 'https://models.example.com/v1', enabled,
+    id,
+    name,
+    protocol: 'openai',
+    baseURL: 'https://models.example.com/v1',
+    enabled,
   });
   if (key) store.setProviderKey(ownerId, id, key);
   return id;
@@ -67,13 +78,17 @@ test('provider management starts empty until the user adds a channel', () => {
 
 test('custom provider channels are owner-scoped and merged into the runtime registry', () => {
   const id = configs.newCustomProviderId();
-  configs.upsertProviderConfig(ownerA, {
-    id,
-    name: 'My OpenAI Channel',
-    protocol: 'openai',
-    baseURL: 'https://models.example.com/v1',
-    enabled: true,
-  }, { custom: true });
+  configs.upsertProviderConfig(
+    ownerA,
+    {
+      id,
+      name: 'My OpenAI Channel',
+      protocol: 'openai',
+      baseURL: 'https://models.example.com/v1',
+      enabled: true,
+    },
+    { custom: true },
+  );
 
   const a = providers.providerSpecs(ownerA)[id];
   const b = providers.providerSpecs(ownerB)[id];
@@ -84,17 +99,24 @@ test('custom provider channels are owner-scoped and merged into the runtime regi
   assert.equal(a.trustedBaseURL, false);
   assert.equal(b, undefined);
   assert.deepEqual(listProviderChannels(ownerB), []);
-  assert.deepEqual(listProviderChannels(ownerA).map((item) => item.id), [id]);
+  assert.deepEqual(
+    listProviderChannels(ownerA).map((item) => item.id),
+    [id],
+  );
 });
 
 test('legacy configured built-in ids are treated as user-owned channels, not templates', () => {
-  configs.upsertProviderConfig(ownerB, {
-    id: 'openai',
-    name: 'My Relay',
-    protocol: 'openai',
-    baseURL: 'https://relay.example.com/openai/v1',
-    enabled: true,
-  }, { custom: false });
+  configs.upsertProviderConfig(
+    ownerB,
+    {
+      id: 'openai',
+      name: 'My Relay',
+      protocol: 'openai',
+      baseURL: 'https://relay.example.com/openai/v1',
+      enabled: true,
+    },
+    { custom: false },
+  );
 
   const channels = listProviderChannels(ownerB);
   assert.equal(channels.length, 1);
@@ -106,12 +128,7 @@ test('legacy configured built-in ids are treated as user-owned channels, not tem
 
 test('provider channel HTTP handler returns only saved channels', async () => {
   const res = captureResponse();
-  const handled = await handleProviderChannels(
-    { method: 'GET' },
-    res,
-    ownerEmpty,
-    new URL('http://localhost/api/provider-channels'),
-  );
+  const handled = await handleProviderChannels({ method: 'GET' }, res, ownerEmpty, new URL('http://localhost/api/provider-channels'));
   assert.equal(handled, true);
   assert.equal(res.status, 200);
   const body = JSON.parse(res.body);
@@ -119,25 +136,61 @@ test('provider channel HTTP handler returns only saved channels', async () => {
 });
 
 test('provider config validation rejects unsafe shapes', () => {
-  assert.throws(() => configs.upsertProviderConfig(ownerA, {
-    id: 'bad-provider', name: 'Bad', protocol: 'unknown', baseURL: 'https://example.com', enabled: true,
-  }), /Протокол/);
-  assert.throws(() => configs.upsertProviderConfig(ownerA, {
-    id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'file:///tmp/model', enabled: true,
-  }), /HTTP/);
-  assert.throws(() => configs.upsertProviderConfig(ownerA, {
-    id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'http://models.example.com/v1', enabled: true,
-  }), /HTTPS/);
-  assert.throws(() => configs.upsertProviderConfig(ownerA, {
-    id: 'bad-provider', name: 'Bad', protocol: 'openai', baseURL: 'https://user:pass@example.com/v1', enabled: true,
-  }), /логина\/пароля/);
+  assert.throws(
+    () =>
+      configs.upsertProviderConfig(ownerA, {
+        id: 'bad-provider',
+        name: 'Bad',
+        protocol: 'unknown',
+        baseURL: 'https://example.com',
+        enabled: true,
+      }),
+    /Протокол/,
+  );
+  assert.throws(
+    () =>
+      configs.upsertProviderConfig(ownerA, {
+        id: 'bad-provider',
+        name: 'Bad',
+        protocol: 'openai',
+        baseURL: 'file:///tmp/model',
+        enabled: true,
+      }),
+    /HTTP/,
+  );
+  assert.throws(
+    () =>
+      configs.upsertProviderConfig(ownerA, {
+        id: 'bad-provider',
+        name: 'Bad',
+        protocol: 'openai',
+        baseURL: 'http://models.example.com/v1',
+        enabled: true,
+      }),
+    /HTTPS/,
+  );
+  assert.throws(
+    () =>
+      configs.upsertProviderConfig(ownerA, {
+        id: 'bad-provider',
+        name: 'Bad',
+        protocol: 'openai',
+        baseURL: 'https://user:pass@example.com/v1',
+        enabled: true,
+      }),
+    /логина\/пароля/,
+  );
 });
 
 test('manual model flags survive an enable/disable toggle from settings', async () => {
   const id = connectedChannel(ownerA, 'Flags');
 
-  const created = await call('POST', `/api/provider-channels/${id}/manual-models`,
-    { modelId: 'free-model', name: 'Free Model', isFree: true, probe: false }, ownerA);
+  const created = await call(
+    'POST',
+    `/api/provider-channels/${id}/manual-models`,
+    { modelId: 'free-model', name: 'Free Model', isFree: true, probe: false },
+    ownerA,
+  );
   assert.equal(created.status, 200);
   const [saved] = store.listManualModels(ownerA, id);
   assert.equal(saved.is_free, true);
@@ -146,8 +199,12 @@ test('manual model flags survive an enable/disable toggle from settings', async 
 
   // Переключатель видимости шлёт только enabled, и это не должно
   // обнулять название и флаг «бесплатная».
-  const toggled = await call('POST', `/api/provider-channels/${id}/manual-models`,
-    { modelId: 'free-model', enabled: false, probe: false }, ownerA);
+  const toggled = await call(
+    'POST',
+    `/api/provider-channels/${id}/manual-models`,
+    { modelId: 'free-model', enabled: false, probe: false },
+    ownerA,
+  );
   assert.equal(toggled.status, 200);
   const [afterToggle] = store.listManualModels(ownerA, id);
   assert.equal(afterToggle.enabled, false);
@@ -169,7 +226,10 @@ test('manual model flags reach the model picker catalog', async () => {
 
   const catalog = await providers.buildCatalog(owner, { force: false });
   const rows = catalog.models.filter((model) => model.sourceProviderID === id);
-  assert.deepEqual(rows.map((model) => model.modelID), ['shown']);
+  assert.deepEqual(
+    rows.map((model) => model.modelID),
+    ['shown'],
+  );
   assert.equal(rows[0].free, true);
 });
 
@@ -180,22 +240,31 @@ test('a refresh names manual models the provider no longer lists', async () => {
   // а DNS в тестовой песочнице недоступен.
   const id = configs.newCustomProviderId();
   configs.upsertProviderConfig(owner, {
-    id, name: 'Zen', protocol: 'openai', baseURL: 'https://1.1.1.1/zen/v1', enabled: true,
+    id,
+    name: 'Zen',
+    protocol: 'openai',
+    baseURL: 'https://1.1.1.1/zen/v1',
+    enabled: true,
   });
   store.setProviderKey(owner, id, 'secret-key');
-  await call('POST', `/api/provider-channels/${id}/manual-models`,
-    { modelId: 'deepseek-v3-free', probe: false }, owner);
+  await call('POST', `/api/provider-channels/${id}/manual-models`, { modelId: 'deepseek-v3-free', probe: false }, owner);
 
   // Провайдер заменил бесплатную модель на другую.
-  providers.setProviderTransportForTests(async () => new Response(
-    JSON.stringify({ data: [{ id: 'minimax-m2.6-free', name: 'MiniMax M2.6 Free' }] }),
-    { status: 200, headers: { 'content-type': 'application/json' } },
-  ));
+  providers.setProviderTransportForTests(
+    async () =>
+      new Response(JSON.stringify({ data: [{ id: 'minimax-m2.6-free', name: 'MiniMax M2.6 Free' }] }), {
+        status: 200,
+        headers: { 'content-type': 'application/json' },
+      }),
+  );
   try {
     const refreshed = await call('POST', `/api/provider-channels/${id}/refresh`, {}, owner);
     assert.equal(refreshed.status, 200);
     assert.equal(refreshed.body.status, 'live');
-    assert.deepEqual(refreshed.body.models.map((model) => model.id), ['minimax-m2.6-free']);
+    assert.deepEqual(
+      refreshed.body.models.map((model) => model.id),
+      ['minimax-m2.6-free'],
+    );
     // Старая ручная модель осталась в выборе моделей, и об этом говорят вслух.
     assert.deepEqual(refreshed.body.missingManual, ['deepseek-v3-free']);
   } finally {
@@ -257,23 +326,43 @@ test('deleting a manual model requires an id', async () => {
 });
 
 test('saving a channel reports disabled and missing-key states separately', async () => {
-  const off = await call('POST', '/api/provider-channels', {
-    name: 'Turned off', protocol: 'openai', baseURL: 'https://off.example.com/v1', enabled: false,
-  }, ownerA);
+  const off = await call(
+    'POST',
+    '/api/provider-channels',
+    {
+      name: 'Turned off',
+      protocol: 'openai',
+      baseURL: 'https://off.example.com/v1',
+      enabled: false,
+    },
+    ownerA,
+  );
   assert.equal(off.status, 200);
   // Раньше выключенный канал без ключа отвечал unauthorized и UI просил ключ.
   assert.equal(off.body.catalog.status, 'disabled');
 
-  const on = await call('POST', '/api/provider-channels', {
-    name: 'No key yet', protocol: 'openai', baseURL: 'https://nokey.example.com/v1', enabled: true,
-  }, ownerA);
+  const on = await call(
+    'POST',
+    '/api/provider-channels',
+    {
+      name: 'No key yet',
+      protocol: 'openai',
+      baseURL: 'https://nokey.example.com/v1',
+      enabled: true,
+    },
+    ownerA,
+  );
   assert.equal(on.body.catalog.status, 'unauthorized');
 });
 
 test('deleting a provider removes its key and model state atomically', () => {
   const id = configs.newCustomProviderId();
   configs.upsertProviderConfig(ownerA, {
-    id, name: 'Disposable', protocol: 'anthropic', baseURL: 'https://anthropic.example.com/v1', enabled: true,
+    id,
+    name: 'Disposable',
+    protocol: 'anthropic',
+    baseURL: 'https://anthropic.example.com/v1',
+    enabled: true,
   });
   store.setProviderKey(ownerA, id, 'secret-key');
   store.upsertManualModel(ownerA, id, { modelId: 'model-1', enabled: true });

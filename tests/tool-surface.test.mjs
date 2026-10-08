@@ -98,8 +98,12 @@ test('a streamed text part is persisted once, not once per character', async () 
   const events = [];
 
   await emitText(assistant, text, 'text', {
-    putMessage: () => { writes += 1; },
-    emit: (_sessionId, type) => { events.push(type); },
+    putMessage: () => {
+      writes += 1;
+    },
+    emit: (_sessionId, type) => {
+      events.push(type);
+    },
   });
 
   assert.equal(writes, 1, 'persisting per character turns one answer into thousands of synchronous writes');
@@ -208,9 +212,6 @@ test('every tool that can report progress is wired to the live output channel', 
     ['server/native/tools/environment.mjs', 'ensure_environment'],
     ['server/native/tools/media.mjs', 'media tools'],
   ]) {
-    assert.ok(
-      read(file).includes('ctx.signal, ctx)'),
-      `${label} must forward ctx to execBash or the card shows nothing until the end`,
-    );
+    assert.ok(read(file).includes('ctx.signal, ctx)'), `${label} must forward ctx to execBash or the card shows nothing until the end`);
   }
 });

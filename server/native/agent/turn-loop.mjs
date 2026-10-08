@@ -1,13 +1,20 @@
 import { framesFromMessages, systemPrompt, textParts } from '../agent-frames.mjs';
 import { memoryPrompt } from '../agent-memory.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, waitForRetry } from '../agent-parts.mjs';
-import {
-  buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget,
-} from '../autopilot.mjs';
+import { buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget } from '../autopilot.mjs';
 import { effectiveToolOptions, filterChatTools, normalizeChatToolOptions } from '../chat-tool-options.mjs';
 import { isClustered, releaseTurnLock, renewTurnLock } from '../cluster.mjs';
 import { MAX_AGENT_STEPS_CEILING } from '../config.mjs';
-import { compactFrames, completionGate, contextWeight, createTurnStrategy, MAX_COMPLETION_GATE_REMINDERS, observeTool, shouldEnforceCompletionGate, strategyGuidance } from '../context.mjs';
+import {
+  compactFrames,
+  completionGate,
+  contextWeight,
+  createTurnStrategy,
+  MAX_COMPLETION_GATE_REMINDERS,
+  observeTool,
+  shouldEnforceCompletionGate,
+  strategyGuidance,
+} from '../context.mjs';
 import { checkpointDurableJob, markDurableJobFinalizing } from '../durable-jobs.mjs';
 import { emit } from '../events.mjs';
 import { executorNetworkless, executorRequired, probeExecutor } from '../executor-client.mjs';
@@ -23,12 +30,24 @@ import { availableToolDefinitions } from '../tools.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { createTurnTelemetry, finalizeTurnTelemetry, recordCompletionGate, recordModelCall, recordToolCall } from '../turn-telemetry.mjs';
 import {
-  classifyTaskOutcome, createLoopGuard, guardStopError, loopStopSatisfiesTask, observeToolLoop, stepLimitError,
+  classifyTaskOutcome,
+  createLoopGuard,
+  guardStopError,
+  loopStopSatisfiesTask,
+  observeToolLoop,
+  stepLimitError,
 } from '../turn-trust.mjs';
 import { agentFeatures, userSettingsPrompt } from '../user-settings-prompt.mjs';
 import { runtimeCapabilityPrompt } from '../workspace-policy.mjs';
 import { framesWithDossier } from './dossier.mjs';
-import { demoteDraftTextToReasoning, emitPart, emitText, persistAssistant, promoteReasoningToText, settleOpenToolParts } from './message-parts.mjs';
+import {
+  demoteDraftTextToReasoning,
+  emitPart,
+  emitText,
+  persistAssistant,
+  promoteReasoningToText,
+  settleOpenToolParts,
+} from './message-parts.mjs';
 import { resumePendingQuestion } from './questions.mjs';
 import { interruptedToolParts } from './recovery.mjs';
 import { formatIssues, reviewTurn, shouldReview } from './reviewer.mjs';
@@ -62,7 +81,8 @@ function resetLoopGuardCounters(guard) {
 // Провайдер отказал из-за длины запроса («Prompt exceeds max length»,
 // context_length_exceeded и т.п.). Это не повод заканчивать ход: история
 // сжимается сильнее и шаг повторяется.
-const CONTEXT_OVERFLOW_RE = /prompt (?:exceeds|is too long)|exceeds (?:the )?max(?:imum)? (?:length|context|tokens?)|context[_ ](?:length|window)(?:[_ ]exceeded)?|maximum context length|too many (?:input )?tokens|input (?:is )?too long|request too large|reduce the length/i;
+const CONTEXT_OVERFLOW_RE =
+  /prompt (?:exceeds|is too long)|exceeds (?:the )?max(?:imum)? (?:length|context|tokens?)|context[_ ](?:length|window)(?:[_ ]exceeded)?|maximum context length|too many (?:input )?tokens|input (?:is )?too long|request too large|reduce the length/i;
 const MIN_CONTEXT_BUDGET = 24_000;
 const MAX_OVERFLOW_RETRIES = 4;
 // Запоминаем сработавший бюджет для модели, чтобы следующие ходы не
@@ -101,22 +121,31 @@ function remainingPlanItems(strategy) {
 // A reply with no tool call whose last sentence only announces the next step
 // ("Let me close the browser now.", "Сейчас запущу тесты.") is not a final
 // answer: the model stopped mid-task. Detect that narrow pattern.
-const DANGLING_INTENT_RE = /(?:^|[.!?\n]\s*)(?:let me(?! know)|let's|i'll|i will|i'm going to|now i(?:'ll| will)|next,? i|сейчас|теперь (?:я )?(?:запущу|проверю|открою|закрою|сделаю|выполню|попробую|исправлю)|далее|давай(?:те)?|пробую|попробую|запускаю|открываю|проверяю)(?=[\s,.:!…']|$)[^.!?\n]{0,160}[.!…:]?\s*$/iu;
+const DANGLING_INTENT_RE =
+  /(?:^|[.!?\n]\s*)(?:let me(?! know)|let's|i'll|i will|i'm going to|now i(?:'ll| will)|next,? i|сейчас|теперь (?:я )?(?:запущу|проверю|открою|закрою|сделаю|выполню|попробую|исправлю)|далее|давай(?:те)?|пробую|попробую|запускаю|открываю|проверяю)(?=[\s,.:!…']|$)[^.!?\n]{0,160}[.!…:]?\s*$/iu;
 const MAX_DANGLING_INTENT_NUDGES = 2;
 
 export function expectsUserReply(text) {
-  const tail = String(text || '').trim().split(/\n\s*\n/).at(-1) || '';
+  const tail =
+    String(text || '')
+      .trim()
+      .split(/\n\s*\n/)
+      .at(-1) || '';
   // A request for the user's next decision is a stopping point, even when
   // followed by "and I will start". Optional offers are not blocking requests.
   if (/^(?:если (?:хотите|нужно|понадобится)|if you (?:want|need)|let me know if)/iu.test(tail)) return false;
   // Ответ, который заканчивается вопросом к пользователю («Какой вариант
   // выбрать?», «Would you like me to…?»), — тоже точка остановки.
   if (/\?\s*[*_)»"']*\s*$/u.test(tail) && !/```\s*$/.test(tail)) return true;
-  return /^(?:\*{0,2})(?:скажите|скажи|пришлите|пришли|уточните|уточни|выберите|выбери|подтвердите|подтверди|укажите|укажи|сообщите|сообщи|что (?:делаем|сделать) дальше|please (?:provide|send|choose|confirm|specify)|(?:provide|send|choose|confirm|specify) (?:the|your|a)|which (?:option|project)|what (?:would you like|should we))/iu.test(tail);
+  return /^(?:\*{0,2})(?:скажите|скажи|пришлите|пришли|уточните|уточни|выберите|выбери|подтвердите|подтверди|укажите|укажи|сообщите|сообщи|что (?:делаем|сделать) дальше|please (?:provide|send|choose|confirm|specify)|(?:provide|send|choose|confirm|specify) (?:the|your|a)|which (?:option|project)|what (?:would you like|should we))/iu.test(
+    tail,
+  );
 }
 
 export function endsWithDanglingIntent(text) {
-  const tail = String(text || '').trim().slice(-400);
+  const tail = String(text || '')
+    .trim()
+    .slice(-400);
   if (!tail || expectsUserReply(text)) return false;
   return DANGLING_INTENT_RE.test(tail);
 }
@@ -140,13 +169,21 @@ import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mj
 import { createToolCallSink } from './tool-stream.mjs';
 
 export function notifyTurnIdle(sessionId) {
-  if (isClustered()) { try { releaseTurnLock(sessionId); } catch {} }
-  try { releaseTurnCapacity(sessionId); } catch {}
+  if (isClustered()) {
+    try {
+      releaseTurnLock(sessionId);
+    } catch {}
+  }
+  try {
+    releaseTurnCapacity(sessionId);
+  } catch {}
   const waiters = idleWaiters.get(sessionId);
   if (!waiters) return;
   idleWaiters.delete(sessionId);
   for (const resolve of waiters) {
-    try { resolve(); } catch {}
+    try {
+      resolve();
+    } catch {}
   }
 }
 
@@ -163,7 +200,14 @@ export function updateTurn(sessionId, state, transitionOptions = {}) {
   assertTurnTransition(getTurn(sessionId), projection, transitionOptions);
   setTurn(sessionId, projection);
   emit(sessionId, 'session.status', {
-    status: projection.lifecycle === 'waiting_user_input' ? 'busy' : projection.lifecycle === 'failed' ? 'error' : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled' ? 'idle' : 'busy',
+    status:
+      projection.lifecycle === 'waiting_user_input'
+        ? 'busy'
+        : projection.lifecycle === 'failed'
+          ? 'error'
+          : projection.lifecycle === 'completed' || projection.lifecycle === 'cancelled'
+            ? 'idle'
+            : 'busy',
     lifecycle: projection.lifecycle,
     turnID: projection.turnId,
     waiting: projection.lifecycle === 'waiting_user_input' || projection.lifecycle === 'waiting_permission',
@@ -171,14 +215,30 @@ export function updateTurn(sessionId, state, transitionOptions = {}) {
   return projection;
 }
 
-export async function finalizeAssistant({ sessionId, assistant, strategy, usage, outcome, telemetry = null, finish = 'stop', note = '', error = null, publicError = '', lifecycle = 'completed', verdict = 'completed', reason = 'model_final' }) {
+export async function finalizeAssistant({
+  sessionId,
+  assistant,
+  strategy,
+  usage,
+  outcome,
+  telemetry = null,
+  finish = 'stop',
+  note = '',
+  error = null,
+  publicError = '',
+  lifecycle = 'completed',
+  verdict = 'completed',
+  reason = 'model_final',
+}) {
   if (note) await emitText(assistant, note, 'text', { putMessage, emit });
   assistant.time.completed = Date.now();
   assistant.info.finish = finish;
-  assistant.info.tokens = usage ? {
-    input: usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens ?? usage.promptTokenCount,
-    output: usage.completion_tokens ?? usage.output_tokens ?? usage.outputTokens ?? usage.candidatesTokenCount,
-  } : undefined;
+  assistant.info.tokens = usage
+    ? {
+        input: usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens ?? usage.promptTokenCount,
+        output: usage.completion_tokens ?? usage.output_tokens ?? usage.outputTokens ?? usage.candidatesTokenCount,
+      }
+    : undefined;
   assistant.info.strategy = strategyInfo(strategy);
   assistant.info.outcome = outcome;
   assistant.info.telemetry = finalizeTurnTelemetry(telemetry, { outcome, strategy, model: assistant.info.model || '', reason });
@@ -194,7 +254,9 @@ export async function finalizeAssistant({ sessionId, assistant, strategy, usage,
   settleOpenToolParts(assistant, { putMessage, emit });
   persistAssistant(assistant, { putMessage, emit });
   if (assistant.info.telemetry) emit(sessionId, 'turn.telemetry', { telemetry: assistant.info.telemetry });
-  try { markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed }); } catch {}
+  try {
+    markDurableJobFinalizing(sessionId, { status: outcome?.status || verdict, reason, completedAt: assistant.time.completed });
+  } catch {}
   updateTurn(sessionId, { lifecycle, verdict, since: Date.now(), reason });
   emit(sessionId, 'session.idle', {});
   return assistant;
@@ -216,9 +278,11 @@ export function turnErrorInfo(error, publicError = '') {
 
 /** A structured stop report has substance beyond the error itself. */
 export function hasStructuredSummary(strategy) {
-  return (Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0)
-    || (Array.isArray(strategy?.plan) && strategy.plan.length > 0)
-    || Boolean(strategy?.lastVerificationEvidence);
+  return (
+    (Array.isArray(strategy?.changedPaths) && strategy.changedPaths.length > 0) ||
+    (Array.isArray(strategy?.plan) && strategy.plan.length > 0) ||
+    Boolean(strategy?.lastVerificationEvidence)
+  );
 }
 
 export function safeAttemptInfo(attempt) {
@@ -230,29 +294,39 @@ export function safeAttemptInfo(attempt) {
 }
 
 export function checkpointState(sessionId, runtime, strategy, fields = {}) {
-  if (isClustered()) { try { renewTurnLock(sessionId); } catch {} }
+  if (isClustered()) {
+    try {
+      renewTurnLock(sessionId);
+    } catch {}
+  }
   try {
-    checkpointDurableJob(sessionId, {
-      phase: fields.phase || 'running',
-      toolOptions: runtime.toolOptions,
-      stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
-      gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
-      intentNudges: Number(fields.intentNudges ?? runtime.intentNudges ?? 0),
-      reviewsDone: Number(fields.reviewsDone ?? runtime.reviewsDone ?? 0),
-      visualNudges: Number(fields.visualNudges ?? runtime.visualNudges ?? 0),
-      lastUsage: fields.lastUsage ?? runtime.lastUsage ?? null,
-      strategy: strategy ? {
-        goal: strategy.goal,
-        plan: strategy.plan,
-        changed: strategy.changed,
-        needsVerification: strategy.needsVerification,
-        verificationAttempts: strategy.verificationAttempts,
-        lastVerificationOk: strategy.lastVerificationOk,
-        toolErrors: strategy.toolErrors,
-      } : null,
-      ambiguousCalls: [...(runtime.recovery?.ambiguousSignatures || [])],
-      recoveryInspected: Boolean(runtime.recovery?.inspected),
-    }, { modelPlan: runtime.modelPlan });
+    checkpointDurableJob(
+      sessionId,
+      {
+        phase: fields.phase || 'running',
+        toolOptions: runtime.toolOptions,
+        stepsUsed: Number(fields.stepsUsed ?? runtime.stepsUsed ?? 0),
+        gateReminders: Number(fields.gateReminders ?? runtime.gateReminders ?? 0),
+        intentNudges: Number(fields.intentNudges ?? runtime.intentNudges ?? 0),
+        reviewsDone: Number(fields.reviewsDone ?? runtime.reviewsDone ?? 0),
+        visualNudges: Number(fields.visualNudges ?? runtime.visualNudges ?? 0),
+        lastUsage: fields.lastUsage ?? runtime.lastUsage ?? null,
+        strategy: strategy
+          ? {
+              goal: strategy.goal,
+              plan: strategy.plan,
+              changed: strategy.changed,
+              needsVerification: strategy.needsVerification,
+              verificationAttempts: strategy.verificationAttempts,
+              lastVerificationOk: strategy.lastVerificationOk,
+              toolErrors: strategy.toolErrors,
+            }
+          : null,
+        ambiguousCalls: [...(runtime.recovery?.ambiguousSignatures || [])],
+        recoveryInspected: Boolean(runtime.recovery?.inspected),
+      },
+      { modelPlan: runtime.modelPlan },
+    );
   } catch {}
 }
 
@@ -312,14 +386,18 @@ export function synthesizeTurnSummary({ strategy, outcome, note = '', error = nu
 
   if (hasEvidence) {
     const v = strategy.lastVerificationEvidence;
-    lines.push(v.executable === false
-      ? '**3. Верификация:** Файлы прочитаны после изменений. Запуск тестов и исполняемых проверок недоступен; их результат не подтверждён.'
-      : `**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`);
+    lines.push(
+      v.executable === false
+        ? '**3. Верификация:** Файлы прочитаны после изменений. Запуск тестов и исполняемых проверок недоступен; их результат не подтверждён.'
+        : `**3. Верификация:** Проверка выполнена через инструмент \`${v.tool}\` (${v.ok ? 'успешно' : 'с замечаниями'}).`,
+    );
     if (v.detail) lines.push(`> \`${v.detail.slice(0, 200)}\``);
     lines.push('');
   } else if (changed && strategy?.gitEvidence) {
     // Коммит или чистый git status — это сохранение, а не проверка работы.
-    lines.push(`**3. Верификация:** не выполнялась. Git: ${({ commit: 'изменения закоммичены', create_branch: 'создана ветка' })[strategy.gitEvidence.action] || 'рабочее дерево чистое'}, но это не подтверждает, что изменения работают.`);
+    lines.push(
+      `**3. Верификация:** не выполнялась. Git: ${({ commit: 'изменения закоммичены', create_branch: 'создана ветка' })[strategy.gitEvidence.action] || 'рабочее дерево чистое'}, но это не подтверждает, что изменения работают.`,
+    );
     lines.push('');
   }
 
@@ -346,7 +424,13 @@ async function runReview({ assistant, runtime, goal, strategy, workspace, draft,
     type: 'tool',
     tool: 'review',
     callID: `review_${partId()}`,
-    state: { status: 'running', input: { files: (strategy.changedPaths || []).slice(-20) }, title: 'Ревью изменений перед ответом', metadata: { runtimeReview: true }, time: { start: Date.now() } },
+    state: {
+      status: 'running',
+      input: { files: (strategy.changedPaths || []).slice(-20) },
+      title: 'Ревью изменений перед ответом',
+      metadata: { runtimeReview: true },
+      time: { start: Date.now() },
+    },
   };
   emitPart(assistant, part, { putMessage, emit });
   let review = null;
@@ -374,8 +458,22 @@ async function runReview({ assistant, runtime, goal, strategy, workspace, draft,
   return review;
 }
 
-export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requestedModel, system, toolOptions: requestedToolOptions = null, goal, controller, resume = false, job = null }) {
-  const toolOptions = effectiveToolOptions(normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions), availableToolDefinitions());
+export async function executeTurnLifecycle({
+  sessionId,
+  ownerId,
+  assistant,
+  requestedModel,
+  system,
+  toolOptions: requestedToolOptions = null,
+  goal,
+  controller,
+  resume = false,
+  job = null,
+}) {
+  const toolOptions = effectiveToolOptions(
+    normalizeChatToolOptions(resume ? job?.checkpoint?.toolOptions : requestedToolOptions),
+    availableToolDefinitions(),
+  );
   const turnTools = () => filterChatTools(availableToolDefinitions(), toolOptions);
   // Описание среды для модели опирается на ответ самого executor о его сети.
   if (executorRequired() && executorNetworkless() === null) await probeExecutor().catch(() => null);
@@ -389,11 +487,20 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     const names = [...String(goal || '').matchAll(/(?:^|\s)[/$]([a-z0-9]+(?:-[a-z0-9]+)*)\b/g)].map((m) => m[1]);
     if (names.length) {
       const library = (await import('../store/memory.mjs')).listSkills(ownerId);
-      const selected = [...new Set([...settings.selected, ...names.filter((n) => library.some((s) => s.name === n && s.enabled))])].slice(0, 8);
+      const selected = [...new Set([...settings.selected, ...names.filter((n) => library.some((s) => s.name === n && s.enabled))])].slice(
+        0,
+        8,
+      );
       setChatSkillSettings(ownerId, sessionId, { selected });
     }
   }
-  const ownerPrompt = [userSettingsPrompt(ownerId), features.memory ? memoryPrompt(ownerId, sessionId, { includeSkills: false }) : '', skillsPrompt(ownerId, sessionId, workspaceFor(sessionId))].filter(Boolean).join('\n\n');
+  const ownerPrompt = [
+    userSettingsPrompt(ownerId),
+    features.memory ? memoryPrompt(ownerId, sessionId, { includeSkills: false }) : '',
+    skillsPrompt(ownerId, sessionId, workspaceFor(sessionId)),
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   const strategy = resume ? rebuildStrategy(goal, assistant) : createTurnStrategy(goal);
   let lastUsage = job?.checkpoint?.lastUsage || null;
   let lockPulse = null;
@@ -438,13 +545,20 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
     checkpointState(sessionId, runtime, strategy, { phase: resume ? 'resumed' : 'prepared' });
     if (isClustered()) {
       lockPulse = setInterval(() => {
-        try { renewTurnLock(sessionId); } catch {}
+        try {
+          renewTurnLock(sessionId);
+        } catch {}
       }, 5_000);
       lockPulse.unref?.();
     }
-    capacityPulse = setInterval(() => {
-      try { renewTurnCapacity(sessionId, { ttlMs: TURN_CAPACITY_TTL_MS }); } catch {}
-    }, Math.min(30_000, Math.max(10_000, Math.floor(TURN_CAPACITY_TTL_MS / 3))));
+    capacityPulse = setInterval(
+      () => {
+        try {
+          renewTurnCapacity(sessionId, { ttlMs: TURN_CAPACITY_TTL_MS });
+        } catch {}
+      },
+      Math.min(30_000, Math.max(10_000, Math.floor(TURN_CAPACITY_TTL_MS / 3))),
+    );
     capacityPulse.unref?.();
 
     const workspace = workspaceFor(sessionId);
@@ -482,7 +596,23 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       let response;
       try {
         response = await callModelAutopilot(ownerId, runtime.modelPlan, {
-          system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext, bashFirst: toolOptions.bashFirst }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, recoveryGuidance(runtime.recovery), strategyGuidance(strategy), system || ''].filter(Boolean).join('\n\n'),
+          system: [
+            systemPrompt({
+              toolNames: turnTools().map((t) => t.name),
+              goal,
+              projectContext: runtime.projectContext,
+              bashFirst: toolOptions.bashFirst,
+            }),
+            runtimeCapabilityPrompt(),
+            mediaPrompt,
+            ownerPrompt,
+            runtime.projectContext,
+            recoveryGuidance(runtime.recovery),
+            strategyGuidance(strategy),
+            system || '',
+          ]
+            .filter(Boolean)
+            .join('\n\n'),
           frames: providerFrames,
           tools: turnTools(),
           signal: controller.signal,
@@ -517,7 +647,11 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         throw err;
       }
       modelStepRetries = 0;
-      recordModelCall(runtime.telemetry, { response, latencyMs: Date.now() - modelStartedAt, contextChars: JSON.stringify(providerFrames).length });
+      recordModelCall(runtime.telemetry, {
+        response,
+        latencyMs: Date.now() - modelStartedAt,
+        contextChars: JSON.stringify(providerFrames).length,
+      });
       const streamed = live.finish();
       runtime.modelPlan = promoteModelPlan(runtime.modelPlan, response.model);
       assistant.info.model = modelKey(response.model);
@@ -554,9 +688,10 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       if (calls.length > 0 || !cutOff) continuations = 0;
       if (calls.length === 0) {
         const waitingForUser = expectsUserReply(response.text);
-        const planGate = !waitingForUser && !completionGate(strategy) && runtime.gateReminders < MAX_COMPLETION_GATE_REMINDERS
-          ? planContinuationGate(strategy)
-          : null;
+        const planGate =
+          !waitingForUser && !completionGate(strategy) && runtime.gateReminders < MAX_COMPLETION_GATE_REMINDERS
+            ? planContinuationGate(strategy)
+            : null;
         if (planGate) {
           runtime.gateReminders += 1;
           recordCompletionGate(runtime.telemetry);
@@ -581,14 +716,21 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
           frames.push({
             role: 'user',
-            content: '[Runtime] Your last message announced a next step but contained no tool call and no final answer, so the turn would end here. If work remains, perform that step now with tools. If the task is complete, write the final answer for the user (in the user\'s language) with the actual results. Do not claim actions you did not perform.',
+            content:
+              "[Runtime] Your last message announced a next step but contained no tool call and no final answer, so the turn would end here. If work remains, perform that step now with tools. If the task is complete, write the final answer for the user (in the user's language) with the actual results. Do not claim actions you did not perform.",
           });
           checkpointState(sessionId, runtime, strategy, { phase: 'intent_gate', intentNudges: runtime.intentNudges });
           continue;
         }
-        if (!waitingForUser && !reasoningOnly && runtime.visualNudges < 1 && features.visualCheck
-          && uiFilesChanged(strategy).length > 0 && strategy.visualEpoch !== strategy.mutationEpoch
-          && turnTools().some((t) => t.name === 'visual_check')) {
+        if (
+          !waitingForUser &&
+          !reasoningOnly &&
+          runtime.visualNudges < 1 &&
+          features.visualCheck &&
+          uiFilesChanged(strategy).length > 0 &&
+          strategy.visualEpoch !== strategy.mutationEpoch &&
+          turnTools().some((t) => t.name === 'visual_check')
+        ) {
           runtime.visualNudges += 1;
           frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
           frames.push({
@@ -600,7 +742,15 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
         }
         if (!reasoningOnly && shouldReview(strategy, { enabled: features.review, reviewsDone: runtime.reviewsDone, waitingForUser })) {
           runtime.reviewsDone += 1;
-          const review = await runReview({ assistant, runtime, goal, strategy, workspace, draft: response.text, signal: controller.signal });
+          const review = await runReview({
+            assistant,
+            runtime,
+            goal,
+            strategy,
+            workspace,
+            draft: response.text,
+            signal: controller.signal,
+          });
           checkpointState(sessionId, runtime, strategy, { phase: 'review', reviewsDone: runtime.reviewsDone });
           if (review?.verdict === 'fix') {
             demoteDraftTextToReasoning(assistant, streamed.parts, { putMessage, emit });
@@ -618,17 +768,28 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
             frames.push({ role: 'assistant', content: '', toolCalls: [] });
             frames.push({
               role: 'user',
-              content: '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
+              content:
+                '[System Instruction] All tool operations are done. Please write your final structured summary report for the user in Russian (detailing: 1. What was done/changed with file paths; 2. Verification results; 3. Final status). Do not call any tools.',
             });
             const summaryRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
-              system: [systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+              system: [
+                systemPrompt({ toolNames: turnTools().map((t) => t.name), goal, projectContext: runtime.projectContext }),
+                runtimeCapabilityPrompt(),
+                mediaPrompt,
+                ownerPrompt,
+                runtime.projectContext,
+                system || '',
+              ]
+                .filter(Boolean)
+                .join('\n\n'),
               frames: compactFrames(frames),
               tools: [],
               signal: controller.signal,
             });
             finalText = String(summaryRes.text || '').trim();
           } catch (err) {
-            if (!controller.signal.aborted) console.warn(`[turn] ${sessionId}: final summary request failed: ${String(err?.message || err).slice(0, 300)}`);
+            if (!controller.signal.aborted)
+              console.warn(`[turn] ${sessionId}: final summary request failed: ${String(err?.message || err).slice(0, 300)}`);
           }
         }
         let promotedReasoning = false;
@@ -709,7 +870,10 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       if (stepMedia.length) {
         frames.push({
           role: 'user',
-          content: `[Runtime] Visual content returned by view_media (${stepMedia.length} image${stepMedia.length > 1 ? 's' : ''}): ${stepMedia.map((m) => m.name).filter(Boolean).join('; ')}. This is not a new user request; continue the task using what you see.`,
+          content: `[Runtime] Visual content returned by view_media (${stepMedia.length} image${stepMedia.length > 1 ? 's' : ''}): ${stepMedia
+            .map((m) => m.name)
+            .filter(Boolean)
+            .join('; ')}. This is not a new user request; continue the task using what you see.`,
           media: stepMedia.slice(0, 12),
           runtimeMedia: true,
         });
@@ -730,14 +894,24 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
             content: `[Runtime] ${guardedStop.message} Tool calls are disabled for the rest of this turn. Write the final answer for the user now, in the user's language, using only results you already have: what was done, what was actually checked, and what was not checked. Do not call tools.`,
           });
           const finalRes = await callModelAutopilot(ownerId, runtime.modelPlan, {
-            system: [systemPrompt({ toolNames: [], goal, projectContext: runtime.projectContext }), runtimeCapabilityPrompt(), mediaPrompt, ownerPrompt, runtime.projectContext, system || ''].filter(Boolean).join('\n\n'),
+            system: [
+              systemPrompt({ toolNames: [], goal, projectContext: runtime.projectContext }),
+              runtimeCapabilityPrompt(),
+              mediaPrompt,
+              ownerPrompt,
+              runtime.projectContext,
+              system || '',
+            ]
+              .filter(Boolean)
+              .join('\n\n'),
             frames: compactFrames(frames),
             tools: [],
             signal: controller.signal,
           });
           finalText = splitReasoningFromContent(String(finalRes.text || '').trim()).text || '';
         } catch (err) {
-          if (!controller.signal.aborted) console.warn(`[turn] ${sessionId}: final answer after loop stop failed: ${String(err?.message || err).slice(0, 300)}`);
+          if (!controller.signal.aborted)
+            console.warn(`[turn] ${sessionId}: final answer after loop stop failed: ${String(err?.message || err).slice(0, 300)}`);
         }
         await emitText(assistant, finalText.trim() || synthesizeTurnSummary({ strategy, outcome }), 'text', { putMessage, emit });
       }
@@ -795,16 +969,13 @@ export async function executeTurnLifecycle({ sessionId, ownerId, assistant, requ
       });
     }
     const modelLocked = Boolean(runtime?.modelPlan?.locked);
-    const publicError = modelLocked && err?.modelLocked
-      ? (err?.publicMessage || err?.message || String(err))
-      : publicProviderErrorMessage(err);
+    const publicError =
+      modelLocked && err?.modelLocked ? err?.publicMessage || err?.message || String(err) : publicProviderErrorMessage(err);
     const outcome = classifyTaskOutcome({ strategy, kind: 'failed' });
     // The error banner already states the reason. Repeating it as reply text
     // showed the same line twice and replayed it to the model on the next turn
     // as if the assistant had said it. Only a real stop report is written.
-    const summary = hasStructuredSummary(strategy)
-      ? synthesizeTurnSummary({ strategy, outcome, error: { message: publicError } })
-      : '';
+    const summary = hasStructuredSummary(strategy) ? synthesizeTurnSummary({ strategy, outcome, error: { message: publicError } }) : '';
     return await finalizeAssistant({
       sessionId,
       assistant,

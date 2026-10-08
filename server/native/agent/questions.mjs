@@ -14,8 +14,16 @@ export function waitWithAbort(map, id, sessionId, signal) {
     };
     map.set(id, {
       sessionId,
-      resolve: (value) => { map.delete(id); cleanup(); resolve(value); },
-      reject: (err) => { map.delete(id); cleanup(); reject(err); },
+      resolve: (value) => {
+        map.delete(id);
+        cleanup();
+        resolve(value);
+      },
+      reject: (err) => {
+        map.delete(id);
+        cleanup();
+        reject(err);
+      },
     });
     signal?.addEventListener('abort', onAbort, { once: true });
   });
@@ -55,7 +63,11 @@ export async function resumePendingQuestion(sessionId, assistant, signal, update
     : findQuestionForRecovery(sessionId, inputQuestions);
   if (!stored || stored.sessionID !== sessionId) return false;
 
-  updateTurn?.(sessionId, { lifecycle: stored.status === 'pending' ? 'waiting_user_input' : 'running', since: Date.now(), reason: 'question_recovered' });
+  updateTurn?.(sessionId, {
+    lifecycle: stored.status === 'pending' ? 'waiting_user_input' : 'running',
+    since: Date.now(),
+    reason: 'question_recovered',
+  });
   if (stored.status === 'pending') emit(sessionId, 'question.asked', { id: stored.id, questions: stored.questions, recovered: true });
   const answers = await waitForQuestionAnswer(stored, sessionId, signal);
   part.state = {

@@ -12,4 +12,6 @@ try {
   const quick = String(db.prepare('PRAGMA quick_check').get()?.quick_check || '');
   if (quick !== 'ok') throw new Error(`SQLite quick_check failed: ${quick}`);
   console.log(JSON.stringify({ ok: true, ...result, latest: LATEST_SCHEMA_VERSION, quickCheck: quick }));
-} finally { db.close(); }
+} finally {
+  db.close();
+}

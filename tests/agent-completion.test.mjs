@@ -19,17 +19,38 @@ const owner = 'completion@example.com';
 store.createUser(owner, 'test-hash');
 configs.upsertProviderConfig(owner, { id: 'channel_test', name: 'Test', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', enabled: true });
 store.setProviderKey(owner, 'channel_test', 'test-key');
-test.after(() => { providers.setProviderTransportForTests(null); fs.rmSync(root, { recursive: true, force: true }); });
+test.after(() => {
+  providers.setProviderTransportForTests(null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 function response(delta, finish = 'stop') {
-  return new Response([ { choices: [{ delta }] }, { choices: [{ delta: {}, finish_reason: finish }] }, '[DONE]' ].map((x) => `data: ${typeof x === 'string' ? x : JSON.stringify(x)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    [{ choices: [{ delta }] }, { choices: [{ delta: {}, finish_reason: finish }] }, '[DONE]']
+      .map((x) => `data: ${typeof x === 'string' ? x : JSON.stringify(x)}\n\n`)
+      .join(''),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
 }
-const screenshotFinal = 'Вывод\n\nСреда готова, но воркспейс пуст.\n\nСкажите, что делаем: развернуть проект с нуля, разобрать репозиторий или подготовить сборку — и я начну.';
+const screenshotFinal =
+  'Вывод\n\nСреда готова, но воркспейс пуст.\n\nСкажите, что делаем: развернуть проект с нуля, разобрать репозиторий или подготовить сборку — и я начну.';
 
 for (const [name, tool, args, final, status] of [
   ['environment inspection', 'bash', { command: 'command -v node; command -v python3; ls -la' }, screenshotFinal, 'needs_input'],
-  ['ordinary read-only report', 'bash', { command: 'command -v node' }, 'Осмотр закончен: Node доступен, файлов проекта пока нет.', 'completed'],
-  ['stale read-only plan', 'todowrite', { todos: [{ id: 'audit', content: 'Осмотреть среду', status: 'in_progress', priority: 'medium' }] }, 'Осмотр среды завершён. Файлов проекта пока нет.', 'partial'],
+  [
+    'ordinary read-only report',
+    'bash',
+    { command: 'command -v node' },
+    'Осмотр закончен: Node доступен, файлов проекта пока нет.',
+    'completed',
+  ],
+  [
+    'stale read-only plan',
+    'todowrite',
+    { todos: [{ id: 'audit', content: 'Осмотреть среду', status: 'in_progress', priority: 'medium' }] },
+    'Осмотр среды завершён. Файлов проекта пока нет.',
+    'partial',
+  ],
 ]) {
   test(`${name} settles once without tools after the final answer`, async () => {
     agent.resetAgentStateForTests();
@@ -37,14 +58,26 @@ for (const [name, tool, args, final, status] of [
     store.createChat(sid, owner, 'Test');
     let calls = 0;
     const statuses = [];
-    const unsubscribe = events.subscribe(sid, (frame) => { if (frame.event?.type === 'session.status') statuses.push(frame.event.properties.status); });
+    const unsubscribe = events.subscribe(sid, (frame) => {
+      if (frame.event?.type === 'session.status') statuses.push(frame.event.properties.status);
+    });
     providers.setProviderTransportForTests(async () => {
       calls++;
-      if (calls === 1) return response({ tool_calls: [{ index: 0, id: 'inspect', function: { name: tool, arguments: JSON.stringify(args) } }] }, 'tool_calls');
+      if (calls === 1)
+        return response(
+          { tool_calls: [{ index: 0, id: 'inspect', function: { name: tool, arguments: JSON.stringify(args) } }] },
+          'tool_calls',
+        );
       return response({ content: final });
     });
     try {
-      const assistant = await agent.runTurn({ sessionId: sid, ownerId: owner, parts: [{ type: 'text', text: 'Изучи среду и сделай вывод.' }], model: { providerID: 'channel_test', modelID: 'model' }, system: '' });
+      const assistant = await agent.runTurn({
+        sessionId: sid,
+        ownerId: owner,
+        parts: [{ type: 'text', text: 'Изучи среду и сделай вывод.' }],
+        model: { providerID: 'channel_test', modelID: 'model' },
+        system: '',
+      });
       assert.equal(calls, 2, 'no continuation request after a final report');
       assert.equal(assistant.info.strategy.changed, false);
       assert.equal(assistant.info.outcome.status, status);
@@ -53,7 +86,10 @@ for (const [name, tool, args, final, status] of [
       assert.equal(executed[0].state.status, 'completed');
       assert.equal(agent.isTurnActive(sid), false);
       assert.equal(statuses.at(-1), 'idle');
-    } finally { unsubscribe(); agent.resetAgentStateForTests(); }
+    } finally {
+      unsubscribe();
+      agent.resetAgentStateForTests();
+    }
   });
 }
 
@@ -72,5 +108,8 @@ test('fallback reports never invent verification or success after cancellation',
     if (status === 'cancelled') assert.match(text, /остановлен пользователем/);
     if (status === 'partial') assert.match(text, /не полностью/);
   }
-  assert.match(synthesizeTurnSummary({ strategy: { changedPaths: ['a.js'] }, outcome: { status: 'cancelled' } }), /Ход остановлен пользователем/);
+  assert.match(
+    synthesizeTurnSummary({ strategy: { changedPaths: ['a.js'] }, outcome: { status: 'cancelled' } }),
+    /Ход остановлен пользователем/,
+  );
 });

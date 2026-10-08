@@ -30,14 +30,18 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     try {
       const map = await executeTool('repo_map', { maxFiles: 1800, maxSymbolsPerFile: 4 }, { workspace, signal });
       repositorySnapshot = toolOutputText(map).slice(0, 60_000);
-    } catch { /* repository map is an accelerator, not a hard dependency */ }
+    } catch {
+      /* repository map is an accelerator, not a hard dependency */
+    }
     mapDone?.('Карта репозитория готова');
   }
 
-  const frames = [{
-    role: 'user',
-    content: [prompt, repositorySnapshot && `[Automatic repository snapshot]\n${repositorySnapshot}`].filter(Boolean).join('\n\n'),
-  }];
+  const frames = [
+    {
+      role: 'user',
+      content: [prompt, repositorySnapshot && `[Automatic repository snapshot]\n${repositorySnapshot}`].filter(Boolean).join('\n\n'),
+    },
+  ];
   const maxSteps = subagentStepBudget(profile, prompt);
   let plan = modelPlan;
   let selectedModel = plan?.candidates?.[0] || null;
@@ -62,11 +66,15 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     plan = promoteModelPlan(plan, selectedModel);
     const calls = response.toolCalls || [];
     // Обрыв стрима или лимит токенов — не готовый отчёт: просим продолжить.
-    const cutOff = Boolean(response.interrupted) || /^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/i.test(String(response.finish || ''));
+    const cutOff =
+      Boolean(response.interrupted) || /^(length|max_tokens|max_output_tokens|MAX_TOKENS)$/i.test(String(response.finish || ''));
     if (calls.length === 0 && cutOff && continuations < 2) {
       continuations += 1;
       frames.push({ role: 'assistant', content: response.text || '', toolCalls: [] });
-      frames.push({ role: 'user', content: '[Runtime] Your previous response was cut off. Continue exactly from where you stopped without repeating earlier text.' });
+      frames.push({
+        role: 'user',
+        content: '[Runtime] Your previous response was cut off. Continue exactly from where you stopped without repeating earlier text.',
+      });
       continue;
     }
     if (response.text && calls.length > 0) progress?.step(`Модель: ${response.text}`);
@@ -85,7 +93,13 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
     for (const call of calls) {
       if (!tools.some((tool) => tool.name === call.name)) {
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Tool ${call.name} is not available to the ${profile.name} subagent.`, isError: true });
+        frames.push({
+          role: 'tool',
+          callId: call.id,
+          name: call.name,
+          content: `Tool ${call.name} is not available to the ${profile.name} subagent.`,
+          isError: true,
+        });
         continue;
       }
       const toolDone = progress?.ticker(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})}`);
@@ -108,7 +122,11 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
   const limitDone = progress?.ticker(`Лимит в ${maxSteps} шагов исчерпан, пишу итоговый отчёт`);
   try {
     if (!signal?.aborted) {
-      frames.push({ role: 'user', content: '[Runtime] Step limit reached. Do not call tools. Write your report now: what you found or changed (with file paths), what is verified, and what remains unfinished.' });
+      frames.push({
+        role: 'user',
+        content:
+          '[Runtime] Step limit reached. Do not call tools. Write your report now: what you found or changed (with file paths), what is verified, and what remains unfinished.',
+      });
       const summary = await callModelAutopilot(ownerId, plan, {
         system: [profile.system, projectContext].filter(Boolean).join('\n\n'),
         frames: compactFrames(frames, { maxChars: 180_000, maxObservationChars: 24_000 }),

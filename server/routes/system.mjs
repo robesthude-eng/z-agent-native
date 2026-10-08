@@ -49,12 +49,17 @@ export async function handleSystemRoutes(req, res, p, { startedAt, isDraining })
   // process and never one that is merely finishing its turns. Use /health/ready
   // (or /health) to decide whether to route traffic to the instance.
   if (p === '/health/live' && (req.method === 'GET' || req.method === 'HEAD')) {
-    sendJson(res, 200, {
-      status: isDraining() ? 'draining' : 'alive',
-      runtime: 'z-agent-native',
-      version: '1.0.0',
-      uptime: Math.floor((Date.now() - startedAt) / 1000),
-    }, { 'cache-control': 'no-store' });
+    sendJson(
+      res,
+      200,
+      {
+        status: isDraining() ? 'draining' : 'alive',
+        runtime: 'z-agent-native',
+        version: '1.0.0',
+        uptime: Math.floor((Date.now() - startedAt) / 1000),
+      },
+      { 'cache-control': 'no-store' },
+    );
     return true;
   }
 
@@ -70,10 +75,15 @@ export async function handleSystemRoutes(req, res, p, { startedAt, isDraining })
       return true;
     }
     const readiness = await readinessCheck();
-    const checks = Object.fromEntries(Object.entries(readiness.checks || {}).map(([name, value]) => [name, {
-      ok: Boolean(value?.ok),
-      latencyMs: Number(value?.latencyMs) || 0,
-    }]));
+    const checks = Object.fromEntries(
+      Object.entries(readiness.checks || {}).map(([name, value]) => [
+        name,
+        {
+          ok: Boolean(value?.ok),
+          latencyMs: Number(value?.latencyMs) || 0,
+        },
+      ]),
+    );
     sendJson(res, readiness.ok ? 200 : 503, {
       status: readiness.ok ? 'ok' : 'not_ready',
       runtime: 'z-agent-native',

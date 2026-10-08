@@ -4,7 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {
-  diffManifests, sandboxShape, localManifest, parseRemoteManifest, verifyTarListing, shq, SYNC_EXCLUDES,
+  diffManifests,
+  sandboxShape,
+  localManifest,
+  parseRemoteManifest,
+  verifyTarListing,
+  shq,
+  SYNC_EXCLUDES,
 } from '../server/native/cloud-sandbox.mjs';
 
 test('localManifest skips dependency dirs and symlinks', () => {
@@ -20,8 +26,16 @@ test('localManifest skips dependency dirs and symlinks', () => {
 });
 
 test('diffManifests reports changed, new and removed files', () => {
-  const before = new Map([['a', '1:1'], ['b', '1:1'], ['c', '1:1']]);
-  const after = new Map([['a', '1:1'], ['b', '2:5'], ['d', '1:1']]);
+  const before = new Map([
+    ['a', '1:1'],
+    ['b', '1:1'],
+    ['c', '1:1'],
+  ]);
+  const after = new Map([
+    ['a', '1:1'],
+    ['b', '2:5'],
+    ['d', '1:1'],
+  ]);
   assert.deepEqual(diffManifests(before, after), { changed: ['b', 'd'], removed: ['c'] });
 });
 

@@ -33,15 +33,18 @@ test('DuckDuckGo HTML parser keeps public results and unwraps uddg links', () =>
 });
 
 test('DuckDuckGo Instant Answer parser reads abstract and related topics', () => {
-  const rows = parseDuckDuckGoInstant({
-    Heading: 'Gukesh Dommaraju',
-    Abstract: 'Current world chess champion.',
-    AbstractURL: 'https://en.wikipedia.org/wiki/Gukesh_Dommaraju',
-    RelatedTopics: [
-      { Text: 'World Chess Championship', FirstURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship' },
-      { Topics: [{ Text: 'Nested', FirstURL: 'https://en.wikipedia.org/wiki/Chess' }] },
-    ],
-  }, 5);
+  const rows = parseDuckDuckGoInstant(
+    {
+      Heading: 'Gukesh Dommaraju',
+      Abstract: 'Current world chess champion.',
+      AbstractURL: 'https://en.wikipedia.org/wiki/Gukesh_Dommaraju',
+      RelatedTopics: [
+        { Text: 'World Chess Championship', FirstURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship' },
+        { Topics: [{ Text: 'Nested', FirstURL: 'https://en.wikipedia.org/wiki/Chess' }] },
+      ],
+    },
+    5,
+  );
   assert.equal(rows[0].url, 'https://en.wikipedia.org/wiki/Gukesh_Dommaraju');
   assert.equal(rows.length, 3);
 });
@@ -52,16 +55,22 @@ test('Wikipedia OpenSearch parser reads the 4-tuple array', () => {
 });
 
 test('Brave parser reads web.results and skips junk URLs', () => {
-  const rows = parseBraveResults({
-    web: {
-      results: [
-        { title: 'One', url: 'https://example.org/a', description: 'first' },
-        { title: 'Local', url: 'http://localhost/secret', description: 'nope' },
-        { title: 'Two', url: 'https://example.org/b', description: 'second' },
-      ],
+  const rows = parseBraveResults(
+    {
+      web: {
+        results: [
+          { title: 'One', url: 'https://example.org/a', description: 'first' },
+          { title: 'Local', url: 'http://localhost/secret', description: 'nope' },
+          { title: 'Two', url: 'https://example.org/b', description: 'second' },
+        ],
+      },
     },
-  }, 10);
-  assert.deepEqual(rows.map((row) => row.url), ['https://example.org/a', 'https://example.org/b']);
+    10,
+  );
+  assert.deepEqual(
+    rows.map((row) => row.url),
+    ['https://example.org/a', 'https://example.org/b'],
+  );
   assert.match(formatSearchRows(rows), /example\.org\/a/);
 });
 
@@ -110,14 +119,27 @@ test('a year-stuffed query retries without the year', async () => {
     const q = parsed.searchParams.get('q') || parsed.searchParams.get('search') || '';
     if (/\b2026\b/.test(q)) return { status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) };
     if (String(url).includes('api.duckduckgo.com')) {
-      return { status: 200, text: JSON.stringify({ Heading: 'World Chess Championship', Abstract: 'Gukesh', AbstractURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship' }) };
+      return {
+        status: 200,
+        text: JSON.stringify({
+          Heading: 'World Chess Championship',
+          Abstract: 'Gukesh',
+          AbstractURL: 'https://en.wikipedia.org/wiki/World_Chess_Championship',
+        }),
+      };
     }
     return { status: 200, text: JSON.stringify(['q', [], [], []]) };
   };
   const result = await runWebSearch({ query: 'current world chess champion 2026', apiKey: '', request });
   assert.match(result.output, /World_Chess_Championship/);
   assert.ok(calls.some((url) => url.includes('2026')));
-  assert.ok(calls.some((url) => /q=current\+world\+chess\+champion(?:&|$)/.test(url) || decodeURIComponent(url).includes('current world chess champion') && !url.includes('2026')));
+  assert.ok(
+    calls.some(
+      (url) =>
+        /q=current\+world\+chess\+champion(?:&|$)/.test(url) ||
+        (decodeURIComponent(url).includes('current world chess champion') && !url.includes('2026')),
+    ),
+  );
 });
 
 test('Cyrillic queries search Russian Wikipedia when Instant Answer is empty', async () => {
@@ -128,7 +150,10 @@ test('Cyrillic queries search Russian Wikipedia when Instant Answer is empty', a
       return { status: 200, text: JSON.stringify({ Heading: '', Abstract: '', RelatedTopics: [] }) };
     }
     if (String(url).includes('ru.wikipedia.org')) {
-      return { status: 200, text: JSON.stringify(['q', ['Чемпион мира по шахматам'], ['титул'], ['https://ru.wikipedia.org/wiki/Чемпион_мира_по_шахматам']]) };
+      return {
+        status: 200,
+        text: JSON.stringify(['q', ['Чемпион мира по шахматам'], ['титул'], ['https://ru.wikipedia.org/wiki/Чемпион_мира_по_шахматам']]),
+      };
     }
     return { status: 200, text: JSON.stringify(['q', [], [], []]) };
   };
@@ -169,7 +194,8 @@ test('a search that finds nothing returns an empty result, not an error', async 
 test('an empty Brave answer falls through to the keyless providers', async () => {
   const request = async (url) => {
     if (String(url).includes('api.search.brave.com')) return { status: 200, text: JSON.stringify({ web: { results: [] } }) };
-    if (String(url).includes('html.duckduckgo.com')) return { status: 200, text: '<a class="result__a" href="https://example.org/hit">Hit</a>' };
+    if (String(url).includes('html.duckduckgo.com'))
+      return { status: 200, text: '<a class="result__a" href="https://example.org/hit">Hit</a>' };
     return { status: 200, text: JSON.stringify({}) };
   };
   const result = await runWebSearch({ query: 'a rare live question', apiKey: 'test-key', request });
@@ -198,14 +224,17 @@ test('runWebSearch refuses an empty query', async () => {
 });
 
 test('parseSearxngResults maps results, strips tags and keeps answers', () => {
-  const rows = parseSearxngResults({
-    answers: ['1 USD = 82 RUB'],
-    results: [
-      { title: '<b>Курс</b> доллара', url: 'https://cbr.ru/', content: 'Официальный <em>курс</em>' },
-      { title: 'dup', url: 'https://cbr.ru/' },
-      { title: 'local', url: 'http://localhost/x' },
-    ],
-  }, 5);
+  const rows = parseSearxngResults(
+    {
+      answers: ['1 USD = 82 RUB'],
+      results: [
+        { title: '<b>Курс</b> доллара', url: 'https://cbr.ru/', content: 'Официальный <em>курс</em>' },
+        { title: 'dup', url: 'https://cbr.ru/' },
+        { title: 'local', url: 'http://localhost/x' },
+      ],
+    },
+    5,
+  );
   assert.equal(rows.length, 1);
   assert.equal(rows[0].title, 'Курс доллара');
   assert.match(rows[0].snippet, /1 USD = 82 RUB/);
@@ -216,7 +245,10 @@ test('runWebSearch prefers SearXNG and falls back to DuckDuckGo when it is down'
   const searxCalls = [];
   const searxngFetch = async (url) => {
     searxCalls.push(String(url));
-    return { status: 200, text: async () => JSON.stringify({ results: [{ title: 'Hit', url: 'https://example.org/s', content: 'snippet' }] }) };
+    return {
+      status: 200,
+      text: async () => JSON.stringify({ results: [{ title: 'Hit', url: 'https://example.org/s', content: 'snippet' }] }),
+    };
   };
   const request = async () => ({ status: 500, text: '' });
   const ok = await runWebSearch({ query: 'node 24', searxngUrl: 'http://z-agent-search:8080/', searxngFetch, request });
@@ -225,11 +257,20 @@ test('runWebSearch prefers SearXNG and falls back to DuckDuckGo when it is down'
   assert.match(searxCalls[0], /^http:\/\/z-agent-search:8080\/search\?q=node\+24&format=json/);
 
   let downCalls = 0;
-  const downFetch = async () => { downCalls++; throw new Error('ECONNREFUSED'); };
-  const ddgRequest = async (url) => (String(url).includes('html.duckduckgo.com')
-    ? { status: 200, text: '<a class="result__a" href="https://example.com/d">DDG</a>' }
-    : { status: 200, text: '{}' });
-  const fb = await runWebSearch({ query: 'погода Волгоград сегодня', searxngUrl: 'http://z-agent-search:8080', searxngFetch: downFetch, request: ddgRequest });
+  const downFetch = async () => {
+    downCalls++;
+    throw new Error('ECONNREFUSED');
+  };
+  const ddgRequest = async (url) =>
+    String(url).includes('html.duckduckgo.com')
+      ? { status: 200, text: '<a class="result__a" href="https://example.com/d">DDG</a>' }
+      : { status: 200, text: '{}' };
+  const fb = await runWebSearch({
+    query: 'погода Волгоград сегодня',
+    searxngUrl: 'http://z-agent-search:8080',
+    searxngFetch: downFetch,
+    request: ddgRequest,
+  });
   assert.equal(fb.metadata.websearch.provider, 'duckduckgo');
   assert.match(fb.output, /example\.com\/d/);
   assert.equal(downCalls, 1);

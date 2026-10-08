@@ -109,7 +109,9 @@ function pricingFor(model) {
 function estimateCostUsd(telemetry, model) {
   const pricing = pricingFor(model);
   if (!pricing) return null;
-  const cost = (numeric(telemetry?.tokens?.input) * pricing.inputPerMillion + numeric(telemetry?.tokens?.output) * pricing.outputPerMillion) / 1_000_000;
+  const cost =
+    (numeric(telemetry?.tokens?.input) * pricing.inputPerMillion + numeric(telemetry?.tokens?.output) * pricing.outputPerMillion) /
+    1_000_000;
   return Math.round(cost * 1e8) / 1e8;
 }
 

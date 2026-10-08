@@ -4,13 +4,7 @@ import { generateImageAsset, generateSpeechAsset } from '../media-generation.mjs
 import { executeViewMedia } from './view.mjs';
 import { syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
-import {
-  escapeHtml,
-  htmlDocument,
-  inlineWorkspaceAssets,
-  markdownToHtml,
-  pdfFromText,
-} from './documents.mjs';
+import { escapeHtml, htmlDocument, inlineWorkspaceAssets, markdownToHtml, pdfFromText } from './documents.mjs';
 import {
   buildClipConcatArgs,
   buildConvertArgs,
@@ -53,19 +47,25 @@ function tempFile(root, ctx, suffix) {
     write(content) {
       fs.writeFileSync(full, content);
       if (ctx?.sessionId) {
-        try { syncSandboxOwnership(ctx.sessionId, root, full); } catch {}
+        try {
+          syncSandboxOwnership(ctx.sessionId, root, full);
+        } catch {}
       }
       return full;
     },
     cleanup() {
-      try { fs.rmSync(full, { force: true }); } catch {}
+      try {
+        fs.rmSync(full, { force: true });
+      } catch {}
     },
   };
 }
 
 function requireRunner(run, binary) {
   if (typeof run !== 'function') {
-    throw Object.assign(new Error(`${binary} cannot run: this deployment has no session sandbox to execute it in.`), { code: 'MEDIA_NO_SANDBOX' });
+    throw Object.assign(new Error(`${binary} cannot run: this deployment has no session sandbox to execute it in.`), {
+      code: 'MEDIA_NO_SANDBOX',
+    });
   }
 }
 
@@ -75,7 +75,10 @@ async function runMediaCommand(run, argv, { timeoutMs, binary }) {
   const output = String(result?.output ?? '');
   if (exit !== 0) {
     if (/command not found|No such file or directory: ?["']?(ffmpeg|ffprobe)/i.test(output) && /ffmpeg|ffprobe/i.test(output)) {
-      throw Object.assign(new Error(`${binary} is not installed in this runtime image. Install ffmpeg (Debian: apt-get install ffmpeg) and retry.`), { code: 'MEDIA_BINARY_MISSING' });
+      throw Object.assign(
+        new Error(`${binary} is not installed in this runtime image. Install ffmpeg (Debian: apt-get install ffmpeg) and retry.`),
+        { code: 'MEDIA_BINARY_MISSING' },
+      );
     }
     const tail = output.trim().split('\n').slice(-12).join('\n');
     throw new Error(`${binary} exited with code ${exit}:\n${tail || '(no output)'}`);
@@ -104,7 +107,8 @@ function mediaResult({ target, kind, bytes, engine, extra = {}, output, mutated 
 function listFramesDir(root, dir) {
   const full = safeWorkspacePath(root, dir, { allowMissing: false });
   if (!fs.existsSync(full) || !fs.statSync(full).isDirectory()) throw new Error(`framesDir not found: ${dir}`);
-  return fs.readdirSync(full)
+  return fs
+    .readdirSync(full)
     .filter((name) => IMAGE_FORMATS.includes(mediaExtension(name)))
     .sort((a, b) => a.localeCompare(b, 'en', { numeric: true }))
     .map((name) => path.join(full, name));
@@ -136,7 +140,11 @@ async function renderWithBrowserService({ html, mode, options, ctx, renderPage }
 async function renderWithLocalChromium({ root, html, mode, options, ctx, run }) {
   if (typeof run !== 'function') return null;
   const probe = await run(`for b in ${CHROMIUM_BINARIES.join(' ')}; do command -v "$b" && break; done`, 15_000).catch(() => null);
-  const binary = String(probe?.output || '').trim().split('\n').filter(Boolean).pop();
+  const binary = String(probe?.output || '')
+    .trim()
+    .split('\n')
+    .filter(Boolean)
+    .pop();
   if (!binary || Number(probe?.exit ?? 1) !== 0) return null;
 
   const source = tempFile(root, ctx, '.html');
@@ -144,11 +152,19 @@ async function renderWithLocalChromium({ root, html, mode, options, ctx, run }) 
   try {
     source.write(html);
     const argv = [
-      binary, '--headless=new', '--disable-gpu', '--no-sandbox', '--hide-scrollbars',
-      '--disable-dev-shm-usage', '--virtual-time-budget=8000',
+      binary,
+      '--headless=new',
+      '--disable-gpu',
+      '--no-sandbox',
+      '--hide-scrollbars',
+      '--disable-dev-shm-usage',
+      '--virtual-time-budget=8000',
     ];
     if (mode === 'image') {
-      argv.push(`--screenshot=${artifact.full}`, `--window-size=${Math.round(clampNumber(options.width, 200, 4000, 1280))},${Math.round(clampNumber(options.height, 200, 8000, 1600))}`);
+      argv.push(
+        `--screenshot=${artifact.full}`,
+        `--window-size=${Math.round(clampNumber(options.width, 200, 4000, 1280))},${Math.round(clampNumber(options.height, 200, 8000, 1600))}`,
+      );
     } else {
       argv.push(`--print-to-pdf=${artifact.full}`, '--no-pdf-header-footer');
       if (options.landscape) argv.push('--landscape');
@@ -210,21 +226,31 @@ async function renderDocumentTool({ root, input, ctx, run, renderPage }) {
   if (target.ext === 'md' || target.ext === 'txt') {
     const text = format === 'html' ? plainTextFromMarkup(source) : source;
     const { size } = writeMediaFile(root, target.rel, Buffer.from(text, 'utf8'), ctx);
-    return mediaResult({ target, kind: 'document', bytes: size, engine: 'text', output: `Wrote ${size} bytes of ${target.ext} to ${target.rel}` });
+    return mediaResult({
+      target,
+      kind: 'document',
+      bytes: size,
+      engine: 'text',
+      output: `Wrote ${size} bytes of ${target.ext} to ${target.rel}`,
+    });
   }
 
-  const bodyHtml = format === 'html'
-    ? source
-    : format === 'text'
-      ? `<pre class="plain">${escapeHtml(source)}</pre>`
-      : markdownToHtml(source);
-  const fullDocument = format === 'html' && /<html[\s>]/i.test(source)
-    ? source
-    : htmlDocument({ title, body: bodyHtml, theme: input?.theme, css: input?.css, fontSize: input?.fontSize });
+  const bodyHtml =
+    format === 'html' ? source : format === 'text' ? `<pre class="plain">${escapeHtml(source)}</pre>` : markdownToHtml(source);
+  const fullDocument =
+    format === 'html' && /<html[\s>]/i.test(source)
+      ? source
+      : htmlDocument({ title, body: bodyHtml, theme: input?.theme, css: input?.css, fontSize: input?.fontSize });
 
   if (target.ext === 'html') {
     const { size } = writeMediaFile(root, target.rel, Buffer.from(fullDocument, 'utf8'), ctx);
-    return mediaResult({ target, kind: 'document', bytes: size, engine: 'html', output: `Wrote a standalone HTML document (${size} bytes) to ${target.rel}` });
+    return mediaResult({
+      target,
+      kind: 'document',
+      bytes: size,
+      engine: 'html',
+      output: `Wrote a standalone HTML document (${size} bytes) to ${target.rel}`,
+    });
   }
 
   const inlined = inlineWorkspaceAssets(fullDocument, root, { maxTotalBytes: 3_000_000 });
@@ -255,10 +281,19 @@ async function renderDocumentTool({ root, input, ctx, run, renderPage }) {
       output: `Wrote ${size} bytes to ${target.rel} using the built-in text PDF writer (no Chromium in this runtime, so layout, CSS and images were dropped).`,
     });
   }
-  if (!rendered) throw new Error(`Rendering ${target.ext.toUpperCase()} needs Chromium, which is unavailable in this runtime. Render to .html or .pdf instead, or install chromium.`);
+  if (!rendered)
+    throw new Error(
+      `Rendering ${target.ext.toUpperCase()} needs Chromium, which is unavailable in this runtime. Render to .html or .pdf instead, or install chromium.`,
+    );
 
   const { size } = writeMediaFile(root, target.rel, rendered.bytes, ctx);
-  return mediaResult({ target, kind: 'document', bytes: size, engine: rendered.engine, output: `Rendered ${target.ext.toUpperCase()} document (${size} bytes) to ${target.rel}` });
+  return mediaResult({
+    target,
+    kind: 'document',
+    bytes: size,
+    engine: rendered.engine,
+    output: `Rendered ${target.ext.toUpperCase()} document (${size} bytes) to ${target.rel}`,
+  });
 }
 
 export async function executeMediaTool({ tool, input = {}, ctx = {}, root, run, renderPage, generators = null }) {
@@ -287,37 +322,51 @@ export async function executeMediaTool({ tool, input = {}, ctx = {}, root, run, 
       let argv;
       if (frames.length) {
         list.write(concatListContent(frames, input?.secondsPerFrame));
-        argv = ['ffmpeg', ...buildSlideshowArgs({
-          listFile: list.full,
-          output: target.abs,
-          ext: target.ext,
-          fps: input?.fps,
-          width: input?.width,
-          height: input?.height,
-          fit: input?.fit,
-          background: input?.background,
-          audioFile: audioInput?.abs || '',
-          crf: input?.quality,
-        })];
+        argv = [
+          'ffmpeg',
+          ...buildSlideshowArgs({
+            listFile: list.full,
+            output: target.abs,
+            ext: target.ext,
+            fps: input?.fps,
+            width: input?.width,
+            height: input?.height,
+            fit: input?.fit,
+            background: input?.background,
+            audioFile: audioInput?.abs || '',
+            crf: input?.quality,
+          }),
+        ];
       } else {
         list.write(concatListContent(clips, 0));
-        argv = ['ffmpeg', ...buildClipConcatArgs({
-          listFile: list.full,
-          output: target.abs,
-          ext: target.ext,
-          width: input?.width,
-          height: input?.height,
-          fit: input?.fit,
-          crf: input?.quality,
-          fps: input?.fps,
-        })];
+        argv = [
+          'ffmpeg',
+          ...buildClipConcatArgs({
+            listFile: list.full,
+            output: target.abs,
+            ext: target.ext,
+            width: input?.width,
+            height: input?.height,
+            fit: input?.fit,
+            crf: input?.quality,
+            fps: input?.fps,
+          }),
+        ];
       }
       await runMediaCommand(run, argv, { timeoutMs: mediaTimeout(input), binary: 'ffmpeg' });
       if (ctx?.sessionId) {
-        try { syncSandboxOwnership(ctx.sessionId, root, target.abs); } catch {}
+        try {
+          syncSandboxOwnership(ctx.sessionId, root, target.abs);
+        } catch {}
       }
       const bytes = fs.existsSync(target.abs) ? fs.statSync(target.abs).size : 0;
-      return mediaResult({ target, kind: target.ext === 'gif' ? 'image' : 'video', bytes, engine: 'ffmpeg', output: `Rendered ${target.ext.toUpperCase()} (${bytes} bytes) to ${target.rel}` });
+      return mediaResult({
+        target,
+        kind: target.ext === 'gif' ? 'image' : 'video',
+        bytes,
+        engine: 'ffmpeg',
+        output: `Rendered ${target.ext.toUpperCase()} (${bytes} bytes) to ${target.rel}`,
+      });
     } finally {
       list.cleanup();
     }
@@ -328,29 +377,52 @@ export async function executeMediaTool({ tool, input = {}, ctx = {}, root, run, 
     const source = resolveMediaInput(root, input?.source, 'source');
     const target = resolveMediaOutput(root, input?.path, [...IMAGE_FORMATS, ...VIDEO_FORMATS, ...AUDIO_FORMATS], 'output');
     const op = String(input?.operation || 'convert').toLowerCase();
-    const argv = op === 'crop'
-      ? ['ffmpeg', ...buildCropArgs({ input: source.abs, output: target.abs, x: input?.x, y: input?.y, width: input?.width, height: input?.height, outputExt: target.ext })]
-      : ['ffmpeg', ...buildConvertArgs({
-        operation: op,
-        input: source.abs,
-        output: target.abs,
-        outputExt: target.ext,
-        startMs: input?.startMs,
-        durationMs: input?.durationMs,
-        atMs: input?.atMs,
-        width: input?.width,
-        height: input?.height,
-        fit: input?.fit,
-        quality: input?.quality,
-        fps: input?.fps,
-      })];
+    const argv =
+      op === 'crop'
+        ? [
+            'ffmpeg',
+            ...buildCropArgs({
+              input: source.abs,
+              output: target.abs,
+              x: input?.x,
+              y: input?.y,
+              width: input?.width,
+              height: input?.height,
+              outputExt: target.ext,
+            }),
+          ]
+        : [
+            'ffmpeg',
+            ...buildConvertArgs({
+              operation: op,
+              input: source.abs,
+              output: target.abs,
+              outputExt: target.ext,
+              startMs: input?.startMs,
+              durationMs: input?.durationMs,
+              atMs: input?.atMs,
+              width: input?.width,
+              height: input?.height,
+              fit: input?.fit,
+              quality: input?.quality,
+              fps: input?.fps,
+            }),
+          ];
 
     await runMediaCommand(run, argv, { timeoutMs: mediaTimeout(input), binary: 'ffmpeg' });
     if (ctx?.sessionId) {
-      try { syncSandboxOwnership(ctx.sessionId, root, target.abs); } catch {}
+      try {
+        syncSandboxOwnership(ctx.sessionId, root, target.abs);
+      } catch {}
     }
     const bytes = fs.existsSync(target.abs) ? fs.statSync(target.abs).size : 0;
-    return mediaResult({ target, kind: mediaKindForPath(target.rel), bytes, engine: 'ffmpeg', output: `Transformed ${source.rel} -> ${target.rel} (${bytes} bytes)` });
+    return mediaResult({
+      target,
+      kind: mediaKindForPath(target.rel),
+      bytes,
+      engine: 'ffmpeg',
+      output: `Transformed ${source.rel} -> ${target.rel} (${bytes} bytes)`,
+    });
   }
 
   if (tool === 'view_media') return await executeViewMedia({ root, input, run, ctx });

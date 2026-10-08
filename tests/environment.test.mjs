@@ -7,12 +7,9 @@ import path from 'node:path';
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
 process.env.Z_AGENT_NETWORK_POLICY = 'public';
 process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS = '1';
-const {
-  commitEnvironmentRequirement,
-  managedShellEnvironment,
-  prepareEnvironmentRequirement,
-  readEnvironmentManifest,
-} = await import('../server/native/environment.mjs');
+const { commitEnvironmentRequirement, managedShellEnvironment, prepareEnvironmentRequirement, readEnvironmentManifest } = await import(
+  '../server/native/environment.mjs'
+);
 const { TOOL_DEFINITIONS, availableToolDefinitions, requiresPermission } = await import('../server/native/tools.mjs');
 
 function workspace(prefix = 'z-agent-env-') {
@@ -23,7 +20,22 @@ test('environment tools are available with a shell sandbox and retain sensitive 
   const definition = TOOL_DEFINITIONS.find((tool) => tool.name === 'ensure_environment');
   assert.ok(definition);
   const kinds = definition.inputSchema.properties.kind.enum;
-  for (const kind of ['python', 'java', 'gradle', 'android', 'go', 'rust', 'node', 'maven', 'flutter', 'kubectl', 'terraform', 'aws', 'gcloud', 'portable']) {
+  for (const kind of [
+    'python',
+    'java',
+    'gradle',
+    'android',
+    'go',
+    'rust',
+    'node',
+    'maven',
+    'flutter',
+    'kubectl',
+    'terraform',
+    'aws',
+    'gcloud',
+    'portable',
+  ]) {
     assert.ok(kinds.includes(kind), `missing environment kind: ${kind}`);
   }
   assert.equal(requiresPermission('ensure_environment'), true);
@@ -44,10 +56,7 @@ test('Java plan installs a verified Temurin JDK below the hidden agent home', ()
 
 test('Android package provisioning requires explicit acceptLicenses input and pins the CLI checksum', () => {
   const root = workspace();
-  assert.throws(
-    () => prepareEnvironmentRequirement(root, { kind: 'android', packages: ['platforms;android-36'] }),
-    /acceptLicenses=true/,
-  );
+  assert.throws(() => prepareEnvironmentRequirement(root, { kind: 'android', packages: ['platforms;android-36'] }), /acceptLicenses=true/);
   const plan = prepareEnvironmentRequirement(root, {
     kind: 'android',
     packages: ['platform-tools', 'platforms;android-36', 'build-tools;36.0.0'],

@@ -41,7 +41,9 @@ export function fileSink(finalPath, { overwrite = false, mode = 0o600 } = {}) {
   const tmpPath = `${finalPath}.upload-${process.pid.toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
   const stream = fs.createWriteStream(tmpPath, { flags: 'wx', mode });
   let failure = null;
-  stream.on('error', (err) => { failure = failure || err; });
+  stream.on('error', (err) => {
+    failure = failure || err;
+  });
   return {
     path: finalPath,
     tmpPath,
@@ -49,15 +51,25 @@ export function fileSink(finalPath, { overwrite = false, mode = 0o600 } = {}) {
       if (failure) throw failure;
       if (stream.write(chunk)) return;
       await new Promise((resolve, reject) => {
-        const onDrain = () => { stream.off('error', onError); resolve(); };
-        const onError = (err) => { stream.off('drain', onDrain); reject(err); };
+        const onDrain = () => {
+          stream.off('error', onError);
+          resolve();
+        };
+        const onError = (err) => {
+          stream.off('drain', onDrain);
+          reject(err);
+        };
         stream.once('drain', onDrain);
         stream.once('error', onError);
       });
     },
     async finish() {
       stream.end();
-      try { await streamFinished(stream); } catch (err) { failure = failure || err; }
+      try {
+        await streamFinished(stream);
+      } catch (err) {
+        failure = failure || err;
+      }
       if (failure) throw failure;
       if (overwrite) {
         fs.renameSync(tmpPath, finalPath);
@@ -65,7 +77,11 @@ export function fileSink(finalPath, { overwrite = false, mode = 0o600 } = {}) {
       }
       // linkSync fails with EEXIST instead of clobbering a file that appeared
       // while this upload was streaming.
-      try { fs.linkSync(tmpPath, finalPath); } finally { fs.rmSync(tmpPath, { force: true }); }
+      try {
+        fs.linkSync(tmpPath, finalPath);
+      } finally {
+        fs.rmSync(tmpPath, { force: true });
+      }
     },
     async discard() {
       stream.destroy();
@@ -106,7 +122,10 @@ export async function parseMultipartStream(req, boundary, options = {}) {
   async function consume(chunk) {
     current.size += chunk.length;
     if (maxPartBytes && current.size > maxPartBytes) {
-      if (sink) { await sink.discard(); sink = null; }
+      if (sink) {
+        await sink.discard();
+        sink = null;
+      }
       current.skipped = true;
       current.error = current.error || PART_TOO_LARGE;
       return;
@@ -122,7 +141,11 @@ export async function parseMultipartStream(req, boundary, options = {}) {
       } catch (err) {
         current.error = err.message;
         current.skipped = true;
-        try { await sink.discard(); } catch { /* best effort */ }
+        try {
+          await sink.discard();
+        } catch {
+          /* best effort */
+        }
       }
       sink = null;
     }
@@ -138,7 +161,10 @@ export async function parseMultipartStream(req, boundary, options = {}) {
           return;
         }
         const after = idx + delimiter.length;
-        if (buf.length < after + 2) { buf = buf.subarray(idx); return; }
+        if (buf.length < after + 2) {
+          buf = buf.subarray(idx);
+          return;
+        }
         if (buf[after] === DASH && buf[after + 1] === DASH) {
           done = true;
           buf = Buffer.alloc(0);
@@ -147,7 +173,10 @@ export async function parseMultipartStream(req, boundary, options = {}) {
         let cursor = after;
         while (cursor < buf.length && buf[cursor] !== CR) cursor += 1;
         if (cursor - after > MAX_DELIMITER_PADDING) throw httpError(400, 'malformed multipart delimiter');
-        if (cursor + 1 >= buf.length) { buf = buf.subarray(idx); return; }
+        if (cursor + 1 >= buf.length) {
+          buf = buf.subarray(idx);
+          return;
+        }
         buf = buf.subarray(cursor + 2);
         state = 'headers';
         continue;
@@ -222,7 +251,11 @@ export async function parseMultipartStream(req, boundary, options = {}) {
     if (!done && state === 'body') throw httpError(400, 'multipart body truncated');
   } catch (err) {
     if (sink) {
-      try { await sink.discard(); } catch { /* best effort */ }
+      try {
+        await sink.discard();
+      } catch {
+        /* best effort */
+      }
       sink = null;
     }
     throw err;

@@ -20,13 +20,20 @@ test('backup is accepted only after a full restore/integrity/secret/audit drill'
     Z_AGENT_AUDIT_KEY: '77'.repeat(32),
   };
   try {
-    const seed = run(['--input-type=module', '-e', `
+    const seed = run(
+      [
+        '--input-type=module',
+        '-e',
+        `
       const s=await import('./server/native/store.mjs');
       s.createRegistrationUser('restore@example.test','test-hash',{allowAdditional:true});
       s.setProviderKey('restore@example.test','openai','sk-restorable');
       s.createChat('ses_Restore123','restore@example.test','Restore me');
       s.closeStore();
-    `], env);
+    `,
+      ],
+      env,
+    );
     assert.equal(seed.status, 0, seed.stderr || seed.stdout);
 
     const snapshot = path.join(root, 'backup.sqlite');

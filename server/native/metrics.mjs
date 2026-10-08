@@ -34,10 +34,11 @@ function metricLine(name, value, labels = {}) {
 function splitKey(raw) {
   const [name, rest = ''] = raw.split('|', 2);
   const labels = {};
-  if (rest) for (const item of rest.split(',')) {
-    const at = item.indexOf('=');
-    if (at > 0) labels[item.slice(0, at)] = item.slice(at + 1);
-  }
+  if (rest)
+    for (const item of rest.split(',')) {
+      const at = item.indexOf('=');
+      if (at > 0) labels[item.slice(0, at)] = item.slice(at + 1);
+    }
   return { name, labels };
 }
 
@@ -105,4 +106,6 @@ export function prometheusMetrics({ activeTurns = 0 } = {}) {
   return `${lines.join('\n')}\n`;
 }
 
-export function resetMetricsForTests() { counters.clear(); }
+export function resetMetricsForTests() {
+  counters.clear();
+}

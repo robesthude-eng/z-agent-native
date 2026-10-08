@@ -66,10 +66,13 @@ test('runtime lifecycle binds an exact workspace result to the assistant message
   const result = results.getTurnResult(sessionId, assistantId);
   assert.equal(result.turnId, turnId);
   assert.equal(result.messageId, assistantId);
-  assert.deepEqual(result.changes.map((row) => [row.status, row.path]), [
-    ['modified', 'app.txt'],
-    ['added', 'new.txt'],
-  ]);
+  assert.deepEqual(
+    result.changes.map((row) => [row.status, row.path]),
+    [
+      ['modified', 'app.txt'],
+      ['added', 'new.txt'],
+    ],
+  );
 
   const patch = results.getTurnResultDiff(sessionId, assistantId, 'app.txt');
   assert.match(patch.patch, /-before/);
@@ -86,7 +89,9 @@ test('runtime lifecycle binds an exact workspace result to the assistant message
 });
 
 test.after(() => {
-  try { store.closeStore(); } catch {}
+  try {
+    store.closeStore();
+  } catch {}
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -113,13 +118,19 @@ test('a turn in a workspace without Git records why no snapshot exists', () => {
   });
   events.emit(sessionId, 'session.status', { status: 'idle' });
 
-  assert.throws(() => results.getTurnResult(sessionId, assistantId), (err) => {
-    assert.equal(err.statusCode, 404);
-    assert.equal(err.code, 'TURN_RESULT_UNAVAILABLE');
-    assert.equal(err.reason, 'not_git');
-    assert.match(err.message, /не является Git-репозиторием/);
-    return true;
-  });
+  assert.throws(
+    () => results.getTurnResult(sessionId, assistantId),
+    (err) => {
+      assert.equal(err.statusCode, 404);
+      assert.equal(err.code, 'TURN_RESULT_UNAVAILABLE');
+      assert.equal(err.reason, 'not_git');
+      assert.match(err.message, /не является Git-репозиторием/);
+      return true;
+    },
+  );
   // A message that never had a snapshot stays distinguishable from a failed capture.
-  assert.throws(() => results.getTurnResult(sessionId, 'msg_LifecycleNoGitMissing'), (err) => err.statusCode === 404);
+  assert.throws(
+    () => results.getTurnResult(sessionId, 'msg_LifecycleNoGitMissing'),
+    (err) => err.statusCode === 404,
+  );
 });

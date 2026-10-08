@@ -26,7 +26,12 @@ function procFdUsable() {
   } catch {
     procFdState = false;
   } finally {
-    if (fd !== null) try { fs.closeSync(fd); } catch { /* ignore */ }
+    if (fd !== null)
+      try {
+        fs.closeSync(fd);
+      } catch {
+        /* ignore */
+      }
   }
   return procFdState;
 }
@@ -40,7 +45,11 @@ function notFileError() {
 }
 
 function isSymlink(target) {
-  try { return fs.lstatSync(target).isSymbolicLink(); } catch { return false; }
+  try {
+    return fs.lstatSync(target).isSymbolicLink();
+  } catch {
+    return false;
+  }
 }
 
 function openChildDir(parentFd, name, create) {
@@ -49,7 +58,11 @@ function openChildDir(parentFd, name, create) {
     return fs.openSync(target, C.O_RDONLY | C.O_DIRECTORY | C.O_NOFOLLOW);
   } catch (err) {
     if (err?.code === 'ENOENT' && create) {
-      try { fs.mkdirSync(target); } catch (mkdirErr) { if (mkdirErr?.code !== 'EEXIST') throw mkdirErr; }
+      try {
+        fs.mkdirSync(target);
+      } catch (mkdirErr) {
+        if (mkdirErr?.code !== 'EEXIST') throw mkdirErr;
+      }
       return openChildDir(parentFd, name, false);
     }
     if ((err?.code === 'ENOTDIR' || err?.code === 'ELOOP') && isSymlink(target)) throw symlinkError();
@@ -86,7 +99,11 @@ function walkParents(base, segments, create) {
     }
     return dirFd;
   } catch (err) {
-    try { fs.closeSync(dirFd); } catch { /* ignore */ }
+    try {
+      fs.closeSync(dirFd);
+    } catch {
+      /* ignore */
+    }
     throw err;
   }
 }
@@ -177,7 +194,11 @@ export function contentVersion(content) {
 }
 
 function tooLargeError(size, maxBytes) {
-  return Object.assign(new Error(`File is too large (${size} bytes, limit ${maxBytes})`), { statusCode: 413, code: 'FILE_TOO_LARGE', size });
+  return Object.assign(new Error(`File is too large (${size} bytes, limit ${maxBytes})`), {
+    statusCode: 413,
+    code: 'FILE_TOO_LARGE',
+    size,
+  });
 }
 
 /** Read a whole regular file from the workspace through a verified descriptor. */

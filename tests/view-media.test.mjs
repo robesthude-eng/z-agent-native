@@ -16,7 +16,12 @@ test('an image costs a fixed weight, not its base64 length', () => {
 });
 
 test('only the latest runtime media frames keep their images', () => {
-  const frames = [1, 2, 3].map((i) => ({ role: 'user', content: `view ${i}`, media: [{ name: `${i}.png`, dataUrl: img }], runtimeMedia: true }));
+  const frames = [1, 2, 3].map((i) => ({
+    role: 'user',
+    content: `view ${i}`,
+    media: [{ name: `${i}.png`, dataUrl: img }],
+    runtimeMedia: true,
+  }));
   const out = compactFrames(frames);
   assert.equal(out[0].media.length, 0);
   assert.equal(out[1].media.length, 1);
@@ -25,7 +30,7 @@ test('only the latest runtime media frames keep their images', () => {
 
 test('context overflow errors are recognised', () => {
   assert.ok(isContextOverflowError(new Error('Prompt exceeds max length')));
-  assert.ok(isContextOverflowError({ message: 'This model\'s maximum context length is 128000 tokens', statusCode: 400 }));
+  assert.ok(isContextOverflowError({ message: "This model's maximum context length is 128000 tokens", statusCode: 400 }));
   assert.ok(isContextOverflowError({ message: 'x', statusCode: 413 }));
   assert.ok(!isContextOverflowError({ message: 'rate limit', statusCode: 429 }));
 });

@@ -23,10 +23,7 @@ test('v2 provider secrets authenticate their record context', () => {
   const encoded = secrets.encryptSecret('sk-top-secret', context);
   assert.match(encoded, /^enc:v2:[0-9a-f]{16}:/);
   assert.equal(secrets.decryptSecret(encoded, context), 'sk-top-secret');
-  assert.throws(
-    () => secrets.decryptSecret(encoded, 'provider:bob@example.test:openai:api_key'),
-    /authentication failed/,
-  );
+  assert.throws(() => secrets.decryptSecret(encoded, 'provider:bob@example.test:openai:api_key'), /authentication failed/);
 });
 
 test('keyring decrypts old v2 envelopes and rewraps them to the primary key', () => {

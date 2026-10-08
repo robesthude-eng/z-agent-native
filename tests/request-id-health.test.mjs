@@ -36,8 +36,12 @@ test('/health/live is a cheap liveness probe and every response carries x-reques
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stderr = '';
-  child.stderr.on('data', (d) => { stderr += d; });
-  t.after(() => { child.kill('SIGTERM'); });
+  child.stderr.on('data', (d) => {
+    stderr += d;
+  });
+  t.after(() => {
+    child.kill('SIGTERM');
+  });
 
   const base = `http://127.0.0.1:${port}`;
   for (let i = 0; i < 80; i++) {

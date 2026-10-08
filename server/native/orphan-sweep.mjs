@@ -14,7 +14,12 @@ const SESSION_ENTRY = /^(ses_[A-Za-z0-9]+)(\.json)?$/;
  * Запускается при старте сервера; трогает только имена вида ses_*.
  */
 export function sweepOrphanSessionData({ dataDir = DATA_DIR, workspacesDir = WORKSPACES_DIR, database = db } = {}) {
-  const alive = new Set(database.prepare('SELECT id FROM chats').all().map((row) => row.id));
+  const alive = new Set(
+    database
+      .prepare('SELECT id FROM chats')
+      .all()
+      .map((row) => row.id),
+  );
   const targets = [
     workspacesDir,
     path.join(dataDir, 'durable-jobs'),
@@ -24,14 +29,20 @@ export function sweepOrphanSessionData({ dataDir = DATA_DIR, workspacesDir = WOR
   let removed = 0;
   for (const dir of targets) {
     let entries = [];
-    try { entries = fs.readdirSync(dir); } catch { continue; }
+    try {
+      entries = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
     for (const name of entries) {
       const match = SESSION_ENTRY.exec(name);
       if (!match || alive.has(match[1])) continue;
       try {
         fs.rmSync(path.join(dir, name), { recursive: true, force: true });
         removed += 1;
-      } catch { /* best effort */ }
+      } catch {
+        /* best effort */
+      }
     }
   }
   return removed;

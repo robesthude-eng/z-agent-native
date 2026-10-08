@@ -21,15 +21,15 @@
     "enabled": true,
     "indentStyle": "space",
     "indentWidth": 2,
-    "includes": [
-      "**",
-      "!server/**",
-      "!tests/**",
-      "!evals/**",
-      "!e2e/**",
-      "!cloudflare/**"
-    ]
+    "includes": ["**", "!evals/**", "!e2e/**", "!cloudflare/**"]
   },
+  "overrides": [
+    {
+      "includes": ["server/**", "tests/**"],
+      "formatter": { "lineWidth": 140 },
+      "javascript": { "formatter": { "quoteStyle": "single" } }
+    }
+  ],
   "css": {
     "parser": { "tailwindDirectives": true, "cssModules": false },
     "linter": { "enabled": false },

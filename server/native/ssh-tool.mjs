@@ -16,7 +16,9 @@ const MUTATING_ACTIONS = new Set(['write', 'patch']);
 // service start/stop/restart change remote state but never the local workspace,
 // which is what mutatedPaths tracks; they are reported through metadata instead.
 export function sshActionMutatesRemote(action) {
-  const value = String(action || '').trim().toLowerCase();
+  const value = String(action || '')
+    .trim()
+    .toLowerCase();
   return MUTATING_ACTIONS.has(value) || value === 'service';
 }
 
@@ -80,7 +82,9 @@ export function resolveSshToolLauncher() {
   try {
     fs.accessSync(installed, fs.constants.X_OK);
     return { file: installed, prefix: [] };
-  } catch { /* fall through to the source checkout */ }
+  } catch {
+    /* fall through to the source checkout */
+  }
   const script = new URL('../ssh_tool.py', import.meta.url).pathname;
   if (!fs.existsSync(script)) {
     throw new Error('ssh_tool is not installed in this runtime image.');
@@ -97,7 +101,9 @@ function keyArgs(root, value) {
     // paramiko refuses group/world-readable keys the same way OpenSSH does, and
     // an unpacked archive routinely lands at 0644.
     fs.chmodSync(full, 0o600);
-  } catch { /* best effort; paramiko reports the real problem */ }
+  } catch {
+    /* best effort; paramiko reports the real problem */
+  }
   return ['--key', full];
 }
 
@@ -157,13 +163,23 @@ export function buildSshArgs(root, action, input = {}) {
 
   if (action === 'service') {
     const name = assertPattern(input.name, SERVICE_PATTERN, 'name');
-    const requested = String(input.serviceAction || 'status').trim().toLowerCase();
+    const requested = String(input.serviceAction || 'status')
+      .trim()
+      .toLowerCase();
     const serviceAction = requested === 'journal' ? 'logs' : requested;
     if (!SSH_SERVICE_ACTIONS.includes(serviceAction)) {
       throw new Error(`Unsupported serviceAction "${input.serviceAction}". Use one of: ${SSH_SERVICE_ACTIONS.join(', ')}`);
     }
     return {
-      args: ['service', ...conn, '--name', name, '--action', serviceAction, ...(serviceAction === 'logs' ? ['--lines', String(Math.min(500, Math.max(1, Math.floor(Number(input.lines) || 50))))] : [])],
+      args: [
+        'service',
+        ...conn,
+        '--name',
+        name,
+        '--action',
+        serviceAction,
+        ...(serviceAction === 'logs' ? ['--lines', String(Math.min(500, Math.max(1, Math.floor(Number(input.lines) || 50))))] : []),
+      ],
       title: `ssh service ${name} ${serviceAction} @ ${host}`,
       stdin: '',
     };
@@ -230,8 +246,16 @@ async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
     const kill = () => {
       if (stopped) return;
       stopped = true;
-      try { child.kill('SIGTERM'); } catch { /* already gone */ }
-      forceTimer = setTimeout(() => { try { child.kill('SIGKILL'); } catch {} }, 1000);
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* already gone */
+      }
+      forceTimer = setTimeout(() => {
+        try {
+          child.kill('SIGKILL');
+        } catch {}
+      }, 1000);
       forceTimer.unref?.();
     };
     const timer = setTimeout(kill, budget);
@@ -242,18 +266,27 @@ async function runSshTool(root, identity, plan, signal, timeoutMs, onOutput) {
       clearTimeout(forceTimer);
       signal?.removeEventListener('abort', kill);
     };
-    child.on('error', (err) => { cleanup(); reject(err); });
+    child.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
     child.on('close', (code) => {
       cleanup();
       if (signal?.aborted) return reject(Object.assign(new Error('Turn cancelled'), { name: 'AbortError' }));
-      resolve({ code: stopped ? 124 : (code || (inputError ? 1 : (code ?? 1))), stdout, stderr: stopped ? `${stderr}\nSSH operation timed out.` : stderr });
+      resolve({
+        code: stopped ? 124 : code || (inputError ? 1 : (code ?? 1)),
+        stdout,
+        stderr: stopped ? `${stderr}\nSSH operation timed out.` : stderr,
+      });
     });
     child.stdin.end(String(plan.stdin ?? ''));
   });
 }
 
 export async function executeSshTool({ root, identity, input = {}, signal, sessionId = null, onOutput = null }) {
-  const action = String(input.action || '').trim().toLowerCase();
+  const action = String(input.action || '')
+    .trim()
+    .toLowerCase();
   if (!SSH_ACTIONS.includes(action)) {
     throw new Error(`Unsupported ssh_tool action "${input.action}". Use one of: ${SSH_ACTIONS.join(', ')}`);
   }
@@ -265,11 +298,9 @@ export async function executeSshTool({ root, identity, input = {}, signal, sessi
   plan.password = input.password ? String(input.password) : '';
 
   const result = await runSshTool(root, identity, plan, signal, input.timeoutMs, onOutput);
-  const body = [
-    `exit=${result.code}`,
-    result.stdout && `stdout:\n${result.stdout}`,
-    result.stderr && `stderr:\n${result.stderr}`,
-  ].filter(Boolean).join('\n');
+  const body = [`exit=${result.code}`, result.stdout && `stdout:\n${result.stdout}`, result.stderr && `stderr:\n${result.stderr}`]
+    .filter(Boolean)
+    .join('\n');
 
   if (result.code !== 0) {
     const detail = (result.stderr || result.stdout || '').trim();

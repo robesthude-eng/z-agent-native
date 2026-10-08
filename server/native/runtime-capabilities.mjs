@@ -19,7 +19,9 @@ import {
  * the browser, only their counts.
  */
 export function runtimeCapabilities() {
-  const tools = availableToolDefinitions().map((tool) => tool.name).sort();
+  const tools = availableToolDefinitions()
+    .map((tool) => tool.name)
+    .sort();
   const has = (name) => tools.includes(name);
   const executorIsRequired = executorRequired();
   const executorIsReady = executorAvailable();

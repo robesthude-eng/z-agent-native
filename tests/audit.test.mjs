@@ -14,7 +14,9 @@ process.env.Z_AGENT_AUDIT_KEY = '55'.repeat(32);
 const store = await import(`../server/native/store.mjs?audit-test=${Date.now()}`);
 
 test.after(() => {
-  try { store.closeStore(); } catch {}
+  try {
+    store.closeStore();
+  } catch {}
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -41,7 +43,9 @@ test('security-sensitive mutations append a pseudonymised HMAC chain', () => {
     assert.doesNotMatch(serialized, /sk-should-never-be-audited/);
     assert.doesNotMatch(serialized, /bearer-secret-token/);
     assert.ok(rows.some((row) => row.action === 'provider.secret_set'));
-  } finally { db.close(); }
+  } finally {
+    db.close();
+  }
 });
 
 test('audit verification detects database-only history tampering', () => {
@@ -49,7 +53,9 @@ test('audit verification detects database-only history tampering', () => {
   const db = new DatabaseSync(path.join(process.env.Z_AGENT_DATA_DIR, 'z-agent.sqlite'));
   try {
     db.prepare("UPDATE audit_events SET action='provider.secret_delete' WHERE seq=(SELECT MIN(seq) FROM audit_events)").run();
-  } finally { db.close(); }
+  } finally {
+    db.close();
+  }
   const result = store.verifyAuditLog();
   assert.equal(result.ok, false);
   assert.equal(result.reason, 'signature_mismatch');

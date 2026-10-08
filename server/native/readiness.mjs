@@ -10,7 +10,10 @@ import { storeReadinessCheck } from './store.mjs';
 let cached = null;
 let cachedAt = 0;
 const CACHE_MS = 2_000;
-const MIN_FREE_BYTES = Math.min(Math.max(Number(process.env.Z_AGENT_MIN_FREE_BYTES) || 256 * 1024 * 1024, 16 * 1024 * 1024), 100 * 1024 * 1024 * 1024);
+const MIN_FREE_BYTES = Math.min(
+  Math.max(Number(process.env.Z_AGENT_MIN_FREE_BYTES) || 256 * 1024 * 1024, 16 * 1024 * 1024),
+  100 * 1024 * 1024 * 1024,
+);
 
 function writableDirectory(dir, label) {
   fs.mkdirSync(dir, { recursive: true });
@@ -25,7 +28,9 @@ function writableDirectory(dir, label) {
     }
     return { ok: true, freeBytes };
   } catch (error) {
-    try { fs.unlinkSync(probe); } catch {}
+    try {
+      fs.unlinkSync(probe);
+    } catch {}
     throw new Error(`${label} is not writable: ${error?.message || error}`);
   }
 }

@@ -1,6 +1,13 @@
 import {
-  authFromRequest, changePassword, checkCsrf, clearCookies, issueLogin,
-  loginUser, logoutToken, registerUser, requireAuth,
+  authFromRequest,
+  changePassword,
+  checkCsrf,
+  clearCookies,
+  issueLogin,
+  loginUser,
+  logoutToken,
+  registerUser,
+  requireAuth,
 } from '../native/auth.mjs';
 import { TRUST_PROXY } from '../native/config.mjs';
 import { readJson, sendJson } from '../native/json.mjs';
@@ -12,7 +19,9 @@ const AUTH_ACCOUNT_MAX_FAILURES = 15;
 
 export function authRemoteAddress(req) {
   if (TRUST_PROXY) {
-    const forwarded = String(req.headers?.['x-forwarded-for'] || '').split(',')[0].trim();
+    const forwarded = String(req.headers?.['x-forwarded-for'] || '')
+      .split(',')[0]
+      .trim();
     if (forwarded) return forwarded;
   }
   return String(req.socket?.remoteAddress || 'unknown');
@@ -23,7 +32,9 @@ export function authIpBucket(req) {
 }
 
 export function authAccountBucket(email) {
-  return `account:${String(email || '').trim().toLowerCase()}`;
+  return `account:${String(email || '')
+    .trim()
+    .toLowerCase()}`;
 }
 
 export function checkAuthRate(req, email) {
@@ -51,8 +62,12 @@ export async function handleAuthRoutes(req, res, p) {
       return true;
     }
     let user;
-    try { user = registerUser(body.email, body.password, body.inviteCode); }
-    catch (error) { noteAuthFailure(req, body.email); throw error; }
+    try {
+      user = registerUser(body.email, body.password, body.inviteCode);
+    } catch (error) {
+      noteAuthFailure(req, body.email);
+      throw error;
+    }
     const login = issueLogin(user.email);
     sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
     return true;
@@ -65,8 +80,12 @@ export async function handleAuthRoutes(req, res, p) {
       return true;
     }
     let user;
-    try { user = loginUser(body.email, body.password); }
-    catch (error) { noteAuthFailure(req, body.email); throw error; }
+    try {
+      user = loginUser(body.email, body.password);
+    } catch (error) {
+      noteAuthFailure(req, body.email);
+      throw error;
+    }
     const login = issueLogin(user.email);
     sendJson(res, 200, { status: 'success', user: { email: user.email, role: user.role } }, { 'set-cookie': login.cookies });
     return true;

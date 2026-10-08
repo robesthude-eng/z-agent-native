@@ -4,13 +4,10 @@ import { managedShellEnvironment } from '../environment.mjs';
 import { suggestToolchainForCommand } from '../toolchains.mjs';
 import { classifyBash } from '../context.mjs';
 import { compareWorkspaceSnapshots, snapshotWorkspace } from '../workspace-changes.mjs';
-import {
-  ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand, 
-} from '../sandbox.mjs';
+import { ensureManagedHome, prepareWorkspaceSandbox, sandboxCommand } from '../sandbox.mjs';
 import { executeInExecutor } from '../executor-client.mjs';
 import { assertShellCommandAllowed, shellNetworkPolicy } from '../workspace-policy.mjs';
 import { createLiveOutput, truncate } from './dispatcher.mjs';
-
 
 export function externalSpawnIdentity(ctx, root) {
   if (ctx?.sessionId) return prepareWorkspaceSandbox(ctx.sessionId, root);
@@ -51,11 +48,21 @@ export async function execBash(root, command, timeoutMs = DEFAULT_TOOL_TIMEOUT_M
   if (identity?.isolated) {
     const live = createLiveOutput(ctx?.onOutput);
     let remote;
-    try { remote = await executeInExecutor({
-      workspace: root, uid: identity.uid, gid: identity.gid,
-      file: '/bin/bash', args: ['--noprofile', '--norc', '-c', command],
-      env, timeoutMs, signal, onOutput: typeof ctx?.onOutput === 'function' ? (stdout, stderr) => live.push(stdout, stderr) : undefined,
-    }); } finally { live.stop(); }
+    try {
+      remote = await executeInExecutor({
+        workspace: root,
+        uid: identity.uid,
+        gid: identity.gid,
+        file: '/bin/bash',
+        args: ['--noprofile', '--norc', '-c', command],
+        env,
+        timeoutMs,
+        signal,
+        onOutput: typeof ctx?.onOutput === 'function' ? (stdout, stderr) => live.push(stdout, stderr) : undefined,
+      });
+    } finally {
+      live.stop();
+    }
     if (remote) return remote;
   }
 
@@ -82,7 +89,13 @@ export async function execBash(root, command, timeoutMs = DEFAULT_TOOL_TIMEOUT_M
 
     let forceKillTimer = null;
     const killGroup = (sig = 'SIGTERM') => {
-      try { process.kill(-child.pid, sig); } catch { try { child.kill(sig); } catch {} }
+      try {
+        process.kill(-child.pid, sig);
+      } catch {
+        try {
+          child.kill(sig);
+        } catch {}
+      }
     };
     const abort = () => {
       killGroup('SIGTERM');
@@ -130,13 +143,21 @@ export async function executeBashTool(root, input, ctx = {}) {
     `exit=${result.code}`,
     result.stdout && `stdout:\n${result.stdout}`,
     result.stderr && `stderr:\n${result.stderr}`,
-    hint && `Environment hint: command "${hint.command}" is missing. Use ensure_environment with kind="${hint.kind}" and then continue the original task; lack of sudo/root is not a reason to stop.`,
-    uidHint && `Environment hint: OpenSSH failed because this session runs under isolated uid ${uidHint.uid}, which has no /etc/passwd entry. This is expected and permanent - the host, the key and the remote username are not the problem, and retrying ssh/scp/sftp from bash will fail identically. Use the ssh_tool tool instead (action=test, exec, read, write, patch, service); it connects over paramiko and never reads the passwd database.`,
-  ].filter(Boolean).join('\n');
+    hint &&
+      `Environment hint: command "${hint.command}" is missing. Use ensure_environment with kind="${hint.kind}" and then continue the original task; lack of sudo/root is not a reason to stop.`,
+    uidHint &&
+      `Environment hint: OpenSSH failed because this session runs under isolated uid ${uidHint.uid}, which has no /etc/passwd entry. This is expected and permanent - the host, the key and the remote username are not the problem, and retrying ssh/scp/sftp from bash will fail identically. Use the ssh_tool tool instead (action=test, exec, read, write, patch, service); it connects over paramiko and never reads the passwd database.`,
+  ]
+    .filter(Boolean)
+    .join('\n');
   return {
     output: body,
     title: command,
-    mutatedPaths: workspaceChanges.paths.length ? workspaceChanges.paths : workspaceChanges.complete || classifyBash(command) !== 'may_mutate' ? [] : ['.'],
+    mutatedPaths: workspaceChanges.paths.length
+      ? workspaceChanges.paths
+      : workspaceChanges.complete || classifyBash(command) !== 'may_mutate'
+        ? []
+        : ['.'],
     metadata: {
       exit: result.code,
       workspaceChanges,

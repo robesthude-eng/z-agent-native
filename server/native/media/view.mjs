@@ -24,15 +24,26 @@ const MAX_FRAMES = 12;
 
 export const VIEW_MEDIA_DEFINITION = {
   name: 'view_media',
-  description: 'Look at a workspace image or video with your own eyes. Images (png/jpg/webp/gif and more) are shown to you directly; for a video, evenly spaced key frames with their timestamps are shown. Use it to check screenshots, generated images, rendered pages or videos, and to describe what they contain. The images arrive in the next message right after this tool result.',
+  description:
+    'Look at a workspace image or video with your own eyes. Images (png/jpg/webp/gif and more) are shown to you directly; for a video, evenly spaced key frames with their timestamps are shown. Use it to check screenshots, generated images, rendered pages or videos, and to describe what they contain. The images arrive in the next message right after this tool result.',
   inputSchema: {
     type: 'object',
     properties: {
       path: { type: 'string', description: 'Workspace-relative image or video file, for example screenshots/page.png or media/demo.mp4' },
-      frames: { type: 'integer', minimum: 1, maximum: MAX_FRAMES, description: `Video only: how many key frames to look at. Defaults to ${DEFAULT_FRAMES}.` },
+      frames: {
+        type: 'integer',
+        minimum: 1,
+        maximum: MAX_FRAMES,
+        description: `Video only: how many key frames to look at. Defaults to ${DEFAULT_FRAMES}.`,
+      },
       startMs: { type: 'integer', minimum: 0, description: 'Video only: start of the fragment to sample, in milliseconds.' },
       endMs: { type: 'integer', minimum: 0, description: 'Video only: end of the fragment to sample, in milliseconds.' },
-      maxSize: { type: 'integer', minimum: 256, maximum: 2048, description: 'Longest side in pixels the image is scaled down to. Defaults to 1280 for images and 768 for video frames.' },
+      maxSize: {
+        type: 'integer',
+        minimum: 256,
+        maximum: 2048,
+        description: 'Longest side in pixels the image is scaled down to. Defaults to 1280 for images and 768 for video frames.',
+      },
     },
     required: ['path'],
     additionalProperties: false,
@@ -48,7 +59,9 @@ function tempPath(root, suffix, ctx) {
   fs.mkdirSync(dir, { recursive: true });
   // ffmpeg работает от пользователя песочницы: каталог должен быть его.
   if (ctx?.sessionId) {
-    try { syncSandboxOwnership(ctx.sessionId, root, dir); } catch {}
+    try {
+      syncSandboxOwnership(ctx.sessionId, root, dir);
+    } catch {}
   }
   return path.join(dir, `view-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}${suffix}`);
 }
@@ -61,7 +74,11 @@ async function runOk(run, argv, timeoutMs) {
   const result = await run(shellCommand(argv), timeoutMs);
   const exit = Number(result?.exit ?? 0);
   if (exit !== 0) {
-    const tail = String(result?.output || '').trim().split('\n').slice(-8).join('\n');
+    const tail = String(result?.output || '')
+      .trim()
+      .split('\n')
+      .slice(-8)
+      .join('\n');
     throw new Error(`${argv[0]} failed (exit ${exit})${tail ? `:\n${tail}` : ''}`);
   }
   return String(result?.output || '');
@@ -73,7 +90,9 @@ async function extractJpeg(run, argv, out) {
     if (!fs.existsSync(out) || fs.statSync(out).size === 0) return null;
     return fs.readFileSync(out);
   } finally {
-    try { fs.rmSync(out, { force: true }); } catch {}
+    try {
+      fs.rmSync(out, { force: true });
+    } catch {}
   }
 }
 
@@ -98,7 +117,11 @@ async function viewImage({ root, source, input, run, ctx }) {
   }
   if (!run) throw new Error(`Cannot view ${source.rel}: it needs conversion with ffmpeg, but this deployment has no session sandbox.`);
   const out = tempPath(root, '.jpg', ctx);
-  const bytes = await extractJpeg(run, ['ffmpeg', '-y', '-v', 'error', '-i', source.abs, '-frames:v', '1', '-vf', scaleFilter(maxSize), '-q:v', '4', out], out);
+  const bytes = await extractJpeg(
+    run,
+    ['ffmpeg', '-y', '-v', 'error', '-i', source.abs, '-frames:v', '1', '-vf', scaleFilter(maxSize), '-q:v', '4', out],
+    out,
+  );
   if (!bytes) throw new Error(`Could not decode ${source.rel} as an image.`);
   return {
     output: `Image ${source.rel} (scaled to at most ${maxSize}px) is attached below. Look at it and describe or use what you see.`,
@@ -112,7 +135,7 @@ async function viewImage({ root, source, input, run, ctx }) {
 async function viewVideo({ root, source, input, run, ctx }) {
   if (!run) throw new Error(`Cannot view video ${source.rel}: ffmpeg needs a session sandbox, which this deployment does not have.`);
   const probe = summarizeProbe(await runOk(run, ['ffprobe', ...buildProbeArgs(source.abs)], 60_000));
-  const durationMs = Math.max(0, Number(probe?.info?.durationMs ?? (Number(probe?.info?.duration) * 1000)) || 0);
+  const durationMs = Math.max(0, Number(probe?.info?.durationMs ?? Number(probe?.info?.duration) * 1000) || 0);
   const count = Math.round(clampNumber(input?.frames, 1, MAX_FRAMES, DEFAULT_FRAMES));
   const maxSize = Math.round(clampNumber(input?.maxSize, 256, 2048, 768));
   const from = Math.max(0, Number(input?.startMs) || 0);
@@ -130,20 +153,47 @@ async function viewVideo({ root, source, input, run, ctx }) {
     const out = tempPath(root, '.jpg', ctx);
     let bytes = null;
     try {
-      bytes = await extractJpeg(run, ['ffmpeg', '-y', '-v', 'error', '-ss', (at / 1000).toFixed(3), '-i', source.abs, '-frames:v', '1', '-vf', scaleFilter(maxSize), '-q:v', '5', out], out);
-    } catch { bytes = null; }
+      bytes = await extractJpeg(
+        run,
+        [
+          'ffmpeg',
+          '-y',
+          '-v',
+          'error',
+          '-ss',
+          (at / 1000).toFixed(3),
+          '-i',
+          source.abs,
+          '-frames:v',
+          '1',
+          '-vf',
+          scaleFilter(maxSize),
+          '-q:v',
+          '5',
+          out,
+        ],
+        out,
+      );
+    } catch {
+      bytes = null;
+    }
     if (!bytes) continue;
     visualMedia.push({ name: `${source.rel} @ ${formatTime(at)}`, dataUrl: dataUrl('image/jpeg', bytes) });
     shown.push(formatTime(at));
   }
   if (visualMedia.length === 0) throw new Error(`Could not extract frames from ${source.rel}.`);
-  const facts = String(probe?.text || '').split('\n').slice(0, 8).join('\n');
+  const facts = String(probe?.text || '')
+    .split('\n')
+    .slice(0, 8)
+    .join('\n');
   return {
     output: [
       `Video ${source.rel}: ${visualMedia.length} key frame(s) attached below in order, at ${shown.join(', ')}${durationMs ? ` of ${formatTime(durationMs)}` : ''}.`,
       'Treat them as a storyboard of the clip: describe what happens between them, but say when something can only be inferred. Audio is not included.',
       facts ? `\nffprobe:\n${facts}` : '',
-    ].filter(Boolean).join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
     title: source.rel,
     metadata: { viewed: { path: source.rel, kind: 'video', frames: shown } },
     mutatedPaths: [],

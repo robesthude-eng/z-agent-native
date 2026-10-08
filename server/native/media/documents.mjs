@@ -4,10 +4,14 @@ import { mediaMimeType, clampNumber } from './formats.mjs';
 
 export function escapeHtml(value) {
   return String(value ?? '')
-    .split('&').join('&amp;')
-    .split('<').join('&lt;')
-    .split('>').join('&gt;')
-    .split('"').join('&quot;');
+    .split('&')
+    .join('&amp;')
+    .split('<')
+    .join('&lt;')
+    .split('>')
+    .join('&gt;')
+    .split('"')
+    .join('&quot;');
 }
 
 function inlineMarkdown(text) {
@@ -28,7 +32,9 @@ function inlineMarkdown(text) {
 }
 
 export function markdownToHtml(markdown) {
-  const lines = String(markdown ?? '').replace(/\r\n?/g, '\n').split('\n');
+  const lines = String(markdown ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n');
   const html = [];
   let paragraph = [];
   let listType = '';
@@ -54,8 +60,17 @@ export function markdownToHtml(markdown) {
     html.push(`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
     table = null;
   };
-  const flushAll = () => { flushParagraph(); flushList(); flushTable(); };
-  const splitRow = (line) => line.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|').map((cell) => cell.trim());
+  const flushAll = () => {
+    flushParagraph();
+    flushList();
+    flushTable();
+  };
+  const splitRow = (line) =>
+    line
+      .replace(/^\s*\|/, '')
+      .replace(/\|\s*$/, '')
+      .split('|')
+      .map((cell) => cell.trim());
 
   for (const line of lines) {
     const fence = /^\s*```+\s*([A-Za-z0-9_+-]*)\s*$/.exec(line);
@@ -72,11 +87,21 @@ export function markdownToHtml(markdown) {
       }
       continue;
     }
-    if (inCode) { code.push(line); continue; }
+    if (inCode) {
+      code.push(line);
+      continue;
+    }
 
-    if (!line.trim()) { flushAll(); continue; }
+    if (!line.trim()) {
+      flushAll();
+      continue;
+    }
 
-    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) { flushAll(); html.push('<hr />'); continue; }
+    if (/^\s*(-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+      flushAll();
+      html.push('<hr />');
+      continue;
+    }
 
     const heading = /^\s*(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
@@ -97,7 +122,10 @@ export function markdownToHtml(markdown) {
       flushParagraph();
       flushList();
       const cells = splitRow(line);
-      if (!table) { table = { head: cells, rows: [] }; continue; }
+      if (!table) {
+        table = { head: cells, rows: [] };
+        continue;
+      }
       if (cells.every((cell) => /^:?-{2,}:?$/.test(cell))) continue;
       table.rows.push(cells);
       continue;
@@ -110,10 +138,16 @@ export function markdownToHtml(markdown) {
       flushParagraph();
       const wanted = bullet ? 'ul' : 'ol';
       if (listType && listType !== wanted) flushList();
-      if (!listType) { html.push(`<${wanted}>`); listType = wanted; }
+      if (!listType) {
+        html.push(`<${wanted}>`);
+        listType = wanted;
+      }
       const item = (bullet ? bullet[1] : ordered[1]).trim();
       const todo = /^\[([ xX])\]\s+(.*)$/.exec(item);
-      if (todo) html.push(`<li class="task"><input type="checkbox" disabled${todo[1].toLowerCase() === 'x' ? ' checked' : ''} /> ${inlineMarkdown(todo[2])}</li>`);
+      if (todo)
+        html.push(
+          `<li class="task"><input type="checkbox" disabled${todo[1].toLowerCase() === 'x' ? ' checked' : ''} /> ${inlineMarkdown(todo[2])}</li>`,
+        );
       else html.push(`<li>${inlineMarkdown(item)}</li>`);
       continue;
     }
@@ -183,12 +217,23 @@ export function inlineWorkspaceAssets(html, root, { maxTotalBytes = 1_200_000 } 
   const replaced = String(html).replace(/(<img\b[^>]*\bsrc=")([^"]+)(")/g, (match, before, src, after) => {
     if (/^(data:|https?:|file:)/i.test(src)) return match;
     let resolved;
-    try { resolved = safeWorkspacePath(root, decodeURIComponent(src), { allowMissing: false }); }
-    catch { skipped.push(src); return match; }
+    try {
+      resolved = safeWorkspacePath(root, decodeURIComponent(src), { allowMissing: false });
+    } catch {
+      skipped.push(src);
+      return match;
+    }
     let bytes;
-    try { bytes = fs.readFileSync(resolved); }
-    catch { skipped.push(src); return match; }
-    if (bytes.length > budget) { skipped.push(src); return match; }
+    try {
+      bytes = fs.readFileSync(resolved);
+    } catch {
+      skipped.push(src);
+      return match;
+    }
+    if (bytes.length > budget) {
+      skipped.push(src);
+      return match;
+    }
     budget -= bytes.length;
     return `${before}data:${mediaMimeType(resolved)};base64,${bytes.toString('base64')}${after}`;
   });
@@ -198,20 +243,43 @@ export function inlineWorkspaceAssets(html, root, { maxTotalBytes = 1_200_000 } 
 const PAGE_SIZES = { a4: [595.28, 841.89], letter: [612, 792], legal: [612, 1008] };
 
 const HELVETICA_WIDTHS = [
-  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278,
-  556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278, 278, 584, 584, 584, 556,
-  1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778,
-  667, 778, 722, 667, 611, 722, 667, 944, 667, 667, 611, 278, 278, 278, 469, 556,
-  333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556,
-  556, 556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
+  278, 278, 355, 556, 556, 889, 667, 191, 333, 333, 389, 584, 278, 333, 278, 278, 556, 556, 556, 556, 556, 556, 556, 556, 556, 556, 278,
+  278, 584, 584, 584, 556, 1015, 667, 667, 722, 722, 667, 611, 778, 722, 278, 500, 667, 556, 833, 722, 778, 667, 778, 722, 667, 611, 722,
+  667, 944, 667, 667, 611, 278, 278, 278, 469, 556, 333, 556, 556, 500, 556, 556, 278, 556, 556, 222, 222, 500, 222, 833, 556, 556, 556,
+  556, 333, 500, 278, 556, 500, 722, 500, 500, 500, 334, 260, 334, 584,
 ];
 
-const WINANSI_EXTRA = new Map(Object.entries({
-  '\u20ac': 128, '\u201a': 130, '\u0192': 131, '\u201e': 132, '\u2026': 133, '\u2020': 134, '\u2021': 135,
-  '\u02c6': 136, '\u2030': 137, '\u0160': 138, '\u2039': 139, '\u0152': 140, '\u017d': 142, '\u2018': 145,
-  '\u2019': 146, '\u201c': 147, '\u201d': 148, '\u2022': 149, '\u2013': 150, '\u2014': 151, '\u02dc': 152,
-  '\u2122': 153, '\u0161': 154, '\u203a': 155, '\u0153': 156, '\u017e': 158, '\u0178': 159,
-}));
+const WINANSI_EXTRA = new Map(
+  Object.entries({
+    '\u20ac': 128,
+    '\u201a': 130,
+    '\u0192': 131,
+    '\u201e': 132,
+    '\u2026': 133,
+    '\u2020': 134,
+    '\u2021': 135,
+    '\u02c6': 136,
+    '\u2030': 137,
+    '\u0160': 138,
+    '\u2039': 139,
+    '\u0152': 140,
+    '\u017d': 142,
+    '\u2018': 145,
+    '\u2019': 146,
+    '\u201c': 147,
+    '\u201d': 148,
+    '\u2022': 149,
+    '\u2013': 150,
+    '\u2014': 151,
+    '\u02dc': 152,
+    '\u2122': 153,
+    '\u0161': 154,
+    '\u203a': 155,
+    '\u0153': 156,
+    '\u017e': 158,
+    '\u0178': 159,
+  }),
+);
 
 export function winAnsiCode(char) {
   const code = char.codePointAt(0);
@@ -253,9 +321,14 @@ export function measureHelvetica(text, fontSize) {
 
 export function wrapPlainText(text, { fontSize = 11, maxWidth = 480 } = {}) {
   const output = [];
-  for (const rawLine of String(text ?? '').replace(/\r\n?/g, '\n').split('\n')) {
+  for (const rawLine of String(text ?? '')
+    .replace(/\r\n?/g, '\n')
+    .split('\n')) {
     const line = rawLine.replace(/\t/g, '    ');
-    if (!line.trim()) { output.push(''); continue; }
+    if (!line.trim()) {
+      output.push('');
+      continue;
+    }
     let current = '';
     for (const word of line.split(/\s+/)) {
       const candidate = current ? `${current} ${word}` : word;
@@ -263,8 +336,10 @@ export function wrapPlainText(text, { fontSize = 11, maxWidth = 480 } = {}) {
         if (measureHelvetica(candidate, fontSize) > maxWidth && !current) {
           let chunk = '';
           for (const char of candidate) {
-            if (measureHelvetica(chunk + char, fontSize) > maxWidth && chunk) { output.push(chunk); chunk = char; }
-            else chunk += char;
+            if (measureHelvetica(chunk + char, fontSize) > maxWidth && chunk) {
+              output.push(chunk);
+              chunk = char;
+            } else chunk += char;
           }
           current = chunk;
           continue;
@@ -284,7 +359,9 @@ export function pdfFromText(text, { title = '', fontSize = 11, pageSize = 'a4', 
   const missing = unsupportedPdfCharacters(`${text}\n${title}`);
   if (missing.length) {
     throw Object.assign(
-      new Error(`The built-in PDF writer only covers Latin-1 text and cannot encode: ${missing.slice(0, 8).join(' ')}. Render through Chromium (browser service or a local chromium binary) for full Unicode support.`),
+      new Error(
+        `The built-in PDF writer only covers Latin-1 text and cannot encode: ${missing.slice(0, 8).join(' ')}. Render through Chromium (browser service or a local chromium binary) for full Unicode support.`,
+      ),
       { code: 'PDF_UNSUPPORTED_CHARSET' },
     );
   }
@@ -298,32 +375,45 @@ export function pdfFromText(text, { title = '', fontSize = 11, pageSize = 'a4', 
   for (let index = 0; index < Math.max(lines.length, 1); index += perPage) pages.push(lines.slice(index, index + perPage));
 
   const objects = [];
-  const push = (buffer) => { objects.push(buffer); return objects.length; };
+  const push = (buffer) => {
+    objects.push(buffer);
+    return objects.length;
+  };
   const catalog = push(Buffer.from('<< /Type /Catalog /Pages 2 0 R >>', 'latin1'));
   const pagesObj = push(Buffer.alloc(0));
   const fontObj = push(Buffer.from('<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>', 'latin1'));
   const kids = [];
   for (const pageLines of pages) {
-    const streamParts = [Buffer.from(`BT\n/F1 ${size} Tf\n${leading} TL\n1 0 0 1 ${gutter.toFixed(2)} ${(pageHeight - gutter - size).toFixed(2)} Tm\n`, 'latin1')];
+    const streamParts = [
+      Buffer.from(
+        `BT\n/F1 ${size} Tf\n${leading} TL\n1 0 0 1 ${gutter.toFixed(2)} ${(pageHeight - gutter - size).toFixed(2)} Tm\n`,
+        'latin1',
+      ),
+    ];
     for (const line of pageLines) {
       streamParts.push(Buffer.from('(', 'latin1'), pdfLiteral(line), Buffer.from(') Tj T*\n', 'latin1'));
     }
     streamParts.push(Buffer.from('ET', 'latin1'));
     const stream = Buffer.concat(streamParts);
-    const contentObj = push(Buffer.concat([
-      Buffer.from(`<< /Length ${stream.length} >>\nstream\n`, 'latin1'),
-      stream,
-      Buffer.from('\nendstream', 'latin1'),
-    ]));
-    const pageObj = push(Buffer.from(`<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contentObj} 0 R >>`, 'latin1'));
+    const contentObj = push(
+      Buffer.concat([Buffer.from(`<< /Length ${stream.length} >>\nstream\n`, 'latin1'), stream, Buffer.from('\nendstream', 'latin1')]),
+    );
+    const pageObj = push(
+      Buffer.from(
+        `<< /Type /Page /Parent ${pagesObj} 0 R /MediaBox [0 0 ${pageWidth.toFixed(2)} ${pageHeight.toFixed(2)}] /Resources << /Font << /F1 ${fontObj} 0 R >> >> /Contents ${contentObj} 0 R >>`,
+        'latin1',
+      ),
+    );
     kids.push(`${pageObj} 0 R`);
   }
   objects[pagesObj - 1] = Buffer.from(`<< /Type /Pages /Count ${kids.length} /Kids [${kids.join(' ')}] >>`, 'latin1');
-  const infoObj = push(Buffer.concat([
-    Buffer.from('<< /Title (', 'latin1'),
-    pdfLiteral(title || 'Document'),
-    Buffer.from(`) /Producer (Z Agent) /CreationDate (D:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z) >>`, 'latin1'),
-  ]));
+  const infoObj = push(
+    Buffer.concat([
+      Buffer.from('<< /Title (', 'latin1'),
+      pdfLiteral(title || 'Document'),
+      Buffer.from(`) /Producer (Z Agent) /CreationDate (D:${new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)}Z) >>`, 'latin1'),
+    ]),
+  );
 
   const chunks = [Buffer.from('%PDF-1.4\n%\xE2\xE3\xCF\xD3\n', 'latin1')];
   let offset = chunks[0].length;
@@ -338,6 +428,11 @@ export function pdfFromText(text, { title = '', fontSize = 11, pageSize = 'a4', 
   const xref = [`xref\n0 ${objects.length + 1}\n`, '0000000000 65535 f \n'];
   for (const value of offsets) xref.push(`${String(value).padStart(10, '0')} 00000 n \n`);
   chunks.push(Buffer.from(xref.join(''), 'latin1'));
-  chunks.push(Buffer.from(`trailer\n<< /Size ${objects.length + 1} /Root ${catalog} 0 R /Info ${infoObj} 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`, 'latin1'));
+  chunks.push(
+    Buffer.from(
+      `trailer\n<< /Size ${objects.length + 1} /Root ${catalog} 0 R /Info ${infoObj} 0 R >>\nstartxref\n${xrefStart}\n%%EOF\n`,
+      'latin1',
+    ),
+  );
   return Buffer.concat(chunks);
 }

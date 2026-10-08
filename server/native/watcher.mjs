@@ -38,7 +38,10 @@ export function ensureWorkspaceWatcher(sessionId, root) {
   const observe = (filename) => {
     const eventPath = safeEventPath(filename);
     if (shouldIgnoreEvent(eventPath)) return;
-    if (paths.size >= MAX_PENDING_WATCH_PATHS) { truncated = true; return; }
+    if (paths.size >= MAX_PENDING_WATCH_PATHS) {
+      truncated = true;
+      return;
+    }
     paths.add(eventPath);
     if (timer) clearTimeout(timer);
     timer = setTimeout(flush, 120);
@@ -62,10 +65,13 @@ export function ensureWorkspaceWatcher(sessionId, root) {
     const attempt = (watchers.get(sessionId)?.attempt || 0) + 1;
     closeWorkspaceWatcher(sessionId);
     if (attempt > WATCH_RETRY_LIMIT) return;
-    const retry = setTimeout(() => {
-      const next = ensureWorkspaceWatcher(sessionId, root);
-      if (next) next.attempt = attempt;
-    }, Math.min(30_000, 500 * 2 ** (attempt - 1)));
+    const retry = setTimeout(
+      () => {
+        const next = ensureWorkspaceWatcher(sessionId, root);
+        if (next) next.attempt = attempt;
+      },
+      Math.min(30_000, 500 * 2 ** (attempt - 1)),
+    );
     retry.unref?.();
   });
   watcher.unref?.();
@@ -78,7 +84,9 @@ export function closeWorkspaceWatcher(sessionId) {
   const state = watchers.get(sessionId);
   if (!state) return;
   watchers.delete(sessionId);
-  try { state.watcher.close(); } catch {}
+  try {
+    state.watcher.close();
+  } catch {}
 }
 
 export function closeAllWorkspaceWatchers() {

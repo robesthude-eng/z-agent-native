@@ -4,10 +4,17 @@ import path from 'node:path';
 const MAX_FAILURES_REPORTED = 40;
 const TAIL_LINES = 120;
 const FRAMEWORK_COMMANDS = {
-  npm: 'npm test', node: 'node --test', vitest: 'npx --no-install vitest run',
-  jest: 'npx --no-install jest --runInBand', pytest: 'pytest -q', go: 'go test ./...',
-  cargo: 'cargo test', gradle: 'gradle test', maven: 'mvn test',
-  phpunit: 'vendor/bin/phpunit', rspec: 'bundle exec rspec',
+  npm: 'npm test',
+  node: 'node --test',
+  vitest: 'npx --no-install vitest run',
+  jest: 'npx --no-install jest --runInBand',
+  pytest: 'pytest -q',
+  go: 'go test ./...',
+  cargo: 'cargo test',
+  gradle: 'gradle test',
+  maven: 'mvn test',
+  phpunit: 'vendor/bin/phpunit',
+  rspec: 'bundle exec rspec',
 };
 export const TEST_FRAMEWORKS = Object.keys(FRAMEWORK_COMMANDS);
 
@@ -26,7 +33,9 @@ export function detectTestCommand(root) {
       if (typeof scripts.test === 'string' && scripts.test.trim()) {
         return { command: 'npm test', framework: guessFramework(scripts.test), source: 'package.json scripts.test' };
       }
-    } catch { /* an unreadable manifest is a detection miss, not a failure */ }
+    } catch {
+      /* an unreadable manifest is a detection miss, not a failure */
+    }
   }
   if (fs.existsSync(path.join(root, 'pytest.ini')) || fs.existsSync(path.join(root, 'pyproject.toml'))) {
     return { command: 'pytest -q', framework: 'pytest', source: 'python project' };
@@ -40,7 +49,12 @@ export function detectTestCommand(root) {
   if (fs.existsSync(path.join(root, 'gradlew'))) {
     return { command: './gradlew test', framework: 'gradle', source: 'gradle wrapper' };
   }
-  for (const [file, framework] of [['pom.xml', 'maven'], ['phpunit.xml', 'phpunit'], ['phpunit.xml.dist', 'phpunit'], ['.rspec', 'rspec']]) {
+  for (const [file, framework] of [
+    ['pom.xml', 'maven'],
+    ['phpunit.xml', 'phpunit'],
+    ['phpunit.xml.dist', 'phpunit'],
+    ['.rspec', 'rspec'],
+  ]) {
     if (fs.existsSync(path.join(root, file))) return { command: FRAMEWORK_COMMANDS[framework], framework, source: file };
   }
   return null;
@@ -63,17 +77,22 @@ export function guessFramework(command) {
 
 export function buildTestCommand(root, input = {}) {
   const explicit = String(input.command || '').trim();
-  const framework = String(input.framework || '').trim().toLowerCase();
+  const framework = String(input.framework || '')
+    .trim()
+    .toLowerCase();
   if (framework && !TEST_FRAMEWORKS.includes(framework)) throw new Error(`Unsupported test framework: ${framework}`);
   const detected = detectTestCommand(root);
-  const selected = framework && detected?.framework !== framework
-    ? { command: framework === 'gradle' && fs.existsSync(path.join(root, 'gradlew')) ? './gradlew test' : FRAMEWORK_COMMANDS[framework], framework, source: 'explicit framework' }
-    : detected;
+  const selected =
+    framework && detected?.framework !== framework
+      ? {
+          command: framework === 'gradle' && fs.existsSync(path.join(root, 'gradlew')) ? './gradlew test' : FRAMEWORK_COMMANDS[framework],
+          framework,
+          source: 'explicit framework',
+        }
+      : detected;
   // An explicit command must still honour filter; silently dropping it would
   // run the whole suite while the caller believes it ran one test.
-  const base = explicit
-    ? { command: explicit, framework: guessFramework(explicit), source: 'explicit command' }
-    : selected;
+  const base = explicit ? { command: explicit, framework: guessFramework(explicit), source: 'explicit command' } : selected;
   if (!base) {
     throw new Error('No test command could be detected. Pass command explicitly, for example command="npm test" or command="pytest -q".');
   }

@@ -23,7 +23,9 @@ function sha256File(file) {
       if (!n) break;
       hash.update(buffer.subarray(0, n));
     }
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
   return hash.digest('hex');
 }
 
@@ -58,12 +60,29 @@ try {
   const marker = db.prepare("SELECT 1 AS ok FROM sqlite_master WHERE type='table' AND name='schema_compatibility'").get()
     ? db.prepare('SELECT current_version,min_reader_version FROM schema_compatibility WHERE singleton=1').get()
     : null;
-  const schemaCompatible = schemaVersion === LATEST_SCHEMA_VERSION
-    || (schemaVersion > LATEST_SCHEMA_VERSION && Number(marker?.current_version) === schemaVersion && Number(marker?.min_reader_version) <= LATEST_SCHEMA_VERSION);
+  const schemaCompatible =
+    schemaVersion === LATEST_SCHEMA_VERSION ||
+    (schemaVersion > LATEST_SCHEMA_VERSION &&
+      Number(marker?.current_version) === schemaVersion &&
+      Number(marker?.min_reader_version) <= LATEST_SCHEMA_VERSION);
   if (!schemaCompatible) throw new Error(`Snapshot schema ${schemaVersion} is not compatible with code schema ${LATEST_SCHEMA_VERSION}`);
 
-  const requiredTables = ['users','auth_sessions','chats','messages','provider_keys','schema_migrations','audit_events','turn_capacity_leases'];
-  const existing = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map((row) => String(row.name)));
+  const requiredTables = [
+    'users',
+    'auth_sessions',
+    'chats',
+    'messages',
+    'provider_keys',
+    'schema_migrations',
+    'audit_events',
+    'turn_capacity_leases',
+  ];
+  const existing = new Set(
+    db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+      .all()
+      .map((row) => String(row.name)),
+  );
   const missing = requiredTables.filter((name) => !existing.has(name));
   if (missing.length) throw new Error(`Snapshot is missing required tables: ${missing.join(', ')}`);
 
@@ -73,17 +92,32 @@ try {
     providerSecrets += 1;
   }
 
-  const auditRows = db.prepare('SELECT seq,event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash FROM audit_events ORDER BY seq').all();
+  const auditRows = db
+    .prepare('SELECT seq,event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash FROM audit_events ORDER BY seq')
+    .all();
   const audit = verifyAuditRows(auditRows);
   if (!audit.ok) throw new Error(`Audit chain verification failed at seq ${audit.seq}: ${audit.reason}`);
 
   const counts = {};
-  for (const table of ['users','auth_sessions','chats','messages','provider_keys','audit_events']) {
+  for (const table of ['users', 'auth_sessions', 'chats', 'messages', 'provider_keys', 'audit_events']) {
     counts[table] = Number(db.prepare(`SELECT COUNT(*) AS n FROM ${table}`).get()?.n || 0);
   }
-  console.log(JSON.stringify({
-    ok: true, snapshot, bytes: stat.size, manifestVerified, quickCheck: quick, foreignKeyViolations: 0,
-    schemaVersion, codeSchemaVersion: LATEST_SCHEMA_VERSION, providerSecretsVerified: providerSecrets,
-    auditEventsVerified: audit.events, auditHead: audit.head, counts,
-  }));
-} finally { db.close(); }
+  console.log(
+    JSON.stringify({
+      ok: true,
+      snapshot,
+      bytes: stat.size,
+      manifestVerified,
+      quickCheck: quick,
+      foreignKeyViolations: 0,
+      schemaVersion,
+      codeSchemaVersion: LATEST_SCHEMA_VERSION,
+      providerSecretsVerified: providerSecrets,
+      auditEventsVerified: audit.events,
+      auditHead: audit.head,
+      counts,
+    }),
+  );
+} finally {
+  db.close();
+}

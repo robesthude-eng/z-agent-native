@@ -4,39 +4,74 @@ import { db } from './db.mjs';
 
 const parse = (value, fallback = null) => {
   if (value == null) return fallback;
-  try { return JSON.parse(value); } catch { return fallback; }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
 };
 
 export function getAction(sessionId, actionId) {
   const r = db.prepare('SELECT * FROM actions WHERE session_id=? AND action_id=?').get(sessionId, actionId);
-  return r ? { sessionId: r.session_id, actionId: r.action_id, state: r.state, result: parse(r.result_json, null), createdAt: r.created_at, updatedAt: r.updated_at } : null;
+  return r
+    ? {
+        sessionId: r.session_id,
+        actionId: r.action_id,
+        state: r.state,
+        result: parse(r.result_json, null),
+        createdAt: r.created_at,
+        updatedAt: r.updated_at,
+      }
+    : null;
 }
 
 export function claimAction(sessionId, actionId) {
   const now = Date.now();
-  const result = db.prepare('INSERT OR IGNORE INTO actions(session_id,action_id,state,created_at,updated_at) VALUES(?,?,?,?,?)').run(sessionId, actionId, 'running', now, now);
+  const result = db
+    .prepare('INSERT OR IGNORE INTO actions(session_id,action_id,state,created_at,updated_at) VALUES(?,?,?,?,?)')
+    .run(sessionId, actionId, 'running', now, now);
   return result.changes > 0;
 }
 
 export function completeAction(sessionId, actionId, result) {
-  db.prepare('UPDATE actions SET state=?,result_json=?,updated_at=? WHERE session_id=? AND action_id=?').run('completed', JSON.stringify(result ?? null), Date.now(), sessionId, actionId);
+  db.prepare('UPDATE actions SET state=?,result_json=?,updated_at=? WHERE session_id=? AND action_id=?').run(
+    'completed',
+    JSON.stringify(result ?? null),
+    Date.now(),
+    sessionId,
+    actionId,
+  );
 }
 
 export function failAction(sessionId, actionId, error) {
-  db.prepare('UPDATE actions SET state=?,result_json=?,updated_at=? WHERE session_id=? AND action_id=?').run('failed', JSON.stringify({ error: String(error?.message || error) }), Date.now(), sessionId, actionId);
+  db.prepare('UPDATE actions SET state=?,result_json=?,updated_at=? WHERE session_id=? AND action_id=?').run(
+    'failed',
+    JSON.stringify({ error: String(error?.message || error) }),
+    Date.now(),
+    sessionId,
+    actionId,
+  );
 }
 
 export function resetAction(sessionId, actionId) {
-  return db.prepare("UPDATE actions SET state='running',result_json=NULL,updated_at=? WHERE session_id=? AND action_id=? AND state='failed'")
-    .run(Date.now(), sessionId, actionId).changes > 0;
+  return (
+    db
+      .prepare("UPDATE actions SET state='running',result_json=NULL,updated_at=? WHERE session_id=? AND action_id=? AND state='failed'")
+      .run(Date.now(), sessionId, actionId).changes > 0
+  );
 }
 
 export function listQueue(sessionId) {
-  return db.prepare('SELECT action_id,payload_json,created_at FROM action_queue WHERE session_id=? ORDER BY created_at').all(sessionId).map((r) => ({ actionId: r.action_id, payload: parse(r.payload_json, {}), createdAt: r.created_at }));
+  return db
+    .prepare('SELECT action_id,payload_json,created_at FROM action_queue WHERE session_id=? ORDER BY created_at')
+    .all(sessionId)
+    .map((r) => ({ actionId: r.action_id, payload: parse(r.payload_json, {}), createdAt: r.created_at }));
 }
 
 export function enqueueAction(sessionId, actionId, payload) {
-  const result = db.prepare('INSERT OR IGNORE INTO action_queue(session_id,action_id,payload_json,created_at) VALUES(?,?,?,?)').run(sessionId, actionId, JSON.stringify(payload || {}), Date.now());
+  const result = db
+    .prepare('INSERT OR IGNORE INTO action_queue(session_id,action_id,payload_json,created_at) VALUES(?,?,?,?)')
+    .run(sessionId, actionId, JSON.stringify(payload || {}), Date.now());
   return result.changes ? 'queued' : 'duplicate';
 }
 
@@ -75,8 +110,16 @@ export function insertAuditEventInCurrentTransaction({ actor = '', action, targe
   };
   const eventHash = signAuditEvent(event);
   db.prepare(`INSERT INTO audit_events(event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash)
-              VALUES(?,?,?,?,?,?,?,?)`)
-    .run(event.event_id, event.ts, event.actor_hash, event.action, event.target_hash, event.detail_json, event.prev_hash, eventHash);
+              VALUES(?,?,?,?,?,?,?,?)`).run(
+    event.event_id,
+    event.ts,
+    event.actor_hash,
+    event.action,
+    event.target_hash,
+    event.detail_json,
+    event.prev_hash,
+    eventHash,
+  );
   return { eventId: event.event_id, eventHash };
 }
 
@@ -87,13 +130,17 @@ export function recordAuditEvent(event) {
     db.exec('COMMIT');
     return result;
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
 
 export function verifyAuditLog() {
-  const rows = db.prepare('SELECT seq,event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash FROM audit_events ORDER BY seq').all();
+  const rows = db
+    .prepare('SELECT seq,event_id,ts,actor_hash,action,target_hash,detail_json,prev_hash,event_hash FROM audit_events ORDER BY seq')
+    .all();
   return verifyAuditRows(rows);
 }
 

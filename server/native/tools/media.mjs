@@ -13,12 +13,13 @@ export async function executeMediaAction(tool, root, input, ctx = {}, execBash) 
     return { exit: result.code, output: [result.stdout, result.stderr].filter(Boolean).join('\n') };
   };
   const identity = sandboxIdentity(ctx.sessionId);
-  const renderPage = async (payload) => await executeBrowserTool({
-    sessionId: ctx.sessionId,
-    uid: identity?.isolated ? identity.uid : null,
-    input: payload,
-    signal: ctx.signal,
-  });
+  const renderPage = async (payload) =>
+    await executeBrowserTool({
+      sessionId: ctx.sessionId,
+      uid: identity?.isolated ? identity.uid : null,
+      input: payload,
+      signal: ctx.signal,
+    });
   return await executeMediaTool({
     tool,
     input: input && typeof input === 'object' ? input : {},

@@ -33,13 +33,7 @@ test.after(() => fs.rmSync(runtimeRoot, { recursive: true, force: true }));
 
 test('concat list repeats the final frame so the last slide keeps its duration', () => {
   const content = concatListContent(['/w/a.png', '/w/b.png'], 2);
-  assert.deepEqual(content.trim().split('\n'), [
-    'file /w/a.png',
-    'duration 2',
-    'file /w/b.png',
-    'duration 2',
-    'file /w/b.png',
-  ]);
+  assert.deepEqual(content.trim().split('\n'), ['file /w/a.png', 'duration 2', 'file /w/b.png', 'duration 2', 'file /w/b.png']);
   // Out-of-range and garbage values clamp instead of reaching ffmpeg.
   assert.match(concatListContent(['/w/a.png'], 9000), /duration 600/);
   assert.match(concatListContent(['/w/a.png'], 'soon'), /duration 2\.5/);
@@ -62,11 +56,26 @@ test('slideshow args differ for video and gif targets', () => {
 });
 
 test('convert args cover thumbnail, audio extraction and mute', () => {
-  const thumb = buildConvertArgs({ operation: 'thumbnail', input: '/w/in.mp4', output: '/w/out.png', outputExt: 'png', atMs: 5000, width: 640, height: 360 });
+  const thumb = buildConvertArgs({
+    operation: 'thumbnail',
+    input: '/w/in.mp4',
+    output: '/w/out.png',
+    outputExt: 'png',
+    atMs: 5000,
+    width: 640,
+    height: 360,
+  });
   assert.deepEqual(thumb.slice(0, 4), ['-y', '-ss', '5', '-i']);
   assert.ok(thumb.includes('-frames:v'));
 
-  const audio = buildConvertArgs({ operation: 'extract_audio', input: '/w/in.mp4', output: '/w/out.mp3', outputExt: 'mp3', startMs: 1500, durationMs: 4000 });
+  const audio = buildConvertArgs({
+    operation: 'extract_audio',
+    input: '/w/in.mp4',
+    output: '/w/out.mp3',
+    outputExt: 'mp3',
+    startMs: 1500,
+    durationMs: 4000,
+  });
   assert.deepEqual(audio.slice(0, 3), ['-y', '-ss', '1.5']);
   assert.ok(audio.includes('-t'));
   assert.ok(audio.includes('-vn'));
@@ -83,13 +92,15 @@ test('crop args build the filter and refuse an empty box', () => {
 });
 
 test('probe summary keeps the numbers and renders a readable block', () => {
-  const { info, text } = summarizeProbe(JSON.stringify({
-    format: { format_name: 'mov,mp4,m4a', duration: '12.5', size: '2048', bit_rate: '800000' },
-    streams: [
-      { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, avg_frame_rate: '30/1' },
-      { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2 },
-    ],
-  }));
+  const { info, text } = summarizeProbe(
+    JSON.stringify({
+      format: { format_name: 'mov,mp4,m4a', duration: '12.5', size: '2048', bit_rate: '800000' },
+      streams: [
+        { codec_type: 'video', codec_name: 'h264', width: 1920, height: 1080, avg_frame_rate: '30/1' },
+        { codec_type: 'audio', codec_name: 'aac', sample_rate: '48000', channels: 2 },
+      ],
+    }),
+  );
   assert.equal(info.formatName, 'mov');
   assert.equal(info.durationMs, 12_500);
   assert.equal(info.width, 1920);
@@ -124,11 +135,16 @@ test('built-in pdf writer emits a valid skeleton and refuses non latin-1 text', 
   assert.ok(text.trimEnd().endsWith('%%EOF'));
   // Cyrillic has no WinAnsi code point: fail loudly so render_document can fall
   // back to Chromium instead of writing a file full of blanks.
-  assert.throws(() => pdfFromText('Привет'), (error) => error.code === 'PDF_UNSUPPORTED_CHARSET');
+  assert.throws(
+    () => pdfFromText('Привет'),
+    (error) => error.code === 'PDF_UNSUPPORTED_CHARSET',
+  );
 });
 
 test('markdown renderer covers headings, code, tables and escaping', () => {
-  const html = markdownToHtml('# Title\n\nText with <b>markup</b> and **bold**\n\n```js\nconst a = 1;\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n');
+  const html = markdownToHtml(
+    '# Title\n\nText with <b>markup</b> and **bold**\n\n```js\nconst a = 1;\n```\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n',
+  );
   assert.match(html, /<h1>Title<\/h1>/);
   assert.match(html, /&lt;b&gt;/);
   assert.match(html, /<strong>bold<\/strong>/);
@@ -146,7 +162,10 @@ test('plain text wrapping respects the measured width and keeps blank lines', ()
 
 test('model refs split on the first slash only', () => {
   assert.deepEqual(parseModelRef('openai/gpt-image-1'), { providerID: 'openai', modelID: 'gpt-image-1' });
-  assert.deepEqual(parseModelRef('', 'openrouter/google/gemini-2.5-flash-image'), { providerID: 'openrouter', modelID: 'google/gemini-2.5-flash-image' });
+  assert.deepEqual(parseModelRef('', 'openrouter/google/gemini-2.5-flash-image'), {
+    providerID: 'openrouter',
+    modelID: 'google/gemini-2.5-flash-image',
+  });
   assert.throws(() => parseModelRef('gpt-image-1'), /provider\/model/);
 });
 

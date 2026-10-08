@@ -45,7 +45,10 @@ test('webfetch returns extracted text for HTML, raw markup on request and JSON a
   const { executeWebFetch } = await import('../server/native/tools/web.mjs');
   const bodies = {
     '/page': { type: 'text/html; charset=utf-8', text: PAGE },
-    '/spa': { type: 'text/html', text: `<!doctype html><html><head><title>App</title>${'<link rel="preload" href="/x.js">'.repeat(300)}</head><body><div id="root"></div></body></html>` },
+    '/spa': {
+      type: 'text/html',
+      text: `<!doctype html><html><head><title>App</title>${'<link rel="preload" href="/x.js">'.repeat(300)}</head><body><div id="root"></div></body></html>`,
+    },
     '/data.json': { type: 'application/json', text: '{"lts":"v24"}' },
   };
   setExternalTransportForTests(async ({ url }) => {
@@ -71,6 +74,7 @@ test('webfetch returns extracted text for HTML, raw markup on request and JSON a
     assert.ok(short.output.length < 1200);
   } finally {
     setExternalTransportForTests(null);
-    if (previousNetworkPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousNetworkPolicy;
+    if (previousNetworkPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY;
+    else process.env.Z_AGENT_NETWORK_POLICY = previousNetworkPolicy;
   }
 });

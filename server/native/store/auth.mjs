@@ -14,8 +14,7 @@ for (const row of db.prepare("SELECT token FROM auth_sessions WHERE token NOT LI
 }
 
 export function createUser(email, passwordHash, role = 'user') {
-  db.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)')
-    .run(email, passwordHash, role, Date.now());
+  db.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)').run(email, passwordHash, role, Date.now());
 }
 
 export function createRegistrationUser(email, passwordHash, { allowAdditional = false } = {}) {
@@ -36,7 +35,9 @@ export function createRegistrationUser(email, passwordHash, { allowAdditional = 
     db.exec('COMMIT');
     return { status: 'created', role };
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -58,11 +59,18 @@ export function updatePasswordAndRevokeSessions(email, passwordHash, keepToken) 
   try {
     db.prepare('UPDATE users SET password_hash=? WHERE email=?').run(passwordHash, email);
     const revoked = db.prepare('DELETE FROM auth_sessions WHERE email=? AND token<>?').run(email, authSessionKey(keepToken)).changes;
-    insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.password_change', target: email, details: { revokedSessions: Number(revoked) } });
+    insertAuditEventInCurrentTransaction({
+      actor: email,
+      action: 'auth.password_change',
+      target: email,
+      details: { revokedSessions: Number(revoked) },
+    });
     db.exec('COMMIT');
     return Number(revoked);
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -70,11 +78,18 @@ export function updatePasswordAndRevokeSessions(email, passwordHash, keepToken) 
 export function createAuthSession(token, email, csrf = null) {
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(authSessionKey(token), email, Date.now(), csrf || null);
+    db.prepare('INSERT INTO auth_sessions(token,email,created_at,csrf) VALUES(?,?,?,?)').run(
+      authSessionKey(token),
+      email,
+      Date.now(),
+      csrf || null,
+    );
     insertAuditEventInCurrentTransaction({ actor: email, action: 'auth.session_issued', target: email });
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -93,7 +108,9 @@ export function deleteAuthSession(token) {
     db.exec('COMMIT');
     return Boolean(changes);
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -135,7 +152,9 @@ export function recordAuthFailures(buckets, { windowMs = 10 * 60 * 1000 } = {}, 
     db.prepare('DELETE FROM auth_rate_limits WHERE reset_at < ?').run(now - windowMs);
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }

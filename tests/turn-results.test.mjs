@@ -4,12 +4,7 @@ import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import {
-  captureWorkspaceTree,
-  diffWorkspaceTreePath,
-  diffWorkspaceTrees,
-  rollbackWorkspaceTrees,
-} from '../server/native/turn-results.mjs';
+import { captureWorkspaceTree, diffWorkspaceTreePath, diffWorkspaceTrees, rollbackWorkspaceTrees } from '../server/native/turn-results.mjs';
 
 function git(root, args) {
   return execFileSync('git', args, { cwd: root, encoding: 'utf8' });
@@ -44,10 +39,13 @@ test('turn trees describe only the exact before/after workspace transition', () 
   const after = captureWorkspaceTree(root);
 
   const changes = diffWorkspaceTrees(root, before, after);
-  assert.deepEqual(changes.map((row) => [row.status, row.path]), [
-    ['added', 'new.txt'],
-    ['modified', 'tracked.txt'],
-  ]);
+  assert.deepEqual(
+    changes.map((row) => [row.status, row.path]),
+    [
+      ['added', 'new.txt'],
+      ['modified', 'tracked.txt'],
+    ],
+  );
   const diff = diffWorkspaceTreePath(root, before, after, 'tracked.txt');
   assert.match(diff.patch, /-baseline/);
   assert.match(diff.patch, /\+agent change/);
@@ -95,10 +93,7 @@ test('rollback is all-or-nothing when later work touched a turn path', () => {
   const after = captureWorkspaceTree(root);
 
   fs.writeFileSync(path.join(root, 'tracked.txt'), 'later change on same path\n');
-  assert.throws(
-    () => rollbackWorkspaceTrees(root, before, after),
-    /более поздняя работа изменила tracked\.txt/i,
-  );
+  assert.throws(() => rollbackWorkspaceTrees(root, before, after), /более поздняя работа изменила tracked\.txt/i);
   // Conflict is detected before writes: the other turn's file and this turn's
   // new file are both untouched.
   assert.equal(fs.readFileSync(path.join(root, 'tracked.txt'), 'utf8'), 'later change on same path\n');

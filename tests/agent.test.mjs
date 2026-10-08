@@ -54,7 +54,9 @@ test('question suspends and resumes the same native turn without creating a seco
     assert.equal(body.stream, true);
     streamCall += 1;
     if (streamCall === 1) {
-      const args = JSON.stringify({ questions: [{ header: 'Mode', question: 'Как продолжить?', options: [{ label: 'Авто' }], allowCustomResponse: true }] });
+      const args = JSON.stringify({
+        questions: [{ header: 'Mode', question: 'Как продолжить?', options: [{ label: 'Авто' }], allowCustomResponse: true }],
+      });
       return sse([
         { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_question', function: { name: 'question', arguments: args } }] } }] },
         { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
@@ -80,7 +82,10 @@ test('question suspends and resumes the same native turn without creating a seco
     assert.equal(agent.answerQuestion(sid, question.id, [['мой вариант']]), true);
     const assistant = await turn;
     const messages = store.listMessages(sid);
-    assert.deepEqual(messages.map((m) => m.role), ['user', 'assistant']);
+    assert.deepEqual(
+      messages.map((m) => m.role),
+      ['user', 'assistant'],
+    );
     assert.equal(messages.filter((m) => m.role === 'user').length, 1);
     assert.match(assistant.parts.find((p) => p.type === 'text')?.text || '', /Продолжаю/);
     const qPart = assistant.parts.find((p) => p.type === 'tool' && p.tool === 'question');
@@ -105,10 +110,13 @@ test('task runs a nested read-only subagent loop and returns its report to the p
     if (!body.stream) {
       subagentCalls += 1;
       assert.match(body.messages?.[0]?.content || '', /read-only subagent/i);
-      return new Response(JSON.stringify({ choices: [{ message: { content: 'Отчёт подагента: найден README.md.' }, finish_reason: 'stop' }] }), {
-        status: 200,
-        headers: { 'content-type': 'application/json' },
-      });
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content: 'Отчёт подагента: найден README.md.' }, finish_reason: 'stop' }] }),
+        {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        },
+      );
     }
     mainStreamCalls += 1;
     if (mainStreamCalls === 1) {
@@ -146,7 +154,6 @@ test('task runs a nested read-only subagent loop and returns its report to the p
   }
 });
 
-
 test('typed attachments stay separate from user text while model receives workspace context', async () => {
   agent.resetAgentStateForTests();
   const sid = 'ses_attachmentnative1';
@@ -180,10 +187,16 @@ test('typed attachments stay separate from user text while model receives worksp
       system: '',
     });
     const user = store.listMessages(sid).find((m) => m.role === 'user');
-    assert.deepEqual(user.parts.map((p) => p.type), ['attachment', 'text']);
+    assert.deepEqual(
+      user.parts.map((p) => p.type),
+      ['attachment', 'text'],
+    );
     assert.equal(user.parts.find((p) => p.type === 'text')?.text, 'Посмотри приложенный файл');
     assert.equal(user.parts.find((p) => p.type === 'attachment')?.path, 'uploads/notes.txt');
-    assert.equal(user.parts.some((p) => typeof p.text === 'string' && p.text.includes('<attachments>')), false);
+    assert.equal(
+      user.parts.some((p) => typeof p.text === 'string' && p.text.includes('<attachments>')),
+      false,
+    );
     assert.match(providerUserContent, /uploads\/notes\.txt/);
     assert.doesNotMatch(providerUserContent, /private file body/);
   } finally {

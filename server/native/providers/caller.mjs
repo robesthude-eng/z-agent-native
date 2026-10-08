@@ -12,11 +12,17 @@ export async function callModel(ownerId, model, request) {
 }
 
 // Красный квадрат 32×32 для проверки, видит ли модель изображения.
-const PROBE_IMAGE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAK0lEQVR4nO3NQQEAAATAQGTQP5kwSvC7BdjldMdn9XoHAAAAAAAAAAAAhy3gIwFE6inHLwAAAABJRU5ErkJggg==';
+const PROBE_IMAGE =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAACAAAAAgCAIAAAD8GO2jAAAAK0lEQVR4nO3NQQEAAATAQGTQP5kwSvC7BdjldMdn9XoHAAAAAAAAAAAAhy3gIwFE6inHLwAAAABJRU5ErkJggg==';
 const PROBE_TOOL = {
   name: 'report_status',
   description: 'Report the probe status.',
-  inputSchema: { type: 'object', properties: { status: { type: 'string', enum: ['ok'] } }, required: ['status'], additionalProperties: false },
+  inputSchema: {
+    type: 'object',
+    properties: { status: { type: 'string', enum: ['ok'] } },
+    required: ['status'],
+    additionalProperties: false,
+  },
 };
 
 function callByKind(resolved, request) {
@@ -47,7 +53,9 @@ async function probeCapabilities(resolved) {
   try {
     const r = await callByKind(resolved, {
       system: 'Answer with one word.',
-      frames: [{ role: 'user', content: 'What is the main color of this image? One word.', media: [{ dataUrl: PROBE_IMAGE, name: 'probe.png' }] }],
+      frames: [
+        { role: 'user', content: 'What is the main color of this image? One word.', media: [{ dataUrl: PROBE_IMAGE, name: 'probe.png' }] },
+      ],
       tools: [],
     });
     out.vision = /red|красн|rojo|rouge|rot/i.test(String(r.text || ''));
@@ -75,11 +83,12 @@ export async function probeModel(ownerId, providerId, { modelId, baseUrl = null,
       trustedBaseURL: baseUrl ? false : Boolean(spec.trustedBaseURL),
     };
     const pingTools = [];
-    const result = resolved.spec.kind === 'anthropic'
-      ? await callAnthropic(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools })
-      : resolved.spec.kind === 'google'
-        ? await callGoogle(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools })
-        : await callOpenAI(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools });
+    const result =
+      resolved.spec.kind === 'anthropic'
+        ? await callAnthropic(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools })
+        : resolved.spec.kind === 'google'
+          ? await callGoogle(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools })
+          : await callOpenAI(resolved, { system: 'Reply with OK.', frames: [{ role: 'user', content: 'OK' }], tools: pingTools });
     const available = Boolean(result.text || result.finish);
     const latencyMs = Date.now() - start;
     if (!available || !capabilities) return { available, latencyMs, checkedAt: Date.now() };

@@ -1,13 +1,14 @@
 import { readJson, sendJson } from '../native/json.mjs';
 import { handleProviderChannels } from '../native/provider-channels.mjs';
 import { buildCatalog, providerList, providerSpecs } from '../native/providers.mjs';
-import {
-  deleteProviderKey, listProviderKeyIds, setProviderKey,
-} from '../native/store.mjs';
+import { deleteProviderKey, listProviderKeyIds, setProviderKey } from '../native/store.mjs';
 
 function decodePathPart(part) {
-  try { return decodeURIComponent(part); }
-  catch { return part; }
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 export async function handleModelRoutes(req, res, p, url, ownerId) {

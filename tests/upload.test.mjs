@@ -4,21 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import test from 'node:test';
-import {
-  PART_TOO_LARGE,
-  boundaryFromContentType,
-  fileSink,
-  parseMultipartStream,
-} from '../server/native/multipart.mjs';
+import { PART_TOO_LARGE, boundaryFromContentType, fileSink, parseMultipartStream } from '../server/native/multipart.mjs';
 
 const BOUNDARY = 'z-agent-test-boundary';
 
 function multipartBody(parts, boundary = BOUNDARY) {
   const chunks = [];
   for (const part of parts) {
-    const disposition = part.filename
-      ? `form-data; name="${part.name}"; filename="${part.filename}"`
-      : `form-data; name="${part.name}"`;
+    const disposition = part.filename ? `form-data; name="${part.name}"; filename="${part.filename}"` : `form-data; name="${part.name}"`;
     chunks.push(Buffer.from(`--${boundary}\r\nContent-Disposition: ${disposition}\r\n\r\n`));
     chunks.push(Buffer.isBuffer(part.data) ? part.data : Buffer.from(part.data));
     chunks.push(Buffer.from('\r\n'));

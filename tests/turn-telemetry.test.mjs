@@ -42,7 +42,6 @@ test('turn telemetry aggregates model/tool/gate evidence and persists one JSONL 
   assert.equal(persisted.tools.run_tests.calls, 1);
 });
 
-
 test('turn telemetry can estimate cost from operator-supplied model pricing without hard-coded prices', () => {
   const previous = process.env.Z_AGENT_MODEL_PRICING_JSON;
   try {
@@ -52,6 +51,7 @@ test('turn telemetry can estimate cost from operator-supplied model pricing with
     const summary = telemetry.finalizeTurnTelemetry(state, { model: 'fixture/costed', outcome: { status: 'completed' }, strategy: {} });
     assert.equal(summary.estimatedCostUsd, 0.006);
   } finally {
-    if (previous == null) delete process.env.Z_AGENT_MODEL_PRICING_JSON; else process.env.Z_AGENT_MODEL_PRICING_JSON = previous;
+    if (previous == null) delete process.env.Z_AGENT_MODEL_PRICING_JSON;
+    else process.env.Z_AGENT_MODEL_PRICING_JSON = previous;
   }
 });

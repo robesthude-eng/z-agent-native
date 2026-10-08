@@ -2,17 +2,30 @@ import { executorNetworkless } from './executor-client.mjs';
 import path from 'node:path';
 
 const SENSITIVE_BASENAMES = new Set([
-  '.env', '.netrc', '.npmrc', '.pypirc',
-  'id_rsa', 'id_dsa', 'id_ecdsa', 'id_ed25519',
-  'credentials', 'credentials.json', 'service-account.json',
+  '.env',
+  '.netrc',
+  '.npmrc',
+  '.pypirc',
+  'id_rsa',
+  'id_dsa',
+  'id_ecdsa',
+  'id_ed25519',
+  'credentials',
+  'credentials.json',
+  'service-account.json',
 ]);
 
 function normalized(relative) {
-  return String(relative || '').replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
+  return String(relative || '')
+    .replace(/\\/g, '/')
+    .replace(/^\.\//, '')
+    .toLowerCase();
 }
 
 export function sensitiveFilePolicy() {
-  const value = String(process.env.Z_AGENT_SENSITIVE_FILE_POLICY || 'block').trim().toLowerCase();
+  const value = String(process.env.Z_AGENT_SENSITIVE_FILE_POLICY || 'block')
+    .trim()
+    .toLowerCase();
   return value === 'allow' ? 'allow' : 'block';
 }
 
@@ -39,9 +52,10 @@ export function assertAgentReadablePath(relative) {
   });
 }
 
-
 export function agentNetworkPolicy() {
-  const value = String(process.env.Z_AGENT_NETWORK_POLICY || 'off').trim().toLowerCase();
+  const value = String(process.env.Z_AGENT_NETWORK_POLICY || 'off')
+    .trim()
+    .toLowerCase();
   return ['public', 'allowlist', 'off'].includes(value) ? value : 'off';
 }
 
@@ -53,7 +67,9 @@ export function agentNetworkAllowlist() {
 }
 
 function hostnameAllowed(hostname, allowed) {
-  const host = String(hostname || '').toLowerCase().replace(/\.+$/, '');
+  const host = String(hostname || '')
+    .toLowerCase()
+    .replace(/\.+$/, '');
   return allowed.some((entry) => {
     const value = String(entry || '').toLowerCase();
     if (value.startsWith('*.')) {
@@ -75,15 +91,23 @@ export function assertAgentNetworkUrl(value, { tool = 'network tool' } = {}) {
   const policy = agentNetworkPolicy();
   if (policy === 'public') return;
   if (policy === 'off') {
-    throw Object.assign(new Error(`${tool} is disabled by Z_AGENT_NETWORK_POLICY=off.`), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+    throw Object.assign(new Error(`${tool} is disabled by Z_AGENT_NETWORK_POLICY=off.`), {
+      statusCode: 403,
+      code: 'AGENT_NETWORK_BLOCKED',
+    });
   }
   let parsed;
-  try { parsed = new URL(String(value)); } catch {
+  try {
+    parsed = new URL(String(value));
+  } catch {
     throw Object.assign(new Error(`Invalid URL for ${tool}`), { statusCode: 400, code: 'AGENT_NETWORK_URL_INVALID' });
   }
   const allowed = agentNetworkAllowlist();
   if (!allowed.length || !hostnameAllowed(parsed.hostname, allowed)) {
-    throw Object.assign(new Error(`${tool} host is not in Z_AGENT_NETWORK_ALLOWLIST: ${parsed.hostname}`), { statusCode: 403, code: 'AGENT_NETWORK_HOST_BLOCKED' });
+    throw Object.assign(new Error(`${tool} host is not in Z_AGENT_NETWORK_ALLOWLIST: ${parsed.hostname}`), {
+      statusCode: 403,
+      code: 'AGENT_NETWORK_HOST_BLOCKED',
+    });
   }
 }
 
@@ -104,7 +128,9 @@ export function shellPrivilegePolicy() {
 }
 
 export function shellNetworkPolicy() {
-  const value = String(process.env.Z_AGENT_SHELL_NETWORK_POLICY || 'guarded').trim().toLowerCase();
+  const value = String(process.env.Z_AGENT_SHELL_NETWORK_POLICY || 'guarded')
+    .trim()
+    .toLowerCase();
   return ['open', 'guarded', 'tool-only'].includes(value) ? value : 'guarded';
 }
 
@@ -120,16 +146,20 @@ export function sshHostAllowlist() {
  * Empty configuration must never mean "any server": it means disabled.
  */
 export function sshPolicy() {
-  const value = String(process.env.Z_AGENT_SSH_POLICY || 'off').trim().toLowerCase();
+  const value = String(process.env.Z_AGENT_SSH_POLICY || 'off')
+    .trim()
+    .toLowerCase();
   return ['off', 'allowlist', 'any'].includes(value) ? value : 'off';
 }
 
 const DIRECT_NETWORK = /(?:^|[;&|\n]\s*|\b)(?:curl|wget|ssh|scp|sftp|ftp|telnet|nc|ncat|socat)\b/i;
 const REMOTE_RSYNC = /\brsync\b[^\n;&|]*(?:\s|^)(?:[^\s:@]+@)?[^\s:]+:/i;
-const INLINE_NETWORK_CODE = /\b(?:python3?|node|ruby|perl)\b[^\n]*(?:https?:\/\/|requests\.|urllib|socket\.|fetch\s*\(|https?\.(?:get|request)\s*\()/i;
+const INLINE_NETWORK_CODE =
+  /\b(?:python3?|node|ruby|perl)\b[^\n]*(?:https?:\/\/|requests\.|urllib|socket\.|fetch\s*\(|https?\.(?:get|request)\s*\()/i;
 const PACKAGE_NETWORK = /(?:^|[;&|\n]\s*|\b)(?:npm|npx|pnpm|yarn|bun|pip|pip3|poetry|uv|gem|bundle|cargo|go|mvn|gradle|gradlew)\b/i;
 const REMOTE_GIT = /\bgit\s+(?:clone|fetch|pull|push|ls-remote)\b/i;
-const SENSITIVE_COMMAND = /(?:^|[\s'"`/])(?:\.env(?:\.[\w.-]+)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|\.ssh(?:\/|\b)|(?:aws\/)?credentials(?:\.json)?|service[-_]?account[^\s'"`]*)/i;
+const SENSITIVE_COMMAND =
+  /(?:^|[\s'"`/])(?:\.env(?:\.[\w.-]+)?|\.netrc|\.npmrc|\.pypirc|id_(?:rsa|dsa|ecdsa|ed25519)|\.ssh(?:\/|\b)|(?:aws\/)?credentials(?:\.json)?|service[-_]?account[^\s'"`]*)/i;
 const ESCALATION = /(?:^|[\s'"`;|&<>(])(?:sudo|doas|pkexec|su)\b/i;
 const HOST_ESCAPE = /(?:^|[\s'"`;|&<>])\/(?:etc\/(?:passwd|shadow|sudoers|master\.passwd)|proc\/|sys\/|root\/|var\/run\/secrets)\b/i;
 
@@ -161,24 +191,39 @@ export function assertShellCommandAllowed(command) {
   // or a password prompt that nobody could answer. Refuse it here with an
   // explanation of the switch that enables it, so the agent stops guessing.
   if (ESCALATION.test(text) && shellPrivilegePolicy() !== 'sudo') {
-    throw Object.assign(new Error('Elevated shell access (sudo/su/doas) is not enabled. Set Z_AGENT_ALLOW_SUDO=1 for a trusted single-user deployment, or provision runtimes with ensure_environment.'), {
-      statusCode: 403,
-      code: 'SHELL_ESCALATION_BLOCKED',
-    });
+    throw Object.assign(
+      new Error(
+        'Elevated shell access (sudo/su/doas) is not enabled. Set Z_AGENT_ALLOW_SUDO=1 for a trusted single-user deployment, or provision runtimes with ensure_environment.',
+      ),
+      {
+        statusCode: 403,
+        code: 'SHELL_ESCALATION_BLOCKED',
+      },
+    );
   }
 
   if (DIRECT_NETWORK.test(text) || REMOTE_RSYNC.test(text) || INLINE_NETWORK_CODE.test(text)) {
-    throw Object.assign(new Error('Direct shell network egress is blocked. Use webfetch/websearch for public reads or explicitly configure Z_AGENT_SHELL_NETWORK_POLICY=open for a trusted single-user deployment.'), {
-      statusCode: 403,
-      code: 'SHELL_EGRESS_BLOCKED',
-    });
+    throw Object.assign(
+      new Error(
+        'Direct shell network egress is blocked. Use webfetch/websearch for public reads or explicitly configure Z_AGENT_SHELL_NETWORK_POLICY=open for a trusted single-user deployment.',
+      ),
+      {
+        statusCode: 403,
+        code: 'SHELL_EGRESS_BLOCKED',
+      },
+    );
   }
 
   if (policy === 'tool-only' && (PACKAGE_NETWORK.test(text) || REMOTE_GIT.test(text))) {
-    throw Object.assign(new Error('This shell command may access the network and is blocked by Z_AGENT_SHELL_NETWORK_POLICY=tool-only. Use managed environment tools or run it outside the autonomous agent boundary.'), {
-      statusCode: 403,
-      code: 'SHELL_EGRESS_BLOCKED',
-    });
+    throw Object.assign(
+      new Error(
+        'This shell command may access the network and is blocked by Z_AGENT_SHELL_NETWORK_POLICY=tool-only. Use managed environment tools or run it outside the autonomous agent boundary.',
+      ),
+      {
+        statusCode: 403,
+        code: 'SHELL_EGRESS_BLOCKED',
+      },
+    );
   }
 }
 
@@ -198,26 +243,36 @@ export function runtimeCapabilityPrompt() {
   const executorRequiredHere = String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') === '1';
   const attested = executorNetworkless();
   const isolatedExecutor = executorRequiredHere && (attested ?? String(process.env.Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE || '1') !== '0');
-  const installers = web === 'public'
-    && (String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') !== '1'
-      || process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS === '1');
+  const installers =
+    web === 'public' &&
+    (String(process.env.Z_AGENT_EXECUTOR_REQUIRED || '') !== '1' || process.env.Z_AGENT_ALLOW_NETWORKED_INSTALLERS === '1');
   const lines = ['Runtime capabilities (generated per request; trust this over any general assumption):'];
   if (web === 'public') {
-    lines.push('- Internet: enabled. websearch, webfetch and browser reach any public host. Never claim you have no internet access; look things up instead.');
+    lines.push(
+      '- Internet: enabled. websearch, webfetch and browser reach any public host. Never claim you have no internet access; look things up instead.',
+    );
   } else if (web === 'allowlist') {
     const hosts = agentNetworkAllowlist();
-    lines.push(`- Internet: limited to these hosts: ${hosts.length ? hosts.join(', ') : '(none configured yet)'}. Other hosts are refused by policy, not by you.`);
+    lines.push(
+      `- Internet: limited to these hosts: ${hosts.length ? hosts.join(', ') : '(none configured yet)'}. Other hosts are refused by policy, not by you.`,
+    );
   } else {
     lines.push('- Internet: disabled for this instance. Do not promise to look anything up online.');
   }
   if (isolatedExecutor) {
-    lines.push('- Shell network: autonomous bash/build/test commands run in a networkless executor. Use only enabled structured network tools for external access.');
+    lines.push(
+      '- Shell network: autonomous bash/build/test commands run in a networkless executor. Use only enabled structured network tools for external access.',
+    );
   } else if (shell === 'open') {
     lines.push('- Shell network: direct egress is allowed from bash (curl, wget, git clone, package managers).');
   } else if (shell === 'tool-only') {
-    lines.push('- Shell network: blocked, including package managers and remote git. Use websearch/webfetch and ensure_environment instead.');
+    lines.push(
+      '- Shell network: blocked, including package managers and remote git. Use websearch/webfetch and ensure_environment instead.',
+    );
   } else {
-    lines.push('- Shell network: direct network clients are blocked, package managers and remote git are allowed. Use websearch/webfetch for public reads.');
+    lines.push(
+      '- Shell network: direct network clients are blocked, package managers and remote git are allowed. Use websearch/webfetch for public reads.',
+    );
   }
   if (ssh === 'any') {
     lines.push('- Remote SSH: enabled for any destination through ssh_tool. Use the structured tool instead of bash ssh/scp.');
@@ -228,14 +283,20 @@ export function runtimeCapabilityPrompt() {
     lines.push('- Remote SSH: disabled for this instance.');
   }
   if (String(process.env.DAYTONA_API_KEY || '').trim()) {
-    lines.push('- Cloud sandbox: enabled. cloud_sandbox runs commands on a remote Daytona machine (more CPU/RAM than local bash) over a synced copy of the workspace; prefer it for heavy builds, long test suites and memory-hungry jobs.');
+    lines.push(
+      '- Cloud sandbox: enabled. cloud_sandbox runs commands on a remote Daytona machine (more CPU/RAM than local bash) over a synced copy of the workspace; prefer it for heavy builds, long test suites and memory-hungry jobs.',
+    );
   }
   if (sudo) {
-    lines.push('- Elevated shell: sudo is available. Install system packages when the task genuinely needs them, prefer non-destructive commands, and stay out of credentials and files unrelated to the task.');
+    lines.push(
+      '- Elevated shell: sudo is available. Install system packages when the task genuinely needs them, prefer non-destructive commands, and stay out of credentials and files unrelated to the task.',
+    );
   } else {
-    lines.push(installers
-      ? '- Elevated shell: no sudo. Provision missing runtimes with ensure_environment instead of treating them as a blocker.'
-      : '- Elevated shell: no sudo. Networked installers are disabled; missing system packages must be baked into the image or provisioned by the operator.');
+    lines.push(
+      installers
+        ? '- Elevated shell: no sudo. Provision missing runtimes with ensure_environment instead of treating them as a blocker.'
+        : '- Elevated shell: no sudo. Networked installers are disabled; missing system packages must be baked into the image or provisioned by the operator.',
+    );
   }
   return lines.join('\n');
 }

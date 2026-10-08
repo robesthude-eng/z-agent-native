@@ -3,7 +3,6 @@
  * Modular implementations live in server/native/store/*.
  */
 
-
 export {
   auditEventCount,
   claimAction,

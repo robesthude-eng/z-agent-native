@@ -35,15 +35,23 @@ function gitResult(root, args, options = {}) {
   const gitArgs = [...SAFE_GIT_PREFIX, ...args];
   if (options.executor?.isolated) {
     const remote = executeInExecutorSync({
-      workspace: root, uid: options.executor.uid, gid: options.executor.gid, file: 'git', args: gitArgs, env, timeoutMs,
+      workspace: root,
+      uid: options.executor.uid,
+      gid: options.executor.gid,
+      file: 'git',
+      args: gitArgs,
+      env,
+      timeoutMs,
     });
     if (remote) return { status: Number(remote.code) || 0, stdout: String(remote.stdout || ''), stderr: String(remote.stderr || '') };
   }
-  const result = spawnSync(options.spawnFile || 'git', [
-    ...(options.spawnArgsPrefix || []),
-    ...gitArgs,
-  ], {
-    cwd: root, encoding: 'utf8', timeout: timeoutMs, ...(options.spawnOptions || {}), env, maxBuffer: 4 * 1024 * 1024,
+  const result = spawnSync(options.spawnFile || 'git', [...(options.spawnArgsPrefix || []), ...gitArgs], {
+    cwd: root,
+    encoding: 'utf8',
+    timeout: timeoutMs,
+    ...(options.spawnOptions || {}),
+    env,
+    maxBuffer: 4 * 1024 * 1024,
   });
   if (result.error) throw result.error;
   return { status: result.status ?? 1, stdout: String(result.stdout || ''), stderr: String(result.stderr || '') };
@@ -89,11 +97,7 @@ export function parsePorcelainZ(text) {
 }
 
 export function listGitChanges(root, options = {}) {
-  const text = gitOrThrow(
-    root,
-    ['status', '--porcelain=v1', '-z', '--untracked-files=all'],
-    options,
-  );
+  const text = gitOrThrow(root, ['status', '--porcelain=v1', '-z', '--untracked-files=all'], options);
   return parsePorcelainZ(text);
 }
 
@@ -233,7 +237,8 @@ export function revertGitChange(root, relativePath, options = {}) {
     gitResult(root, ['rm', '-f', '--cached', '--ignore-unmatch', '--', change.path], options);
     removeWorkspacePath(root, change.path);
   } else if (change.status === 'renamed') {
-    if (!change.originalPath) throw Object.assign(new Error('Не удалось определить исходный путь переименованного файла'), { statusCode: 409 });
+    if (!change.originalPath)
+      throw Object.assign(new Error('Не удалось определить исходный путь переименованного файла'), { statusCode: 409 });
     // A staged rename is represented as old-path deletion + new-path addition.
     // Clear the destination from the index first, then restore the source from HEAD.
     gitResult(root, ['rm', '-f', '--cached', '--ignore-unmatch', '--', change.path], options);

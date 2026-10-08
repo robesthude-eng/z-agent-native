@@ -35,14 +35,15 @@ const PREVIEW_HTML_REWRITE_LIMIT = 2 * 1024 * 1024;
 export function previewSecurityPolicy(req) {
   const rawHost = String(req?.headers?.host || '').trim();
   const host = /^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(rawHost) ? rawHost : '';
-  const forwarded = String(req?.headers?.['x-forwarded-proto'] || '').split(',')[0].trim().toLowerCase();
-  const scheme = forwarded === 'https' || forwarded === 'http'
-    ? forwarded
-    : (req?.socket?.encrypted ? 'https' : 'http');
+  const forwarded = String(req?.headers?.['x-forwarded-proto'] || '')
+    .split(',')[0]
+    .trim()
+    .toLowerCase();
+  const scheme = forwarded === 'https' || forwarded === 'http' ? forwarded : req?.socket?.encrypted ? 'https' : 'http';
   const own = host ? `${scheme}://${host}` : '';
   const from = own ? `${own} ` : '';
   return [
-    "sandbox allow-scripts allow-forms allow-popups",
+    'sandbox allow-scripts allow-forms allow-popups',
     "default-src 'none'",
     `script-src ${from}'unsafe-inline' 'unsafe-eval'`,
     `style-src ${from}'unsafe-inline'`,
@@ -60,8 +61,9 @@ export function previewSecurityPolicy(req) {
 
 export function servePreviewFile(req, res, psid, rawRelative) {
   let relative;
-  try { relative = rawRelative.split('/').map(decodeURIComponent).join('/'); }
-  catch {
+  try {
+    relative = rawRelative.split('/').map(decodeURIComponent).join('/');
+  } catch {
     sendJson(res, 400, { error: 'Bad request' });
     return;
   }
@@ -82,7 +84,11 @@ export function servePreviewFile(req, res, psid, rawRelative) {
 
   if (/\.html?$/i.test(full) && st.size > 0 && st.size <= PREVIEW_HTML_REWRITE_LIMIT) {
     let rewritten = null;
-    try { rewritten = Buffer.from(rewritePreviewHtml(readFd(fd, st.size).toString('utf8')), 'utf8'); } catch { rewritten = null; }
+    try {
+      rewritten = Buffer.from(rewritePreviewHtml(readFd(fd, st.size).toString('utf8')), 'utf8');
+    } catch {
+      rewritten = null;
+    }
     if (rewritten) {
       fs.closeSync(fd);
       res.writeHead(200, {

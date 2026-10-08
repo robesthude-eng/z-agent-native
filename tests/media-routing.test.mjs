@@ -13,12 +13,24 @@ const store = await import('../server/native/store.mjs');
 const configs = await import('../server/native/provider-configs.mjs');
 const providers = await import('../server/native/providers.mjs');
 const media = await import('../server/native/media-generation.mjs');
-test.after(() => { providers.setProviderTransportForTests(null); fs.rmSync(root, { recursive: true, force: true }); });
+test.after(() => {
+  providers.setProviderTransportForTests(null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
 let counter = 0;
 const owners = new Set();
 function channel(protocol, id, enabled = true, owner = `media-${++counter}@example.com`) {
-  if (!owners.has(owner)) { store.createUser(owner, 'test-hash'); owners.add(owner); }
-  configs.upsertProviderConfig(owner, { id, name: 'A neutral label', protocol, baseURL: `https://1.1.1.1/${protocol === 'google' ? 'v1beta' : 'v1'}`, enabled });
+  if (!owners.has(owner)) {
+    store.createUser(owner, 'test-hash');
+    owners.add(owner);
+  }
+  configs.upsertProviderConfig(owner, {
+    id,
+    name: 'A neutral label',
+    protocol,
+    baseURL: `https://1.1.1.1/${protocol === 'google' ? 'v1beta' : 'v1'}`,
+    enabled,
+  });
   store.setProviderKey(owner, id, 'test-key');
   return owner;
 }
@@ -31,12 +43,35 @@ test('Google protocol with a UI-generated channel ID uses generateContent for im
     const body = JSON.parse(init.body);
     requests.push({ url: String(url), body });
     const audio = body.generationConfig.responseModalities[0] === 'AUDIO';
-    return Response.json({ candidates: [{ content: { parts: [{ inlineData: { mimeType: audio ? 'audio/L16;rate=24000' : 'image/png', data: Buffer.from([0, 0, 0, 0]).toString('base64') } }] } }] });
+    return Response.json({
+      candidates: [
+        {
+          content: {
+            parts: [
+              {
+                inlineData: { mimeType: audio ? 'audio/L16;rate=24000' : 'image/png', data: Buffer.from([0, 0, 0, 0]).toString('base64') },
+              },
+            ],
+          },
+        },
+      ],
+    });
   });
   fs.writeFileSync(path.join(root, 'reference.png'), Buffer.from([1, 2, 3]));
-  const image = await media.generateImageAsset({ root, input: { prompt: 'Image', path: 'image.png', model: `${id}/image-model`, referenceImages: ['reference.png'] }, ctx: { ownerId } });
-  const audio = await media.generateSpeechAsset({ root, input: { text: 'Hello', path: 'speech.wav', model: `${id}/speech-model` }, ctx: { ownerId } });
-  assert.deepEqual(requests.map((r) => new URL(r.url).pathname), ['/v1beta/models/image-model:generateContent', '/v1beta/models/speech-model:generateContent']);
+  const image = await media.generateImageAsset({
+    root,
+    input: { prompt: 'Image', path: 'image.png', model: `${id}/image-model`, referenceImages: ['reference.png'] },
+    ctx: { ownerId },
+  });
+  const audio = await media.generateSpeechAsset({
+    root,
+    input: { text: 'Hello', path: 'speech.wav', model: `${id}/speech-model` },
+    ctx: { ownerId },
+  });
+  assert.deepEqual(
+    requests.map((r) => new URL(r.url).pathname),
+    ['/v1beta/models/image-model:generateContent', '/v1beta/models/speech-model:generateContent'],
+  );
   assert.equal(fs.readFileSync(path.join(root, 'speech.wav')).subarray(0, 4).toString(), 'RIFF');
   assert.equal(image.metadata.media.bytes, 4);
   assert.equal(image.metadata.media.mimeType, 'image/png');
@@ -56,9 +91,16 @@ test('OpenAI protocol uses OpenAI endpoints even when its ID says google', async
       ? new Response(Buffer.from('test-audio'), { headers: { 'content-type': 'audio/mpeg' } })
       : Response.json({ data: [{ b64_json: Buffer.from('test-image').toString('base64') }] });
   });
-  await media.generateImageAsset({ root, input: { prompt: 'Image', path: 'openai.png', model: `${id}/vendor/image-model` }, ctx: { ownerId } });
+  await media.generateImageAsset({
+    root,
+    input: { prompt: 'Image', path: 'openai.png', model: `${id}/vendor/image-model` },
+    ctx: { ownerId },
+  });
   await media.generateSpeechAsset({ root, input: { text: 'Hello', path: 'speech.mp3', model: `${id}/speech-model` }, ctx: { ownerId } });
-  assert.deepEqual(requests.map((r) => new URL(r.url).pathname), ['/v1/images/generations', '/v1/audio/speech']);
+  assert.deepEqual(
+    requests.map((r) => new URL(r.url).pathname),
+    ['/v1/images/generations', '/v1/audio/speech'],
+  );
   assert.equal(requests[0].body.model, 'vendor/image-model');
   assert.equal(fs.readFileSync(path.join(root, 'openai.png')).toString(), 'test-image');
   assert.equal(fs.readFileSync(path.join(root, 'speech.mp3')).toString(), 'test-audio');

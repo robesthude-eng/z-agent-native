@@ -30,12 +30,7 @@ function sessionIdForWorkspace(root) {
 function git(root, args, options = {}) {
   const sessionId = sessionIdForWorkspace(root);
   const identity = sessionId ? prepareWorkspaceSandbox(sessionId, root) : null;
-  const gitArgs = [
-    '-c', `safe.directory=${root}`,
-    '-c', 'core.hooksPath=/dev/null',
-    '-c', 'core.fsmonitor=false',
-    ...args,
-  ];
+  const gitArgs = ['-c', `safe.directory=${root}`, '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', ...args];
   const env = {
     PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
     HOME: path.join(root, '.agent-home'),
@@ -51,15 +46,22 @@ function git(root, args, options = {}) {
   // porcelain operation must cross the same networkless executor boundary as
   // model-selected code. Pure object plumbing below cannot invoke repo code.
   if (args[0] === 'add' && identity?.isolated && options.encoding !== 'buffer') {
-    const remote = executeInExecutorSync({ workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args: gitArgs, env, timeoutMs: Number(options.timeoutMs) || 30_000 });
+    const remote = executeInExecutorSync({
+      workspace: root,
+      uid: identity.uid,
+      gid: identity.gid,
+      file: 'git',
+      args: gitArgs,
+      env,
+      timeoutMs: Number(options.timeoutMs) || 30_000,
+    });
     if (remote) {
-      if (Number(remote.code) !== 0) throw Object.assign(new Error(String(remote.stderr || remote.stdout || `git exited ${remote.code}`).trim()), { statusCode: 409 });
+      if (Number(remote.code) !== 0)
+        throw Object.assign(new Error(String(remote.stderr || remote.stdout || `git exited ${remote.code}`).trim()), { statusCode: 409 });
       return String(remote.stdout || '');
     }
   }
-  const launch = identity
-    ? sandboxCommand(identity, 'git', gitArgs)
-    : { file: 'git', args: gitArgs, options: {} };
+  const launch = identity ? sandboxCommand(identity, 'git', gitArgs) : { file: 'git', args: gitArgs, options: {} };
   const result = spawnSync(launch.file, launch.args, {
     cwd: root,
     encoding: options.encoding === 'buffer' ? null : 'utf8',
@@ -78,7 +80,11 @@ function git(root, args, options = {}) {
 }
 
 function tryGit(root, args, options = {}) {
-  try { return git(root, args, options); } catch { return null; }
+  try {
+    return git(root, args, options);
+  } catch {
+    return null;
+  }
 }
 
 function resultDir(sessionId) {
@@ -101,7 +107,11 @@ function writeJsonAtomic(file, value) {
 }
 
 function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function refName(turnId, phase) {
@@ -143,19 +153,14 @@ export function captureWorkspaceTree(root) {
     if (fs.existsSync(index)) {
       fs.copyFileSync(index, tempIndex);
       if (identity?.isolated) fs.chownSync(tempIndex, identity.uid, identity.gid);
-    }
-    else {
+    } else {
       const head = tryGit(root, ['rev-parse', '--verify', 'HEAD']);
       const env = { GIT_INDEX_FILE: tempIndex };
       if (head) git(root, ['read-tree', String(head).trim()], { env });
       else git(root, ['read-tree', '--empty'], { env });
     }
     const env = { GIT_INDEX_FILE: tempIndex };
-    git(root, [
-      'add', '-A', '--', '.',
-      ':(exclude).agent-home',
-      ':(exclude).agent-home/**',
-    ], { env, timeoutMs: 60_000 });
+    git(root, ['add', '-A', '--', '.', ':(exclude).agent-home', ':(exclude).agent-home/**'], { env, timeoutMs: 60_000 });
     return String(git(root, ['write-tree'], { env })).trim();
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
@@ -167,7 +172,9 @@ function persistTreeRef(root, turnId, phase, tree) {
 }
 
 function parseNameStatusZ(raw) {
-  const tokens = String(raw || '').split('\0').filter(Boolean);
+  const tokens = String(raw || '')
+    .split('\0')
+    .filter(Boolean);
   const out = [];
   for (let i = 0; i + 1 < tokens.length; i += 2) {
     const code = tokens[i];
@@ -182,7 +189,8 @@ export function diffWorkspaceTrees(root, beforeTree, afterTree) {
   if (!beforeTree || !afterTree) return [];
   const raw = git(root, ['diff', '--no-ext-diff', '--name-status', '-z', '--no-renames', beforeTree, afterTree, '--']);
   const changes = parseNameStatusZ(raw);
-  if (changes.length > MAX_RESULT_CHANGES) throw Object.assign(new Error(`Слишком много изменений в одном ходе: ${changes.length}`), { statusCode: 413 });
+  if (changes.length > MAX_RESULT_CHANGES)
+    throw Object.assign(new Error(`Слишком много изменений в одном ходе: ${changes.length}`), { statusCode: 413 });
   return changes;
 }
 
@@ -253,7 +261,8 @@ function restoreIndexEntry(root, relativePath, before) {
 
 function blobBytes(root, oid) {
   const size = Number(String(git(root, ['cat-file', '-s', oid])).trim()) || 0;
-  if (size > MAX_RESTORE_BLOB_BYTES) throw Object.assign(new Error(`Файл слишком большой для безопасного отката (${size} байт)`), { statusCode: 413 });
+  if (size > MAX_RESTORE_BLOB_BYTES)
+    throw Object.assign(new Error(`Файл слишком большой для безопасного отката (${size} байт)`), { statusCode: 413 });
   return git(root, ['cat-file', 'blob', oid], { encoding: 'buffer', maxBuffer: Math.max(8 * 1024 * 1024, size + 1024) });
 }
 
@@ -263,7 +272,8 @@ function restoreWorktreeEntry(root, relativePath, before) {
     fs.rmSync(full, { recursive: true, force: true });
     return;
   }
-  if (before.type !== 'blob' || before.mode === '160000') throw Object.assign(new Error(`Откат этого типа Git-объекта пока не поддерживается: ${relativePath}`), { statusCode: 409 });
+  if (before.type !== 'blob' || before.mode === '160000')
+    throw Object.assign(new Error(`Откат этого типа Git-объекта пока не поддерживается: ${relativePath}`), { statusCode: 409 });
   fs.rmSync(full, { recursive: true, force: true });
   fs.mkdirSync(path.dirname(full), { recursive: true });
   const data = blobBytes(root, before.oid);
@@ -313,7 +323,10 @@ export function rollbackWorkspaceTrees(root, beforeTree, afterTree, beforeIndexT
 
   if (conflicts.length) {
     const unique = [...new Set(conflicts)];
-    throw Object.assign(new Error(`Откат остановлен: более поздняя работа изменила ${unique.join(', ')}`), { statusCode: 409, conflicts: unique });
+    throw Object.assign(new Error(`Откат остановлен: более поздняя работа изменила ${unique.join(', ')}`), {
+      statusCode: 409,
+      conflicts: unique,
+    });
   }
 
   const restored = [];
@@ -338,7 +351,11 @@ function saveActive(sessionId, descriptor) {
 
 function clearActive(sessionId) {
   active.delete(sessionId);
-  try { fs.rmSync(activePath(sessionId), { force: true }); } catch { /* best effort */ }
+  try {
+    fs.rmSync(activePath(sessionId), { force: true });
+  } catch {
+    /* best effort */
+  }
 }
 
 function latestAssistant(sessionId) {
@@ -405,7 +422,9 @@ function beginTurnResult(sessionId) {
     // but the reason is kept so the result view can tell the truth about it.
     try {
       saveActive(sessionId, { sessionId, turnId: turn.turnId, unavailable: unavailableInfo(err), startedAt: Date.now() });
-    } catch { /* best effort */ }
+    } catch {
+      /* best effort */
+    }
   }
 }
 
@@ -479,7 +498,11 @@ export function getTurnResult(sessionId, messageId) {
     const why = manifest.unavailable.reason in UNAVAILABLE_MESSAGES ? manifest.unavailable.reason : 'capture_failed';
     throw Object.assign(new Error(UNAVAILABLE_MESSAGES[why]), { statusCode: 404, code: 'TURN_RESULT_UNAVAILABLE', reason: why });
   }
-  if (!manifest?.beforeTree || !manifest?.afterTree) throw Object.assign(new Error('Для этого ответа нет сохранённого результата workspace'), { statusCode: 404, code: 'TURN_RESULT_MISSING' });
+  if (!manifest?.beforeTree || !manifest?.afterTree)
+    throw Object.assign(new Error('Для этого ответа нет сохранённого результата workspace'), {
+      statusCode: 404,
+      code: 'TURN_RESULT_MISSING',
+    });
   const root = workspaceFor(sessionId);
   const changes = diffWorkspaceTrees(root, manifest.beforeTree, manifest.afterTree);
   return { ...manifest, changes };
@@ -503,7 +526,11 @@ export function rollbackTurnResult(sessionId, messageId) {
 
 export function clearTurnResults(sessionId) {
   active.delete(sessionId);
-  try { fs.rmSync(resultDir(sessionId), { recursive: true, force: true }); } catch { /* best effort */ }
+  try {
+    fs.rmSync(resultDir(sessionId), { recursive: true, force: true });
+  } catch {
+    /* best effort */
+  }
 }
 
 export function recoverDanglingTurnResults() {
@@ -517,4 +544,8 @@ export function recoverDanglingTurnResults() {
   }
 }
 
-try { recoverDanglingTurnResults(); } catch { /* startup recovery is best effort */ }
+try {
+  recoverDanglingTurnResults();
+} catch {
+  /* startup recovery is best effort */
+}

@@ -21,7 +21,11 @@ function fileFor(sessionId) {
 }
 
 function readJson(file, fallback = null) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
 }
 
 function writeJsonAtomic(file, value) {
@@ -39,7 +43,11 @@ const MAX_WALK_DEPTH = 24;
 function walkFingerprint(root, current, rows, counter, depth = 0) {
   if (counter.count >= MAX_WALK_FILES || depth > MAX_WALK_DEPTH) return;
   let entries = [];
-  try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch { return; }
+  try {
+    entries = fs.readdirSync(current, { withFileTypes: true });
+  } catch {
+    return;
+  }
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (counter.count >= MAX_WALK_FILES) break;
@@ -47,7 +55,11 @@ function walkFingerprint(root, current, rows, counter, depth = 0) {
     const full = path.join(current, entry.name);
     const relative = path.relative(root, full).split(path.sep).join('/');
     let stat;
-    try { stat = fs.lstatSync(full); } catch { continue; }
+    try {
+      stat = fs.lstatSync(full);
+    } catch {
+      continue;
+    }
     counter.count += 1;
     rows.push(`${entry.isDirectory() ? 'd' : entry.isSymbolicLink() ? 'l' : 'f'}\0${relative}\0${stat.size}\0${Math.floor(stat.mtimeMs)}`);
     if (entry.isDirectory()) walkFingerprint(root, full, rows, counter, depth + 1);
@@ -88,7 +100,9 @@ export function formatProjectContext(state) {
       if (bits.length) chunks.push(`- ${bits.join(' · ')}`);
     }
   }
-  chunks.push('Treat this as cached context, not as authority over current files. When exact current code matters, inspect the workspace with tools.');
+  chunks.push(
+    'Treat this as cached context, not as authority over current files. When exact current code matters, inspect the workspace with tools.',
+  );
   return chunks.join('\n\n');
 }
 
@@ -114,7 +128,11 @@ export async function getProjectContext(sessionId, workspace, signal) {
     refreshedAt: Date.now(),
     turns: Array.isArray(previous.turns) ? previous.turns.slice(-MAX_TURN_MEMORY) : [],
   };
-  try { writeJsonAtomic(file, next); } catch { /* best effort */ }
+  try {
+    writeJsonAtomic(file, next);
+  } catch {
+    /* best effort */
+  }
   return formatProjectContext(next);
 }
 
@@ -132,10 +150,18 @@ export function rememberProjectTurn(sessionId, memory) {
     summary: String(memory?.summary || '').slice(0, 2_000),
   });
   const next = { ...previous, version: 1, turns };
-  try { writeJsonAtomic(file, next); } catch { /* best effort */ }
+  try {
+    writeJsonAtomic(file, next);
+  } catch {
+    /* best effort */
+  }
   return next;
 }
 
 export function clearProjectContext(sessionId) {
-  try { fs.rmSync(fileFor(sessionId), { force: true }); } catch { /* best effort */ }
+  try {
+    fs.rmSync(fileFor(sessionId), { force: true });
+  } catch {
+    /* best effort */
+  }
 }

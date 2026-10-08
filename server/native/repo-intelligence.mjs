@@ -2,44 +2,143 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const IGNORED_DIRS = new Set([
-  '.git', 'node_modules', '.next', 'dist', 'build', 'coverage', '.cache', '.agent-home', '.agent-skills',
-  '.venv', 'venv', '__pycache__', 'target', '.turbo', '.parcel-cache', '.pytest_cache',
+  '.git',
+  'node_modules',
+  '.next',
+  'dist',
+  'build',
+  'coverage',
+  '.cache',
+  '.agent-home',
+  '.agent-skills',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'target',
+  '.turbo',
+  '.parcel-cache',
+  '.pytest_cache',
 ]);
 
 const LANGUAGE_BY_EXT = new Map([
-  ['.js', 'JavaScript'], ['.jsx', 'JavaScript'], ['.mjs', 'JavaScript'], ['.cjs', 'JavaScript'],
-  ['.ts', 'TypeScript'], ['.tsx', 'TypeScript'], ['.mts', 'TypeScript'], ['.cts', 'TypeScript'],
-  ['.py', 'Python'], ['.go', 'Go'], ['.rs', 'Rust'], ['.java', 'Java'], ['.kt', 'Kotlin'],
-  ['.rb', 'Ruby'], ['.php', 'PHP'], ['.cs', 'C#'], ['.cpp', 'C++'], ['.cc', 'C++'], ['.c', 'C'],
-  ['.h', 'C/C++ Header'], ['.hpp', 'C++ Header'], ['.swift', 'Swift'], ['.vue', 'Vue'], ['.svelte', 'Svelte'],
-  ['.sql', 'SQL'], ['.sh', 'Shell'], ['.bash', 'Shell'], ['.css', 'CSS'], ['.scss', 'SCSS'],
-  ['.html', 'HTML'], ['.md', 'Markdown'], ['.json', 'JSON'], ['.yaml', 'YAML'], ['.yml', 'YAML'],
-  ['.toml', 'TOML'], ['.xml', 'XML'],
+  ['.js', 'JavaScript'],
+  ['.jsx', 'JavaScript'],
+  ['.mjs', 'JavaScript'],
+  ['.cjs', 'JavaScript'],
+  ['.ts', 'TypeScript'],
+  ['.tsx', 'TypeScript'],
+  ['.mts', 'TypeScript'],
+  ['.cts', 'TypeScript'],
+  ['.py', 'Python'],
+  ['.go', 'Go'],
+  ['.rs', 'Rust'],
+  ['.java', 'Java'],
+  ['.kt', 'Kotlin'],
+  ['.rb', 'Ruby'],
+  ['.php', 'PHP'],
+  ['.cs', 'C#'],
+  ['.cpp', 'C++'],
+  ['.cc', 'C++'],
+  ['.c', 'C'],
+  ['.h', 'C/C++ Header'],
+  ['.hpp', 'C++ Header'],
+  ['.swift', 'Swift'],
+  ['.vue', 'Vue'],
+  ['.svelte', 'Svelte'],
+  ['.sql', 'SQL'],
+  ['.sh', 'Shell'],
+  ['.bash', 'Shell'],
+  ['.css', 'CSS'],
+  ['.scss', 'SCSS'],
+  ['.html', 'HTML'],
+  ['.md', 'Markdown'],
+  ['.json', 'JSON'],
+  ['.yaml', 'YAML'],
+  ['.yml', 'YAML'],
+  ['.toml', 'TOML'],
+  ['.xml', 'XML'],
 ]);
 
 const MANIFEST_NAMES = new Set([
-  'package.json', 'pyproject.toml', 'requirements.txt', 'Pipfile', 'poetry.lock',
-  'Cargo.toml', 'go.mod', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'Gemfile',
-  'composer.json', 'mix.exs', 'deno.json', 'deno.jsonc', 'bun.lock', 'bun.lockb',
+  'package.json',
+  'pyproject.toml',
+  'requirements.txt',
+  'Pipfile',
+  'poetry.lock',
+  'Cargo.toml',
+  'go.mod',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'Gemfile',
+  'composer.json',
+  'mix.exs',
+  'deno.json',
+  'deno.jsonc',
+  'bun.lock',
+  'bun.lockb',
 ]);
 
 const CONFIG_NAMES = new Set([
-  'tsconfig.json', 'jsconfig.json', 'vite.config.js', 'vite.config.mjs', 'vite.config.ts',
-  'next.config.js', 'next.config.mjs', 'next.config.ts', 'eslint.config.js', 'eslint.config.mjs',
-  'biome.json', 'biome.jsonc', 'Dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
-  'Makefile', 'Justfile', '.github', '.gitlab-ci.yml', 'playwright.config.ts', 'vitest.config.ts',
+  'tsconfig.json',
+  'jsconfig.json',
+  'vite.config.js',
+  'vite.config.mjs',
+  'vite.config.ts',
+  'next.config.js',
+  'next.config.mjs',
+  'next.config.ts',
+  'eslint.config.js',
+  'eslint.config.mjs',
+  'biome.json',
+  'biome.jsonc',
+  'Dockerfile',
+  'docker-compose.yml',
+  'docker-compose.yaml',
+  'Makefile',
+  'Justfile',
+  '.github',
+  '.gitlab-ci.yml',
+  'playwright.config.ts',
+  'vitest.config.ts',
 ]);
 
 const SOURCE_EXTS = new Set([
-  '.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts', '.py', '.go', '.rs',
-  '.java', '.kt', '.rb', '.php', '.cs', '.cpp', '.cc', '.c', '.h', '.hpp', '.swift', '.vue', '.svelte',
+  '.js',
+  '.jsx',
+  '.mjs',
+  '.cjs',
+  '.ts',
+  '.tsx',
+  '.mts',
+  '.cts',
+  '.py',
+  '.go',
+  '.rs',
+  '.java',
+  '.kt',
+  '.rb',
+  '.php',
+  '.cs',
+  '.cpp',
+  '.cc',
+  '.c',
+  '.h',
+  '.hpp',
+  '.swift',
+  '.vue',
+  '.svelte',
 ]);
 
 const IMPORT_EXTS = ['.ts', '.tsx', '.mts', '.cts', '.js', '.jsx', '.mjs', '.cjs', '.json'];
 const MAX_SCAN_BYTES = 160 * 1024;
 
-function slash(value) { return value.split(path.sep).join('/'); }
-function rel(root, full) { return slash(path.relative(root, full)) || '.'; }
+function slash(value) {
+  return value.split(path.sep).join('/');
+}
+function rel(root, full) {
+  return slash(path.relative(root, full)) || '.';
+}
 
 function readSmall(full, maxBytes = MAX_SCAN_BYTES) {
   try {
@@ -62,7 +161,11 @@ function walkFiles(root, scope, options = {}) {
   function visit(dir, depth) {
     if (truncated || depth > maxDepth) return;
     let entries;
-    try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     entries.sort((a, b) => a.name.localeCompare(b.name));
     for (const entry of entries) {
       if (truncated) break;
@@ -74,7 +177,9 @@ function walkFiles(root, scope, options = {}) {
       }
       if (!entry.isFile()) continue;
       let size = 0;
-      try { size = fs.statSync(full).size; } catch {}
+      try {
+        size = fs.statSync(full).size;
+      } catch {}
       files.push({ full, path: rel(root, full), size, ext: path.extname(entry.name).toLowerCase(), name: entry.name });
       if (files.length >= maxFiles) truncated = true;
     }
@@ -96,13 +201,18 @@ function packageSummary(_root, files) {
   if (!text) return null;
   try {
     const json = JSON.parse(text);
-    const scripts = Object.fromEntries(Object.entries(json.scripts || {}).slice(0, 30).map(([key, value]) => [key, String(value)]));
+    const scripts = Object.fromEntries(
+      Object.entries(json.scripts || {})
+        .slice(0, 30)
+        .map(([key, value]) => [key, String(value)]),
+    );
     const declaredEntrypoints = [json.main, json.module, json.browser]
-      .flatMap((value) => typeof value === 'string' ? [value] : [])
+      .flatMap((value) => (typeof value === 'string' ? [value] : []))
       .map((value) => slash(value.replace(/^\.\//, '')));
     if (typeof json.bin === 'string') declaredEntrypoints.push(slash(json.bin.replace(/^\.\//, '')));
     else if (json.bin && typeof json.bin === 'object') {
-      for (const value of Object.values(json.bin)) if (typeof value === 'string') declaredEntrypoints.push(slash(value.replace(/^\.\//, '')));
+      for (const value of Object.values(json.bin))
+        if (typeof value === 'string') declaredEntrypoints.push(slash(value.replace(/^\.\//, '')));
     }
     return {
       name: typeof json.name === 'string' ? json.name : null,
@@ -144,10 +254,12 @@ function topDirectories(files) {
 }
 
 function looksLikeTest(filePath) {
-  return /(^|\/)(?:test|tests|__tests__|spec)(\/|$)/i.test(filePath)
-    || /(?:\.test|\.spec)\.[^./]+$/i.test(filePath)
-    || /_test\.(?:go|py)$/i.test(filePath)
-    || /^test_.+\.py$/i.test(path.basename(filePath));
+  return (
+    /(^|\/)(?:test|tests|__tests__|spec)(\/|$)/i.test(filePath) ||
+    /(?:\.test|\.spec)\.[^./]+$/i.test(filePath) ||
+    /_test\.(?:go|py)$/i.test(filePath) ||
+    /^test_.+\.py$/i.test(path.basename(filePath))
+  );
 }
 
 function entrypointScore(filePath) {
@@ -253,7 +365,10 @@ function importHubs(root, files) {
 }
 
 function manifests(files) {
-  return files.filter((file) => MANIFEST_NAMES.has(file.name)).map((file) => file.path).slice(0, 30);
+  return files
+    .filter((file) => MANIFEST_NAMES.has(file.name))
+    .map((file) => file.path)
+    .slice(0, 30);
 }
 
 function configs(files) {
@@ -282,7 +397,10 @@ export function buildRepoMap(root, scope = root, options = {}) {
     entrypoints: candidateEntrypoints(scan.files, pkg),
     importHubs: importHubs(root, scan.files),
     symbolFiles: collectSymbols(scan.files, 240, maxSymbolsPerFile),
-    tests: scan.files.filter((file) => looksLikeTest(file.path)).map((file) => file.path).slice(0, 80),
+    tests: scan.files
+      .filter((file) => looksLikeTest(file.path))
+      .map((file) => file.path)
+      .slice(0, 80),
   };
 }
 
@@ -320,7 +438,12 @@ export function formatRepoMap(map) {
   lines.push(fmtList(map.importHubs, (row) => `- ${row.path}: ${row.inboundImports} inbound relative imports`));
   lines.push('');
   lines.push('High-signal symbols:');
-  lines.push(fmtList(map.symbolFiles?.slice(0, 60), (row) => `- ${row.path}: ${row.symbols.map((symbol) => `${symbol.kind} ${symbol.name}`).join(', ')}`));
+  lines.push(
+    fmtList(
+      map.symbolFiles?.slice(0, 60),
+      (row) => `- ${row.path}: ${row.symbols.map((symbol) => `${symbol.kind} ${symbol.name}`).join(', ')}`,
+    ),
+  );
   lines.push('');
   lines.push(`Tests (${map.tests?.length || 0} shown): ${map.tests?.length ? map.tests.join(', ') : '(none detected)'}`);
   return lines.join('\n');

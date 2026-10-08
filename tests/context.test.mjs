@@ -2,7 +2,16 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
-const { classifyBash, compactFrames, completionGate, createTurnStrategy, gitStatusLooksClean, observeTool, shouldEnforceCompletionGate, strategyGuidance } = await import('../server/native/context.mjs');
+const {
+  classifyBash,
+  compactFrames,
+  completionGate,
+  createTurnStrategy,
+  gitStatusLooksClean,
+  observeTool,
+  shouldEnforceCompletionGate,
+  strategyGuidance,
+} = await import('../server/native/context.mjs');
 const { classifyTaskOutcome } = await import('../server/native/turn-trust.mjs');
 
 test('compactFrames bounds large tool observations and preserves recent tool coherence', () => {
@@ -11,7 +20,14 @@ test('compactFrames bounds large tool observations and preserves recent tool coh
     { role: 'assistant', content: '', toolCalls: [{ id: 'call_old', name: 'read', arguments: { path: 'old.txt' } }] },
     { role: 'tool', callId: 'call_old', name: 'read', content: 'x'.repeat(80_000) },
     { role: 'user', content: 'current request' },
-    { role: 'assistant', content: '', toolCalls: [{ id: 'call_new', name: 'grep', arguments: { query: 'needle' } }, { id: 'call_dropped', name: 'read', arguments: { path: 'huge.txt' } }] },
+    {
+      role: 'assistant',
+      content: '',
+      toolCalls: [
+        { id: 'call_new', name: 'grep', arguments: { query: 'needle' } },
+        { id: 'call_dropped', name: 'read', arguments: { path: 'huge.txt' } },
+      ],
+    },
     { role: 'tool', callId: 'call_new', name: 'grep', content: 'y'.repeat(80_000) },
   ];
 
@@ -22,18 +38,29 @@ test('compactFrames bounds large tool observations and preserves recent tool coh
   assert.match(recentTool.content, /observation compacted/);
   const recentAssistant = compacted.find((frame) => frame.role === 'assistant' && frame.toolCalls?.some((call) => call.id === 'call_new'));
   assert.ok(recentAssistant);
-  assert.deepEqual(recentAssistant.toolCalls.map((call) => call.id), ['call_new']);
+  assert.deepEqual(
+    recentAssistant.toolCalls.map((call) => call.id),
+    ['call_new'],
+  );
 });
 
 test('turn strategy requires verification after edits and clears after a successful check', () => {
   const strategy = createTurnStrategy('Fix the failing parser');
-  observeTool(strategy, { name: 'edit', arguments: { path: 'parser.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['parser.mjs'] });
+  observeTool(
+    strategy,
+    { name: 'edit', arguments: { path: 'parser.mjs' } },
+    { isError: false, metadata: {}, mutatedPaths: ['parser.mjs'] },
+  );
   assert.equal(strategy.needsVerification, true);
   assert.equal(strategy.mutationEpoch, 1);
   assert.deepEqual(strategy.changedPaths, ['parser.mjs']);
   assert.match(completionGate(strategy) || '', /verification/i);
 
-  observeTool(strategy, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] });
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'npm test' } },
+    { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] },
+  );
   assert.equal(strategy.verificationAttempts, 1);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(strategy.needsVerification, false);
@@ -45,7 +72,11 @@ test('turn strategy requires verification after edits and clears after a success
 test('a later mutation invalidates earlier verification evidence', () => {
   const strategy = createTurnStrategy('Verify, then change again');
   observeTool(strategy, { name: 'edit', arguments: { path: 'a.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['a.mjs'] });
-  observeTool(strategy, { name: 'run_tests', arguments: { command: 'node --test a.test.mjs' } }, { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: [] });
+  observeTool(
+    strategy,
+    { name: 'run_tests', arguments: { command: 'node --test a.test.mjs' } },
+    { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: [] },
+  );
   assert.equal(strategy.needsVerification, false);
   const verifiedEpoch = strategy.verificationEpoch;
   observeTool(strategy, { name: 'edit', arguments: { path: 'b.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['b.mjs'] });
@@ -59,7 +90,11 @@ test('a later mutation invalidates earlier verification evidence', () => {
 test('failed verification keeps the completion gate active', () => {
   const strategy = createTurnStrategy('Change behavior');
   observeTool(strategy, { name: 'write', arguments: { path: 'a.txt' } }, { isError: false, metadata: {}, mutatedPaths: ['a.txt'] });
-  observeTool(strategy, { name: 'bash', arguments: { command: 'npm run typecheck' } }, { isError: false, metadata: { exit: 2 }, mutatedPaths: ['.'] });
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'npm run typecheck' } },
+    { isError: false, metadata: { exit: 2 }, mutatedPaths: ['.'] },
+  );
   assert.equal(strategy.lastVerificationOk, false);
   assert.equal(strategy.needsVerification, true);
   assert.match(completionGate(strategy) || '', /verification/i);
@@ -67,32 +102,56 @@ test('failed verification keeps the completion gate active', () => {
 
 test('dedicated verification tools satisfy the completion gate only on success', () => {
   const testsStrategy = createTurnStrategy('Fix behavior');
-  observeTool(testsStrategy, { name: 'edit', arguments: { path: 'feature.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] });
-  observeTool(testsStrategy, { name: 'run_tests', arguments: {} }, { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: ['.'] });
+  observeTool(
+    testsStrategy,
+    { name: 'edit', arguments: { path: 'feature.mjs' } },
+    { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] },
+  );
+  observeTool(
+    testsStrategy,
+    { name: 'run_tests', arguments: {} },
+    { isError: false, metadata: { tests: { exit: 0 } }, mutatedPaths: ['.'] },
+  );
   assert.equal(testsStrategy.verificationAttempts, 1);
   assert.equal(testsStrategy.lastVerificationOk, true);
   assert.equal(testsStrategy.needsVerification, false);
 
   const failedTests = createTurnStrategy('Fix behavior');
-  observeTool(failedTests, { name: 'write', arguments: { path: 'feature.mjs' } }, { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] });
+  observeTool(
+    failedTests,
+    { name: 'write', arguments: { path: 'feature.mjs' } },
+    { isError: false, metadata: {}, mutatedPaths: ['feature.mjs'] },
+  );
   observeTool(failedTests, { name: 'run_tests', arguments: {} }, { isError: false, metadata: { tests: { exit: 1 } }, mutatedPaths: ['.'] });
   assert.equal(failedTests.lastVerificationOk, false);
   assert.equal(failedTests.needsVerification, true);
 
   const diagnosticsStrategy = createTurnStrategy('Fix types');
-  observeTool(diagnosticsStrategy, { name: 'edit', arguments: { path: 'types.ts' } }, { isError: false, metadata: {}, mutatedPaths: ['types.ts'] });
-  observeTool(diagnosticsStrategy, { name: 'diagnostics', arguments: { kind: 'typecheck' } }, { isError: false, metadata: { diagnostics: { ok: true } }, mutatedPaths: [] });
+  observeTool(
+    diagnosticsStrategy,
+    { name: 'edit', arguments: { path: 'types.ts' } },
+    { isError: false, metadata: {}, mutatedPaths: ['types.ts'] },
+  );
+  observeTool(
+    diagnosticsStrategy,
+    { name: 'diagnostics', arguments: { kind: 'typecheck' } },
+    { isError: false, metadata: { diagnostics: { ok: true } }, mutatedPaths: [] },
+  );
   assert.equal(diagnosticsStrategy.lastVerificationOk, true);
   assert.equal(diagnosticsStrategy.needsVerification, false);
 });
 
 test('writer subagent mutations propagate into the parent completion strategy', () => {
   const strategy = createTurnStrategy('Delegate a scoped implementation');
-  observeTool(strategy, { name: 'task', arguments: { agent: 'implement' } }, {
-    isError: false,
-    metadata: { subagent: true, agent: 'implement' },
-    mutatedPaths: ['src/feature.ts'],
-  });
+  observeTool(
+    strategy,
+    { name: 'task', arguments: { agent: 'implement' } },
+    {
+      isError: false,
+      metadata: { subagent: true, agent: 'implement' },
+      mutatedPaths: ['src/feature.ts'],
+    },
+  );
   assert.equal(strategy.changed, true);
   assert.equal(strategy.needsVerification, true);
   assert.equal(strategy.lastVerificationOk, null);
@@ -118,13 +177,19 @@ test('strategy guidance tells the agent to put a page at index.html for Preview'
 
 test('todowrite becomes pinned strategy guidance', () => {
   const strategy = createTurnStrategy('Implement feature');
-  observeTool(strategy, { name: 'todowrite' }, {
-    isError: false,
-    metadata: { todos: [
-      { content: 'Inspect code', status: 'completed', priority: 'high' },
-      { content: 'Implement fix', status: 'in_progress', priority: 'high' },
-    ] },
-  });
+  observeTool(
+    strategy,
+    { name: 'todowrite' },
+    {
+      isError: false,
+      metadata: {
+        todos: [
+          { content: 'Inspect code', status: 'completed', priority: 'high' },
+          { content: 'Implement fix', status: 'in_progress', priority: 'high' },
+        ],
+      },
+    },
+  );
   const guidance = strategyGuidance(strategy);
   assert.match(guidance, /Goal: Implement feature/);
   assert.match(guidance, /\[in_progress\] Implement fix/);
@@ -142,7 +207,7 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('sha256sum app.tar'), 'read_only');
   assert.equal(classifyBash('python3 -c "assert len(open(\'index.html\').read()) > 100"'), 'verification');
   assert.equal(classifyBash('node -e "console.log(1)"'), 'verification');
-  assert.equal(classifyBash('python3 -c "open(\'f\',\'w\').write(\'x\')"'), 'may_mutate');
+  assert.equal(classifyBash("python3 -c \"open('f','w').write('x')\""), 'may_mutate');
   assert.equal(classifyBash('echo hi > out.txt'), 'may_mutate');
   assert.equal(classifyBash('python checkers_test.js'), 'verification');
   assert.equal(classifyBash('cd app && pytest -q'), 'verification');
@@ -151,14 +216,22 @@ test('bash classification separates checks, inspection, and likely mutations', (
   assert.equal(classifyBash('python3 -m py_compile multiplication_table.py && python3 multiplication_table.py'), 'verification');
   assert.equal(classifyBash('node server.mjs'), 'verification');
   assert.equal(classifyBash('python3 setup.py install'), 'may_mutate');
-  assert.equal(classifyBash(`node -e "\nconst fs = require('fs');\nconst html = fs.readFileSync('index.html', 'utf8');\nif (html.length > 100) console.log('ok');\n"`), 'verification');
+  assert.equal(
+    classifyBash(
+      `node -e "\nconst fs = require('fs');\nconst html = fs.readFileSync('index.html', 'utf8');\nif (html.length > 100) console.log('ok');\n"`,
+    ),
+    'verification',
+  );
 });
 
 test('stdlib unittest and common runners count as checks; installs never do', () => {
   assert.equal(classifyBash('python3 -m unittest -v test_textstats 2>&1'), 'verification');
   assert.equal(classifyBash('python3 -B -m unittest discover -s tests'), 'verification');
   assert.equal(classifyBash('python -m doctest README.md'), 'verification');
-  assert.equal(classifyBash('cd /w && python3 -B -m unittest -v test_textstats 2>&1; echo "--- exit=$? ---"; python3 -B -c "print(1)"'), 'verification');
+  assert.equal(
+    classifyBash('cd /w && python3 -B -m unittest -v test_textstats 2>&1; echo "--- exit=$? ---"; python3 -B -c "print(1)"'),
+    'verification',
+  );
   assert.equal(classifyBash('npx vitest run'), 'verification');
   assert.equal(classifyBash('npx --yes jest --runInBand'), 'verification');
   assert.equal(classifyBash('make test'), 'verification');
@@ -168,7 +241,8 @@ test('stdlib unittest and common runners count as checks; installs never do', ()
   assert.equal(classifyBash('python3 -m pip install pytest'), 'may_mutate');
   assert.equal(classifyBash('npm i -D eslint'), 'may_mutate');
   assert.equal(classifyBash('apt-get install -y shellcheck'), 'may_mutate');
-  assert.equal(classifyBash('python3 -B -c "open(\'f\',\'w\').write(1)"'), 'may_mutate');  assert.equal(classifyBash('git -C slugify status --short'), 'read_only');
+  assert.equal(classifyBash("python3 -B -c \"open('f','w').write(1)\""), 'may_mutate');
+  assert.equal(classifyBash('git -C slugify status --short'), 'read_only');
   assert.equal(classifyBash('git -C repo checkout main'), 'may_mutate');
   assert.equal(classifyBash('npm ls --depth=0 2>&1 | head -15'), 'read_only');
   assert.equal(classifyBash('env FOO=1 npm install'), 'may_mutate');
@@ -178,34 +252,55 @@ test('stdlib unittest and common runners count as checks; installs never do', ()
 test('a green unittest run clears the gate even though it writes __pycache__', () => {
   const strategy = createTurnStrategy('Мини-проект на Python с тестами');
   observeTool(strategy, { name: 'write', arguments: { path: 'textstats.py' } }, { isError: false, mutatedPaths: ['textstats.py'] });
-  observeTool(strategy, { name: 'write', arguments: { path: 'test_textstats.py' } }, { isError: false, mutatedPaths: ['test_textstats.py'] });
-  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 -m unittest -v test_textstats 2>&1' } }, {
-    isError: false,
-    content: 'exit=0\nstdout:\nRan 11 tests in 0.001s\n\nOK\n',
-    metadata: { exit: 0, workspaceChanges: { complete: true, paths: ['__pycache__/textstats.cpython-311.pyc'] } },
-  });
+  observeTool(
+    strategy,
+    { name: 'write', arguments: { path: 'test_textstats.py' } },
+    { isError: false, mutatedPaths: ['test_textstats.py'] },
+  );
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'python3 -m unittest -v test_textstats 2>&1' } },
+    {
+      isError: false,
+      content: 'exit=0\nstdout:\nRan 11 tests in 0.001s\n\nOK\n',
+      metadata: { exit: 0, workspaceChanges: { complete: true, paths: ['__pycache__/textstats.cpython-311.pyc'] } },
+    },
+  );
   assert.equal(strategy.needsVerification, false);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(completionGate(strategy), null);
 });
 
 test('a masked exit status does not turn a failing test run into a pass', () => {
-  const failing = 'exit=0\nstdout:\n--- exit=1 ---\nstderr:\nFAIL: test_ties (test_textstats.TestTopWords)\n----\nRan 3 tests in 0.001s\n\nFAILED (failures=1)\n';
+  const failing =
+    'exit=0\nstdout:\n--- exit=1 ---\nstderr:\nFAIL: test_ties (test_textstats.TestTopWords)\n----\nRan 3 tests in 0.001s\n\nFAILED (failures=1)\n';
   const masked = createTurnStrategy('Тесты');
   observeTool(masked, { name: 'write', arguments: { path: 'textstats.py' } }, { isError: false, mutatedPaths: ['textstats.py'] });
-  observeTool(masked, { name: 'bash', arguments: { command: 'python3 -m unittest -v 2>&1; echo "--- exit=$? ---"' } }, { isError: false, content: failing, metadata: { exit: 0 } });
+  observeTool(
+    masked,
+    { name: 'bash', arguments: { command: 'python3 -m unittest -v 2>&1; echo "--- exit=$? ---"' } },
+    { isError: false, content: failing, metadata: { exit: 0 } },
+  );
   assert.equal(masked.lastVerificationOk, false);
   assert.equal(masked.needsVerification, true);
 
   const piped = createTurnStrategy('Тесты');
   observeTool(piped, { name: 'write', arguments: { path: 'app.py' } }, { isError: false, mutatedPaths: ['app.py'] });
-  observeTool(piped, { name: 'bash', arguments: { command: 'pytest -q | tail -5' } }, { isError: false, content: 'exit=0\nstdout:\n1 failed, 4 passed in 0.12s\n', metadata: { exit: 0 } });
+  observeTool(
+    piped,
+    { name: 'bash', arguments: { command: 'pytest -q | tail -5' } },
+    { isError: false, content: 'exit=0\nstdout:\n1 failed, 4 passed in 0.12s\n', metadata: { exit: 0 } },
+  );
   assert.equal(piped.lastVerificationOk, false);
 
   // A plain run with no masking trusts its own exit status.
   const plain = createTurnStrategy('Тесты');
   observeTool(plain, { name: 'write', arguments: { path: 'app.py' } }, { isError: false, mutatedPaths: ['app.py'] });
-  observeTool(plain, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, content: 'exit=0\nstdout:\nprints "1 failed in 2s" as fixture text\n', metadata: { exit: 0 } });
+  observeTool(
+    plain,
+    { name: 'bash', arguments: { command: 'npm test' } },
+    { isError: false, content: 'exit=0\nstdout:\nprints "1 failed in 2s" as fixture text\n', metadata: { exit: 0 } },
+  );
   assert.equal(plain.lastVerificationOk, true);
 });
 
@@ -214,12 +309,20 @@ test('python -c checks and static HTML read-back satisfy the gate; wc does not r
   observeTool(strategy, { name: 'write', arguments: { path: 'index.html' } }, { isError: false, mutatedPaths: ['index.html'] });
   assert.equal(strategy.needsVerification, true);
 
-  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 -c "print(open(\'index.html\').read())"' } }, { isError: false, metadata: { exit: 0 } });
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'python3 -c "print(open(\'index.html\').read())"' } },
+    { isError: false, metadata: { exit: 0 } },
+  );
   assert.equal(strategy.needsVerification, false);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(completionGate(strategy), null);
 
-  observeTool(strategy, { name: 'bash', arguments: { command: 'wc -l index.html' } }, { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] });
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'wc -l index.html' } },
+    { isError: false, metadata: { exit: 0 }, mutatedPaths: ['.'] },
+  );
   assert.equal(strategy.needsVerification, false);
   assert.equal(completionGate(strategy), null);
 
@@ -242,9 +345,17 @@ test('completion gate stops nagging after a few reminders', () => {
 
 test('running a python script after writing it satisfies the completion gate', () => {
   const strategy = createTurnStrategy('Напиши таблицу умножения на Python и убедись что запускается');
-  observeTool(strategy, { name: 'write', arguments: { path: 'multiplication_table.py' } }, { isError: false, mutatedPaths: ['multiplication_table.py'] });
+  observeTool(
+    strategy,
+    { name: 'write', arguments: { path: 'multiplication_table.py' } },
+    { isError: false, mutatedPaths: ['multiplication_table.py'] },
+  );
   assert.equal(strategy.needsVerification, true);
-  observeTool(strategy, { name: 'bash', arguments: { command: 'python3 multiplication_table.py' } }, { isError: false, metadata: { exit: 0 } });
+  observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'python3 multiplication_table.py' } },
+    { isError: false, metadata: { exit: 0 } },
+  );
   assert.equal(strategy.needsVerification, false);
   assert.equal(strategy.lastVerificationOk, true);
   assert.equal(completionGate(strategy), null);
@@ -267,7 +378,11 @@ test('git commit and a clean git status are reported but do not count as verific
   // Committing records the change; it says nothing about whether the code works.
   const committed = createTurnStrategy('Сохрани в git');
   observeTool(committed, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
-  observeTool(committed, { name: 'bash', arguments: { command: 'git add broken.mjs && git commit -m broken' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n[main 1] broken' });
+  observeTool(
+    committed,
+    { name: 'bash', arguments: { command: 'git add broken.mjs && git commit -m broken' } },
+    { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n[main 1] broken' },
+  );
   assert.equal(committed.needsVerification, true);
   assert.equal(committed.lastVerificationOk, null);
   assert.equal(committed.gitEvidence?.action, 'commit');
@@ -276,14 +391,26 @@ test('git commit and a clean git status are reported but do not count as verific
 
   const viaTool = createTurnStrategy('Закоммить изменения');
   observeTool(viaTool, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
-  observeTool(viaTool, { name: 'git', arguments: { action: 'commit', message: 'save' } }, { isError: false, metadata: { git: { action: 'commit', exit: 0 } }, mutatedPaths: ['.'] });
+  observeTool(
+    viaTool,
+    { name: 'git', arguments: { action: 'commit', message: 'save' } },
+    { isError: false, metadata: { git: { action: 'commit', exit: 0 } }, mutatedPaths: ['.'] },
+  );
   assert.equal(viaTool.needsVerification, true);
   assert.equal(viaTool.gitEvidence?.action, 'commit');
 
   const clean = createTurnStrategy('Проверь git');
   observeTool(clean, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
-  observeTool(clean, { name: 'git', arguments: { action: 'status' } }, { isError: false, metadata: { git: { action: 'status', exit: 0 } }, content: '## main' });
-  observeTool(clean, { name: 'bash', arguments: { command: 'git status --porcelain=v1 --branch' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n## main' });
+  observeTool(
+    clean,
+    { name: 'git', arguments: { action: 'status' } },
+    { isError: false, metadata: { git: { action: 'status', exit: 0 } }, content: '## main' },
+  );
+  observeTool(
+    clean,
+    { name: 'bash', arguments: { command: 'git status --porcelain=v1 --branch' } },
+    { isError: false, metadata: { exit: 0 }, content: 'exit=0\nstdout:\n## main' },
+  );
   assert.equal(clean.needsVerification, true);
   assert.equal(clean.gitEvidence?.action, 'status');
 
@@ -291,7 +418,11 @@ test('git commit and a clean git status are reported but do not count as verific
   const verified = createTurnStrategy('Исправь и закоммить');
   observeTool(verified, { name: 'write', arguments: { path: 'broken.mjs' } }, { isError: false, mutatedPaths: ['broken.mjs'] });
   observeTool(verified, { name: 'bash', arguments: { command: 'npm test' } }, { isError: false, metadata: { exit: 0 } });
-  observeTool(verified, { name: 'bash', arguments: { command: 'git add -A && git commit -m fix' } }, { isError: false, metadata: { exit: 0 }, content: 'exit=0' });
+  observeTool(
+    verified,
+    { name: 'bash', arguments: { command: 'git add -A && git commit -m fix' } },
+    { isError: false, metadata: { exit: 0 }, content: 'exit=0' },
+  );
   assert.equal(verified.needsVerification, false);
   assert.equal(verified.lastVerificationOk, true);
   assert.equal(completionGate(verified), null);

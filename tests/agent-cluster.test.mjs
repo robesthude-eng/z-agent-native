@@ -14,7 +14,9 @@ process.env.Z_AGENT_CLUSTER_POLL_MS = '60000';
 const cluster = await import('../server/native/cluster.mjs');
 const agent = await import('../server/native/agent.mjs');
 
-after(() => { cluster.stopCluster(); });
+after(() => {
+  cluster.stopCluster();
+});
 
 test('a session owned by another replica is refused with 409', async () => {
   const sessionId = 'ses_ownedElsewhere';

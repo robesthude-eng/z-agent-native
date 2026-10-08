@@ -34,9 +34,12 @@ function check(schema, input, at, errors) {
   const actual = typeName(value);
   const label = at || 'arguments';
   if (type) {
-    const ok = type === 'integer' ? Number.isInteger(value)
-      : type === 'number' ? typeof value === 'number' && Number.isFinite(value)
-      : actual === type;
+    const ok =
+      type === 'integer'
+        ? Number.isInteger(value)
+        : type === 'number'
+          ? typeof value === 'number' && Number.isFinite(value)
+          : actual === type;
     if (!ok) {
       errors.push(`${label}: expected ${type}, got ${actual}`);
       return value;
@@ -50,12 +53,16 @@ function check(schema, input, at, errors) {
     if (Number.isFinite(schema.maximum) && value > schema.maximum) errors.push(`${label}: must be <= ${schema.maximum}`);
   }
   if (typeof value === 'string') {
-    if (Number.isFinite(schema.minLength) && value.length < schema.minLength) errors.push(`${label}: must be at least ${schema.minLength} characters`);
-    if (Number.isFinite(schema.maxLength) && value.length > schema.maxLength) errors.push(`${label}: must be at most ${schema.maxLength} characters`);
+    if (Number.isFinite(schema.minLength) && value.length < schema.minLength)
+      errors.push(`${label}: must be at least ${schema.minLength} characters`);
+    if (Number.isFinite(schema.maxLength) && value.length > schema.maxLength)
+      errors.push(`${label}: must be at most ${schema.maxLength} characters`);
   }
   if (Array.isArray(value)) {
-    if (Number.isFinite(schema.minItems) && value.length < schema.minItems) errors.push(`${label}: needs at least ${schema.minItems} items`);
-    if (Number.isFinite(schema.maxItems) && value.length > schema.maxItems) errors.push(`${label}: allows at most ${schema.maxItems} items`);
+    if (Number.isFinite(schema.minItems) && value.length < schema.minItems)
+      errors.push(`${label}: needs at least ${schema.minItems} items`);
+    if (Number.isFinite(schema.maxItems) && value.length > schema.maxItems)
+      errors.push(`${label}: allows at most ${schema.maxItems} items`);
     if (schema.items) return value.map((item, i) => check(schema.items, item, `${label}[${i}]`, errors));
   }
   if (actual === 'object' && (schema.properties || schema.required)) {
@@ -84,7 +91,9 @@ export class ToolArgumentsError extends Error {
     const params = Object.entries(schema?.properties || {})
       .map(([k, s]) => `${k}${(schema.required || []).includes(k) ? ' (required)' : ''}: ${s?.type || 'any'}`)
       .join('; ');
-    super(`Invalid arguments for ${tool}: ${errors.slice(0, 8).join('; ')}. Nothing was executed. Expected parameters: ${params}. Fix the arguments and call ${tool} again.`);
+    super(
+      `Invalid arguments for ${tool}: ${errors.slice(0, 8).join('; ')}. Nothing was executed. Expected parameters: ${params}. Fix the arguments and call ${tool} again.`,
+    );
     this.name = 'ToolArgumentsError';
     this.code = 'INVALID_TOOL_ARGUMENTS';
     this.errors = errors;

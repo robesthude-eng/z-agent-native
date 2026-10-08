@@ -11,7 +11,14 @@ const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 // ---- partial JSON ----------------------------------------------------------
 
 test('parsePartialJson reads every prefix of a streamed document without throwing', () => {
-  const doc = JSON.stringify({ path: 'src/a.js', content: 'line1\nline "two"\\ \u00e9\u4e2d', n: 12.5, ok: true, list: [1, { a: 'x' }], nothing: null });
+  const doc = JSON.stringify({
+    path: 'src/a.js',
+    content: 'line1\nline "two"\\ \u00e9\u4e2d',
+    n: 12.5,
+    ok: true,
+    list: [1, { a: 'x' }],
+    nothing: null,
+  });
   let parsed = 0;
   for (let i = 1; i <= doc.length; i++) {
     const value = parsePartialJson(doc.slice(0, i));
@@ -50,8 +57,15 @@ function harness() {
   const events = [];
   const assistant = { id: 'm1', sessionID: 's1', parts: [] };
   let persisted = 0;
-  const emit = (sessionId, type, data) => events.push({ sessionId, type, part: data.part ? JSON.parse(JSON.stringify(data.part)) : null, data });
-  const sink = createToolCallSink(assistant, { emit, persist: () => { persisted += 1; }, throttleMs: 20 });
+  const emit = (sessionId, type, data) =>
+    events.push({ sessionId, type, part: data.part ? JSON.parse(JSON.stringify(data.part)) : null, data });
+  const sink = createToolCallSink(assistant, {
+    emit,
+    persist: () => {
+      persisted += 1;
+    },
+    throttleMs: 20,
+  });
   return { events, assistant, sink, persisted: () => persisted };
 }
 
@@ -85,11 +99,17 @@ test('bind queues every call, reuses streamed cards and removes stale ones', () 
   assert.equal(parts.length, 2);
   assert.equal(parts[0].id, streamedIds[0], 'the streamed card is reused');
   assert.notEqual(parts[1].id, streamedIds[1], 'a card with another tool name is not reused');
-  assert.deepEqual(assistant.parts.map((p) => p.tool), ['read', 'grep']);
+  assert.deepEqual(
+    assistant.parts.map((p) => p.tool),
+    ['read', 'grep'],
+  );
   assert.ok(parts.every((p) => p.state.status === 'pending'));
   assert.equal(parts[1].callID, 'c');
   assert.equal(persisted(), 1, 'the removal is saved');
-  assert.ok(events.some((e) => e.type === 'message.part.removed'), 'and announced to clients');
+  assert.ok(
+    events.some((e) => e.type === 'message.part.removed'),
+    'and announced to clients',
+  );
   assert.ok(events.filter((e) => e.part?.state?.status === 'pending').length >= 2);
 });
 
@@ -106,14 +126,23 @@ test('discard removes cards drawn by a failed attempt and stops pending timers',
 
 test('settleOpenToolParts closes queued and running cards of a finished turn', () => {
   const emitted = [];
-  const assistant = { id: 'm', sessionID: 's', parts: [
-    { id: '1', type: 'tool', tool: 'bash', state: { status: 'completed', output: 'ok' } },
-    { id: '2', type: 'tool', tool: 'bash', state: { status: 'pending', input: {} } },
-    { id: '3', type: 'tool', tool: 'bash', state: { status: 'running', input: {}, time: { start: 1 } } },
-    { id: '4', type: 'text', text: 'hi' },
-  ] };
+  const assistant = {
+    id: 'm',
+    sessionID: 's',
+    parts: [
+      { id: '1', type: 'tool', tool: 'bash', state: { status: 'completed', output: 'ok' } },
+      { id: '2', type: 'tool', tool: 'bash', state: { status: 'pending', input: {} } },
+      { id: '3', type: 'tool', tool: 'bash', state: { status: 'running', input: {}, time: { start: 1 } } },
+      { id: '4', type: 'text', text: 'hi' },
+    ],
+  };
   let saved = 0;
-  const n = settleOpenToolParts(assistant, { putMessage: () => { saved += 1; }, emit: (...args) => emitted.push(args) });
+  const n = settleOpenToolParts(assistant, {
+    putMessage: () => {
+      saved += 1;
+    },
+    emit: (...args) => emitted.push(args),
+  });
   assert.equal(n, 2);
   assert.equal(saved, 1);
   assert.equal(assistant.parts[0].state.status, 'completed');
@@ -153,39 +182,69 @@ function sse(events) {
 }
 const frames = [{ role: 'user', content: 'hi' }];
 const openai = { key: 'k', modelId: 'm-tool-stream', spec: { baseURL: 'https://example.test/v1', kind: 'openai' }, trustedBaseURL: true };
-const anthropic = { key: 'k', modelId: 'claude-ts', spec: { baseURL: 'https://example.test/anthropic', kind: 'anthropic' }, trustedBaseURL: true };
+const anthropic = {
+  key: 'k',
+  modelId: 'claude-ts',
+  spec: { baseURL: 'https://example.test/anthropic', kind: 'anthropic' },
+  trustedBaseURL: true,
+};
 const google = { key: 'k', modelId: 'gem-ts', spec: { baseURL: 'https://example.test/google', kind: 'google' }, trustedBaseURL: true };
 
 async function withFetch(response, fn) {
   const original = globalThis.fetch;
   globalThis.fetch = async () => response();
-  try { return await fn(); } finally { globalThis.fetch = original; }
+  try {
+    return await fn();
+  } finally {
+    globalThis.fetch = original;
+  }
 }
 
 test('OpenAI: onToolCall fires for every argument delta, per tool index', async () => {
   const reports = [];
-  const result = await withFetch(() => sse([
-    { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c0', function: { name: 'write', arguments: '' } }] } }] },
-    { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":"a",' } }] } }] },
-    { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"content":"hi"}' } }] } }] },
-    { choices: [{ delta: { tool_calls: [{ index: 1, id: 'c1', function: { name: 'bash', arguments: '{"command":"ls"}' } }] } }] },
-    { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
-    '[DONE]',
-  ]), () => callOpenAI(openai, { system: 's', frames, tools: [], onTextDelta: () => {}, onToolCall: (c) => reports.push({ ...c }) }));
+  const result = await withFetch(
+    () =>
+      sse([
+        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'c0', function: { name: 'write', arguments: '' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '{"path":"a",' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 0, function: { arguments: '"content":"hi"}' } }] } }] },
+        { choices: [{ delta: { tool_calls: [{ index: 1, id: 'c1', function: { name: 'bash', arguments: '{"command":"ls"}' } }] } }] },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]),
+    () => callOpenAI(openai, { system: 's', frames, tools: [], onTextDelta: () => {}, onToolCall: (c) => reports.push({ ...c }) }),
+  );
   assert.equal(result.toolCalls.length, 2);
-  assert.deepEqual(reports.map((r) => r.key), [0, 0, 0, 1]);
+  assert.deepEqual(
+    reports.map((r) => r.key),
+    [0, 0, 0, 1],
+  );
   assert.equal(reports[2].args, '{"path":"a","content":"hi"}');
   assert.equal(reports[0].name, 'write');
 });
 
 test('Anthropic: input_json_delta streams into onToolCall, and a throwing callback cannot break the stream', async () => {
   const reports = [];
-  const result = await withFetch(() => sse([
-    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu', name: 'write', input: {} } },
-    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"path":"b"' } },
-    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: ',"content":"x"}' } },
-    { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
-  ]), () => callAnthropic(anthropic, { system: 's', frames, tools: [], onTextDelta: () => {}, onToolCall: (c) => { reports.push(c.args); throw new Error('ui bug'); } }));
+  const result = await withFetch(
+    () =>
+      sse([
+        { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'tu', name: 'write', input: {} } },
+        { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"path":"b"' } },
+        { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: ',"content":"x"}' } },
+        { type: 'message_delta', delta: { stop_reason: 'tool_use' } },
+      ]),
+    () =>
+      callAnthropic(anthropic, {
+        system: 's',
+        frames,
+        tools: [],
+        onTextDelta: () => {},
+        onToolCall: (c) => {
+          reports.push(c.args);
+          throw new Error('ui bug');
+        },
+      }),
+  );
   assert.equal(result.toolCalls.length, 1);
   assert.deepEqual(result.toolCalls[0].arguments, { path: 'b', content: 'x' });
   assert.equal(reports.length, 3);
@@ -194,10 +253,20 @@ test('Anthropic: input_json_delta streams into onToolCall, and a throwing callba
 
 test('Google: whole function calls are reported as they arrive', async () => {
   const reports = [];
-  const result = await withFetch(() => sse([
-    { candidates: [{ content: { parts: [{ functionCall: { name: 'read', args: { path: 'a' } } }] } }] },
-    { candidates: [{ content: { parts: [{ functionCall: { name: 'bash', args: { command: 'ls' } } }] }, finishReason: 'STOP' }] },
-  ]), () => callGoogle(google, { system: 's', frames, tools: [], onTextDelta: () => {}, onToolCall: (c) => reports.push(c) }));
+  const result = await withFetch(
+    () =>
+      sse([
+        { candidates: [{ content: { parts: [{ functionCall: { name: 'read', args: { path: 'a' } } }] } }] },
+        { candidates: [{ content: { parts: [{ functionCall: { name: 'bash', args: { command: 'ls' } } }] }, finishReason: 'STOP' }] },
+      ]),
+    () => callGoogle(google, { system: 's', frames, tools: [], onTextDelta: () => {}, onToolCall: (c) => reports.push(c) }),
+  );
   assert.equal(result.toolCalls.length, 2);
-  assert.deepEqual(reports.map((r) => [r.key, r.name]), [[0, 'read'], [1, 'bash']]);
+  assert.deepEqual(
+    reports.map((r) => [r.key, r.name]),
+    [
+      [0, 'read'],
+      [1, 'bash'],
+    ],
+  );
 });

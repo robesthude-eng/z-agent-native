@@ -32,8 +32,12 @@ E91G7bb0hOb/cA==
 =knv7
 -----END PGP PUBLIC KEY BLOCK-----`;
 
-function agentHome(root) { return path.join(root, '.agent-home'); }
-function shellQuote(value) { return `'${String(value).replace(/'/g, `'"'"'`)}'`; }
+function agentHome(root) {
+  return path.join(root, '.agent-home');
+}
+function shellQuote(value) {
+  return `'${String(value).replace(/'/g, `'"'"'`)}'`;
+}
 
 function awsArch() {
   if (process.arch === 'x64') return 'x86_64';
@@ -48,13 +52,17 @@ function gcloudArch() {
 }
 
 function optionalSha256(input, label) {
-  const sha = String(input?.sha256 || '').trim().toLowerCase();
+  const sha = String(input?.sha256 || '')
+    .trim()
+    .toLowerCase();
   if (sha && !/^[a-f0-9]{64}$/.test(sha)) throw new Error(`${label} sha256 must be 64 hexadecimal characters`);
   return sha;
 }
 
 function awsPlan(root, input) {
-  const version = String(input?.version || 'latest').trim().toLowerCase();
+  const version = String(input?.version || 'latest')
+    .trim()
+    .toLowerCase();
   if (version !== 'latest') throw new Error('AWS CLI managed provisioning currently supports version=latest only');
   const arch = awsArch();
   const home = agentHome(root);
@@ -70,15 +78,31 @@ function awsPlan(root, input) {
   const url = `https://awscli.amazonaws.com/awscli-exe-linux-${arch}.zip`;
   const script = `set -euo pipefail\ncommand -v gpg >/dev/null 2>&1 || { echo 'gpg is unavailable in the runtime image' >&2; exit 42; }\nmkdir -p ${shellQuote(downloads)} ${shellQuote(binDir)} ${shellQuote(gnupgHome)}\nchmod 0700 ${shellQuote(gnupgHome)}\nif [ ! -x ${shellQuote(path.join(binDir, 'aws'))} ]; then\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(url)} -o ${shellQuote(archive)}\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(`${url}.sig`)} -o ${shellQuote(signature)}\n  cat > ${shellQuote(keyFile)} <<'AWSCLIKEY'\n${AWS_CLI_PUBLIC_KEY}\nAWSCLIKEY\n  GNUPGHOME=${shellQuote(gnupgHome)} gpg --batch --import ${shellQuote(keyFile)} >/dev/null 2>&1\n  FINGERPRINT="$(GNUPGHOME=${shellQuote(gnupgHome)} gpg --batch --with-colons --fingerprint A6310ACC4672475C | awk -F: '$1 == "fpr" {print $10; exit}')"\n  test "$FINGERPRINT" = ${shellQuote(AWS_KEY_FINGERPRINT)}\n  GNUPGHOME=${shellQuote(gnupgHome)} gpg --batch --verify ${shellQuote(signature)} ${shellQuote(archive)}\n  rm -rf ${shellQuote(extractDir)}\n  mkdir -p ${shellQuote(extractDir)}\n  unzip -q ${shellQuote(archive)} -d ${shellQuote(extractDir)}\n  test -x ${shellQuote(path.join(extractDir, 'aws', 'install'))}\n  ${shellQuote(path.join(extractDir, 'aws', 'install'))} --install-dir ${shellQuote(installDir)} --bin-dir ${shellQuote(binDir)}\n  rm -rf ${shellQuote(extractDir)}\nfi\n${shellQuote(path.join(binDir, 'aws'))} --version`;
   return {
-    kind: 'aws', title: 'AWS CLI v2 latest', script, env: {}, pathPrepend: [binDir],
-    installedKey: 'aws:latest', installedValue: { kind: 'aws', version: 'latest', source: 'awscli.amazonaws.com', verification: 'PGP', fingerprint: AWS_KEY_FINGERPRINT },
+    kind: 'aws',
+    title: 'AWS CLI v2 latest',
+    script,
+    env: {},
+    pathPrepend: [binDir],
+    installedKey: 'aws:latest',
+    installedValue: {
+      kind: 'aws',
+      version: 'latest',
+      source: 'awscli.amazonaws.com',
+      verification: 'PGP',
+      fingerprint: AWS_KEY_FINGERPRINT,
+    },
   };
 }
 
 function gcloudPlan(root, input) {
   const suppliedSha = optionalSha256(input, 'Google Cloud CLI');
-  const version = String(input?.version || 'latest').trim().toLowerCase();
-  if (version !== 'latest') throw new Error('Google Cloud CLI managed provisioning currently supports version=latest only; use portable for a pinned versioned archive');
+  const version = String(input?.version || 'latest')
+    .trim()
+    .toLowerCase();
+  if (version !== 'latest')
+    throw new Error(
+      'Google Cloud CLI managed provisioning currently supports version=latest only; use portable for a pinned versioned archive',
+    );
   const arch = gcloudArch();
   const home = agentHome(root);
   const downloads = path.join(home, 'downloads');
@@ -91,13 +115,25 @@ function gcloudPlan(root, input) {
     : `DOC="$(curl -fL --retry 3 --retry-delay 1 https://cloud.google.com/sdk/docs/install)"\n  EXPECTED="$(printf '%s' "$DOC" | FILE=${shellQuote(filename)} python3 -c ${shellQuote("import html,os,re,sys\ns=html.unescape(sys.stdin.read())\nname=os.environ['FILE']\ni=s.find(name)\nassert i >= 0, 'gcloud archive name not found on official download page'\nwindow=s[i:i+8000]\nm=re.search(r'(?i)(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])', window)\nassert m, 'gcloud SHA-256 not found near archive name on official download page'\nprint(m.group(0).lower())")})"\n  [[ "$EXPECTED" =~ ^[0-9a-f]{64}$ ]]`;
   const script = `set -euo pipefail\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.dirname(install))}\nif [ ! -x ${shellQuote(path.join(install, 'google-cloud-sdk', 'bin', 'gcloud'))} ]; then\n  ${checksumResolver}\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(url)} -o ${shellQuote(archive)}\n  printf '%s  %s\\n' "$EXPECTED" ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(`${install}.tmp`)}\n  rm -rf "$TMP" ${shellQuote(install)}\n  mkdir -p "$TMP"\n  tar -xzf ${shellQuote(archive)} -C "$TMP"\n  test -x "$TMP/google-cloud-sdk/bin/gcloud"\n  mv "$TMP" ${shellQuote(install)}\nfi\n${shellQuote(path.join(install, 'google-cloud-sdk', 'bin', 'gcloud'))} --version`;
   return {
-    kind: 'gcloud', title: 'Google Cloud CLI latest', script, env: {}, pathPrepend: [path.join(install, 'google-cloud-sdk', 'bin')],
-    installedKey: 'gcloud:latest', installedValue: { kind: 'gcloud', version: 'latest', source: 'dl.google.com', verification: suppliedSha ? 'supplied SHA-256' : 'SHA-256 resolved from official Google Cloud download page' },
+    kind: 'gcloud',
+    title: 'Google Cloud CLI latest',
+    script,
+    env: {},
+    pathPrepend: [path.join(install, 'google-cloud-sdk', 'bin')],
+    installedKey: 'gcloud:latest',
+    installedValue: {
+      kind: 'gcloud',
+      version: 'latest',
+      source: 'dl.google.com',
+      verification: suppliedSha ? 'supplied SHA-256' : 'SHA-256 resolved from official Google Cloud download page',
+    },
   };
 }
 
 export function prepareCloudToolchainRequirement(root, input = {}) {
-  const kind = String(input?.kind || '').trim().toLowerCase();
+  const kind = String(input?.kind || '')
+    .trim()
+    .toLowerCase();
   if (kind === 'aws') return awsPlan(root, input);
   if (kind === 'gcloud') return gcloudPlan(root, input);
   throw new Error(`Unsupported cloud toolchain kind: ${kind || '(empty)'}`);

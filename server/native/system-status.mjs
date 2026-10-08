@@ -33,8 +33,11 @@ export function parseMeminfo(text) {
 }
 
 function memory() {
-  try { return parseMeminfo(fs.readFileSync('/proc/meminfo', 'utf8')); }
-  catch { return { total: os.totalmem(), available: os.freemem(), used: os.totalmem() - os.freemem(), swapTotal: 0, swapUsed: 0 }; }
+  try {
+    return parseMeminfo(fs.readFileSync('/proc/meminfo', 'utf8'));
+  } catch {
+    return { total: os.totalmem(), available: os.freemem(), used: os.totalmem() - os.freemem(), swapTotal: 0, swapUsed: 0 };
+  }
 }
 
 export function readHostStatus(file = HOST_STATUS_FILE, now = Date.now()) {

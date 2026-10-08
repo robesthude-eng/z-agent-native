@@ -6,10 +6,7 @@ import {
   newCustomProviderId,
   upsertProviderConfig,
 } from './provider-configs.mjs';
-import {
-  fetchModels,
-  probeModel,
-} from './providers.mjs';
+import { fetchModels, probeModel } from './providers.mjs';
 import {
   deleteManualModel,
   deleteProviderKey,
@@ -28,8 +25,11 @@ function reply(res, status, body) {
 }
 
 function decodePathPart(value) {
-  try { return decodeURIComponent(value); }
-  catch { throw Object.assign(new Error('Bad request'), { statusCode: 400 }); }
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    throw Object.assign(new Error('Bad request'), { statusCode: 400 });
+  }
 }
 
 /**
@@ -46,7 +46,16 @@ export function listProviderChannels(ownerId) {
     overridden: false,
   }));
   if (process.env.Z_AGENT_ENABLE_FIXTURE_PROVIDER === '1') {
-    rows.unshift({ id: 'fixture', name: 'Deterministic Fixture', protocol: 'openai', baseURL: '', enabled: true, custom: false, connected: true, overridden: false });
+    rows.unshift({
+      id: 'fixture',
+      name: 'Deterministic Fixture',
+      protocol: 'openai',
+      baseURL: '',
+      enabled: true,
+      custom: false,
+      connected: true,
+      overridden: false,
+    });
   }
   return rows;
 }
@@ -64,20 +73,25 @@ export async function handleProviderChannels(req, res, ownerId, url) {
   if (p === '/api/provider-channels' && req.method === 'POST') {
     const body = await readJson(req, 256 * 1024);
     const id = String(body.id || '').trim() || newCustomProviderId();
-    const config = upsertProviderConfig(ownerId, {
-      id,
-      name: body.name,
-      protocol: body.protocol,
-      baseURL: body.baseURL,
-      enabled: body.enabled !== false,
-    }, { custom: true });
+    const config = upsertProviderConfig(
+      ownerId,
+      {
+        id,
+        name: body.name,
+        protocol: body.protocol,
+        baseURL: body.baseURL,
+        enabled: body.enabled !== false,
+      },
+      { custom: true },
+    );
     if (typeof body.key === 'string' && body.key.trim()) setProviderKey(ownerId, id, body.key.trim());
     const hasKey = Boolean(getProviderKey(ownerId, id));
-    const catalog = hasKey && config.enabled
-      ? await fetchModels(ownerId, id, { force: true })
-      // Выключенный канал остаётся выключенным, даже если ключа ещё нет:
-      // иначе UI просит добавить ключ вместо того, чтобы включить канал.
-      : { status: config.enabled ? 'unauthorized' : 'disabled', models: [] };
+    const catalog =
+      hasKey && config.enabled
+        ? await fetchModels(ownerId, id, { force: true })
+        : // Выключенный канал остаётся выключенным, даже если ключа ещё нет:
+          // иначе UI просит добавить ключ вместо того, чтобы включить канал.
+          { status: config.enabled ? 'unauthorized' : 'disabled', models: [] };
     return reply(res, 200, {
       provider: listProviderChannels(ownerId).find((item) => item.id === id),
       catalog: { status: catalog.status, count: catalog.models.length, error: catalog.error || null },
@@ -108,11 +122,12 @@ export async function handleProviderChannels(req, res, ownerId, url) {
     // выпадающем списке даже после того, как провайдер их снял. Обновление
     // сразу называет такое расхождение, а решение остаётся за человеком.
     const live = new Set(catalog.models.map((model) => model.id));
-    const missingManual = catalog.status === 'live'
-      ? listManualModels(ownerId, providerId)
-        .filter((row) => row.enabled && !row.pattern && !live.has(row.model_id))
-        .map((row) => row.model_id)
-      : [];
+    const missingManual =
+      catalog.status === 'live'
+        ? listManualModels(ownerId, providerId)
+            .filter((row) => row.enabled && !row.pattern && !live.has(row.model_id))
+            .map((row) => row.model_id)
+        : [];
     return reply(res, 200, {
       status: catalog.status,
       models: catalog.models,

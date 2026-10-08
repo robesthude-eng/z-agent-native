@@ -14,12 +14,17 @@ const { executeInExecutor } = await import('../server/native/executor-client.mjs
 let requests = 0;
 const server = http.createServer(async (req, res) => {
   requests += 1;
-  for await (const _chunk of req) { /* drain the body */ }
+  for await (const _chunk of req) {
+    /* drain the body */
+  }
   // The command "started", then the executor connection dropped before any
   // response header was written (e.g. the executor was restarted).
   res.destroy();
 });
-await new Promise((resolve, reject) => { server.once('error', reject); server.listen(socket, resolve); });
+await new Promise((resolve, reject) => {
+  server.once('error', reject);
+  server.listen(socket, resolve);
+});
 
 test.after(() => {
   server.close();

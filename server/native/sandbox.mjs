@@ -9,8 +9,14 @@ import { getSandboxUid } from './store.mjs';
 // event loop for all other sessions.
 const preparedSandboxes = new Set();
 
-const SETPRIV_PATH = ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv']
-  .find((candidate) => { try { return fs.existsSync(candidate); } catch { return false; } }) || null;
+const SETPRIV_PATH =
+  ['/usr/bin/setpriv', '/bin/setpriv', '/sbin/setpriv'].find((candidate) => {
+    try {
+      return fs.existsSync(candidate);
+    } catch {
+      return false;
+    }
+  }) || null;
 
 function isRootRuntime() {
   return typeof process.getuid === 'function' && process.getuid() === 0;
@@ -21,10 +27,10 @@ function rootSandboxAvailable() {
   if (!isRootRuntime() || !SETPRIV_PATH) return false;
   if (rootSandboxProbe !== null) return rootSandboxProbe;
   try {
-    const probe = spawnSync(SETPRIV_PATH, [
-      '--clear-groups', '--no-new-privs', '--reuid=20000', '--regid=20000',
-      '/bin/true',
-    ], { stdio: 'ignore', timeout: 2000 });
+    const probe = spawnSync(SETPRIV_PATH, ['--clear-groups', '--no-new-privs', '--reuid=20000', '--regid=20000', '/bin/true'], {
+      stdio: 'ignore',
+      timeout: 2000,
+    });
     rootSandboxProbe = probe.status === 0;
   } catch {
     rootSandboxProbe = false;
@@ -63,9 +69,13 @@ export function sandboxIdentity(sessionId) {
   }
   if (unisolatedShellAllowed()) return { isolated: false };
   if (isRootRuntime() && unisolatedShellRequested()) {
-    throw new Error('Refusing to run the agent shell as root: setpriv-based isolation is unavailable and Z_AGENT_ALLOW_UNISOLATED_SHELL only covers non-root runtimes. Install util-linux (setpriv) in the image, run the server as a non-root user, or set Z_AGENT_ALLOW_ROOT_SHELL=1 to knowingly accept full host access for this process.');
+    throw new Error(
+      'Refusing to run the agent shell as root: setpriv-based isolation is unavailable and Z_AGENT_ALLOW_UNISOLATED_SHELL only covers non-root runtimes. Install util-linux (setpriv) in the image, run the server as a non-root user, or set Z_AGENT_ALLOW_ROOT_SHELL=1 to knowingly accept full host access for this process.',
+    );
   }
-  throw new Error('Shell sandbox is unavailable. Run Z Agent in Docker, or explicitly set Z_AGENT_ALLOW_UNISOLATED_SHELL=1 for an unsafe single-user development fallback.');
+  throw new Error(
+    'Shell sandbox is unavailable. Run Z Agent in Docker, or explicitly set Z_AGENT_ALLOW_UNISOLATED_SHELL=1 for an unsafe single-user development fallback.',
+  );
 }
 
 /**
@@ -81,11 +91,23 @@ function chownTree(root, uid, gid) {
   while (stack.length > 0) {
     const full = stack.pop();
     let st;
-    try { st = fs.lstatSync(full); } catch { continue; }
-    if (st.uid !== uid || st.gid !== gid) { try { fs.lchownSync(full, uid, gid); } catch {} }
+    try {
+      st = fs.lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (st.uid !== uid || st.gid !== gid) {
+      try {
+        fs.lchownSync(full, uid, gid);
+      } catch {}
+    }
     if (!st.isDirectory() || st.isSymbolicLink()) continue;
     let names;
-    try { names = fs.readdirSync(full); } catch { continue; }
+    try {
+      names = fs.readdirSync(full);
+    } catch {
+      continue;
+    }
     for (const name of names) stack.push(path.join(full, name));
   }
 }
@@ -115,12 +137,16 @@ export function prepareWorkspaceSandbox(sessionId, workspace) {
   fs.mkdirSync(root, { recursive: true });
   const key = `${sessionId}:${root}:${identity.uid}`;
   if (preparedSandboxes.has(key)) {
-    try { fs.lchownSync(root, identity.uid, identity.gid); } catch {}
+    try {
+      fs.lchownSync(root, identity.uid, identity.gid);
+    } catch {}
   } else {
     chownTree(root, identity.uid, identity.gid);
     preparedSandboxes.add(key);
   }
-  try { fs.chmodSync(root, 0o700); } catch {}
+  try {
+    fs.chmodSync(root, 0o700);
+  } catch {}
   return identity;
 }
 
@@ -148,10 +174,16 @@ export function syncSandboxOwnership(sessionId, workspace, target = workspace) {
   if (fs.existsSync(full)) chownTree(full, identity.uid, identity.gid);
   while (full !== root) {
     full = path.dirname(full);
-    try { fs.lchownSync(full, identity.uid, identity.gid); } catch {}
+    try {
+      fs.lchownSync(full, identity.uid, identity.gid);
+    } catch {}
   }
-  try { fs.lchownSync(root, identity.uid, identity.gid); } catch {}
-  try { fs.chmodSync(root, 0o700); } catch {}
+  try {
+    fs.lchownSync(root, identity.uid, identity.gid);
+  } catch {}
+  try {
+    fs.chmodSync(root, 0o700);
+  } catch {}
 }
 
 const MANAGED_HOME_DIRS = ['cache/pip', 'cache/npm', 'venvs', 'bin', '.local/bin'];
@@ -168,7 +200,9 @@ export function ensureManagedHome(sessionId, workspace) {
   for (const dir of MANAGED_HOME_DIRS) {
     fs.mkdirSync(path.join(home, dir), { recursive: true });
   }
-  try { fs.chmodSync(home, 0o700); } catch {}
+  try {
+    fs.chmodSync(home, 0o700);
+  } catch {}
   if (sessionId) syncSandboxOwnership(sessionId, root, home);
   return home;
 }
@@ -179,7 +213,11 @@ export function killSandboxProcesses(sessionId) {
   if (!Number.isInteger(uid)) return 0;
   let killed = 0;
   let entries = [];
-  try { entries = fs.readdirSync('/proc'); } catch { return 0; }
+  try {
+    entries = fs.readdirSync('/proc');
+  } catch {
+    return 0;
+  }
   for (const entry of entries) {
     if (!/^\d+$/.test(entry)) continue;
     const pid = Number(entry);
@@ -190,7 +228,11 @@ export function killSandboxProcesses(sessionId) {
       if (realUid !== uid) continue;
       process.kill(pid, 'SIGTERM');
       killed += 1;
-      setTimeout(() => { try { process.kill(pid, 'SIGKILL'); } catch {} }, 750).unref?.();
+      setTimeout(() => {
+        try {
+          process.kill(pid, 'SIGKILL');
+        } catch {}
+      }, 750).unref?.();
     } catch {}
   }
   return killed;
@@ -198,11 +240,17 @@ export function killSandboxProcesses(sessionId) {
 
 export function assertRuntimeSecretsPrivate() {
   if (!isRootRuntime()) return;
-  try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
-  try { fs.chmodSync(WORKSPACES_DIR, 0o711); } catch {}
+  try {
+    fs.chmodSync(DATA_DIR, 0o700);
+  } catch {}
+  try {
+    fs.chmodSync(WORKSPACES_DIR, 0o711);
+  } catch {}
   // Loud, once, at boot: this is the one configuration where the runtime hands
   // the model the same privileges as the server itself.
   if (unisolatedShellRequested() && !rootSandboxAvailable() && process.env.Z_AGENT_ALLOW_ROOT_SHELL === '1') {
-    console.warn('[z-agent] SECURITY: agent shell runs as root without setpriv isolation (Z_AGENT_ALLOW_ROOT_SHELL=1). Every session can read data/master.key and all other workspaces.');
+    console.warn(
+      '[z-agent] SECURITY: agent shell runs as root without setpriv isolation (Z_AGENT_ALLOW_ROOT_SHELL=1). Every session can read data/master.key and all other workspaces.',
+    );
   }
 }

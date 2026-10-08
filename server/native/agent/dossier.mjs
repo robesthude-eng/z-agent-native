@@ -23,7 +23,11 @@ function fileFor(sessionId) {
 }
 
 export function readDossier(sessionId) {
-  try { return JSON.parse(fs.readFileSync(fileFor(sessionId), 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(fileFor(sessionId), 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function writeDossier(sessionId, value) {
@@ -35,7 +39,9 @@ function writeDossier(sessionId, value) {
 }
 
 export function clearDossier(sessionId) {
-  try { fs.rmSync(fileFor(sessionId), { force: true }); } catch {}
+  try {
+    fs.rmSync(fileFor(sessionId), { force: true });
+  } catch {}
 }
 
 function clip(text, max) {
@@ -48,7 +54,11 @@ export function transcriptOf(messages) {
   const out = [];
   for (const m of messages) {
     if (m.role === 'user') {
-      const text = (m.parts || []).filter((p) => p?.type === 'text').map((p) => p.text).join('\n').trim();
+      const text = (m.parts || [])
+        .filter((p) => p?.type === 'text')
+        .map((p) => p.text)
+        .join('\n')
+        .trim();
       if (text) out.push(`USER: ${clip(text, 6000)}`);
       continue;
     }
@@ -59,7 +69,9 @@ export function transcriptOf(messages) {
         const st = p.state && typeof p.state === 'object' ? p.state : {};
         const input = st.input && typeof st.input === 'object' ? JSON.stringify(st.input) : '';
         const output = typeof st.output === 'string' ? st.output : '';
-        out.push(`TOOL ${p.tool}${st.status === 'error' ? ' (error)' : ''}: ${clip(input, 500)}${output ? `\n  → ${clip(output, TOOL_OUTPUT_CLIP)}` : ''}`);
+        out.push(
+          `TOOL ${p.tool}${st.status === 'error' ? ' (error)' : ''}: ${clip(input, 500)}${output ? `\n  → ${clip(output, TOOL_OUTPUT_CLIP)}` : ''}`,
+        );
       }
     }
   }
@@ -102,10 +114,9 @@ const SYSTEM = [
 ].join('\n');
 
 export async function summarize({ ownerId, modelPlan, previous, transcript, signal }) {
-  const content = [
-    previous ? `# Previous dossier\n${previous}` : '',
-    `# Transcript to fold in\n${clip(transcript, MAX_SUMMARY_INPUT)}`,
-  ].filter(Boolean).join('\n\n');
+  const content = [previous ? `# Previous dossier\n${previous}` : '', `# Transcript to fold in\n${clip(transcript, MAX_SUMMARY_INPUT)}`]
+    .filter(Boolean)
+    .join('\n\n');
   const res = await callModelAutopilot(ownerId, modelPlan, { system: SYSTEM, frames: [{ role: 'user', content }], tools: [], signal });
   const text = String(res?.text || '').trim();
   return text.length > 200 ? text : null;
@@ -137,7 +148,12 @@ export async function framesWithDossier({ sessionId, ownerId, modelPlan, history
     if (applied && contextWeight(applied) <= DOSSIER_TRIGGER_CHARS) return applied;
     if (idx >= 0 && idx >= cut) return applied || full;
   }
-  const startIdx = existing?.uptoMessageId ? Math.max(0, history.findIndex((m) => m.id === existing.uptoMessageId)) : 0;
+  const startIdx = existing?.uptoMessageId
+    ? Math.max(
+        0,
+        history.findIndex((m) => m.id === existing.uptoMessageId),
+      )
+    : 0;
   const older = history.slice(startIdx, cut);
   if (!older.length) return applyExisting(existing, history, framesFor) || full;
   try {

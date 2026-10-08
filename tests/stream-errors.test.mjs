@@ -9,7 +9,12 @@ function sse(events) {
 
 const frames = [{ role: 'user', content: 'hi' }];
 const openai = { key: 'k', modelId: 'm-stream-err', spec: { baseURL: 'https://example.test/v1', kind: 'openai' }, trustedBaseURL: true };
-const anthropic = { key: 'k', modelId: 'claude-test', spec: { baseURL: 'https://example.test/anthropic', kind: 'anthropic' }, trustedBaseURL: true };
+const anthropic = {
+  key: 'k',
+  modelId: 'claude-test',
+  spec: { baseURL: 'https://example.test/anthropic', kind: 'anthropic' },
+  trustedBaseURL: true,
+};
 
 test('streamEventError ignores ordinary events and shapes provider errors', () => {
   assert.equal(streamEventError({ choices: [{ delta: { content: 'x' } }] }), null);
@@ -35,32 +40,37 @@ test('an HTTP 200 stream that only carries an error event is retried, not return
     const result = await callOpenAI(openai, { system: 's', frames, tools: [], onTextDelta: () => {} });
     assert.equal(result.text, 'OK');
     assert.equal(calls, 2);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a non-retryable in-stream error surfaces as a failure', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => sse([
-    { type: 'message_start', message: { usage: { input_tokens: 1 } } },
-    { type: 'error', error: { type: 'invalid_request_error', message: 'prompt rejected' } },
-  ]);
+  globalThis.fetch = async () =>
+    sse([
+      { type: 'message_start', message: { usage: { input_tokens: 1 } } },
+      { type: 'error', error: { type: 'invalid_request_error', message: 'prompt rejected' } },
+    ]);
   try {
-    await assert.rejects(
-      callAnthropic(anthropic, { system: 's', frames, tools: [], onTextDelta: () => {} }),
-      /prompt rejected/,
-    );
-  } finally { globalThis.fetch = original; }
+    await assert.rejects(callAnthropic(anthropic, { system: 's', frames, tools: [], onTextDelta: () => {} }), /prompt rejected/);
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a transient in-stream error after partial text is reported as an interrupted stream', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => sse([
-    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Partial answer' } },
-    { type: 'error', error: { type: 'api_error', message: 'Internal server error' } },
-  ]);
+  globalThis.fetch = async () =>
+    sse([
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Partial answer' } },
+      { type: 'error', error: { type: 'api_error', message: 'Internal server error' } },
+    ]);
   try {
     const result = await callAnthropic(anthropic, { system: 's', frames, tools: [], onTextDelta: () => {} });
     assert.equal(result.interrupted, true);
     assert.equal(result.text, 'Partial answer');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });

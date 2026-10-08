@@ -15,7 +15,9 @@ export function terminalEnabled() {
 try {
   const mod = await import('node-pty');
   ptySpawn = mod.spawn || mod.default?.spawn || null;
-} catch { /* optional */ }
+} catch {
+  /* optional */
+}
 
 /**
  * Strict origin check for the terminal socket handshake.
@@ -29,10 +31,18 @@ export function sameOrigin(req) {
   const origin = String(req.headers?.origin || '');
   if (!origin) return false;
   let parsed;
-  try { parsed = new URL(origin); } catch { return false; }
+  try {
+    parsed = new URL(origin);
+  } catch {
+    return false;
+  }
   if (ALLOWED_ORIGINS.length) {
     return ALLOWED_ORIGINS.some((allowed) => {
-      try { return new URL(allowed).origin === parsed.origin; } catch { return allowed === parsed.origin; }
+      try {
+        return new URL(allowed).origin === parsed.origin;
+      } catch {
+        return allowed === parsed.origin;
+      }
     });
   }
   return parsed.host === String(req.headers?.host || '');
@@ -94,9 +104,15 @@ export async function initTerminal(httpServer) {
       socket.on('resize', ({ cols, rows } = {}) => {
         const c = Math.min(Math.max(Number(cols) || 80, 2), 500);
         const r = Math.min(Math.max(Number(rows) || 24, 2), 300);
-        try { pty.resize(c, r); } catch {}
+        try {
+          pty.resize(c, r);
+        } catch {}
       });
-      socket.on('disconnect', () => { try { pty.kill(); } catch {} });
+      socket.on('disconnect', () => {
+        try {
+          pty.kill();
+        } catch {}
+      });
       return;
     }
 
@@ -105,7 +121,9 @@ export async function initTerminal(httpServer) {
     child.stdout.on('data', (d) => socket.emit('data', d.toString('utf8')));
     child.stderr.on('data', (d) => socket.emit('data', d.toString('utf8')));
     child.stdin.on('error', () => {});
-    socket.on('data', (data) => { if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(String(data)); });
+    socket.on('data', (data) => {
+      if (!child.stdin.destroyed && child.stdin.writable) child.stdin.write(String(data));
+    });
     socket.on('disconnect', () => child.kill('SIGTERM'));
     child.on('close', () => socket.disconnect(true));
   });
