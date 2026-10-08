@@ -185,6 +185,25 @@ export const TOOL_DEFINITIONS = [
     ),
   },
   {
+    name: 'council',
+    description:
+      'Poll 2-3 independent models (or perspectives: pragmatist, skeptic, maintainer) on a hard decision and get votes, dissent and risks back. Slow and costly; use at most twice per task and only for genuine forks (architecture/data-model choice, irreversible action, expensive ambiguity). Not for routine work. Provide 2-5 concrete options and a compact context.',
+    inputSchema: object(
+      {
+        question: { type: 'string', description: 'The decision to make, one or two sentences' },
+        options: {
+          type: 'array',
+          minItems: 2,
+          maxItems: 5,
+          items: { type: 'string' },
+          description: 'Concrete mutually exclusive options; they are lettered A, B, C…',
+        },
+        context: { type: 'string', description: 'Compact facts the decision depends on (constraints, relevant code, trade-offs)' },
+      },
+      ['question', 'options'],
+    ),
+  },
+  {
     name: 'ensure_environment',
     description:
       'Provision a missing development runtime or CLI inside this session without sudo, then keep it on PATH for later bash/terminal calls. Supports Python packages, Java, Gradle, Android SDK, Go, Rust, Node.js, Maven, Flutter, kubectl, Terraform, and checksum-pinned portable binaries.',

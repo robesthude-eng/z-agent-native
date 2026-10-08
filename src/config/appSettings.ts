@@ -28,6 +28,7 @@ export interface AppSettings {
   agentDossier: boolean;
   agentMemory: boolean;
   agentInstincts: boolean;
+  agentCouncil: boolean;
 }
 
 export const MAX_INSTRUCTIONS = 4000;
@@ -48,6 +49,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   agentDossier: true,
   agentMemory: true,
   agentInstincts: true,
+  agentCouncil: false,
 };
 
 const pick = <T extends string>(v: unknown, allowed: readonly T[], d: T): T =>
@@ -98,6 +100,7 @@ export function normalizeAppSettings(raw: unknown): AppSettings {
     agentDossier: bool(r.agentDossier, d.agentDossier),
     agentMemory: bool(r.agentMemory, d.agentMemory),
     agentInstincts: bool(r.agentInstincts, d.agentInstincts),
+    agentCouncil: bool(r.agentCouncil, d.agentCouncil),
   };
 }
 

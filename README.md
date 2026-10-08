@@ -345,6 +345,7 @@ These are normally set by `docker-compose.yml`, the Dockerfiles or the tooling i
 | `Z_AGENT_ALLOW_ROOT_SHELL` | `0` | `1` lets the agent shell run as root when `setpriv` isolation is unavailable. Every session can then read `data/master.key` and other workspaces; do not use on shared hosts. |
 | `Z_AGENT_ALLOW_HOOK_BYPASS` | `0` | `1` lets the agent shell skip git hooks (`--no-verify`, `core.hooksPath` overrides, `HUSKY=0`); by default such commands are refused so failing hooks get fixed. |
 | `Z_AGENT_INSTINCTS` | `1` | `0` turns the self-learning observer ("instincts") off for every user. Users can also switch it off in Settings → Agent. See ARCHITECTURE.md "Learned instincts". |
+| `Z_AGENT_LIGHT_MODEL` | empty (auto) | Model for cheap background work such as the instincts observer, as `provider/model`. Empty picks a light model by name (mini/nano/lite/flash/haiku/small/instant/3-8B) from the **same provider** as the chat; `off` always uses the chat model. |
 | `Z_AGENT_DEBUG_INSTINCTS` | `0` | `1` logs why a background instinct observation was skipped or failed (never the transcript). |
 | `Z_AGENT_ENABLE_FIXTURE_PROVIDER` | `0` | `1` enables the deterministic fixture provider used by evals/E2E. Never enable in production. |
 | `Z_AGENT_RESTORE_REQUIRE_MANIFEST` | `0` | `1` makes `db:restore-verify` fail without a valid backup manifest (see `OPERATIONS.md`). |

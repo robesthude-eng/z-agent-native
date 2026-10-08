@@ -53,6 +53,7 @@ export function agentFeatureFlags(settings = {}) {
     dossier: on('agentDossier'),
     memory: on('agentMemory'),
     instincts: on('agentInstincts'),
+    council: settings.agentCouncil === true,
   };
 }
 
