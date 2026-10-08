@@ -85,11 +85,13 @@ No question answer is converted into a synthetic user turn. Tool output is never
 
 ## Ideas adopted from opencode
 
-A study of [opencode](https://github.com/sst/opencode) (MIT, see `THIRD_PARTY_NOTICES.md`) fed three parts of the tool layer:
+A study of [opencode](https://github.com/sst/opencode) (MIT, see `THIRD_PARTY_NOTICES.md`) fed these parts of the tool and context layer:
 
 - `tools/edit-match.mjs` — tolerant matching for `edit` (ported replacer cascade). The cascade runs from exact to progressively looser strategies; the first strategy that finds a *unique* span wins, with `all=true` accepting several. A fuzzy span far larger than `oldText` is refused.
 - `project-instructions.mjs` — `AGENTS.md` / `CLAUDE.md` from the workspace root go into the system prompt after the project context (read per turn through the workspace reader, 12k chars max, off with `Z_AGENT_PROJECT_INSTRUCTIONS=0`).
 - `tool-output-spill.mjs` — `executeCall` keeps head + tail of an oversized result in the model frame and writes the full text to `.agent-home/tool-output/` (not tracked as a workspace change, hidden from the file tree).
+- `context.mjs` `pruneOldObservations` — clears old tool results (stub + saved-file path) outside the newest ~120k chars, quantised so the cleared set changes only every 40k chars of growth. Runs before the char-budget trimming in `compactFrames`; the task dossier still handles the long-chat summary.
+- `tools/syntax-check.mjs` — parse-only check of the file after `write`/`edit` (dispatcher `withSyntaxCheck`); silent on success, a warning plus `metadata.syntaxError` on failure.
 
 ## Learned instincts
 

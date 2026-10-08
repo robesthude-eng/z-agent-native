@@ -23,6 +23,7 @@ import {
 } from './filesystem.mjs';
 import { executeMediaAction, isMediaTool } from './media.mjs';
 import { execBash, executeBashTool, externalSpawnIdentity } from './shell.mjs';
+import { withSyntaxCheck } from './syntax-check.mjs';
 import { ToolArgumentsError, validateToolInput } from './validate.mjs';
 import { executeWebFetch, executeWebSearch } from './web.mjs';
 
@@ -148,8 +149,8 @@ export async function executeTool(name, input, ctx = {}) {
     };
   }
 
-  if (tool === 'write') return executeWriteFile(root, input, ctx.sessionId);
-  if (tool === 'edit') return executeEditFile(root, input, ctx.sessionId);
+  if (tool === 'write') return await withSyntaxCheck(root, executeWriteFile(root, input, ctx.sessionId));
+  if (tool === 'edit') return await withSyntaxCheck(root, executeEditFile(root, input, ctx.sessionId));
   if (tool === 'apply_patch') {
     const result = await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal);
     return { ...result, mutatedPaths: ['.'] };
