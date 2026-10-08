@@ -390,7 +390,26 @@ export function createTurnStrategy(goal = '') {
     changedPaths: [],
     lastVerificationEvidence: null,
     gitEvidence: null,
+    sawFailedVerification: false,
+    checkConfigEdits: [],
   };
+}
+
+/**
+ * Lint/type/test/CI configuration. Editing it right after a check failed is the classic
+ * way an agent "fixes" red output without fixing the code, so such edits are tracked and
+ * surfaced to the model and the reviewer. (Idea from the ECC config-protection hook; this is
+ * an independent, soft implementation: the edit is allowed, never silent.)
+ */
+const CHECK_CONFIG_PATH =
+  /(?:^|\/)(?:biome\.jsonc?|\.?eslintrc(?:\.[\w]+)?|eslint\.config\.[cm]?[jt]s|\.prettierrc(?:\.[\w]+)?|prettier\.config\.[cm]?[jt]s|tsconfig(?:\.[\w-]+)?\.json|(?:jest|vitest|playwright|cypress)\.config\.[cm]?[jt]s|pytest\.ini|mypy\.ini|\.?ruff\.toml|\.flake8|\.pylintrc|\.golangci\.ya?ml|\.rubocop\.yml|\.stylelintrc(?:\.[\w]+)?|\.pre-commit-config\.yaml|\.husky\/[^/]+|\.github\/workflows\/[^/]+\.ya?ml)$/i;
+
+export function isCheckConfigPath(filePath) {
+  return CHECK_CONFIG_PATH.test(
+    String(filePath || '')
+      .replace(/\\/g, '/')
+      .replace(/^\.\//, ''),
+  );
 }
 
 function normalizeStrategyEvidence(state) {
@@ -399,6 +418,8 @@ function normalizeStrategyEvidence(state) {
   if (!Array.isArray(state.changedPaths)) state.changedPaths = [];
   if (!('lastVerificationEvidence' in state)) state.lastVerificationEvidence = null;
   if (!('gitEvidence' in state)) state.gitEvidence = null;
+  if (!Array.isArray(state.checkConfigEdits)) state.checkConfigEdits = [];
+  if (typeof state.sawFailedVerification !== 'boolean') state.sawFailedVerification = false;
   return state;
 }
 
@@ -435,6 +456,7 @@ function noteMutation(state, paths = []) {
 function noteVerification(state, { ok, tool, detail = '' }) {
   normalizeStrategyEvidence(state);
   state.verificationAttempts += 1;
+  if (!ok) state.sawFailedVerification = true;
   state.lastVerificationOk = Boolean(ok);
   state.lastVerificationEvidence = {
     tool: String(tool || ''),
@@ -495,6 +517,12 @@ export function observeTool(strategy, call, result) {
   if (['write', 'edit', 'apply_patch'].includes(name)) {
     if (!result?.isError) {
       const paths = result?.mutatedPaths?.length ? result.mutatedPaths : [call?.arguments?.path].filter(Boolean);
+      if (state.sawFailedVerification) {
+        for (const changed of paths.filter(isCheckConfigPath)) {
+          if (!state.checkConfigEdits.includes(changed)) state.checkConfigEdits.push(changed);
+        }
+        state.checkConfigEdits = state.checkConfigEdits.slice(-10);
+      }
       noteMutation(state, paths);
       if (name === 'write' || name === 'edit') {
         const changedPath = String(call?.arguments?.path || '').trim();
@@ -662,6 +690,11 @@ export function strategyGuidance(strategy) {
     for (const todo of strategy.plan.slice(0, 20)) lines.push(`- [${todo.status}] ${todo.content}`);
   }
   if (strategy?.changedPaths?.length) lines.push(`Changed paths (latest tracked set): ${strategy.changedPaths.slice(-12).join(', ')}`);
+  if (strategy?.checkConfigEdits?.length) {
+    lines.push(
+      `You edited check configuration (${strategy.checkConfigEdits.slice(-4).join(', ')}) after a check failed in this turn. Fix the code so the check passes, do not loosen the check, unless the user asked for that configuration change; if you keep it, say so and why in the final answer.`,
+    );
+  }
   const misplaced = htmlPagesWithoutIndex(strategy);
   if (misplaced.length) {
     lines.push(

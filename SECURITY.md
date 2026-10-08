@@ -68,6 +68,10 @@ Repository files, comments, logs, attachments, webpages and tool results are exp
 
 Prompt instructions are defense in depth, not a security boundary. A manipulated model can still make unsafe choices, which is why production defaults agent web access to `off` and executes arbitrary autonomous code in the networkless sibling executor. If `allowlist`/`public` networking is enabled, treat every permitted destination as authorized to receive model-selected data.
 
+## Git hook integrity
+
+The agent shell refuses commands that skip or disable git hooks: `--no-verify`, `git commit -n`, `-c core.hooksPath=…` / `git config core.hooksPath`, `HUSKY=0` and deleting or changing files under `.git/hooks` (`SHELL_HOOK_BYPASS_BLOCKED`, HTTP 403 to the tool). This is behaviour hygiene so a failing hook gets fixed rather than skipped, not a containment boundary: the guard works on command text and applies in every shell network policy. An operator who really wants hooks skippable sets `Z_AGENT_ALLOW_HOOK_BYPASS=1`.
+
 ## Automatic tool approval
 
 Write/edit/patch/bash/webfetch/websearch/environment tool calls do not stop for interactive permission confirmation. The native runtime approves those permission gates immediately so an agent turn can continue without depending on a browser tab or network round-trip.

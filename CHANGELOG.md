@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Agent guard rails (ideas from ECC, independent implementation)
+
+Studied [affaan-m/ECC](https://github.com/affaan-m/ECC) (MIT) and adopted two of its behaviour guards, re-implemented for this runtime:
+
+- The agent shell refuses git-hook bypasses (`--no-verify`, `git commit -n`, `core.hooksPath` overrides, `HUSKY=0`, `.git/hooks` tampering); `Z_AGENT_ALLOW_HOOK_BYPASS=1` is the operator escape hatch.
+- Editing lint/type/test/CI configuration after a check failed in the same turn is tracked (`strategy.checkConfigEdits`), reminded to the model and passed to the pre-answer reviewer, whose prompt now also flags loosened checks and silent failures (swallowed errors, fallbacks that hide failures).
+
 ## Operability and documentation guard rails
 
 - Added `GET /health/live`, a liveness probe with no DB/disk checks that stays 200 while draining; `/health` and `/health/ready` remain the readiness check (and the Compose healthcheck).
