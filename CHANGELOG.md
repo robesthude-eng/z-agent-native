@@ -14,13 +14,12 @@ made on top of it.
 - `npm run docs:check` (already a CI step) now also fails when: code reads a `Z_AGENT_*` / `process.env` variable that no Markdown file or `.env.example` documents; `.env.example` sets a variable nothing reads; a numeric default in the README env table does not match the code; a documented `/api/…`, `/health…` or `/metrics` endpoint does not exist in `server/`; or the README eval-case count differs from `evals/coding-agent.json`.
 - README: new "Advanced, tooling and internal variables" table for the previously undocumented variables.
 - Lint: removed dead code and fixed style/correctness warnings in the server (52 → 28 warnings): unused parameters and constants, `while ((x = …))` assignments, string concatenation, optional chains; intentional control-character regexes are annotated.
-
 - Caddy now sends `X-Request-ID: {http.request.uuid}` upstream, so the ID in the browser, in the proxy and in the application log line is the same.
 - `server/restore-verify.mjs` reports a failed verification as one JSON line (`{"ok":false,"error":"…"}`) with exit code 1 instead of a Node stack trace.
 - Frontend lint warnings: dynamic-`role` and intentional hook-trigger dependencies are annotated with reasons, status dots got `role="img"` for their `aria-label`, unused destructured props were removed.
-
 - Lint is now at zero warnings and `lint:ci` runs `biome lint --error-on-warnings`, so a new warning fails CI. `evals/fixtures` (deliberately imperfect code for agent evals) is excluded from Biome; the e2e evidence payload is typed instead of `any`; shell templates use `\${…}` escapes instead of `${'${…}'}` (generated scripts verified byte-identical).
 - Added a regression test for the `restore-verify` JSON error output.
+- Restored `.github/workflows/deploy.yml` as a **manual-only** workflow (`workflow_dispatch`; no auto-trigger, no hardcoded domain): promotes a successful CI run's immutable digests over SSH with the old pinned-host-key, schema-reader, snapshot and rollback safeguards, fails fast on missing secrets, and refuses non-current commits unless `allow_older=true`. Documented in `OPERATIONS.md`. Not exercised against a real server.
 
 - Biome formatting now also covers `server/**` and `tests/**` (single quotes, line width 140, via `overrides` in `biome.json`), so `format:check` guards the whole runtime. The one-off reformat is whitespace-only: the full native suite (542 tests), the smoke eval and the doc checks give identical results. The reformat commit is listed in `.git-blame-ignore-revs`.
 

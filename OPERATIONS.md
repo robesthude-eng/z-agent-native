@@ -47,7 +47,13 @@ npm run eval:benchmark -- \
 
 The deterministic smoke proves runtime wiring, not model intelligence. The private real-repository corpus is the release-quality model gate. Maintain pinned repository commits and an external oracle/regression command per task.
 
-CI is the authority for release artifacts: it builds and boots the production topology, records immutable registry digests, emits SBOM/provenance material and publishes those digests (job *Production container contract*). The repository has no Deploy workflow any more (removed in `ccf1525`), so promotion is an operator step: set `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` (and `Z_AGENT_RELEASE_SHA`) to the published digests and run `docker compose up -d --no-build`. Production deployment must not rebuild the application image.
+CI is the authority for release artifacts: it builds and boots the production topology, records immutable registry digests, emits SBOM/provenance material and publishes those digests (job *Production container contract*). Promotion is a deliberate operator step, never triggered by a push: either run the manual *Deploy* workflow (section below) or set `Z_AGENT_API_IMAGE` / `Z_AGENT_BROWSER_IMAGE` (and `Z_AGENT_RELEASE_SHA`) to the published digests and run `docker compose up -d --no-build` yourself. Production deployment must not rebuild the application image.
+
+### Deploy workflow (manual)
+
+`.github/workflows/deploy.yml` (Actions → Deploy → *Run workflow*) promotes a CI run that succeeded on `main`; leaving `ci_run_id` empty picks the latest one. It downloads the `production-images` artifact, checks its SHA-256 and that the recorded commit matches, verifies the image attestations (public repositories), then over SSH: snapshots the database with the candidate image, refuses a candidate whose schema cannot be read by the running release, starts the digests with `docker compose up -d --no-build`, waits for `/health/ready`, verifies service images and the live release SHA, and rolls back to the previous images on failure. Deploying anything but the current `main` requires `allow_older=true`.
+
+Secrets (repository or the `production` environment, which can add required reviewers): `DEPLOY_HOST`, `DEPLOY_USER`, `DEPLOY_SSH_KEY`, `DEPLOY_SSH_HOST_KEY` (pinned host key line from `ssh-keyscan -t ed25519 <host>`; there is deliberately no trust-on-first-use), `GHCR_USERNAME`, `GHCR_READ_TOKEN` (read-only `read:packages`). The server needs a checkout in `~/z-agent-native` and a filled `.env`. The job fails immediately and names the missing secrets if any are absent. This workflow has not been exercised against a real server by the documentation audit; try it on a staging host first.
 
 ## 4. Backups and restore drills
 
