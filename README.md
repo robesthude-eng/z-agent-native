@@ -343,6 +343,7 @@ These are normally set by `docker-compose.yml`, the Dockerfiles or the tooling i
 | `Z_AGENT_BROWSER_EGRESS_HOST` / `Z_AGENT_BROWSER_EGRESS_PORT` | `0.0.0.0` / `8080` | Listen address of the browser egress proxy. |
 | `Z_AGENT_EXECUTOR_EXPECT_NETWORK_NONE` | `1` | Whether the executor must attest `network: none`; `docker-compose.trusted.yml` sets `0`. |
 | `Z_AGENT_ALLOW_ROOT_SHELL` | `0` | `1` lets the agent shell run as root when `setpriv` isolation is unavailable. Every session can then read `data/master.key` and other workspaces; do not use on shared hosts. |
+| `Z_AGENT_ALLOW_HOOK_BYPASS` | `0` | `1` lets the agent shell skip git hooks (`--no-verify`, `core.hooksPath` overrides, `HUSKY=0`); by default such commands are refused so failing hooks get fixed. |
 | `Z_AGENT_ENABLE_FIXTURE_PROVIDER` | `0` | `1` enables the deterministic fixture provider used by evals/E2E. Never enable in production. |
 | `Z_AGENT_RESTORE_REQUIRE_MANIFEST` | `0` | `1` makes `db:restore-verify` fail without a valid backup manifest (see `OPERATIONS.md`). |
 | `DAYTONA_API_URL` / `DAYTONA_BASE_IMAGE` | `https://app.daytona.io/api` / `daytonaio/sandbox:0.9.0` | Cloud-sandbox (Daytona) endpoint and base image. |

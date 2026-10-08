@@ -70,6 +70,12 @@ Clustering does **not** share the workspace disk. A second replica without a sha
 10. On runtimes where secure shell execution is unavailable, each changed file
     must be read back before completion; the model then reports that executable
     verification was unavailable instead of claiming a test passed.
+    Two behaviour guards support this loop. Shell commands that skip git hooks
+    (`--no-verify`, `git commit -n`, `core.hooksPath` overrides, `HUSKY=0`,
+    tampering with `.git/hooks`) are refused (`server/native/hook-bypass.mjs`). Edits to lint/type/test/CI
+    configuration made after a check has failed in the same turn are recorded in
+    `strategy.checkConfigEdits`, reminded to the model in the strategy guidance and passed to the
+    pre-answer reviewer, which treats loosening a check to get a green result as a blocker.
 11. Final turn state is persisted and `session.idle` is emitted.
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.

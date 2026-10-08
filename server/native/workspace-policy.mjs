@@ -1,5 +1,6 @@
 import { executorNetworkless } from './executor-client.mjs';
 import path from 'node:path';
+import { assertHooksNotBypassed } from './hook-bypass.mjs';
 
 const SENSITIVE_BASENAMES = new Set([
   '.env',
@@ -170,6 +171,7 @@ const HOST_ESCAPE = /(?:^|[\s'"`;|&<>])\/(?:etc\/(?:passwd|shadow|sudoers|master
  * protects unsafe/local development fallbacks.
  */
 export function assertShellCommandAllowed(command) {
+  assertHooksNotBypassed(command);
   const policy = shellNetworkPolicy();
   if (policy === 'open') return;
   const text = String(command || '');

@@ -64,6 +64,7 @@ const REVIEW_SYSTEM = [
   'You are a strict senior code reviewer checking another AI agent\'s work right before it reports "done" to the user.',
   "You see the user's goal, the final content of the files it changed, its verification evidence and its draft final answer.",
   'Find only REAL problems that matter to the user: bugs, broken or missing parts of what was asked, syntax errors, wrong file paths, security issues (secrets in code, injection, dangerous commands), obvious UI breakage, unverified claims in the draft answer, or work the draft claims but the files do not show.',
+  'Also report as a blocker: lint/type/test/CI configuration loosened or tests disabled/deleted to make a failing check pass instead of fixing the code (unless the goal asked for it), and silent failures (empty catch blocks, swallowed errors, fallbacks that hide a failure and return success).',
   'Ignore style nits, naming preferences and optional improvements. If the work is fine, say so — do not invent issues.',
   'Reply with ONLY a JSON object, no prose, no code fences:',
   '{"verdict":"pass"|"fix","summary":"one sentence in Russian","issues":[{"severity":"blocker"|"major","file":"path or empty","line":0,"problem":"Russian","fix":"Russian, concrete"}]}',
@@ -112,11 +113,13 @@ export async function reviewTurn({ ownerId, modelPlan, goal, strategy, workspace
     : strategy?.needsVerification
       ? 'No successful verification after the latest change.'
       : 'none recorded';
+  const configEdits = (strategy?.checkConfigEdits || []).join(', ');
   const plan = (strategy?.plan || []).map((t) => `- [${t.status}] ${t.content}`).join('\n');
   const content = [
     `# User goal\n${String(goal || '').slice(0, 6000)}`,
     plan ? `# Agent plan\n${plan}` : '',
     `# Verification evidence\n${evidence}`,
+    configEdits ? `# Check configuration edited after a failing check\n${configEdits}` : '',
     `# Changed files (final content)\n${files}`,
     `# Draft final answer\n${String(draft || '(empty)').slice(0, 6000)}`,
   ]
