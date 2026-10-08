@@ -1,5 +1,6 @@
 import { callModelAutopilot, modelKey, promoteModelPlan, subagentStepBudget } from './autopilot.mjs';
 import { previewTitle } from './agent/tool-stream.mjs';
+import { planBatches, runBatch } from './agent/parallel.mjs';
 import { compactFrames } from './context.mjs';
 import { getSubagentProfile, subagentToolNames, subagentWrites } from './subagents.mjs';
 import { availableToolDefinitions, executeTool, toolOutputText } from './tools.mjs';
@@ -91,28 +92,35 @@ export async function runSubagent({ ownerId, modelPlan, input, workspace, signal
     }
 
     frames.push({ role: 'assistant', content: response.text || '', toolCalls: calls });
-    for (const call of calls) {
-      if (!tools.some((tool) => tool.name === call.name)) {
-        frames.push({
-          role: 'tool',
-          callId: call.id,
-          name: call.name,
-          content: `Tool ${call.name} is not available to the ${profile.name} subagent.`,
-          isError: true,
-        });
-        continue;
-      }
-      const toolDone = progress?.ticker(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})}`);
-      try {
-        const result = await executeTool(call.name, call.arguments || {}, toolContext);
-        for (const mutated of result?.mutatedPaths || []) mutatedPaths.add(mutated);
-        const content = toolOutputText(result);
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content, isError: false });
-        toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✓ ${content.length} симв.`);
-      } catch (err) {
-        frames.push({ role: 'tool', callId: call.id, name: call.name, content: `Error: ${err?.message || String(err)}`, isError: true });
-        toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✗ ${String(err?.message || err).split('\n')[0]}`);
-      }
+    // Чтения параллельно, правки/команды по очереди; кадры результатов — в порядке вызовов.
+    for (const batch of planBatches(calls)) {
+      const outcomes = await runBatch(batch, async (call) => {
+        if (!tools.some((tool) => tool.name === call.name)) {
+          return {
+            frame: {
+              role: 'tool',
+              callId: call.id,
+              name: call.name,
+              content: `Tool ${call.name} is not available to the ${profile.name} subagent.`,
+              isError: true,
+            },
+          };
+        }
+        const toolDone = progress?.ticker(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})}`);
+        try {
+          const result = await executeTool(call.name, call.arguments || {}, toolContext);
+          for (const mutated of result?.mutatedPaths || []) mutatedPaths.add(mutated);
+          const content = toolOutputText(result);
+          toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✓ ${content.length} симв.`);
+          return { frame: { role: 'tool', callId: call.id, name: call.name, content, isError: false } };
+        } catch (err) {
+          toolDone?.(`→ ${call.name}: ${previewTitle(call.name, call.arguments || {})} ✗ ${String(err?.message || err).split('\n')[0]}`);
+          return {
+            frame: { role: 'tool', callId: call.id, name: call.name, content: `Error: ${err?.message || String(err)}`, isError: true },
+          };
+        }
+      });
+      for (const outcome of outcomes) frames.push(outcome.frame);
     }
   }
 

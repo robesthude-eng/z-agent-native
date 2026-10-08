@@ -26,6 +26,7 @@ import {
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
 import { agentFeatures } from '../user-settings-prompt.mjs';
 import { clearDossier } from './dossier.mjs';
+import { clearFileAwareness, resetFileAwarenessForTests } from './file-awareness.mjs';
 import { persistAssistant } from './message-parts.mjs';
 import { startDurableRecovery as startDurableRecoveryImpl } from './recovery.mjs';
 import {
@@ -268,10 +269,12 @@ export function clearAgentSessionState(sessionId) {
   clearDurableJob(sessionId);
   clearProjectContext(sessionId);
   clearDossier(sessionId);
+  clearFileAwareness(sessionId);
   return true;
 }
 
 export function resetAgentStateForTests() {
+  resetFileAwarenessForTests();
   for (const active of activeTurns.values()) active.controller.abort();
   const sessions = [...activeTurns.keys()];
   resetRuntimeState();

@@ -503,7 +503,8 @@ function settleReadbacks(state, tool) {
 export function observeTool(strategy, call, result) {
   const state = normalizeStrategyEvidence(strategy);
   const name = String(call?.name || '').toLowerCase();
-  if (result?.isError) state.toolErrors += 1;
+  // A runtime gate (e.g. «read before overwrite») is guidance, not a failure of the tool.
+  if (result?.isError && !result?.metadata?.runtimeGate) state.toolErrors += 1;
 
   if (name === 'todowrite' && Array.isArray(result?.metadata?.todos)) {
     state.plan = result.metadata.todos.slice(0, 30).map((todo) => ({
