@@ -36,7 +36,8 @@
     "formatter": { "enabled": true, "quoteStyle": "single" }
   },
   "files": {
-    "ignoreUnknown": true
+    "ignoreUnknown": true,
+    "includes": ["**", "!evals/fixtures"]
   },
   "vcs": {
     "enabled": true,

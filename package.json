@@ -27,7 +27,7 @@
     "eval:smoke": "node --env-file-if-exists=.env scripts/run-agent-evals.mjs --smoke",
     "docs:check": "node scripts/check-capability-docs.mjs",
     "telemetry:summary": "node --env-file-if-exists=.env scripts/summarize-turn-telemetry.mjs",
-    "lint:ci": "biome lint .",
+    "lint:ci": "biome lint --error-on-warnings .",
     "format:check": "biome format .",
     "architecture:check": "node scripts/check-ui-boundaries.mjs",
     "quality:quick": "npm run typecheck && npm run architecture:check && npm run lint:ci && npm run format:check && npm test && npm run docs:check && npm run eval:validate && npm run eval:benchmark:validate",

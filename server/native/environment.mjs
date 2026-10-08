@@ -184,7 +184,7 @@ function androidPlan(root, input) {
   const sdkmanager = path.join(sdk, 'cmdline-tools', 'latest', 'bin', 'sdkmanager');
   const packageArgs = packages.map(shellQuote).join(' ');
   const licenseBlock = acceptLicenses
-    ? `\nset +o pipefail\nyes | ${shellQuote(sdkmanager)} --sdk_root=${shellQuote(sdk)} --licenses >/dev/null\nLICENSE_STATUS="${'${PIPESTATUS[1]}'}"\nset -o pipefail\ntest "$LICENSE_STATUS" -eq 0`
+    ? `\nset +o pipefail\nyes | ${shellQuote(sdkmanager)} --sdk_root=${shellQuote(sdk)} --licenses >/dev/null\nLICENSE_STATUS="\${PIPESTATUS[1]}"\nset -o pipefail\ntest "$LICENSE_STATUS" -eq 0`
     : '';
   const packageBlock = packages.length ? `\n${shellQuote(sdkmanager)} --sdk_root=${shellQuote(sdk)} ${packageArgs}` : '';
   const script = `set -euo pipefail\ncommand -v java >/dev/null 2>&1 || { echo 'Java is required; provision kind=java first' >&2; exit 42; }\nmkdir -p ${shellQuote(downloads)} ${shellQuote(path.join(sdk, 'cmdline-tools'))}\nif [ ! -x ${shellQuote(sdkmanager)} ]; then\n  curl -fL --retry 3 --retry-delay 1 ${shellQuote(url)} -o ${shellQuote(archive)}\n  printf '%s  %s\\n' ${shellQuote(ANDROID_COMMANDLINE_TOOLS_SHA256)} ${shellQuote(archive)} | sha256sum -c -\n  TMP=${shellQuote(path.join(home, 'toolchains', 'android-cli.tmp'))}\n  rm -rf "$TMP" ${shellQuote(path.join(sdk, 'cmdline-tools', 'latest'))}\n  mkdir -p "$TMP"\n  unzip -q ${shellQuote(archive)} -d "$TMP"\n  test -x "$TMP/cmdline-tools/bin/sdkmanager"\n  mv "$TMP/cmdline-tools" ${shellQuote(path.join(sdk, 'cmdline-tools', 'latest'))}\n  rm -rf "$TMP"\nfi${licenseBlock}${packageBlock}\n${shellQuote(sdkmanager)} --sdk_root=${shellQuote(sdk)} --version`;
