@@ -45,7 +45,7 @@
     "release:check": "npm run supplychain:check && npm run docs:check && npm run eval:validate && npm run eval:benchmark:validate && npm run eval:smoke && npm run test:native"
   },
   "dependencies": {
-    "@radix-ui/react-dialog": "^1.1.23",
+    "@radix-ui/react-dialog": "^1.2.0",
     "@radix-ui/react-label": "^2.1.15",
     "@radix-ui/react-scroll-area": "^1.2.18",
     "@radix-ui/react-separator": "^1.1.15",
