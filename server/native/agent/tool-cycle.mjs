@@ -7,6 +7,7 @@ import { runSubagent } from '../subagent-runner.mjs';
 import { assertValidToolInput, executeTool, toolOutputText } from '../tools.mjs';
 import { createProgressLog } from '../tools/progress.mjs';
 import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
+import { observeFileTool, overwriteGate } from './file-awareness.mjs';
 import { emitPart } from './message-parts.mjs';
 import { askQuestion } from './questions.mjs';
 
@@ -83,6 +84,19 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
   try {
     assertChatToolAllowed(call.name, runtime?.toolOptions);
     const workspace = workspaceFor(sessionId);
+    const gated = overwriteGate(sessionId, workspace, call);
+    if (gated) {
+      part.state = {
+        ...part.state,
+        status: 'completed',
+        output: gated,
+        title: 'Файл не перезаписан: сначала прочитайте его',
+        metadata: { ...(part.state?.metadata || {}), runtimeGate: 'overwrite-unread' },
+        time: { ...part.state.time, end: Date.now() },
+      };
+      emitPart(assistant, part, { putMessage, emit });
+      return { content: gated, isError: true, metadata: part.state.metadata, mutatedPaths: [] };
+    }
     const emitLiveOutput = (text) => {
       if (controller.signal.aborted) return;
       const status = String(part.state?.status || '');
@@ -191,6 +205,7 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     };
     emitPart(assistant, part, { putMessage, emit });
     if (result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result.mutatedPaths });
+    observeFileTool(sessionId, call, result);
     // Картинки для модели (view_media) идут отдельно от текста и в БД не пишутся.
     const visualMedia = Array.isArray(result?.visualMedia) ? result.visualMedia.filter((m) => m && typeof m.dataUrl === 'string') : [];
     return {

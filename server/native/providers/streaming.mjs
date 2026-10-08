@@ -282,16 +282,61 @@ export function anthropicMessages(frames) {
   return out;
 }
 
-export async function callAnthropic(resolved, { system, frames, tools, signal, onTextDelta, onToolCall, failFastRateLimit = false }) {
+const CACHE_HOSTS = new Set(['api.anthropic.com']);
+
+/**
+ * Prompt caching (Anthropic): the system prompt, tool list and the growing conversation prefix are
+ * identical between steps of a tool loop, so marking them as cacheable makes every later step
+ * cheaper and faster. Only applied to Anthropic's own API (gateways may reject unknown fields);
+ * inputs shorter than the provider's minimum are simply not cached.
+ */
+export function withAnthropicCache(request, baseURL, systemTail = '') {
+  let host = '';
+  try {
+    host = new URL(baseURL).hostname;
+  } catch {}
+  if (!CACHE_HOSTS.has(host))
+    return systemTail ? { ...request, system: [request.system, systemTail].filter(Boolean).join('\n\n') } : request;
+  const mark = { type: 'ephemeral' };
+  const out = { ...request };
+  if (typeof out.system === 'string' && out.system) {
+    out.system = [{ type: 'text', text: out.system, cache_control: mark }];
+    if (systemTail) out.system.push({ type: 'text', text: systemTail });
+  } else if (systemTail) out.system = systemTail;
+  if (Array.isArray(out.tools) && out.tools.length) {
+    out.tools = out.tools.map((t, i) => (i === out.tools.length - 1 ? { ...t, cache_control: mark } : t));
+  }
+  const messages = Array.isArray(out.messages) ? out.messages : [];
+  const last = messages.at(-1);
+  if (last && Array.isArray(last.content) && last.content.length) {
+    const blocks = last.content.slice();
+    const lastBlock = blocks.at(-1);
+    // Thinking blocks cannot carry cache_control; empty text blocks are rejected by the API.
+    if (lastBlock && lastBlock.type !== 'thinking' && !(lastBlock.type === 'text' && !lastBlock.text)) {
+      blocks[blocks.length - 1] = { ...lastBlock, cache_control: mark };
+      out.messages = [...messages.slice(0, -1), { ...last, content: blocks }];
+    }
+  }
+  return out;
+}
+
+export async function callAnthropic(
+  resolved,
+  { system, systemTail = '', frames, tools, signal, onTextDelta, onToolCall, failFastRateLimit = false },
+) {
   const directUrl = `${resolved.spec.baseURL.replace(/\/$/, '')}/messages`;
   const target = await routedProviderTarget(directUrl, resolved.trustedBaseURL);
-  const request = {
-    model: resolved.modelId,
-    max_tokens: 8192,
-    system,
-    messages: anthropicMessages(frames),
-    tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })),
-  };
+  const request = withAnthropicCache(
+    {
+      model: resolved.modelId,
+      max_tokens: 8192,
+      system,
+      messages: anthropicMessages(frames),
+      tools: tools.map((t) => ({ name: t.name, description: t.description, input_schema: t.inputSchema })),
+    },
+    resolved.spec.baseURL,
+    systemTail,
+  );
   const headers = {
     'content-type': 'application/json',
     accept: 'application/json',

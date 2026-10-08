@@ -166,6 +166,7 @@ function planContinuationGate(strategy) {
 }
 
 import { liveTextSink } from './streaming.mjs';
+import { planBatches, runBatch } from './parallel.mjs';
 import { assistantHasProgress, executeCall, strategyInfo } from './tool-cycle.mjs';
 import { createToolCallSink } from './tool-stream.mjs';
 
@@ -609,12 +610,12 @@ export async function executeTurnLifecycle({
             mediaPrompt,
             ownerPrompt,
             runtime.projectContext,
-            recoveryGuidance(runtime.recovery),
-            strategyGuidance(strategy),
             system || '',
           ]
             .filter(Boolean)
             .join('\n\n'),
+          // Меняется почти на каждом шаге (план, статус проверки) — отдельно, чтобы не ломать кэш префикса.
+          systemTail: [recoveryGuidance(runtime.recovery), strategyGuidance(strategy)].filter(Boolean).join('\n\n'),
           frames: providerFrames,
           tools: turnTools(),
           signal: controller.signal,
@@ -842,29 +843,40 @@ export async function executeTurnLifecycle({
       // Every card of this step is on screen (queued) before the first tool starts.
       const stepParts = toolSink.bind(calls);
       const stepMedia = [];
-      for (const [callIndex, call] of calls.entries()) {
-        const toolStartedAt = Date.now();
-        const result = await executeCall(sessionId, assistant, call, controller, runtime, updateTurn, stepParts[callIndex]);
-        recordToolCall(runtime.telemetry, { call, result, latencyMs: Date.now() - toolStartedAt });
-        observeTool(strategy, call, result);
-        if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result)) runtime.recovery.inspected = true;
-        const toolFrame = { role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError };
-        frames.push(toolFrame);
-        if (result.visualMedia?.length) stepMedia.push(...result.visualMedia);
-        checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
-        const loop = observeToolLoop(loopGuard, call, result);
-        if (loop) {
-          // Уже проверенный результат — остановка штатная (ниже он завершится
-          // как completed). Иначе сначала предупреждаем модель и даём сменить
-          // подход: ложное срабатывание (тот же `npm test` или `git status`
-          // несколько раз за длинную задачу) не должно обрывать работу.
-          if (loopStopSatisfiesTask(strategy) || loopWarnings >= MAX_LOOP_WARNINGS) {
-            guardedStop = guardStopError(loop);
-            break;
+      // Независимые чтения одного шага идут параллельно, остальное — по очереди (см. parallel.mjs).
+      let callOffset = 0;
+      batches: for (const batch of planBatches(calls)) {
+        const base = callOffset;
+        const executed = await runBatch(batch, async (call, i) => {
+          const startedAt = Date.now();
+          const result = await executeCall(sessionId, assistant, call, controller, runtime, updateTurn, stepParts[base + i]);
+          return { result, latencyMs: Date.now() - startedAt };
+        });
+        callOffset += batch.length;
+        for (const [i, call] of batch.entries()) {
+          const { result, latencyMs } = executed[i];
+          recordToolCall(runtime.telemetry, { call, result, latencyMs });
+          observeTool(strategy, call, result);
+          if (runtime.recovery.resumed && !runtime.recovery.inspected && isInspectionResult(call, result))
+            runtime.recovery.inspected = true;
+          const toolFrame = { role: 'tool', callId: call.id, name: call.name, content: result.content, isError: result.isError };
+          frames.push(toolFrame);
+          if (result.visualMedia?.length) stepMedia.push(...result.visualMedia);
+          checkpointState(sessionId, runtime, strategy, { phase: 'after_tool' });
+          const loop = observeToolLoop(loopGuard, call, result);
+          if (loop) {
+            // Уже проверенный результат — остановка штатная (ниже он завершится
+            // как completed). Иначе сначала предупреждаем модель и даём сменить
+            // подход: ложное срабатывание (тот же `npm test` или `git status`
+            // несколько раз за длинную задачу) не должно обрывать работу.
+            if (loopStopSatisfiesTask(strategy) || loopWarnings >= MAX_LOOP_WARNINGS) {
+              guardedStop = guardStopError(loop);
+              break batches;
+            }
+            loopWarnings += 1;
+            resetLoopGuardCounters(loopGuard);
+            toolFrame.content = `${String(toolFrame.content || '')}\n\n[Runtime loop warning] ${loop.message} Repeating it will not produce new information. Change the approach: use the result you already have, inspect something else, edit the code, or finish with a final answer. If the same pattern repeats, the turn will be stopped.`;
           }
-          loopWarnings += 1;
-          resetLoopGuardCounters(loopGuard);
-          toolFrame.content = `${String(toolFrame.content || '')}\n\n[Runtime loop warning] ${loop.message} Repeating it will not produce new information. Change the approach: use the result you already have, inspect something else, edit the code, or finish with a final answer. If the same pattern repeats, the turn will be stopped.`;
         }
       }
       // Тексты результатов инструментов не умеют нести картинки, поэтому всё,

@@ -3,12 +3,23 @@ import { effectiveSpecs, fixtureResponse, resolveModel } from './catalog.mjs';
 import { callAnthropic, callGoogle, callOpenAI } from './streaming.mjs';
 import { publicProviderErrorMessage } from './transport.mjs';
 
+/**
+ * `systemTail` — часть системного промпта, которая меняется от шага к шагу. Anthropic получает её
+ * отдельным блоком после кэшируемой части; остальные провайдеры — склеенной в один system.
+ */
+export function foldSystemTail(resolved, request) {
+  if (!request?.systemTail || resolved.spec.kind === 'anthropic') return request;
+  const { systemTail, ...rest } = request;
+  return { ...rest, system: [rest.system, systemTail].filter(Boolean).join('\n\n') };
+}
+
 export async function callModel(ownerId, model, request) {
   const resolved = resolveModel(ownerId, model);
-  if (resolved.spec.kind === 'fixture') return fixtureResponse(request);
-  if (resolved.spec.kind === 'anthropic') return callAnthropic(resolved, request);
-  if (resolved.spec.kind === 'google') return callGoogle(resolved, request);
-  return callOpenAI(resolved, request);
+  const req = foldSystemTail(resolved, request);
+  if (resolved.spec.kind === 'fixture') return fixtureResponse(req);
+  if (resolved.spec.kind === 'anthropic') return callAnthropic(resolved, req);
+  if (resolved.spec.kind === 'google') return callGoogle(resolved, req);
+  return callOpenAI(resolved, req);
 }
 
 // Красный квадрат 32×32 для проверки, видит ли модель изображения.
@@ -25,7 +36,8 @@ const PROBE_TOOL = {
   },
 };
 
-function callByKind(resolved, request) {
+function callByKind(resolved, rawRequest) {
+  const request = foldSystemTail(resolved, rawRequest);
   if (resolved.spec.kind === 'anthropic') return callAnthropic(resolved, request);
   if (resolved.spec.kind === 'google') return callGoogle(resolved, request);
   return callOpenAI(resolved, request);

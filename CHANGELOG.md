@@ -7,6 +7,13 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Faster and safer tool loop
+
+- Independent read-only tool calls of one model step now run in parallel (≤4; also in subagents). Mutating tools still run one at a time in the model's order, and results are processed in call order, so behaviour is unchanged except for speed.
+- `write` over an existing, unseen, non-empty file is refused once with a preview (an idea from ECC's GateGuard, independent implementation); an identical retry is accepted. Not counted as a tool error.
+- Prompt caching for `api.anthropic.com`: system prompt, tools and the conversation prefix get `cache_control` breakpoints; the per-step guidance moved to a separate `systemTail` so it no longer invalidates the cached prefix (non-Anthropic providers get the same text concatenated, as before).
+- Tests: `tests/agent-speed-safety.test.mjs`.
+
 ## Learned instincts (self-learning, adapted from ECC)
 
 Adapted the continuous-learning idea of [affaan-m/ECC](https://github.com/affaan-m/ECC) (MIT; ideas only, independent code) — see ARCHITECTURE.md "Learned instincts".
