@@ -372,6 +372,23 @@ export const api = {
     }),
   deleteMemory: (id: string) =>
     req<void>(`/user/memory/${id}`, { method: "DELETE" }),
+  listInstincts: () => req<InstinctEntry[]>(`/user/instincts`),
+  updateInstinct: (
+    id: string,
+    patch: { status?: "active" | "dismissed"; scope?: "global" },
+  ) =>
+    req<InstinctEntry>(`/user/instincts/${id}`, {
+      method: "PATCH",
+      body: JSON.stringify(patch),
+    }),
+  deleteInstinct: (id: string) =>
+    req<void>(`/user/instincts/${id}`, { method: "DELETE" }),
+  exportInstincts: () => req<InstinctExport>(`/user/instincts/export`),
+  importInstincts: (data: InstinctExport) =>
+    req<{ imported: number; skipped: number }>(`/user/instincts/import`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   listSkills: () => req<Skill[]>(`/user/skills`),
   getSkill: (id: string) => req<Skill>(`/user/skills/${id}`),
   listSkillIndex: () => req<Skill[]>(`/user/skills?metadata=1`),
@@ -845,6 +862,30 @@ export type MemoryEntry = {
   source: "agent" | "user";
   created: number;
   chatTitle?: string | null;
+};
+export type InstinctEntry = {
+  id: string;
+  scope: string;
+  trigger: string;
+  action: string;
+  domain: string;
+  confidence: number;
+  observations: number;
+  contradictions: number;
+  source: "observer" | "user" | "import";
+  status: "active" | "dismissed";
+  lastObserved: number;
+  chatTitle?: string | null;
+};
+export type InstinctExport = {
+  format: "zagent-instincts";
+  version: number;
+  instincts: Array<{
+    trigger: string;
+    action: string;
+    domain: string;
+    confidence: number;
+  }>;
 };
 export type SkillSourceInput = {
   source?: string;

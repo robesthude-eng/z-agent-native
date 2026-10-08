@@ -80,6 +80,18 @@ Clustering does **not** share the workspace disk. A second replica without a sha
 
 No question answer is converted into a synthetic user turn. Tool output is never flattened into user prose. Runtime completion-gate reminders are internal turn frames and are not persisted as user-authored chat messages.
 
+## Learned instincts
+
+Self-learning is an optional background step after a turn (`server/native/instincts.mjs`, store in `server/native/store/instincts.mjs`, table `agent_instincts`). The design (atomic "when → do" rules, confidence scale, project/global scope) adapts the continuous-learning idea of [ECC](https://github.com/affaan-m/ECC) (MIT); the code is independent and more conservative.
+
+- **Trigger.** Only turns with a learning signal are observed: the owner's message looks like a correction or a stated preference ("не так", "используй X вместо Y", "always…", "don't…"), or a tool error was followed by a changed workspace. Aborted/failed turns are skipped. At most one observation per owner every 30 s.
+- **Observer.** One non-streaming call to the turn's own model plan with an ephemeral, redacted digest (owner message, short previous reply, a ≤24-line tool trace with basenames only, result flags). Output is JSON: ≤3 new instincts plus `confirmed` / `contradicted` ids of existing ones. The digest is never stored.
+- **Instinct.** `trigger`, `action`, `domain`, `confidence` (0.3–0.9), `observations`, `contradictions`, a ≤200-char redacted `evidence`, `scope` (`global` or a chat id), `status` (`active` / `dismissed`).
+- **Confidence.** New 0.3 (0.5 when the owner literally stated the rule); confirmation `+0.05` but at least the floor for the observation count (3→0.5, 6→0.7, 11→0.85); contradiction `−0.1`, below 0.2 the rule is forgotten; decay `−0.02` per week without confirmation (computed on read). A dismissed rule stays as a tombstone so it is not learned again.
+- **Scope.** A new rule lives in the chat where it was learned. It becomes global only when the owner stated it explicitly in a global-friendly domain (security, git, workflow, communication, tooling), by the owner's "for all chats" action, or automatically when the same pattern exists in ≥2 chats with average confidence ≥0.8. Chat-bound domains (code style, testing, debugging, docs, other) never go global. Chat-scoped rules are deleted with the chat.
+- **Injection.** `instinctsPrompt` adds up to 6 active instincts with confidence ≥0.5 (strongest first, this chat before global on ties) to the system prompt, labelled strong/moderate and framed as non-binding: they never override the owner's request, the safety rules or the permission system.
+- **Surface.** Settings → Agent has an on/off switch (`agentInstincts`); Settings → Memory lists rules with confidence and scope and lets the owner disable, delete, make global, export or import them (`/api/user/instincts`, `/api/user/instincts/export`, `/api/user/instincts/import`). Export contains only `trigger/action/domain/confidence`; import caps confidence at 0.5 and always imports as global.
+
 ## Context manager
 
 The context manager runs on every model step, including nested subagents with profile-specific capabilities. It uses a deterministic character budget as a provider-neutral safety bound and applies two layers of compaction:

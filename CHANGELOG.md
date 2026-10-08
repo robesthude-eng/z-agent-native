@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Learned instincts (self-learning, adapted from ECC)
+
+Adapted the continuous-learning idea of [affaan-m/ECC](https://github.com/affaan-m/ECC) (MIT; ideas only, independent code) — see ARCHITECTURE.md "Learned instincts".
+
+- New table `agent_instincts` (migration 10, additive) and store with ECC's confidence scale: 0.3 start, `+0.05` per confirmation with observation-count floors (0.5 / 0.7 / 0.85), `−0.1` per contradiction, `−0.02`/week decay, forgotten below 0.2, tombstones for dismissed rules, cap 200 per owner.
+- Background observer after turns with a learning signal (correction/preference wording, or an error followed by a change): one call with a redacted ephemeral digest extracts ≤3 rules and confirms/contradicts existing ones. Rules are chat-scoped by default; global only when stated explicitly in a global-friendly domain, promoted manually, or recurring in ≥2 chats with avg confidence ≥0.8.
+- Up to 6 rules with confidence ≥0.5 are added to the system prompt as non-binding habits. Rule text is validated (no secrets, URLs, prompt-override or safety-weakening phrases).
+- `/api/user/instincts` (list, patch status/promote, delete, export, import); Settings → Agent toggle `agentInstincts`; Settings → Memory section "Выученные привычки".
+- New env: `Z_AGENT_INSTINCTS` (default on), `Z_AGENT_DEBUG_INSTINCTS`. Tests: `tests/instincts.test.mjs` (store, confidence, scope/promotion, redaction, rule validation, observer, prompt cap, routes, end-to-end turn).
+
 ## Agent guard rails (ideas from ECC, independent implementation)
 
 Studied [affaan-m/ECC](https://github.com/affaan-m/ECC) (MIT) and adopted two of its behaviour guards, re-implemented for this runtime:

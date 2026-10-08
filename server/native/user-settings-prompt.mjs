@@ -52,6 +52,7 @@ export function agentFeatureFlags(settings = {}) {
     autoResume: on('agentAutoResume'),
     dossier: on('agentDossier'),
     memory: on('agentMemory'),
+    instincts: on('agentInstincts'),
   };
 }
 

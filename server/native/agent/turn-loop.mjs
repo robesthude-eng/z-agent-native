@@ -1,5 +1,6 @@
 import { framesFromMessages, systemPrompt, textParts } from '../agent-frames.mjs';
 import { memoryPrompt } from '../agent-memory.mjs';
+import { instinctsPrompt, observeTurn } from '../instincts.mjs';
 import { isInspectionResult, rebuildLoopGuard, rebuildStrategy, recoveryGuidance, waitForRetry } from '../agent-parts.mjs';
 import { buildModelPlan, callModelAutopilot, modelKey, promoteModelPlan, taskStepBudget } from '../autopilot.mjs';
 import { effectiveToolOptions, filterChatTools, normalizeChatToolOptions } from '../chat-tool-options.mjs';
@@ -497,6 +498,7 @@ export async function executeTurnLifecycle({
   const ownerPrompt = [
     userSettingsPrompt(ownerId),
     features.memory ? memoryPrompt(ownerId, sessionId, { includeSkills: false }) : '',
+    features.instincts ? instinctsPrompt(ownerId, sessionId) : '',
     skillsPrompt(ownerId, sessionId, workspaceFor(sessionId)),
   ]
     .filter(Boolean)
@@ -996,5 +998,9 @@ export async function executeTurnLifecycle({
     if (capacityPulse) clearInterval(capacityPulse);
     activeTurns.delete(sessionId);
     notifyTurnIdle(sessionId);
+    // Фоновое обучение: не ждём и не влияем на ответ (observeTurn сам ловит любые ошибки).
+    if (features.instincts && runtime?.modelPlan) {
+      void observeTurn({ ownerId, sessionId, goal, assistant, strategy, modelPlan: runtime.modelPlan });
+    }
   }
 }
