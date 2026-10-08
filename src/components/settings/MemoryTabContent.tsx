@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useState } from "react";
-import { api, type MemoryEntry, type MemoryKind } from "@/api/client";
+import {
+  api,
+  type InstinctEntry,
+  type MemoryEntry,
+  type MemoryKind,
+} from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/lib/toast";
 import { SkillsLibrary } from "../skills/SkillsLibrary";
@@ -93,11 +98,95 @@ function MemoryRow({
   );
 }
 
+function InstinctRow({
+  entry,
+  onChange,
+  onDelete,
+}: {
+  entry: InstinctEntry;
+  onChange: (patch: {
+    status?: "active" | "dismissed";
+    scope?: "global";
+  }) => void;
+  onDelete: () => void;
+}) {
+  const dismissed = entry.status === "dismissed";
+  const level =
+    entry.confidence >= 0.7
+      ? "уверенно"
+      : entry.confidence >= 0.5
+        ? "умеренно"
+        : "пробно";
+  return (
+    <div className="flex items-start justify-between gap-3 px-4 py-3">
+      <div className={`min-w-0 flex-1 ${dismissed ? "opacity-50" : ""}`}>
+        <div className="text-sm leading-relaxed">
+          <span className="text-muted-foreground">{entry.trigger} →</span>{" "}
+          {entry.action}
+        </div>
+        <div className="mt-1 flex flex-wrap gap-x-2 text-xs text-muted-foreground">
+          <span>
+            {level} · {Math.round(entry.confidence * 100)}%
+          </span>
+          <span>·</span>
+          <span>{entry.domain}</span>
+          <span>·</span>
+          <span>
+            {entry.scope === "global"
+              ? "все чаты"
+              : `чат «${entry.chatTitle || "удалён"}»`}
+          </span>
+          <span>·</span>
+          <span>подтверждений: {entry.observations}</span>
+          {dismissed && (
+            <>
+              <span>·</span>
+              <span>отключено</span>
+            </>
+          )}
+        </div>
+      </div>
+      <div className="flex shrink-0 gap-1">
+        {entry.scope !== "global" && !dismissed && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => onChange({ scope: "global" })}
+          >
+            Для всех чатов
+          </Button>
+        )}
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() =>
+            onChange({ status: dismissed ? "active" : "dismissed" })
+          }
+        >
+          {dismissed ? "Включить" : "Отключить"}
+        </Button>
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          className="text-destructive hover:text-destructive"
+          onClick={onDelete}
+        >
+          Удалить
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 /** Раздел «Память и навыки»: что агент запомнил и какие рецепты сохранил. */
 export function MemoryTabContent() {
   const [memory, setMemory] = useState<MemoryEntry[] | null>(null);
   const [newText, setNewText] = useState("");
   const [newKind, setNewKind] = useState<MemoryKind>("preference");
+  const [instincts, setInstincts] = useState<InstinctEntry[] | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -111,6 +200,61 @@ export function MemoryTabContent() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    api
+      .listInstincts()
+      .then(setInstincts)
+      .catch(() => setInstincts([]));
+  }, []);
+
+  const changeInstinct = async (
+    entry: InstinctEntry,
+    patch: { status?: "active" | "dismissed"; scope?: "global" },
+  ) => {
+    try {
+      const updated = await api.updateInstinct(entry.id, patch);
+      setInstincts((list) =>
+        (list ?? []).map((x) =>
+          x.id === entry.id
+            ? { ...x, ...updated, chatTitle: x.chatTitle ?? null }
+            : x,
+        ),
+      );
+    } catch (e) {
+      toast("error", e instanceof Error ? e.message : "Не удалось изменить");
+    }
+  };
+
+  const exportInstincts = async () => {
+    try {
+      const data = await api.exportInstincts();
+      const url = URL.createObjectURL(
+        new Blob([JSON.stringify(data, null, 2)], { type: "application/json" }),
+      );
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "instincts.json";
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch {
+      toast("error", "Не удалось экспортировать");
+    }
+  };
+
+  const importInstincts = async (file: File | undefined) => {
+    if (!file) return;
+    try {
+      const result = await api.importInstincts(JSON.parse(await file.text()));
+      toast(
+        "success",
+        `Импортировано: ${result.imported}, пропущено: ${result.skipped}`,
+      );
+      setInstincts(await api.listInstincts());
+    } catch {
+      toast("error", "Файл не похож на экспорт инстинктов");
+    }
+  };
 
   const add = async () => {
     const text = newText.trim();
@@ -207,6 +351,59 @@ export function MemoryTabContent() {
           <SettingsCard>{memoryRows(perChat)}</SettingsCard>
         </SettingsSection>
       )}
+
+      <SettingsSection
+        title={`Выученные привычки${instincts ? ` · ${instincts.filter((i) => i.status === "active").length}` : ""}`}
+        description="Короткие правила «когда → делай», которые агент вывел из ваших поправок и исправленных ошибок. Пробные (до 50%) в запросы не попадают; в запрос уходят до шести самых уверенных. Экспортируются только сами правила — без переписки."
+      >
+        <SettingsCard>
+          {instincts === null ? (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Загрузка…
+            </div>
+          ) : instincts.length ? (
+            instincts.map((entry) => (
+              <InstinctRow
+                key={entry.id}
+                entry={entry}
+                onChange={(patch) => void changeInstinct(entry, patch)}
+                onDelete={() => {
+                  void api.deleteInstinct(entry.id).catch(() => undefined);
+                  setInstincts((list) =>
+                    (list ?? []).filter((x) => x.id !== entry.id),
+                  );
+                }}
+              />
+            ))
+          ) : (
+            <div className="px-4 py-6 text-center text-sm text-muted-foreground">
+              Пока ничего не выучено
+            </div>
+          )}
+          <div className="flex flex-wrap justify-end gap-2 px-4 py-3">
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void exportInstincts()}
+            >
+              Экспорт
+            </Button>
+            <label className="inline-flex cursor-pointer items-center rounded-md px-3 text-sm hover:bg-muted">
+              Импорт
+              <input
+                type="file"
+                accept="application/json"
+                className="sr-only"
+                onChange={(e) => {
+                  void importInstincts(e.target.files?.[0]);
+                  e.target.value = "";
+                }}
+              />
+            </label>
+          </div>
+        </SettingsCard>
+      </SettingsSection>
 
       <SkillsLibrary />
     </div>

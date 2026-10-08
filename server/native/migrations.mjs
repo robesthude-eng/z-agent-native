@@ -179,6 +179,35 @@ export const MIGRATIONS = [
       );`);
     },
   },
+  {
+    version: 10,
+    id: '20261005_010_agent_instincts',
+    // Additive: older readers ignore the new table.
+    minReaderVersion: 1,
+    up(db) {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS agent_instincts (
+          id TEXT PRIMARY KEY,
+          owner_id TEXT NOT NULL,
+          scope TEXT NOT NULL,
+          trigger_text TEXT NOT NULL,
+          action_text TEXT NOT NULL,
+          domain TEXT NOT NULL,
+          confidence REAL NOT NULL,
+          observations INTEGER NOT NULL DEFAULT 1,
+          contradictions INTEGER NOT NULL DEFAULT 0,
+          evidence TEXT NOT NULL DEFAULT '',
+          source TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'active',
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          last_observed_at INTEGER NOT NULL,
+          FOREIGN KEY(owner_id) REFERENCES users(email) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_agent_instincts_owner ON agent_instincts(owner_id, scope, status);
+      `);
+    },
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;

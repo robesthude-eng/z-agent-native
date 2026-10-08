@@ -102,6 +102,21 @@ export {
   resolveChatShare,
 } from './store/shares.mjs';
 export {
+  addInstinct,
+  clearChatInstincts,
+  confirmInstinct,
+  contradictInstinct,
+  exportInstincts,
+  getInstinct,
+  importInstincts,
+  INSTINCT_DOMAINS,
+  listInstincts,
+  promoteInstinct,
+  promoteRecurringInstincts,
+  removeInstinct,
+  setInstinctStatus,
+} from './store/instincts.mjs';
+export {
   addMemory,
   clearChatMemory,
   deleteSkill,

@@ -2,6 +2,7 @@ import { abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, subm
 import { closeBrowserSessionRemote } from '../native/browser-client.mjs';
 import { destroyCloudSandboxForSession } from '../native/cloud-sandbox.mjs';
 import { MAX_JSON_BYTES } from '../native/config.mjs';
+import { validateRuleText } from '../native/instincts.mjs';
 import { clearSessionEvents, emit, openSse } from '../native/events.mjs';
 import { killExecutorIdentity } from '../native/executor-client.mjs';
 import { assertActionId, messageId, sessionId } from '../native/ids.mjs';
@@ -12,6 +13,7 @@ import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } fr
 import { invalidateStorageUsage, storageUsage } from '../native/storage-usage.mjs';
 import {
   addMemory,
+  clearChatInstincts,
   clearChatMemory,
   createChat,
   createChatShare,
@@ -21,23 +23,29 @@ import {
   deleteSkill,
   dequeueAction,
   enqueueAction,
+  exportInstincts,
   getChat,
   getChatShare,
   getPrefs,
   getSandboxUid,
   getTurn,
+  importInstincts,
   listChatShares,
   listChats,
+  listInstincts,
   listMemory,
   listMessages,
   listPendingQuestions,
   listQueue,
   listSkills,
   ownsChat,
+  promoteInstinct,
   putMessage,
+  removeInstinct,
   removeMemory,
   renameChat,
   saveSkill,
+  setInstinctStatus,
   setPrefs,
   updateMemory,
   workspaceFor,
@@ -149,6 +157,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       await step('prepared', () => forgetPreparedSandbox(sid));
       await step('cloud', () => destroyCloudSandboxForSession(sid));
       await step('memory', () => clearChatMemory(sid));
+      await step('instincts', () => clearChatInstincts(sid));
       invalidateStorageUsage(ownerId);
       sendJson(res, 204, null);
       return true;
@@ -344,6 +353,45 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
   }
   if (memMatch && req.method === 'DELETE') {
     removeMemory(ownerId, memMatch[1]);
+    sendJson(res, 204, null);
+    return true;
+  }
+  if (p === '/api/user/instincts' && req.method === 'GET') {
+    const titles = new Map(listChats(ownerId).map((c) => [c.id, c.title]));
+    sendJson(
+      res,
+      200,
+      listInstincts(ownerId, { includeAllChats: true, includeDismissed: true }).map((i) => ({
+        ...i,
+        chatTitle: i.scope === 'global' ? null : titles.get(i.scope) || null,
+      })),
+    );
+    return true;
+  }
+  if (p === '/api/user/instincts/export' && req.method === 'GET') {
+    sendJson(res, 200, exportInstincts(ownerId));
+    return true;
+  }
+  if (p === '/api/user/instincts/import' && req.method === 'POST') {
+    const body = await readJson(req, 256 * 1024);
+    if (body?.format !== 'zagent-instincts' || !Array.isArray(body.instincts)) {
+      sendJson(res, 400, { error: 'Expected a zagent-instincts export' });
+      return true;
+    }
+    sendJson(res, 200, importInstincts(ownerId, body.instincts, { validate: validateRuleText }));
+    return true;
+  }
+  const instinctMatch = /^\/api\/user\/instincts\/(ins_[A-Za-z0-9_-]+)$/.exec(p);
+  if (instinctMatch && req.method === 'PATCH') {
+    const body = await readJson(req, 16 * 1024);
+    let updated = null;
+    if (body?.status) updated = setInstinctStatus(ownerId, instinctMatch[1], String(body.status));
+    if (body?.scope === 'global') updated = promoteInstinct(ownerId, instinctMatch[1]);
+    sendJson(res, updated ? 200 : 404, updated || { error: 'Not found' });
+    return true;
+  }
+  if (instinctMatch && req.method === 'DELETE') {
+    removeInstinct(ownerId, instinctMatch[1]);
     sendJson(res, 204, null);
     return true;
   }

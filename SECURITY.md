@@ -72,6 +72,10 @@ Prompt instructions are defense in depth, not a security boundary. A manipulated
 
 The agent shell refuses commands that skip or disable git hooks: `--no-verify`, `git commit -n`, `-c core.hooksPath=…` / `git config core.hooksPath`, `HUSKY=0` and deleting or changing files under `.git/hooks` (`SHELL_HOOK_BYPASS_BLOCKED`, HTTP 403 to the tool). This is behaviour hygiene so a failing hook gets fixed rather than skipped, not a containment boundary: the guard works on command text and applies in every shell network policy. An operator who really wants hooks skippable sets `Z_AGENT_ALLOW_HOOK_BYPASS=1`.
 
+## Learned instincts
+
+The self-learning observer sends a short digest of a finished turn to the same model plan the owner already uses; nothing else leaves the server. The digest is redacted first (tokens, keys, JWTs, `password=`-style values, URLs with credentials, e-mail addresses, long hashes/blobs, home paths), contains no tool output beyond the first line of a failed call, is never persisted and is wrapped as untrusted data. Stored rules are owner-scoped (never shared across accounts), capped at 200 per owner and limited to 160/220 characters. Because a rule ends up in the system prompt, the text is validated again before saving and rejected if it contains secrets, URLs, prompt-override phrases or anything that weakens safety (skipping tests/review/approvals, `--no-verify`, disabling the sandbox, `sudo`, `rm -rf`, `curl | sh`); the prompt frames instincts as lower priority than the owner's request and the permission system. Imported rules get at most moderate confidence. Switch off with `Z_AGENT_INSTINCTS=0` (all users) or Settings → Agent (one user).
+
 ## Automatic tool approval
 
 Write/edit/patch/bash/webfetch/websearch/environment tool calls do not stop for interactive permission confirmation. The native runtime approves those permission gates immediately so an agent turn can continue without depending on a browser tab or network round-trip.

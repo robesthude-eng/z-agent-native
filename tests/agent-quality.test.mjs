@@ -84,7 +84,14 @@ test('skill tool: save, update by name, read counts use, index in prompt', () =>
 });
 
 test('feature flags default to on and respect settings', () => {
-  assert.deepEqual(agentFeatureFlags({}), { review: true, visualCheck: true, autoResume: true, dossier: true, memory: true });
+  assert.deepEqual(agentFeatureFlags({}), {
+    review: true,
+    visualCheck: true,
+    autoResume: true,
+    dossier: true,
+    memory: true,
+    instincts: true,
+  });
   assert.equal(agentFeatureFlags({ agentReview: false }).review, false);
 });
 
