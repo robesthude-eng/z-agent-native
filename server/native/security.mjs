@@ -56,7 +56,8 @@ export function safeWorkspacePath(root, input = '.', { allowMissing = true } = {
   if (path.isAbsolute(raw)) throw Object.assign(new Error('Разрешены только относительные пути workspace'), { statusCode: 400 });
   const base = path.resolve(root);
   const target = path.resolve(base, raw);
-  if (target !== base && !target.startsWith(base + path.sep)) throw Object.assign(new Error('Путь выходит за пределы workspace'), { statusCode: 403 });
+  if (target !== base && !target.startsWith(base + path.sep))
+    throw Object.assign(new Error('Путь выходит за пределы workspace'), { statusCode: 403 });
 
   // Не разрешаем проход через symlink: агент не должен выйти из sandbox через
   // заранее подготовленный link в проекте.
@@ -76,7 +77,7 @@ export function safeWorkspacePath(root, input = '.', { allowMissing = true } = {
 }
 
 function ipv4Private(ip) {
-  const [a,b,c] = ip.split('.').map(Number);
+  const [a, b, c] = ip.split('.').map(Number);
   if (a === 10 || a === 127 || a === 0) return true;
   if (a === 169 && b === 254) return true;
   if (a === 172 && b >= 16 && b <= 31) return true;
@@ -94,10 +95,15 @@ function ipv4Private(ip) {
 }
 
 function ipv6Words(ip) {
-  let source = String(ip || '').toLowerCase().split('%')[0];
+  let source = String(ip || '')
+    .toLowerCase()
+    .split('%')[0];
   if (source.includes('.')) {
     const split = source.lastIndexOf(':');
-    const octets = source.slice(split + 1).split('.').map(Number);
+    const octets = source
+      .slice(split + 1)
+      .split('.')
+      .map(Number);
     if (octets.length !== 4 || octets.some((value) => !Number.isInteger(value) || value < 0 || value > 255)) return null;
     source = `${source.slice(0, split)}:${((octets[0] << 8) | octets[1]).toString(16)}:${((octets[2] << 8) | octets[3]).toString(16)}`;
   }
@@ -142,7 +148,9 @@ function ipBlocked(ip) {
 
 /** Hostnames that must never be reached through a relay or provider base URL. */
 export function isLoopbackOrPrivateHost(hostname) {
-  const host = String(hostname || '').replace(/^\[|\]$/g, '').toLowerCase();
+  const host = String(hostname || '')
+    .replace(/^\[|\]$/g, '')
+    .toLowerCase();
   if (!host) return true;
   if (host === 'localhost' || host.endsWith('.localhost') || host === 'localhost.localdomain') return true;
   if (net.isIP(host)) return ipBlocked(host);
@@ -156,17 +164,23 @@ export function isLoopbackOrPrivateHost(hostname) {
  */
 export async function resolveSafeExternalTarget(value) {
   let url;
-  try { url = new URL(String(value)); } catch { throw Object.assign(new Error('Некорректный URL'), { statusCode: 400 }); }
+  try {
+    url = new URL(String(value));
+  } catch {
+    throw Object.assign(new Error('Некорректный URL'), { statusCode: 400 });
+  }
   if (!['http:', 'https:'].includes(url.protocol)) throw Object.assign(new Error('Разрешены только http/https URL'), { statusCode: 400 });
   if (url.username || url.password) throw Object.assign(new Error('Credentials в URL запрещены'), { statusCode: 400 });
   const host = url.hostname.replace(/^\[|\]$/g, '');
-  if (host === 'localhost' || host.toLowerCase().endsWith('.localhost')) throw Object.assign(new Error('Локальные и служебные адреса запрещены'), { statusCode: 403 });
+  if (host === 'localhost' || host.toLowerCase().endsWith('.localhost'))
+    throw Object.assign(new Error('Локальные и служебные адреса запрещены'), { statusCode: 403 });
   if (net.isIP(host)) {
     if (ipBlocked(host)) throw Object.assign(new Error('Локальные и служебные адреса запрещены'), { statusCode: 403 });
     return { url, address: host, family: net.isIPv6(host) ? 6 : 4 };
   }
   const answers = await dns.lookup(host, { all: true, verbatim: true });
-  if (!answers.length || answers.some((a) => ipBlocked(a.address))) throw Object.assign(new Error('URL разрешается в локальную/служебную сеть'), { statusCode: 403 });
+  if (!answers.length || answers.some((a) => ipBlocked(a.address)))
+    throw Object.assign(new Error('URL разрешается в локальную/служебную сеть'), { statusCode: 403 });
   const first = answers[0];
   return { url, address: first.address, family: Number(first.family) === 6 ? 6 : 4 };
 }
@@ -223,9 +237,7 @@ async function pinnedRequest({ url, address, family }, { headers = {}, signal, m
     method: 'GET',
     headers: { host: url.host, 'accept-encoding': 'identity', ...headers },
     timeout: timeoutMs,
-    lookup: (_hostname, opts, cb) => (opts?.all
-      ? cb(null, [{ address, family }])
-      : cb(null, address, family)),
+    lookup: (_hostname, opts, cb) => (opts?.all ? cb(null, [{ address, family }]) : cb(null, address, family)),
   };
   if (url.protocol === 'https:' && !net.isIP(url.hostname)) options.servername = url.hostname;
 
@@ -256,7 +268,9 @@ async function pinnedRequest({ url, address, family }, { headers = {}, signal, m
         }
         chunks.push(chunk);
       });
-      res.on('end', () => finish(resolve, { url, status, headers: res.headers, text: Buffer.concat(chunks).toString('utf8'), truncated: false }));
+      res.on('end', () =>
+        finish(resolve, { url, status, headers: res.headers, text: Buffer.concat(chunks).toString('utf8'), truncated: false }),
+      );
       res.on('error', (err) => finish(reject, err));
     });
     const abort = () => {
@@ -265,7 +279,10 @@ async function pinnedRequest({ url, address, family }, { headers = {}, signal, m
       finish(reject, err);
     };
     if (signal) {
-      if (signal.aborted) { abort(); return; }
+      if (signal.aborted) {
+        abort();
+        return;
+      }
       signal.addEventListener('abort', abort, { once: true });
     }
     req.on('timeout', () => {
@@ -294,9 +311,7 @@ async function pinnedFetch({ url, address, family }, init = {}) {
     path: `${url.pathname}${url.search}`,
     method: String(init.method || 'GET').toUpperCase(),
     headers: { host: url.host, ...headers },
-    lookup: (_hostname, opts, cb) => (opts?.all
-      ? cb(null, [{ address, family }])
-      : cb(null, address, family)),
+    lookup: (_hostname, opts, cb) => (opts?.all ? cb(null, [{ address, family }]) : cb(null, address, family)),
   };
   if (url.protocol === 'https:' && !net.isIP(url.hostname)) options.servername = url.hostname;
 
@@ -311,9 +326,8 @@ async function pinnedFetch({ url, address, family }, init = {}) {
     };
     const req = transport.request(options, (res) => {
       const status = Number(res.statusCode) || 0;
-      const body = ['HEAD'].includes(String(init.method || 'GET').toUpperCase()) || [204, 205, 304].includes(status)
-        ? null
-        : Readable.toWeb(res);
+      const body =
+        ['HEAD'].includes(String(init.method || 'GET').toUpperCase()) || [204, 205, 304].includes(status) ? null : Readable.toWeb(res);
       const response = new Response(body, {
         status,
         statusText: res.statusMessage || '',
@@ -330,7 +344,10 @@ async function pinnedFetch({ url, address, family }, init = {}) {
     });
     const abort = () => req.destroy(Object.assign(new Error('Request aborted'), { name: 'AbortError', statusCode: 499 }));
     if (init.signal) {
-      if (init.signal.aborted) { abort(); return; }
+      if (init.signal.aborted) {
+        abort();
+        return;
+      }
       init.signal.addEventListener('abort', abort, { once: true });
     }
     req.once('error', (err) => finish(reject, err));

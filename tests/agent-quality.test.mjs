@@ -26,13 +26,25 @@ store.createUser(owner, 'hash');
 configs.upsertProviderConfig(owner, { id: 'channel_q', name: 'Q', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', enabled: true });
 store.setProviderKey(owner, 'channel_q', 'k');
 const MODEL = { providerID: 'channel_q', modelID: 'm' };
-test.after(() => { providers.setProviderTransportForTests(null); fs.rmSync(root, { recursive: true, force: true }); });
+test.after(() => {
+  providers.setProviderTransportForTests(null);
+  fs.rmSync(root, { recursive: true, force: true });
+});
 
 function sse(delta, finish = 'stop') {
-  return new Response([{ choices: [{ delta }] }, { choices: [{ delta: {}, finish_reason: finish }] }, '[DONE]'].map((x) => `data: ${typeof x === 'string' ? x : JSON.stringify(x)}\n\n`).join(''), { headers: { 'content-type': 'text/event-stream' } });
+  return new Response(
+    [{ choices: [{ delta }] }, { choices: [{ delta: {}, finish_reason: finish }] }, '[DONE]']
+      .map((x) => `data: ${typeof x === 'string' ? x : JSON.stringify(x)}\n\n`)
+      .join(''),
+    { headers: { 'content-type': 'text/event-stream' } },
+  );
 }
-const plain = (content) => new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }] }), { headers: { 'content-type': 'application/json' } });
-const toolCall = (id, name, args) => sse({ tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, 'tool_calls');
+const plain = (content) =>
+  new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content }, finish_reason: 'stop' }] }), {
+    headers: { 'content-type': 'application/json' },
+  });
+const toolCall = (id, name, args) =>
+  sse({ tool_calls: [{ index: 0, id, function: { name, arguments: JSON.stringify(args) } }] }, 'tool_calls');
 
 test('memory tool: add, dedupe, chat scope, prompt, remove', () => {
   store.createChat('ses_memA', owner, 'A');
@@ -54,8 +66,17 @@ test('memory tool: add, dedupe, chat scope, prompt, remove', () => {
 
 test('skill tool: save, update by name, read counts use, index in prompt', () => {
   const ctx = { ownerId: owner };
-  assert.match(executeSkillTool({ action: 'save', name: 'Deploy RUVDS', description: 'деплой на сервер', content: '1. ./run.sh' }, ctx).output, /Saved new skill "deploy-ruvds"/);
-  assert.match(executeSkillTool({ action: 'save', name: 'deploy-ruvds', description: 'деплой на сервер', content: '1. ./run.sh\n2. проверить /health' }, ctx).output, /Updated/);
+  assert.match(
+    executeSkillTool({ action: 'save', name: 'Deploy RUVDS', description: 'деплой на сервер', content: '1. ./run.sh' }, ctx).output,
+    /Saved new skill "deploy-ruvds"/,
+  );
+  assert.match(
+    executeSkillTool(
+      { action: 'save', name: 'deploy-ruvds', description: 'деплой на сервер', content: '1. ./run.sh\n2. проверить /health' },
+      ctx,
+    ).output,
+    /Updated/,
+  );
   assert.match(executeSkillTool({ action: 'read', name: 'deploy-ruvds' }, ctx).output, /проверить \/health/);
   assert.equal(store.listSkills(owner)[0].uses, 1);
   assert.match(memoryPrompt(owner, null), /deploy-ruvds — деплой на сервер/);
@@ -68,7 +89,10 @@ test('feature flags default to on and respect settings', () => {
 });
 
 test('reviewer: parse verdicts and pick reviewable paths', () => {
-  assert.equal(parseReview('```json\n{"verdict":"fix","issues":[{"severity":"major","file":"a.js","problem":"bug","fix":"x"}]}\n```').verdict, 'fix');
+  assert.equal(
+    parseReview('```json\n{"verdict":"fix","issues":[{"severity":"major","file":"a.js","problem":"bug","fix":"x"}]}\n```').verdict,
+    'fix',
+  );
   assert.equal(parseReview('{"verdict":"fix","issues":[{"severity":"minor","problem":"nit"}]}').verdict, 'pass');
   assert.equal(parseReview('no json'), null);
   assert.deepEqual(reviewablePaths({ changedPaths: ['.', '.screenshots/a.png', 'src/a.ts', 'logo.png', 'src/a.ts'] }), ['src/a.ts']);
@@ -88,7 +112,13 @@ test('turn: reviewer finds an issue, agent fixes it before the final answer', as
     const sys = String(body.messages[0]?.content || '');
     if (sys.includes('strict senior code reviewer')) {
       reviews += 1;
-      return plain(JSON.stringify({ verdict: 'fix', summary: 'опечатка', issues: [{ severity: 'major', file: 'notes.md', line: 1, problem: 'Опечатка в заголовке', fix: 'Заменить Helo на Hello' }] }));
+      return plain(
+        JSON.stringify({
+          verdict: 'fix',
+          summary: 'опечатка',
+          issues: [{ severity: 'major', file: 'notes.md', line: 1, problem: 'Опечатка в заголовке', fix: 'Заменить Helo на Hello' }],
+        }),
+      );
     }
     main += 1;
     seen.push(String(body.messages.at(-1)?.content || ''));
@@ -99,7 +129,13 @@ test('turn: reviewer finds an issue, agent fixes it before the final answer', as
     if (main === 5) return toolCall('r2', 'read', { path: 'notes.md' });
     return sse({ content: 'Готово: notes.md с заголовком Hello (исправлено после ревью).' });
   });
-  const assistant = await agent.runTurn({ sessionId: sid, ownerId: owner, parts: [{ type: 'text', text: 'Создай notes.md с заголовком Hello' }], model: MODEL, system: '' });
+  const assistant = await agent.runTurn({
+    sessionId: sid,
+    ownerId: owner,
+    parts: [{ type: 'text', text: 'Создай notes.md с заголовком Hello' }],
+    model: MODEL,
+    system: '',
+  });
   assert.equal(reviews, 1, 'exactly one review per turn');
   assert.ok(seen[3].includes('[Runtime review]') && seen[3].includes('Опечатка'), 'issues are fed back to the agent');
   assert.equal(fs.readFileSync(path.join(store.workspaceFor(sid), 'notes.md'), 'utf8'), '# Hello\n');
@@ -107,7 +143,11 @@ test('turn: reviewer finds an issue, agent fixes it before the final answer', as
   assert.equal(reviewPart?.state?.status, 'completed');
   assert.match(reviewPart.state.title, /найдено проблем — 1/);
   // review-карточка не попадает в историю модели следующего хода
-  assert.ok(!framesFromMessages(store.listMessages(sid), store.workspaceFor(sid)).some((f) => f.name === 'review' || (f.toolCalls || []).some((c) => c.name === 'review')));
+  assert.ok(
+    !framesFromMessages(store.listMessages(sid), store.workspaceFor(sid)).some(
+      (f) => f.name === 'review' || (f.toolCalls || []).some((c) => c.name === 'review'),
+    ),
+  );
 });
 
 test('turn: changed UI files trigger one visual-check nudge', async () => {
@@ -132,7 +172,10 @@ test('turn: changed UI files trigger one visual-check nudge', async () => {
   }
   const tools = (await import('../server/native/tools.mjs')).availableToolDefinitions().map((t) => t.name);
   if (tools.includes('visual_check')) {
-    assert.ok(seen.some((s) => s.includes('[Runtime visual check]')), 'agent is asked to look at the UI');
+    assert.ok(
+      seen.some((s) => s.includes('[Runtime visual check]')),
+      'agent is asked to look at the UI',
+    );
     assert.equal(seen.filter((s) => s.includes('[Runtime visual check]')).length, 1, 'nudged only once');
   }
 });
@@ -158,7 +201,10 @@ test('dossier: long history is condensed, recent messages kept verbatim', async 
   const frames = await dossier.framesWithDossier({ sessionId: sid, ownerId: owner, modelPlan: plan, history, framesFor, enabled: true });
   assert.ok(summarized.includes('вопрос 0'), 'oldest messages are summarized');
   assert.ok(frames[0].role === 'user' && frames[0].content.startsWith('[Runtime: task dossier]'));
-  assert.ok(frames.some((f) => String(f.content).startsWith('ответ 3')), 'latest messages stay verbatim');
+  assert.ok(
+    frames.some((f) => String(f.content).startsWith('ответ 3')),
+    'latest messages stay verbatim',
+  );
   assert.ok(!frames.some((f) => String(f.content).startsWith('ответ 0')), 'oldest messages are not sent verbatim');
   const saved = dossier.readDossier(sid);
   assert.ok(saved?.uptoMessageId);
@@ -185,7 +231,12 @@ test('background job: start, wait, status and auto-resume notification', async (
 
   // задача закончилась после ответа агента -> чат продолжается сам
   const submitted = [];
-  bg.configureBackgroundJobHooks({ isTurnActive: () => false, submit: async (x) => { submitted.push(x); } });
+  bg.configureBackgroundJobHooks({
+    isTurnActive: () => false,
+    submit: async (x) => {
+      submitted.push(x);
+    },
+  });
   const second = await bg.executeBackgroundTool(ws, { action: 'start', command: 'echo trained; exit 3', name: 'train' }, ctx);
   await new Promise((r) => setTimeout(r, 1500));
   await bg.backgroundJobsTickForTests();

@@ -34,7 +34,10 @@ export function createToolCallSink(assistant, { emit, persist, throttleMs = DEFA
   const live = new Map();
 
   const send = (entry) => {
-    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+    if (entry.timer) {
+      clearTimeout(entry.timer);
+      entry.timer = null;
+    }
     if (!entry.dirty) return;
     entry.dirty = false;
     entry.last = now();
@@ -53,7 +56,10 @@ export function createToolCallSink(assistant, { emit, persist, throttleMs = DEFA
     entry.dirty = true;
     if (entry.timer) return;
     const wait = Math.max(0, throttleMs - (now() - entry.last));
-    if (wait === 0) { send(entry); return; }
+    if (wait === 0) {
+      send(entry);
+      return;
+    }
     entry.timer = setTimeout(() => send(entry), wait);
     entry.timer.unref?.();
   };

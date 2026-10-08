@@ -27,14 +27,15 @@ export const ALLOW_OPEN_REGISTRATION = process.env.Z_AGENT_ALLOW_OPEN_REGISTRATI
 export const TRUST_PROXY = process.env.Z_AGENT_TRUST_PROXY === '1';
 // Optional explicit browser origins (needed when the public origin differs from Host).
 export const ALLOWED_ORIGINS = String(process.env.Z_AGENT_ALLOWED_ORIGINS || '')
-  .split(',').map((value) => value.trim()).filter(Boolean);
+  .split(',')
+  .map((value) => value.trim())
+  .filter(Boolean);
 export const GREP_TIMEOUT_MS = Number.parseInt(process.env.Z_AGENT_GREP_TIMEOUT_MS || '', 10) || 5_000;
 export const DURABLE_JOB_TTL_MS = Number.parseInt(process.env.Z_AGENT_DURABLE_JOB_TTL_MS || '', 10) || 24 * 60 * 60 * 1000;
 export const MAX_INFLIGHT_UPLOAD_BYTES = Number.parseInt(process.env.Z_AGENT_MAX_INFLIGHT_UPLOAD_BYTES || '', 10) || 512 * 1024 * 1024;
 export const SECURE_COOKIES = process.env.Z_AGENT_SECURE_COOKIES === '1';
 
 export const ALLOW_UNISOLATED_SHELL = process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL === '1';
-
 
 export const PRODUCTION_MODE = process.env.Z_AGENT_PRODUCTION === '1';
 
@@ -56,7 +57,10 @@ export function assertProductionPolicy(env = process.env) {
   if (String(env.Z_AGENT_TERMINAL_ENABLED || '0') === '1' && env.Z_AGENT_ALLOW_PRODUCTION_TERMINAL !== '1') {
     violations.push('interactive terminal in production requires explicit Z_AGENT_ALLOW_PRODUCTION_TERMINAL=1');
   }
-  for (const [key, value] of [['Z_AGENT_DATA_DIR', env.Z_AGENT_DATA_DIR], ['Z_AGENT_WORKSPACES_DIR', env.Z_AGENT_WORKSPACES_DIR]]) {
+  for (const [key, value] of [
+    ['Z_AGENT_DATA_DIR', env.Z_AGENT_DATA_DIR],
+    ['Z_AGENT_WORKSPACES_DIR', env.Z_AGENT_WORKSPACES_DIR],
+  ]) {
     if (!String(value || '').startsWith('/')) violations.push(`${key} must be an absolute path in production`);
   }
   if (violations.length) throw new Error(`Unsafe production configuration: ${violations.join('; ')}`);

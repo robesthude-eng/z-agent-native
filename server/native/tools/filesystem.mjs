@@ -4,7 +4,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { Worker } from 'node:worker_threads';
 import { DEFAULT_TOOL_TIMEOUT_MS, GREP_TIMEOUT_MS } from '../config.mjs';
-import { executeInExecutor, } from '../executor-client.mjs';
+import { executeInExecutor } from '../executor-client.mjs';
 import { ensureManagedHome, sandboxCommand, syncSandboxOwnership } from '../sandbox.mjs';
 import { safeWorkspacePath } from '../security.mjs';
 import { openWorkspaceFile, readFd, replaceFdContent, writeWorkspaceFile } from '../workspace-fs.mjs';
@@ -41,7 +41,11 @@ export function isBinaryFile(absPath) {
 export function walk(root, start, depth, out, baseDepth = 0) {
   if (baseDepth > depth || out.length >= MAX_WALK_ENTRIES) return;
   let entries;
-  try { entries = fs.readdirSync(start, { withFileTypes: true }); } catch { return; }
+  try {
+    entries = fs.readdirSync(start, { withFileTypes: true });
+  } catch {
+    return;
+  }
   entries.sort((a, b) => a.name.localeCompare(b.name));
   for (const entry of entries) {
     if (out.length >= MAX_WALK_ENTRIES) break;
@@ -75,7 +79,8 @@ export function globRegex(glob) {
 
 export function readUtf8(full) {
   const buf = fs.readFileSync(full);
-  if (buf.length > MAX_READ_BYTES) throw new Error(`File is too large for whole-file editing (${buf.length} bytes); use read with offset/limit to inspect it`);
+  if (buf.length > MAX_READ_BYTES)
+    throw new Error(`File is too large for whole-file editing (${buf.length} bytes); use read with offset/limit to inspect it`);
   if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
   return buf.toString('utf8');
 }
@@ -146,7 +151,12 @@ export async function grepInWorker(files, pattern, max, timeoutMs, regex, root =
       fn(value);
     };
     const timer = setTimeout(() => {
-      finish(reject, Object.assign(new Error(`grep: search exceeded ${timeoutMs} ms and was cancelled. Simplify the pattern or narrow the path.`), { statusCode: 408 }));
+      finish(
+        reject,
+        Object.assign(new Error(`grep: search exceeded ${timeoutMs} ms and was cancelled. Simplify the pattern or narrow the path.`), {
+          statusCode: 408,
+        }),
+      );
     }, timeoutMs);
     timer.unref?.();
     worker.on('message', (message) => {
@@ -159,13 +169,20 @@ export async function grepInWorker(files, pattern, max, timeoutMs, regex, root =
 }
 
 function assertSafePatchPath(raw) {
-  let value = String(raw || '').trim().split('\t')[0];
+  let value = String(raw || '')
+    .trim()
+    .split('\t')[0];
   if (!value || value === '/dev/null') return;
   if (value.length > 1 && value.startsWith('"') && value.endsWith('"')) {
-    try { value = JSON.parse(value); } catch { throw new Error(`Unsafe patch path: ${raw}`); }
+    try {
+      value = JSON.parse(value);
+    } catch {
+      throw new Error(`Unsafe patch path: ${raw}`);
+    }
   }
   value = value.replace(/^[ab]\//, '');
-  if (path.isAbsolute(value) || value.split(/[\\/]+/).includes('..') || value.includes('\0')) throw new Error(`Unsafe patch path: ${value}`);
+  if (path.isAbsolute(value) || value.split(/[\\/]+/).includes('..') || value.includes('\0'))
+    throw new Error(`Unsafe patch path: ${value}`);
 }
 
 function validatePatchPaths(patchText) {
@@ -188,10 +205,24 @@ export async function applyGitPatch(root, patchText, signal, ctx) {
   const identity = externalSpawnIdentity(ctx, root);
   const home = ensureManagedHome(ctx?.sessionId, root);
   const args = ['apply', '--no-index', '--whitespace=nowarn', '-'];
-  const env = { PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin', HOME: home, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_TERMINAL_PROMPT: '0' };
+  const env = {
+    PATH: process.env.PATH || '/usr/local/bin:/usr/bin:/bin',
+    HOME: home,
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: '/dev/null',
+    GIT_TERMINAL_PROMPT: '0',
+  };
   if (identity?.isolated) {
     const remote = await executeInExecutor({
-      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env, stdin: String(patchText || ''), timeoutMs: DEFAULT_TOOL_TIMEOUT_MS, signal,
+      workspace: root,
+      uid: identity.uid,
+      gid: identity.gid,
+      file: 'git',
+      args,
+      env,
+      stdin: String(patchText || ''),
+      timeoutMs: DEFAULT_TOOL_TIMEOUT_MS,
+      signal,
     });
     if (remote) {
       if (Number(remote.code) === 0) return { stdout: truncate(remote.stdout), stderr: truncate(remote.stderr) };
@@ -201,12 +232,20 @@ export async function applyGitPatch(root, patchText, signal, ctx) {
   const launch = sandboxCommand(identity, 'git', args);
   return await new Promise((resolve, reject) => {
     const child = spawn(launch.file, launch.args, { cwd: root, env, stdio: ['pipe', 'pipe', 'pipe'], ...launch.options });
-    let stdout = ''; let stderr = '';
-    child.stdout.on('data', (d) => { stdout = truncate(stdout + d.toString('utf8')); });
-    child.stderr.on('data', (d) => { stderr = truncate(stderr + d.toString('utf8')); });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (d) => {
+      stdout = truncate(stdout + d.toString('utf8'));
+    });
+    child.stderr.on('data', (d) => {
+      stderr = truncate(stderr + d.toString('utf8'));
+    });
     const abort = () => child.kill('SIGTERM');
     signal?.addEventListener('abort', abort, { once: true });
-    child.on('error', (err) => { signal?.removeEventListener('abort', abort); reject(err); });
+    child.on('error', (err) => {
+      signal?.removeEventListener('abort', abort);
+      reject(err);
+    });
     child.on('close', (code) => {
       signal?.removeEventListener('abort', abort);
       if (code === 0) resolve({ stdout, stderr });
@@ -246,7 +285,10 @@ export function executeGlobFiles(root, input) {
   walk(root, start, 10, all);
   const rx = globRegex(String(input?.pattern || '**/*'));
   const baseRel = rel(root, start);
-  const hits = all.filter((x) => rx.test(baseRel ? path.posix.relative(baseRel, x.path) : x.path)).map((x) => x.path).slice(0, 1000);
+  const hits = all
+    .filter((x) => rx.test(baseRel ? path.posix.relative(baseRel, x.path) : x.path))
+    .map((x) => x.path)
+    .slice(0, 1000);
   return { output: hits.join('\n'), title: String(input?.pattern || '') };
 }
 
@@ -254,7 +296,8 @@ export async function executeGrepFiles(root, input) {
   const start = safeWorkspacePath(root, input?.path || '.', { allowMissing: false });
   const all = [];
   const st = fs.statSync(start);
-  if (st.isDirectory()) walk(root, start, 10, all); else all.push({ path: rel(root, start), type: 'file' });
+  if (st.isDirectory()) walk(root, start, 10, all);
+  else all.push({ path: rel(root, start), type: 'file' });
   const max = Math.min(Math.max(Number(input?.maxResults) || 100, 1), 300);
   const query = String(input?.query || '');
   if (query.length > MAX_PATTERN_CHARS) throw new Error(`grep: query is too long (max ${MAX_PATTERN_CHARS} characters)`);
@@ -262,7 +305,9 @@ export async function executeGrepFiles(root, input) {
   const files = [];
   for (const item of all) {
     if (item.type !== 'file' || isSensitiveWorkspacePath(item.path)) continue;
-    try { files.push({ path: item.path, full: safeWorkspacePath(root, item.path, { allowMissing: false }) }); } catch {}
+    try {
+      files.push({ path: item.path, full: safeWorkspacePath(root, item.path, { allowMissing: false }) });
+    } catch {}
   }
 
   const regex = Boolean(input?.regex);
@@ -299,7 +344,9 @@ export function executeWriteFile(root, input, sessionId = null) {
   const { full, existed } = written;
   let previousLines = 0;
   if (existed && written.previous) {
-    try { previousLines = lineCount(written.previous.toString('utf8')); } catch {}
+    try {
+      previousLines = lineCount(written.previous.toString('utf8'));
+    } catch {}
   }
   if (sessionId) syncSandboxOwnership(sessionId, root, full);
   const lines = lineCount(content);
@@ -327,7 +374,8 @@ export function executeEditFile(root, input, sessionId = null) {
   let replaced;
   let firstIndex;
   try {
-    if (handle.stat.size > MAX_READ_BYTES) throw new Error(`File is too large for whole-file editing (${handle.stat.size} bytes); use read with offset/limit to inspect it`);
+    if (handle.stat.size > MAX_READ_BYTES)
+      throw new Error(`File is too large for whole-file editing (${handle.stat.size} bytes); use read with offset/limit to inspect it`);
     const buf = readFd(handle.fd, handle.stat.size);
     if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
     before = buf.toString('utf8');
@@ -352,7 +400,10 @@ export function executeEditFile(root, input, sessionId = null) {
   const endLine = startLine + Math.max(added, 1) - 1;
   const snippetEnd = Math.min(endLine + SNIPPET_CONTEXT, startLine - SNIPPET_CONTEXT + SNIPPET_MAX_LINES);
   const notes = [];
-  if (!input?.all && occurrences > 1) notes.push(`Note: oldText occurs ${occurrences} times; only the first one (line ${startLine}) was replaced. Pass all=true to replace every occurrence, or include more surrounding text to target another one.`);
+  if (!input?.all && occurrences > 1)
+    notes.push(
+      `Note: oldText occurs ${occurrences} times; only the first one (line ${startLine}) was replaced. Pass all=true to replace every occurrence, or include more surrounding text to target another one.`,
+    );
   return {
     output: [
       `Edited ${target}: replaced ${replaced} occurrence${replaced === 1 ? '' : 's'} at line ${startLine} (-${removed} +${added} lines). File now has ${lineCount(after)} lines.`,

@@ -64,11 +64,19 @@ test('fallback never mixes two models after the first visible token', async () =
     ],
   };
   await assert.rejects(
-    runFallbackPlan(plan, { onTextDelta(delta) { visible += delta; } }, async (model, request) => {
-      if (model.providerID === 'b') secondCalled = true;
-      request.onTextDelta?.('partial');
-      throw Object.assign(new Error('stream broke'), { statusCode: 503 });
-    }),
+    runFallbackPlan(
+      plan,
+      {
+        onTextDelta(delta) {
+          visible += delta;
+        },
+      },
+      async (model, request) => {
+        if (model.providerID === 'b') secondCalled = true;
+        request.onTextDelta?.('partial');
+        throw Object.assign(new Error('stream broke'), { statusCode: 503 });
+      },
+    ),
     /stream broke/,
   );
   assert.equal(visible, 'partial');
@@ -79,12 +87,32 @@ test('strict explicit model only falls back for transient failures', () => {
   assert.equal(fallbackEligible(Object.assign(new Error('auth'), { statusCode: 401 }), { strict: true }), false);
   assert.equal(fallbackEligible(Object.assign(new Error('rate'), { statusCode: 429 }), { strict: true }), true);
   assert.equal(fallbackEligible(Object.assign(new Error('server'), { statusCode: 503 }), { strict: true }), true);
-  assert.equal(fallbackEligible(new Error('Client network socket disconnected before secure TLS connection was established'), { strict: true }), true);
+  assert.equal(
+    fallbackEligible(new Error('Client network socket disconnected before secure TLS connection was established'), { strict: true }),
+    true,
+  );
   assert.equal(fallbackEligible(Object.assign(new Error('user stop'), { name: 'AbortError' }), { strict: true }), false);
   assert.equal(fallbackEligible(Object.assign(new Error('bad request'), { statusCode: 400 }), { strict: true }), false);
-  assert.equal(fallbackEligible(Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 }), { strict: true }), true);
+  assert.equal(
+    fallbackEligible(
+      Object.assign(
+        new Error(
+          'Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go',
+        ),
+        { statusCode: 400 },
+      ),
+      { strict: true },
+    ),
+    true,
+  );
   assert.equal(fallbackEligible(Object.assign(new Error('payment required'), { statusCode: 402 }), { strict: true }), true);
-  assert.equal(fallbackEligible(Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), { statusCode: 400 }), { strict: true }), true);
+  assert.equal(
+    fallbackEligible(
+      Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), { statusCode: 400 }),
+      { strict: true },
+    ),
+    true,
+  );
   assert.equal(fallbackEligible(Object.assign(new Error('{"model":"mimo-v2.5-free"}'), { statusCode: 400 }), { strict: true }), true);
 });
 
@@ -242,7 +270,13 @@ test('locked-план остаётся закреплённым на всех ш
 
   // Авто-план после выбора модели замок не получает.
   const auto = promoteModelPlan(
-    { candidates: [{ providerID: 'zai', modelID: 'glm-5.3' }, { providerID: 'openai', modelID: 'gpt-5' }], locked: false },
+    {
+      candidates: [
+        { providerID: 'zai', modelID: 'glm-5.3' },
+        { providerID: 'openai', modelID: 'gpt-5' },
+      ],
+      locked: false,
+    },
     { providerID: 'openai', modelID: 'gpt-5' },
   );
   assert.equal(auto.locked, false);

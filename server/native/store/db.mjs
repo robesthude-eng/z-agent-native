@@ -5,8 +5,12 @@ import { LATEST_SCHEMA_VERSION, inspectSchemaCompatibility, runMigrations } from
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
 fs.mkdirSync(WORKSPACES_DIR, { recursive: true });
-try { fs.chmodSync(DATA_DIR, 0o700); } catch {}
-try { fs.chmodSync(WORKSPACES_DIR, typeof process.getuid === 'function' && process.getuid() === 0 ? 0o711 : 0o700); } catch {}
+try {
+  fs.chmodSync(DATA_DIR, 0o700);
+} catch {}
+try {
+  fs.chmodSync(WORKSPACES_DIR, typeof process.getuid === 'function' && process.getuid() === 0 ? 0o711 : 0o700);
+} catch {}
 
 export const db = new DatabaseSync(DB_PATH);
 db.exec(`
@@ -163,14 +167,19 @@ export function storeReadinessCheck() {
   if (row?.ok !== 1) throw new Error('SQLite read probe failed');
   db.exec('SAVEPOINT readiness_probe');
   try {
-    db.prepare("INSERT INTO runtime_meta(key,value) VALUES('readiness_probe',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(now));
+    db.prepare("INSERT INTO runtime_meta(key,value) VALUES('readiness_probe',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
+      String(now),
+    );
     db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe');
   } catch (error) {
-    try { db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe'); } catch {}
+    try {
+      db.exec('ROLLBACK TO readiness_probe; RELEASE readiness_probe');
+    } catch {}
     throw error;
   }
   const schema = inspectSchemaCompatibility(db);
-  if (!schema.compatible) throw new Error(`SQLite schema ${schema.currentVersion} is not compatible with code schema ${LATEST_SCHEMA_VERSION}`);
+  if (!schema.compatible)
+    throw new Error(`SQLite schema ${schema.currentVersion} is not compatible with code schema ${LATEST_SCHEMA_VERSION}`);
   return {
     ok: true,
     journalMode: String(db.prepare('PRAGMA journal_mode').get()?.journal_mode || ''),

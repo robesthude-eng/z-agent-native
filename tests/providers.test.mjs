@@ -52,35 +52,52 @@ test('OpenAI-compatible provider streams text and reconstructs tool arguments', 
   };
   try {
     const deltas = [];
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [{ name: 'read', description: 'read', inputSchema: { type: 'object' } }],
-      onTextDelta: (delta) => deltas.push(delta),
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [{ name: 'read', description: 'read', inputSchema: { type: 'object' } }],
+        onTextDelta: (delta) => deltas.push(delta),
+      },
+    );
     assert.equal(deltas.join(''), 'Проверяю проект.');
     assert.equal(result.text, 'Проверяю проект.');
     assert.deepEqual(result.toolCalls, [{ id: 'call_1', name: 'read', arguments: { path: 'README.md' } }]);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('Anthropic provider streams text and tool input JSON', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => sseResponse([
-    { type: 'message_start', message: { usage: { input_tokens: 3 } } },
-    { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Открываю файл. ' } },
-    { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read', input: {} } },
-    { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"path":"a.ts"}' } },
-    { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
-  ]);
+  globalThis.fetch = async () =>
+    sseResponse([
+      { type: 'message_start', message: { usage: { input_tokens: 3 } } },
+      { type: 'content_block_delta', index: 0, delta: { type: 'text_delta', text: 'Открываю файл. ' } },
+      { type: 'content_block_start', index: 1, content_block: { type: 'tool_use', id: 'toolu_1', name: 'read', input: {} } },
+      { type: 'content_block_delta', index: 1, delta: { type: 'input_json_delta', partial_json: '{"path":"a.ts"}' } },
+      { type: 'message_delta', delta: { stop_reason: 'tool_use' }, usage: { output_tokens: 5 } },
+    ]);
   try {
     const deltas = [];
-    const result = await providers.callModel(ownerId, { providerID: 'anthropic', modelID: 'claude-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [{ name: 'read', description: 'read', inputSchema: { type: 'object' } }],
-      onTextDelta: (delta) => deltas.push(delta),
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'anthropic', modelID: 'claude-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [{ name: 'read', description: 'read', inputSchema: { type: 'object' } }],
+        onTextDelta: (delta) => deltas.push(delta),
+      },
+    );
     assert.equal(deltas.join(''), 'Открываю файл. ');
     assert.deepEqual(result.toolCalls[0], { id: 'toolu_1', name: 'read', arguments: { path: 'a.ts' } });
     assert.equal(result.finish, 'tool_use');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('Gemini provider streams text and function calls', async () => {
@@ -89,19 +106,35 @@ test('Gemini provider streams text and function calls', async () => {
     assert.match(String(url), /streamGenerateContent/);
     return sseResponse([
       { candidates: [{ content: { parts: [{ text: 'Готовлю ' }] } }] },
-      { candidates: [{ content: { parts: [{ text: 'изменение.' }, { functionCall: { name: 'write', args: { path: 'x.txt', content: 'ok' } } }] }, finishReason: 'STOP' }], usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3 } },
+      {
+        candidates: [
+          {
+            content: { parts: [{ text: 'изменение.' }, { functionCall: { name: 'write', args: { path: 'x.txt', content: 'ok' } } }] },
+            finishReason: 'STOP',
+          },
+        ],
+        usageMetadata: { promptTokenCount: 2, candidatesTokenCount: 3 },
+      },
     ]);
   };
   try {
     const deltas = [];
-    const result = await providers.callModel(ownerId, { providerID: 'google', modelID: 'gemini-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [{ name: 'write', description: 'write', inputSchema: { type: 'object' } }],
-      onTextDelta: (delta) => deltas.push(delta),
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'google', modelID: 'gemini-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [{ name: 'write', description: 'write', inputSchema: { type: 'object' } }],
+        onTextDelta: (delta) => deltas.push(delta),
+      },
+    );
     assert.equal(deltas.join(''), 'Готовлю изменение.');
     assert.equal(result.toolCalls[0].name, 'write');
     assert.equal(result.finish, 'STOP');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('streaming provider calls keep retrying TLS after the default attempt budget', async () => {
@@ -112,19 +145,24 @@ test('streaming provider calls keep retrying TLS after the default attempt budge
     if (calls <= 3) {
       throw new Error('Client network socket disconnected before secure TLS connection was established');
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.equal(calls, 4);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('streaming provider calls retry a TLS handshake drop before the first token', async () => {
@@ -135,20 +173,28 @@ test('streaming provider calls retry a TLS handshake drop before the first token
     if (calls === 1) {
       throw new Error('Client network socket disconnected before secure TLS connection was established');
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.equal(calls, 2);
-    assert.equal(providers.isNetworkTransportError(new Error('Client network socket disconnected before secure TLS connection was established')), true);
-  } finally { globalThis.fetch = original; }
+    assert.equal(
+      providers.isNetworkTransportError(new Error('Client network socket disconnected before secure TLS connection was established')),
+      true,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('streaming provider calls retry read ECONNRESET before the first token', async () => {
@@ -161,19 +207,24 @@ test('streaming provider calls retry read ECONNRESET before the first token', as
       err.code = 'ECONNRESET';
       throw err;
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.equal(calls, 2);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('non-streaming provider calls retry transient HTTP errors', async () => {
@@ -187,13 +238,18 @@ test('non-streaming provider calls retry transient HTTP errors', async () => {
         headers: { 'content-type': 'application/json', 'retry-after': '0' },
       });
     }
-    return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'OK' }, finish_reason: 'stop' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   };
   try {
     const result = await providers.probeModel(ownerId, 'openai', { modelId: 'gpt-test' });
     assert.equal(result.available, true);
     assert.equal(calls, 3);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('model discovery falls back to the direct endpoint after relay transport termination', async () => {
@@ -203,18 +259,23 @@ test('model discovery falls back to the direct endpoint after relay transport te
     const value = String(url);
     urls.push(value);
     if (value.startsWith('https://1.1.1.2/relay/')) throw new TypeError('terminated');
-    return new Response(JSON.stringify({ data: [
-      { id: 'glm-test', name: 'GLM Test' },
-      { id: 'glm-test-2' },
-    ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ data: [{ id: 'glm-test', name: 'GLM Test' }, { id: 'glm-test-2' }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   };
   try {
     const result = await providers.fetchModels(ownerId, 'openai', { force: true });
     assert.equal(result.status, 'live');
-    assert.deepEqual(result.models.map((model) => model.id), ['glm-test', 'glm-test-2']);
+    assert.deepEqual(
+      result.models.map((model) => model.id),
+      ['glm-test', 'glm-test-2'],
+    );
     assert.equal(urls.filter((url) => url.startsWith('https://1.1.1.2/relay/')).length, 5);
     assert.equal(urls.at(-1), 'https://1.1.1.1/v1/models');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('idle watchdog keeps a live stream and aborts only after silence', async () => {
@@ -259,20 +320,25 @@ test('streaming prefers the configured relay and falls back to the direct provid
       err.code = 'ECONNRESET';
       throw err;
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.match(urls[0], /^https:\/\/1\.1\.1\.2\/relay\/1\.1\.1\.1\/v1\/chat\/completions$/);
     assert.ok(urls.some((url) => url === 'https://1.1.1.1/v1/chat/completions'));
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a user abort is not retried as a dropped provider socket', async () => {
@@ -288,15 +354,24 @@ test('a user abort is not retried as a dropped provider socket', async () => {
   };
   try {
     await assert.rejects(
-      () => providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-        system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-        signal: controller.signal,
-        onTextDelta: () => {},
-      }),
+      () =>
+        providers.callModel(
+          ownerId,
+          { providerID: 'openai', modelID: 'gpt-test' },
+          {
+            system: 'test',
+            frames: [{ role: 'user', content: 'hi' }],
+            tools: [],
+            signal: controller.signal,
+            onTextDelta: () => {},
+          },
+        ),
       (err) => err?.name === 'AbortError' || /abort/i.test(String(err?.message || '')),
     );
     assert.equal(calls, 1);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('provider URL is blocked before relay wrapping can hide a private destination', async () => {
@@ -320,7 +395,9 @@ test('provider URL is blocked before relay wrapping can hide a private destinati
     assert.equal(result.status, 'unavailable');
     assert.match(result.error, /Локальные|служебные/);
     assert.equal(calls, 0);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('streaming waits out a 429 and continues the same turn', async () => {
@@ -329,26 +406,34 @@ test('streaming waits out a 429 and continues the same turn', async () => {
   globalThis.fetch = async () => {
     calls += 1;
     if (calls === 1) {
-      return new Response(JSON.stringify({
-        error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
-      }), {
-        status: 429,
-        headers: { 'content-type': 'application/json', 'retry-after': '0' },
-      });
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+        }),
+        {
+          status: 429,
+          headers: { 'content-type': 'application/json', 'retry-after': '0' },
+        },
+      );
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.equal(calls, 2);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a Console rate-limit payload is retryable even without HTTP 429', async () => {
@@ -357,34 +442,48 @@ test('a Console rate-limit payload is retryable even without HTTP 429', async ()
   globalThis.fetch = async () => {
     calls += 1;
     if (calls === 1) {
-      return new Response(JSON.stringify({
-        error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
-      }), {
-        status: 400,
-        headers: { 'content-type': 'application/json', 'retry-after': '0' },
-      });
+      return new Response(
+        JSON.stringify({
+          error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+        }),
+        {
+          status: 400,
+          headers: { 'content-type': 'application/json', 'retry-after': '0' },
+        },
+      );
     }
-    return sseResponse([
-      { choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sseResponse([{ choices: [{ delta: { content: 'OK' }, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const result = await providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-      system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-      onTextDelta: () => {},
-    });
+    const result = await providers.callModel(
+      ownerId,
+      { providerID: 'openai', modelID: 'gpt-test' },
+      {
+        system: 'test',
+        frames: [{ role: 'user', content: 'hi' }],
+        tools: [],
+        onTextDelta: () => {},
+      },
+    );
     assert.equal(result.text, 'OK');
     assert.equal(calls, 2);
-    assert.equal(providers.isRateLimitProviderError({
-      statusCode: 400,
-      message: 'Error from provider (Console): Rate limit exceeded. Please try again later.',
-    }), true);
-    assert.equal(providers.isRateLimitProviderError({
-      statusCode: 401,
-      message: "OpenCode's free tier can only be used from within OpenCode",
-    }), true);
-  } finally { globalThis.fetch = original; }
+    assert.equal(
+      providers.isRateLimitProviderError({
+        statusCode: 400,
+        message: 'Error from provider (Console): Rate limit exceeded. Please try again later.',
+      }),
+      true,
+    );
+    assert.equal(
+      providers.isRateLimitProviderError({
+        statusCode: 401,
+        message: "OpenCode's free tier can only be used from within OpenCode",
+      }),
+      true,
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting minutes', async () => {
@@ -392,45 +491,72 @@ test('failFastRateLimit gives Autopilot the 429 immediately instead of waiting m
   let calls = 0;
   globalThis.fetch = async () => {
     calls += 1;
-    return new Response(JSON.stringify({
-      error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
-    }), { status: 429, headers: { 'content-type': 'application/json' } });
+    return new Response(
+      JSON.stringify({
+        error: { message: 'Error from provider (Console): Rate limit exceeded. Please try again later.' },
+      }),
+      { status: 429, headers: { 'content-type': 'application/json' } },
+    );
   };
   try {
     const started = Date.now();
     await assert.rejects(
-      () => providers.callModel(ownerId, { providerID: 'openai', modelID: 'gpt-test' }, {
-        system: 'test', frames: [{ role: 'user', content: 'hi' }], tools: [],
-        onTextDelta: () => {},
-        failFastRateLimit: true,
-      }),
+      () =>
+        providers.callModel(
+          ownerId,
+          { providerID: 'openai', modelID: 'gpt-test' },
+          {
+            system: 'test',
+            frames: [{ role: 'user', content: 'hi' }],
+            tools: [],
+            onTextDelta: () => {},
+            failFastRateLimit: true,
+          },
+        ),
       (err) => /rate limit/i.test(String(err?.message || '')),
     );
     assert.equal(calls, 1);
     assert.ok(Date.now() - started < 1_000, 'must not sit on the 5–60s 429 ladder');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('catalog errors shown in settings are masked like chat errors', async () => {
   providerConfigs.upsertProviderConfig(ownerId, {
-    id: 'catalog-mask', name: 'Mask', protocol: 'openai', baseURL: 'https://1.1.1.1/mask/v1', enabled: true,
+    id: 'catalog-mask',
+    name: 'Mask',
+    protocol: 'openai',
+    baseURL: 'https://1.1.1.1/mask/v1',
+    enabled: true,
   });
   store.setProviderKey(ownerId, 'catalog-mask', 'sk-mask');
   const original = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({
-    error: { message: 'Free promotion has ended for DeepSeek V4 Flash Free. Subscribe to OpenCode Go - https://opencode.ai/go' },
-  }), { status: 400, headers: { 'content-type': 'application/json' } });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        error: { message: 'Free promotion has ended for DeepSeek V4 Flash Free. Subscribe to OpenCode Go - https://opencode.ai/go' },
+      }),
+      { status: 400, headers: { 'content-type': 'application/json' } },
+    );
   try {
     const result = await providers.fetchModels(ownerId, 'catalog-mask', { force: true });
     assert.equal(result.status, 'unavailable');
     assert.ok(result.error);
     assert.doesNotMatch(result.error, /opencode/i);
     assert.doesNotMatch(result.error, /https?:\/\//);
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('ended free-model promotions are unavailable and not advertised to the user', () => {
-  const err = Object.assign(new Error('Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go'), { statusCode: 400 });
+  const err = Object.assign(
+    new Error(
+      'Free promotion has ended for DeepSeek V4 Flash Free. You can continue using the model by subscribing to OpenCode Go - https://opencode.ai/go',
+    ),
+    { statusCode: 400 },
+  );
   assert.equal(providers.isModelUnavailableError(err), true);
   const publicText = providers.publicProviderErrorMessage(err);
   assert.match(publicText, /недоступна/i);
@@ -439,7 +565,9 @@ test('ended free-model promotions are unavailable and not advertised to the user
 });
 
 test('opaque Console unavailable payloads are treated as a dead SKU, not dumped in chat', () => {
-  const consoleErr = Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), { statusCode: 400 });
+  const consoleErr = Object.assign(new Error('Error from provider (Console): Upstream request failed: Model is unavailable.'), {
+    statusCode: 400,
+  });
   assert.equal(providers.isModelUnavailableError(consoleErr), true);
   assert.match(providers.publicProviderErrorMessage(consoleErr), /недоступна/i);
   assert.doesNotMatch(providers.publicProviderErrorMessage(consoleErr), /Console/i);
@@ -454,39 +582,64 @@ test('opaque Console unavailable payloads are treated as a dead SKU, not dumped 
 
 test('catalog refresh keeps whatever the provider API listed', async () => {
   const original = globalThis.fetch;
-  globalThis.fetch = async () => new Response(JSON.stringify({ data: [
-    { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free' },
-    { id: 'gpt-test', name: 'GPT Test' },
-  ] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  globalThis.fetch = async () =>
+    new Response(
+      JSON.stringify({
+        data: [
+          { id: 'deepseek-v4-flash-free', name: 'DeepSeek V4 Flash Free' },
+          { id: 'gpt-test', name: 'GPT Test' },
+        ],
+      }),
+      { status: 200, headers: { 'content-type': 'application/json' } },
+    );
   try {
     const result = await providers.fetchModels(ownerId, 'openai', { force: true });
-    assert.deepEqual(result.models.map((model) => model.id), ['deepseek-v4-flash-free', 'gpt-test']);
-  } finally { globalThis.fetch = original; }
+    assert.deepEqual(
+      result.models.map((model) => model.id),
+      ['deepseek-v4-flash-free', 'gpt-test'],
+    );
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a forced refresh overwrites the old list and never falls back to cache', async () => {
   providerConfigs.upsertProviderConfig(ownerId, {
-    id: 'stale-cache', name: 'Stale', protocol: 'openai', baseURL: 'https://1.1.1.1/stale/v1', enabled: true,
+    id: 'stale-cache',
+    name: 'Stale',
+    protocol: 'openai',
+    baseURL: 'https://1.1.1.1/stale/v1',
+    enabled: true,
   });
   store.setProviderKey(ownerId, 'stale-cache', 'sk-stale');
   const original = globalThis.fetch;
-  const listing = (models) => async () => new Response(JSON.stringify({ data: models }), {
-    status: 200, headers: { 'content-type': 'application/json' },
-  });
+  const listing = (models) => async () =>
+    new Response(JSON.stringify({ data: models }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   try {
     globalThis.fetch = listing([{ id: 'deepseek-v3-free', name: 'DeepSeek V3 Free' }]);
     const first = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
-    assert.deepEqual(first.models.map((model) => model.id), ['deepseek-v3-free']);
+    assert.deepEqual(
+      first.models.map((model) => model.id),
+      ['deepseek-v3-free'],
+    );
 
     // Провайдер заменил бесплатную модель на другую.
     globalThis.fetch = listing([{ id: 'minimax-m2.6-free', name: 'MiniMax M2.6 Free' }]);
     const swapped = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
-    assert.deepEqual(swapped.models.map((model) => model.id), ['minimax-m2.6-free']);
+    assert.deepEqual(
+      swapped.models.map((model) => model.id),
+      ['minimax-m2.6-free'],
+    );
 
     // Сбой обновления не воскрешает прошлый список…
-    globalThis.fetch = async () => new Response(JSON.stringify({ error: { message: 'catalog boom' } }), {
-      status: 400, headers: { 'content-type': 'application/json' },
-    });
+    globalThis.fetch = async () =>
+      new Response(JSON.stringify({ error: { message: 'catalog boom' } }), {
+        status: 400,
+        headers: { 'content-type': 'application/json' },
+      });
     const failed = await providers.fetchModels(ownerId, 'stale-cache', { force: true });
     assert.equal(failed.models.length, 0);
     assert.notEqual(failed.status, 'cache');
@@ -496,7 +649,9 @@ test('a forced refresh overwrites the old list and never falls back to cache', a
     const background = await providers.fetchModels(ownerId, 'stale-cache', { force: false });
     assert.equal(background.models.length, 0);
     assert.notEqual(background.status, 'cache');
-  } finally { globalThis.fetch = original; }
+  } finally {
+    globalThis.fetch = original;
+  }
 });
 
 test('a rate limit is reported as frequency, not as a dead model or empty balance', () => {
@@ -510,7 +665,9 @@ test('a rate limit is reported as frequency, not as a dead model or empty balanc
   assert.match(providers.publicProviderErrorMessage(noHint), /ограничение частоты/i);
 
   // Исчерпанный баланс приходит тем же кодом 429, но это другая причина.
-  const quota = Object.assign(new Error('You exceeded your current quota, please check your plan and billing details'), { statusCode: 429 });
+  const quota = Object.assign(new Error('You exceeded your current quota, please check your plan and billing details'), {
+    statusCode: 429,
+  });
   assert.match(providers.publicProviderErrorMessage(quota), /недоступна/i);
 });
 

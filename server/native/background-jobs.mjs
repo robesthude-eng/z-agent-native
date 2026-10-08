@@ -36,8 +36,11 @@ function jobDir(root, id) {
 
 function jobFile(dir, name) {
   const full = path.join(dir, name);
-  try { if (fs.lstatSync(full).isSymbolicLink()) throw Object.assign(new Error('Symlink in job directory'), { statusCode: 403 }); }
-  catch (err) { if (err?.code !== 'ENOENT') throw err; }
+  try {
+    if (fs.lstatSync(full).isSymbolicLink()) throw Object.assign(new Error('Symlink in job directory'), { statusCode: 403 });
+  } catch (err) {
+    if (err?.code !== 'ENOENT') throw err;
+  }
   return full;
 }
 
@@ -56,11 +59,17 @@ function readNoFollow(file, maxBytes = 1024 * 1024, fromEnd = false) {
     const buf = Buffer.alloc(len);
     fs.readSync(fd, buf, 0, len, start);
     return { text: buf.toString('utf8'), truncated: start > 0 };
-  } finally { fs.closeSync(fd); }
+  } finally {
+    fs.closeSync(fd);
+  }
 }
 
 function readMeta(dir) {
-  try { return JSON.parse(readNoFollow(jobFile(dir, 'meta.json'), 256 * 1024).text); } catch { return null; }
+  try {
+    return JSON.parse(readNoFollow(jobFile(dir, 'meta.json'), 256 * 1024).text);
+  } catch {
+    return null;
+  }
 }
 
 function writeMeta(dir, meta) {
@@ -75,7 +84,9 @@ function readExit(dir) {
     if (!raw) return null;
     const n = Number(raw);
     return Number.isFinite(n) ? n : null;
-  } catch { return null; }
+  } catch {
+    return null;
+  }
 }
 
 export function tailFile(file, maxLines = 40, maxBytes = 64 * 1024) {
@@ -85,7 +96,9 @@ export function tailFile(file, maxLines = 40, maxBytes = 64 * 1024) {
     const lines = r.text.split('\n');
     if (r.truncated) lines.shift();
     return lines.slice(-maxLines).join('\n').trimEnd();
-  } catch { return ''; }
+  } catch {
+    return '';
+  }
 }
 
 function shellQuote(s) {
@@ -96,7 +109,17 @@ function jobState(root, meta) {
   const dir = jobDir(root, meta.id);
   const exitCode = readExit(dir);
   const status = exitCode != null ? (exitCode === 0 ? 'succeeded' : 'failed') : meta.lost ? 'lost' : 'running';
-  const finishedAt = exitCode != null ? (meta.finishedAt || (() => { try { return Math.round(fs.lstatSync(path.join(dir, 'exit_code')).mtimeMs); } catch { return Date.now(); } })()) : null;
+  const finishedAt =
+    exitCode != null
+      ? meta.finishedAt ||
+        (() => {
+          try {
+            return Math.round(fs.lstatSync(path.join(dir, 'exit_code')).mtimeMs);
+          } catch {
+            return Date.now();
+          }
+        })()
+      : null;
   return { ...meta, status, exitCode, finishedAt, durationMs: (finishedAt || Date.now()) - meta.startedAt };
 }
 
@@ -119,7 +142,11 @@ function describe(root, job, lines = 30) {
 
 export function listJobs(root) {
   let names = [];
-  try { names = fs.readdirSync(jobsDir(root)); } catch { return []; }
+  try {
+    names = fs.readdirSync(jobsDir(root));
+  } catch {
+    return [];
+  }
   return names
     .filter((n) => JOB_ID_RE.test(n))
     .map((n) => readMeta(path.join(jobsDir(root), n)))
@@ -131,9 +158,13 @@ export function listJobs(root) {
 async function checkAlive(root, job, ctx) {
   if (!job.pid) return true;
   try {
-    const r = await execBash(root, `kill -0 ${Number(job.pid)} 2>/dev/null && echo alive || echo dead`, 10_000, ctx.signal, { sessionId: ctx.sessionId });
+    const r = await execBash(root, `kill -0 ${Number(job.pid)} 2>/dev/null && echo alive || echo dead`, 10_000, ctx.signal, {
+      sessionId: ctx.sessionId,
+    });
     return !/dead/.test(String(r.stdout || ''));
-  } catch { return true; }
+  } catch {
+    return true;
+  }
 }
 
 async function markLostIfDead(root, job, ctx) {
@@ -189,7 +220,9 @@ async function startJob(root, input, ctx) {
   };
   writeMeta(dir, meta);
   if (ctx.sessionId) {
-    try { syncSandboxOwnership(ctx.sessionId, root, jobsDir(root)); } catch {}
+    try {
+      syncSandboxOwnership(ctx.sessionId, root, jobsDir(root));
+    } catch {}
   }
   const q = (f) => shellQuote(path.join(dir, f));
   // Ждём, пока задача отвяжется (setsid) и запишет свой pid: иначе завершение
@@ -200,7 +233,12 @@ async function startJob(root, input, ctx) {
     `cat ${q('pid')}`,
   ].join('\n');
   const r = await execBash(root, launcher, 20_000, ctx.signal, ctx);
-  const pid = Number(String(r.stdout || '').trim().split('\n').pop());
+  const pid = Number(
+    String(r.stdout || '')
+      .trim()
+      .split('\n')
+      .pop(),
+  );
   if (r.code !== 0 || !Number.isInteger(pid)) {
     fs.rmSync(dir, { recursive: true, force: true });
     throw new Error(`Failed to start background job: ${r.stderr || r.stdout || `exit ${r.code}`}`);
@@ -214,7 +252,9 @@ async function startJob(root, input, ctx) {
       `Log: ${JOBS_REL}/${id}/output.log. It keeps running after this turn ends.`,
       'Do other useful work meanwhile, check it with background action=status or block with action=wait.',
       meta.notify ? 'If it finishes after you have already answered, the chat will be resumed automatically with its result.' : '',
-    ].filter(Boolean).join('\n'),
+    ]
+      .filter(Boolean)
+      .join('\n'),
     title: `Фоновая задача: ${meta.name}`,
     metadata: { background: { action: 'start', id, pid } },
   };
@@ -226,7 +266,14 @@ export async function executeBackgroundTool(root, input, ctx = {}) {
   if (action === 'list') {
     const jobs = listJobs(root);
     return {
-      output: jobs.length ? jobs.map((j) => `${j.id} "${j.name}": ${j.status}${j.exitCode != null ? ` (exit ${j.exitCode})` : ''}, ${formatDuration(j.durationMs)}`).join('\n') : 'No background jobs in this chat.',
+      output: jobs.length
+        ? jobs
+            .map(
+              (j) =>
+                `${j.id} "${j.name}": ${j.status}${j.exitCode != null ? ` (exit ${j.exitCode})` : ''}, ${formatDuration(j.durationMs)}`,
+            )
+            .join('\n')
+        : 'No background jobs in this chat.',
       title: 'Фоновые задачи',
     };
   }
@@ -238,7 +285,11 @@ export async function executeBackgroundTool(root, input, ctx = {}) {
   if (action === 'status' || action === 'logs') {
     const job = await markLostIfDead(root, jobState(root, meta), ctx);
     if (job.status !== 'running') acknowledge(root, id);
-    return { output: describe(root, job, action === 'logs' ? Math.max(lines, 120) : lines), title: `${job.name}: ${job.status}`, metadata: { background: { action, id, status: job.status, exitCode: job.exitCode } } };
+    return {
+      output: describe(root, job, action === 'logs' ? Math.max(lines, 120) : lines),
+      title: `${job.name}: ${job.status}`,
+      metadata: { background: { action, id, status: job.status, exitCode: job.exitCode } },
+    };
   }
   if (action === 'wait') {
     const timeoutMs = Math.min(1800, Math.max(5, Number(input?.timeoutSec) || 600)) * 1000;
@@ -258,7 +309,9 @@ export async function executeBackgroundTool(root, input, ctx = {}) {
         const key = `${tail.length}:${tail.slice(-200)}:${Math.floor((Date.now() - waitStarted) / 1000)}`;
         if (key !== lastShown) {
           lastShown = key;
-          try { ctx.onOutput(text); } catch {}
+          try {
+            ctx.onOutput(text);
+          } catch {}
         }
       }
       job = jobState(root, readMeta(dir) || meta);
@@ -269,17 +322,31 @@ export async function executeBackgroundTool(root, input, ctx = {}) {
     }
     if (job.status !== 'running') acknowledge(root, id);
     const prefix = job.status === 'running' ? `Still running after waiting ${Math.round(timeoutMs / 1000)}s.\n` : '';
-    return { output: prefix + describe(root, job, lines), title: `${job.name}: ${job.status}`, metadata: { background: { action, id, status: job.status, exitCode: job.exitCode } } };
+    return {
+      output: prefix + describe(root, job, lines),
+      title: `${job.name}: ${job.status}`,
+      metadata: { background: { action, id, status: job.status, exitCode: job.exitCode } },
+    };
   }
   if (action === 'kill') {
     const job = jobState(root, meta);
     if (job.status === 'running' && meta.pid) {
-      await execBash(root, `kill -TERM -- -${Number(meta.pid)} 2>/dev/null || kill -TERM ${Number(meta.pid)} 2>/dev/null; sleep 1; kill -KILL -- -${Number(meta.pid)} 2>/dev/null; true`, 15_000, ctx.signal, ctx);
+      await execBash(
+        root,
+        `kill -TERM -- -${Number(meta.pid)} 2>/dev/null || kill -TERM ${Number(meta.pid)} 2>/dev/null; sleep 1; kill -KILL -- -${Number(meta.pid)} 2>/dev/null; true`,
+        15_000,
+        ctx.signal,
+        ctx,
+      );
     }
     const next = { ...readMeta(dir), acknowledged: true, killed: true };
     writeMeta(dir, next);
     if (readExit(dir) == null) writeExclusive(jobFile(dir, 'exit_code'), '143\n');
-    return { output: `Killed ${id}.\n${describe(root, jobState(root, next), 10)}`, title: `Остановлено: ${meta.name}`, metadata: { background: { action, id } } };
+    return {
+      output: `Killed ${id}.\n${describe(root, jobState(root, next), 10)}`,
+      title: `Остановлено: ${meta.name}`,
+      metadata: { background: { action, id } },
+    };
   }
   throw new Error('background action must be start, status, logs, wait, kill or list');
 }
@@ -298,7 +365,9 @@ export function configureBackgroundJobHooks(next) {
 
 function ensureTimer() {
   if (timer || !watched.size || !hooks) return;
-  timer = setInterval(() => { tick().catch((err) => console.warn('[background-jobs]', err?.message || err)); }, WATCH_INTERVAL_MS);
+  timer = setInterval(() => {
+    tick().catch((err) => console.warn('[background-jobs]', err?.message || err));
+  }, WATCH_INTERVAL_MS);
   timer.unref?.();
 }
 
@@ -319,36 +388,68 @@ export function notificationText(job, log) {
 async function tick() {
   for (const [key, w] of watched) {
     let dir;
-    try { dir = jobDir(w.root, w.id); } catch { watched.delete(key); continue; }
+    try {
+      dir = jobDir(w.root, w.id);
+    } catch {
+      watched.delete(key);
+      continue;
+    }
     const meta = readMeta(dir);
-    if (!meta?.notify || meta.notified || meta.acknowledged) { watched.delete(key); continue; }
+    if (!meta?.notify || meta.notified || meta.acknowledged) {
+      watched.delete(key);
+      continue;
+    }
     const job = jobState(w.root, meta);
     if (job.status === 'running') continue;
     if (hooks.isTurnActive(w.sessionId)) continue; // агент ещё работает — он может забрать результат сам
     // Владельца берём только из базы: meta.json лежит в песочнице и может быть изменён агентом.
     const owner = db.prepare('SELECT owner_id FROM chats WHERE id=?').get(w.sessionId)?.owner_id;
-    if (!owner) { watched.delete(key); continue; }
+    if (!owner) {
+      watched.delete(key);
+      continue;
+    }
     writeMeta(dir, { ...meta, notified: true });
     watched.delete(key);
     try {
-      const model = meta.requestedModel && typeof meta.requestedModel === 'object' ? { providerID: String(meta.requestedModel.providerID || ''), modelID: String(meta.requestedModel.modelID || '') } : null;
-      await hooks.submit({ sessionId: w.sessionId, ownerId: owner, model, text: notificationText(job, tailFile(path.join(dir, 'output.log'), 30)) });
+      const model =
+        meta.requestedModel && typeof meta.requestedModel === 'object'
+          ? { providerID: String(meta.requestedModel.providerID || ''), modelID: String(meta.requestedModel.modelID || '') }
+          : null;
+      await hooks.submit({
+        sessionId: w.sessionId,
+        ownerId: owner,
+        model,
+        text: notificationText(job, tailFile(path.join(dir, 'output.log'), 30)),
+      });
     } catch (err) {
       console.warn(`[background-jobs] resume ${w.sessionId} failed: ${err?.message || err}`);
     }
   }
-  if (!watched.size && timer) { clearInterval(timer); timer = null; }
+  if (!watched.size && timer) {
+    clearInterval(timer);
+    timer = null;
+  }
 }
 
 /** После рестарта сервера заново подхватываем незакрытые задачи с notify. */
 export function rescanBackgroundJobs() {
   let sessions = [];
-  try { sessions = db.prepare('SELECT id FROM chats').all().map((r) => r.id); } catch { return 0; }
+  try {
+    sessions = db
+      .prepare('SELECT id FROM chats')
+      .all()
+      .map((r) => r.id);
+  } catch {
+    return 0;
+  }
   let n = 0;
   for (const sid of sessions) {
     const root = path.join(WORKSPACES_DIR, sid);
     for (const job of listJobs(root)) {
-      if (job.notify && !job.notified && !job.acknowledged) { watchJob(sid, root, job.id); n += 1; }
+      if (job.notify && !job.notified && !job.acknowledged) {
+        watchJob(sid, root, job.id);
+        n += 1;
+      }
     }
   }
   return n;

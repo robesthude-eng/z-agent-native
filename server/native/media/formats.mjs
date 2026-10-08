@@ -36,7 +36,10 @@ export const MEDIA_TYPES = {
 };
 
 export function mediaExtension(value) {
-  return path.extname(String(value || '')).replace(/^\./, '').toLowerCase();
+  return path
+    .extname(String(value || ''))
+    .replace(/^\./, '')
+    .toLowerCase();
 }
 
 export function mediaKindForPath(value) {
@@ -90,7 +93,9 @@ export function writeMediaFile(root, target, bytes, ctx = null) {
   fs.mkdirSync(path.dirname(abs), { recursive: true });
   fs.writeFileSync(abs, bytes);
   if (ctx?.sessionId) {
-    try { syncSandboxOwnership(ctx.sessionId, root, abs); } catch {}
+    try {
+      syncSandboxOwnership(ctx.sessionId, root, abs);
+    } catch {}
   }
   return { abs, size: bytes.length };
 }

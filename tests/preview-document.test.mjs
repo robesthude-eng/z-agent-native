@@ -92,11 +92,17 @@ test('unbuilt vite source index.html is not previewed (would be a white screen)'
   const root = tmp();
   const project = path.join(root, 'z-agent-native-main');
   fs.mkdirSync(project, { recursive: true });
-  fs.writeFileSync(path.join(project, 'index.html'), '<!doctype html><html><body><script type="module" src="/src/main.tsx"></script></body></html>');
+  fs.writeFileSync(
+    path.join(project, 'index.html'),
+    '<!doctype html><html><body><script type="module" src="/src/main.tsx"></script></body></html>',
+  );
   assert.equal(previewDocument(root), null);
   // После сборки dist/index.html появляется — и превью переключается на него.
   fs.mkdirSync(path.join(project, 'dist'), { recursive: true });
-  fs.writeFileSync(path.join(project, 'dist', 'index.html'), '<!doctype html><html><body><script type="module" src="assets/index-abc.js"></script></body></html>');
+  fs.writeFileSync(
+    path.join(project, 'dist', 'index.html'),
+    '<!doctype html><html><body><script type="module" src="assets/index-abc.js"></script></body></html>',
+  );
   assert.equal(previewDocument(root), 'z-agent-native-main/dist/index.html');
 });
 
@@ -115,7 +121,9 @@ test('absolute asset paths in preview html become relative', () => {
   assert.match(out, /src="assets\/index-DTblUuFQ\.js"/);
   assert.match(out, /src="images\/hero\.png"/);
   // Внешние и якорные ссылки не трогаем.
-  const keep = rewritePreviewHtml('<a href="https://example.com/x">e</a><a href="/#section">s</a><a href="/">root</a><img src="//cdn.example.com/a.png">');
+  const keep = rewritePreviewHtml(
+    '<a href="https://example.com/x">e</a><a href="/#section">s</a><a href="/">root</a><img src="//cdn.example.com/a.png">',
+  );
   assert.match(keep, /href="https:\/\/example\.com\/x"/);
   assert.match(keep, /href="\/#section"/);
   assert.match(keep, /href="\/"/);
@@ -139,7 +147,9 @@ test('preview html gets a localStorage shim before any script', () => {
 });
 
 test('preview API mock is limited to Z Agent builds and exposes runtime capabilities', () => {
-  const zAgent = rewritePreviewHtml('<!doctype html><html><head><meta name="app-version" content="z-agent-native-v1"></head><body></body></html>');
+  const zAgent = rewritePreviewHtml(
+    '<!doctype html><html><head><meta name="app-version" content="z-agent-native-v1"></head><body></body></html>',
+  );
   assert.match(zAgent, /__previewMock/);
   assert.match(zAgent, /\/api\/runtime-capabilities/);
 

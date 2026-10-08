@@ -24,7 +24,9 @@ const auth = await import(`../server/native/auth.mjs?secure-cookie=${Date.now()}
 const store = await import('../server/native/store.mjs');
 
 test.after(() => {
-  try { store.closeStore(); } catch {}
+  try {
+    store.closeStore();
+  } catch {}
   fs.rmSync(root, { recursive: true, force: true });
 });
 
@@ -57,7 +59,16 @@ test('CSRF prefers the __Host cookie when a leftover unprefixed cookie is also s
       'x-csrf-token': decoded,
     },
   };
-  const res = { statusCode: 0, body: '', writeHead(code) { this.statusCode = code; }, end(body) { this.body = body; } };
+  const res = {
+    statusCode: 0,
+    body: '',
+    writeHead(code) {
+      this.statusCode = code;
+    },
+    end(body) {
+      this.body = body;
+    },
+  };
   const sessionAuth = auth.authFromRequest(req);
   assert.ok(sessionAuth);
   assert.equal(auth.checkCsrf(req, res, sessionAuth), true);
@@ -70,7 +81,16 @@ test('CSRF prefers the __Host cookie when a leftover unprefixed cookie is also s
       'x-csrf-token': 'stale-legacy-token-value-32chars',
     },
   };
-  const staleRes = { statusCode: 0, body: '', writeHead(code) { this.statusCode = code; }, end(body) { this.body = body; } };
+  const staleRes = {
+    statusCode: 0,
+    body: '',
+    writeHead(code) {
+      this.statusCode = code;
+    },
+    end(body) {
+      this.body = body;
+    },
+  };
   assert.equal(auth.checkCsrf(stale, staleRes, sessionAuth), false);
   assert.equal(staleRes.statusCode, 403);
 });

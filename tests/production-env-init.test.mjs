@@ -26,7 +26,9 @@ test('production env bootstrap creates strong keys, mode 0600, and refuses overw
     const second = spawnSync(process.execPath, ['scripts/init-production-env.mjs', target], { cwd: process.cwd(), encoding: 'utf8' });
     assert.notEqual(second.status, 0);
     assert.match(second.stderr, /Refusing to overwrite/);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });
 
 test('privileged single-user profiles require an explicit selection', () => {
@@ -42,8 +44,12 @@ test('privileged single-user profiles require an explicit selection', () => {
       assert.match(text, new RegExp(`^Z_AGENT_ALLOW_SUDO=${profile === 'unrestricted' ? '1' : '0'}$`, 'm'));
       assert.equal(/^COMPOSE_FILE=.*docker-compose.unrestricted.yml$/m.test(text), profile === 'unrestricted');
     }
-    const bad = spawnSync(process.execPath, ['scripts/init-production-env.mjs', path.join(root, 'bad'), '--profile=typo'], { encoding: 'utf8' });
+    const bad = spawnSync(process.execPath, ['scripts/init-production-env.mjs', path.join(root, 'bad'), '--profile=typo'], {
+      encoding: 'utf8',
+    });
     assert.notEqual(bad.status, 0);
     assert.equal(fs.existsSync(path.join(root, 'bad')), false);
-  } finally { fs.rmSync(root, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
 });

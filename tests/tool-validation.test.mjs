@@ -12,19 +12,27 @@ test('write without required content is rejected before touching the file', asyn
   const root = await fs.mkdtemp(path.join(os.tmpdir(), 'tool-validate-'));
   try {
     await fs.writeFile(path.join(root, 'keep.txt'), '16 bytes of data');
-    await assert.rejects(() => executeTool('write', { path: 'keep.txt' }, { workspace: root }), (err) => {
-      assert.equal(err.code, 'INVALID_TOOL_ARGUMENTS');
-      assert.match(err.message, /content: required/);
-      assert.match(err.message, /Nothing was executed/);
-      return true;
-    });
+    await assert.rejects(
+      () => executeTool('write', { path: 'keep.txt' }, { workspace: root }),
+      (err) => {
+        assert.equal(err.code, 'INVALID_TOOL_ARGUMENTS');
+        assert.match(err.message, /content: required/);
+        assert.match(err.message, /Nothing was executed/);
+        return true;
+      },
+    );
     assert.equal(await fs.readFile(path.join(root, 'keep.txt'), 'utf8'), '16 bytes of data');
-  } finally { await fs.rm(root, { recursive: true, force: true }); }
+  } finally {
+    await fs.rm(root, { recursive: true, force: true });
+  }
 });
 
 test('validation checks types, enums and nested items and coerces harmless string forms', () => {
   assert.deepEqual(assertValidToolInput('read', { path: 'a', offset: '5' }), { path: 'a', offset: 5 });
-  assert.throws(() => assertValidToolInput('todowrite', { todos: [{ content: 'x', status: 'doing' }] }), /todos\[0\]\.status: must be one of/);
+  assert.throws(
+    () => assertValidToolInput('todowrite', { todos: [{ content: 'x', status: 'doing' }] }),
+    /todos\[0\]\.status: must be one of/,
+  );
   assert.throws(() => assertValidToolInput('edit', { path: 'a', oldText: 1, newText: 'b' }), /oldText: expected string/);
   assert.throws(() => assertValidToolInput('task', {}), /prompt: required/);
   const schema = { type: 'object', properties: { n: { type: 'integer', minimum: 1, maximum: 3 } }, required: [] };
@@ -52,13 +60,16 @@ test('system prompt includes SSH and toolchain sections only when applicable', (
 });
 
 test('browser calls are normalized: aliases, value from text, screenshot allowed, unsupported rejected', () => {
-  assert.deepEqual(assertValidToolInput('browser', { action: 'fill', selector: '#e', text: 'abc' }), { action: 'fill', selector: '#e', value: 'abc' });
+  assert.deepEqual(assertValidToolInput('browser', { action: 'fill', selector: '#e', text: 'abc' }), {
+    action: 'fill',
+    selector: '#e',
+    value: 'abc',
+  });
   assert.equal(assertValidToolInput('browser', { action: 'key', key: 'Enter' }).action, 'press');
   assert.equal(assertValidToolInput('browser', { action: 'content' }).action, 'snapshot');
   assert.equal(assertValidToolInput('browser', { action: 'screenshot', width: 390 }).action, 'screenshot');
   assert.throws(() => assertValidToolInput('browser', { action: 'evaluate', script: '1' }), /must be one of/);
 });
-
 
 test('response instructions keep readable answers grounded in actual tool evidence', () => {
   const prompt = systemPrompt({ toolNames: ['read'], goal: 'объясни результат' });

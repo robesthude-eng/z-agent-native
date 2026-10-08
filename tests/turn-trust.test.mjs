@@ -109,7 +109,9 @@ test('tool retry is limited to transient errors on idempotent tools', () => {
   assert.equal(shouldRetryToolCall({ name: 'read' }, transient, 1), false);
   assert.equal(shouldRetryToolCall({ name: 'read' }, new Error('File not found'), 0), false);
 
-  const executorDown = Object.assign(new Error('Secure executor is required but unavailable at /run/z-agent-executor/executor.sock'), { code: 'EXECUTOR_UNAVAILABLE' });
+  const executorDown = Object.assign(new Error('Secure executor is required but unavailable at /run/z-agent-executor/executor.sock'), {
+    code: 'EXECUTOR_UNAVAILABLE',
+  });
   assert.equal(shouldRetryToolCall({ name: 'bash' }, executorDown, 0), true);
   assert.equal(shouldRetryToolCall({ name: 'bash' }, executorDown, 1), true);
   assert.equal(shouldRetryToolCall({ name: 'bash' }, executorDown, 2), false);
@@ -119,10 +121,11 @@ test('tool retry is limited to transient errors on idempotent tools', () => {
 });
 
 test('task outcome distinguishes complete, partial and failed work', () => {
-  assert.deepEqual(
-    classifyTaskOutcome({ strategy: { plan: [], needsVerification: false }, kind: 'completed' }),
-    { status: 'completed', label: 'Готово', reason: 'completed' },
-  );
+  assert.deepEqual(classifyTaskOutcome({ strategy: { plan: [], needsVerification: false }, kind: 'completed' }), {
+    status: 'completed',
+    label: 'Готово',
+    reason: 'completed',
+  });
 
   const partial = classifyTaskOutcome({
     strategy: {

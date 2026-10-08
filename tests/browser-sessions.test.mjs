@@ -4,9 +4,9 @@ import test from 'node:test';
 // Must be set before the module is imported: the ceiling is read once at import.
 // node --test runs every test file in its own process, so this does not leak.
 process.env.Z_AGENT_BROWSER_MAX_SESSIONS = '2';
-const {
-  browserSessionCapacity, closeAllBrowserSessions, closeBrowserSession, ensureBrowserSession,
-} = await import('../server/native/browser.mjs');
+const { browserSessionCapacity, closeAllBrowserSessions, closeBrowserSession, ensureBrowserSession } = await import(
+  '../server/native/browser.mjs'
+);
 
 // A Playwright double. The real thing would fork one Chromium per session, which
 // is exactly the resource this cap exists to bound, so it must not be launched
@@ -23,12 +23,16 @@ function stubPlaywright() {
           launched += 1;
           const id = launched;
           return {
-            close: async () => { closed.push(`browser:${id}`); },
+            close: async () => {
+              closed.push(`browser:${id}`);
+            },
             newContext: async () => ({
               route: async () => {},
               routeWebSocket: async () => {},
               newPage: async () => ({ on: () => {} }),
-              close: async () => { closed.push(`context:${id}`); },
+              close: async () => {
+                closed.push(`context:${id}`);
+              },
             }),
           };
         },

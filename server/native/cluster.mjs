@@ -79,7 +79,9 @@ export function isClustered() {
 
 function registerInstance(at) {
   connect()
-    .prepare('INSERT INTO cluster_instances (id, started_at, seen_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET seen_at=excluded.seen_at')
+    .prepare(
+      'INSERT INTO cluster_instances (id, started_at, seen_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET seen_at=excluded.seen_at',
+    )
     .run(INSTANCE_ID, at, at);
 }
 
@@ -95,11 +97,19 @@ export function startCluster({ ingest } = {}) {
   // delivered to whoever was connected at the time.
   cursor = Number(connect().prepare('SELECT COALESCE(MAX(seq), 0) AS seq FROM cluster_events').get().seq) || 0;
   poller = setInterval(() => {
-    try { pollClusterEvents(); } catch { /* a transient sqlite error must not kill the process */ }
+    try {
+      pollClusterEvents();
+    } catch {
+      /* a transient sqlite error must not kill the process */
+    }
   }, POLL_MS);
   poller.unref?.();
   heartbeat = setInterval(() => {
-    try { touchInstance(); } catch { /* ditto */ }
+    try {
+      touchInstance();
+    } catch {
+      /* ditto */
+    }
   }, HEARTBEAT_MS);
   heartbeat.unref?.();
   return true;
@@ -158,8 +168,17 @@ export function pollClusterEvents() {
     // Our own writes were already delivered in-process by emit().
     if (row.instance_id === INSTANCE_ID) continue;
     let event = null;
-    try { event = JSON.parse(row.payload); } catch { continue; }
-    try { ingestFrame(row.session_id, event); delivered += 1; } catch { /* subscriber owns its socket */ }
+    try {
+      event = JSON.parse(row.payload);
+    } catch {
+      continue;
+    }
+    try {
+      ingestFrame(row.session_id, event);
+      delivered += 1;
+    } catch {
+      /* subscriber owns its socket */
+    }
   }
   if (rows.length) pruneEvents();
   return delivered;
@@ -190,19 +209,35 @@ export function acquireLock(key, options = {}) {
     const expired = current ? Number(current.expires_at) <= now : false;
     if (current && !expired && current.instance_id !== instanceId) {
       handle.exec('COMMIT');
-      return { ok: false, instanceId: current.instance_id, owner: current.owner ?? null, expiresAt: Number(current.expires_at), takeover: false };
+      return {
+        ok: false,
+        instanceId: current.instance_id,
+        owner: current.owner ?? null,
+        expiresAt: Number(current.expires_at),
+        takeover: false,
+      };
     }
     // Two replicas racing for an expired lock both run this, and only one row
     // survives.
     handle
-      .prepare('INSERT INTO cluster_locks (key, instance_id, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET instance_id=excluded.instance_id, owner=excluded.owner, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE cluster_locks.expires_at <= ? OR cluster_locks.instance_id = ?')
+      .prepare(
+        'INSERT INTO cluster_locks (key, instance_id, owner, acquired_at, expires_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(key) DO UPDATE SET instance_id=excluded.instance_id, owner=excluded.owner, acquired_at=excluded.acquired_at, expires_at=excluded.expires_at WHERE cluster_locks.expires_at <= ? OR cluster_locks.instance_id = ?',
+      )
       .run(key, instanceId, owner, now, now + ttlMs, now, instanceId);
     const after = handle.prepare('SELECT instance_id, owner, expires_at FROM cluster_locks WHERE key=?').get(key);
     handle.exec('COMMIT');
     const ok = after?.instance_id === instanceId;
-    return { ok, instanceId: after?.instance_id ?? null, owner: after?.owner ?? null, expiresAt: Number(after?.expires_at) || 0, takeover: ok && expired };
+    return {
+      ok,
+      instanceId: after?.instance_id ?? null,
+      owner: after?.owner ?? null,
+      expiresAt: Number(after?.expires_at) || 0,
+      takeover: ok && expired,
+    };
   } catch (error) {
-    try { handle.exec('ROLLBACK'); } catch {}
+    try {
+      handle.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
@@ -210,7 +245,9 @@ export function acquireLock(key, options = {}) {
 export function renewLock(key, options = {}) {
   const { ttlMs = LOCK_TTL_MS, now = Date.now(), instanceId = INSTANCE_ID } = options;
   if (!CLUSTER_ENABLED) return true;
-  const info = connect().prepare('UPDATE cluster_locks SET expires_at=? WHERE key=? AND instance_id=?').run(now + ttlMs, key, instanceId);
+  const info = connect()
+    .prepare('UPDATE cluster_locks SET expires_at=? WHERE key=? AND instance_id=?')
+    .run(now + ttlMs, key, instanceId);
   return (Number(info?.changes) || 0) > 0;
 }
 

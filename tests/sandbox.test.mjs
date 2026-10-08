@@ -52,7 +52,11 @@ test('isolated shell cannot read runtime secrets or another session workspace', 
     `printf "\\nmaster="; cat ${JSON.stringify(path.join(data, 'master.key'))} 2>/dev/null || printf DENIED`,
     `printf "\\ndb="; if test -r ${JSON.stringify(path.join(data, 'z-agent.sqlite'))}; then printf READABLE; else printf DENIED; fi`,
   ].join('; ');
-  const result = await executeTool('bash', { command }, { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal });
+  const result = await executeTool(
+    'bash',
+    { command },
+    { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal },
+  );
   assert.equal(result.metadata.exit, 0);
   assert.match(result.output, new RegExp(`uid=${uidA}`));
   assert.match(result.output, /mine=mine/);
@@ -79,14 +83,20 @@ test('session uid can mkdir venvs after the API created .agent-home', { skip: !s
   const aRoot = store.workspaceFor('ses_sandboxa1');
   fs.mkdirSync(path.join(aRoot, '.agent-home'), { recursive: true });
   sandbox.ensureManagedHome('ses_sandboxa1', aRoot);
-  const result = await executeTool('bash', {
-    command: 'mkdir -p "$HOME/venvs/python" "$HOME/cache/pip" && test -w "$HOME/venvs" && test -w "$HOME/cache/pip" && echo writable',
-  }, { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal });
+  const result = await executeTool(
+    'bash',
+    {
+      command: 'mkdir -p "$HOME/venvs/python" "$HOME/cache/pip" && test -w "$HOME/venvs" && test -w "$HOME/cache/pip" && echo writable',
+    },
+    { sessionId: 'ses_sandboxa1', workspace: aRoot, signal: new AbortController().signal },
+  );
   assert.equal(result.metadata.exit, 0);
   assert.match(result.output, /writable/);
 });
 
-test('secure mode refuses shell when UID isolation is unavailable unless unsafe fallback is explicit', { skip: secureSandboxAvailable }, () => {
+test('secure mode refuses shell when UID isolation is unavailable unless unsafe fallback is explicit', {
+  skip: secureSandboxAvailable,
+}, () => {
   assert.equal(sandbox.shellSandboxAvailable(), false);
   assert.throws(() => sandbox.sandboxIdentity('ses_sandboxa1'), /sandbox is unavailable/i);
 });

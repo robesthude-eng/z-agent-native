@@ -15,7 +15,11 @@ function jobPath(sessionId) {
 }
 
 function readJson(file) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return null; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return null;
+  }
 }
 
 function writeJsonAtomic(file, value) {
@@ -71,7 +75,11 @@ export function createDurableJob(input) {
     if (!(age > DURABLE_JOB_TTL_MS)) {
       throw Object.assign(new Error('Unfinished durable turn already exists for this session'), { statusCode: 409 });
     }
-    try { fs.rmSync(jobPath(sessionId), { force: true }); } catch { /* recreated below */ }
+    try {
+      fs.rmSync(jobPath(sessionId), { force: true });
+    } catch {
+      /* recreated below */
+    }
   }
   const now = Date.now();
   const job = {
@@ -89,7 +97,10 @@ export function createDurableJob(input) {
     state: 'running',
     checkpoint: {
       phase: 'created',
-      toolOptions: { webSearch: input?.toolOptions?.webSearch !== false, ...(input?.toolOptions?.bashFirst === true ? { bashFirst: true } : {}) },
+      toolOptions: {
+        webSearch: input?.toolOptions?.webSearch !== false,
+        ...(input?.toolOptions?.bashFirst === true ? { bashFirst: true } : {}),
+      },
       stepsUsed: 0,
       gateReminders: 0,
       lastUsage: null,
@@ -116,9 +127,7 @@ export function updateDurableJob(sessionId, patch = {}) {
     ...patch,
     ...(Object.hasOwn(patch, 'requestedModel') ? { requestedModel: cleanModel(patch.requestedModel) } : {}),
     ...(Object.hasOwn(patch, 'modelPlan') ? { modelPlan: cleanPlan(patch.modelPlan) } : {}),
-    checkpoint: patch.checkpoint
-      ? { ...(current.checkpoint || {}), ...patch.checkpoint, savedAt: Date.now() }
-      : current.checkpoint,
+    checkpoint: patch.checkpoint ? { ...(current.checkpoint || {}), ...patch.checkpoint, savedAt: Date.now() } : current.checkpoint,
     updatedAt: Date.now(),
   };
   writeJsonAtomic(jobPath(sessionId), next);
@@ -151,7 +160,11 @@ export function markDurableJobResuming(sessionId) {
 }
 
 export function clearDurableJob(sessionId) {
-  try { fs.rmSync(jobPath(sessionId), { force: true }); } catch { /* best effort */ }
+  try {
+    fs.rmSync(jobPath(sessionId), { force: true });
+  } catch {
+    /* best effort */
+  }
 }
 
 /**
@@ -163,7 +176,12 @@ export function pruneExpiredDurableJobs(ttlMs = DURABLE_JOB_TTL_MS) {
   for (const job of listDurableJobs()) {
     const age = Date.now() - Number(job.updatedAt || job.createdAt || 0);
     if (age <= ttlMs) continue;
-    try { fs.rmSync(jobPath(job.sessionId), { force: true }); removed += 1; } catch { /* keep going */ }
+    try {
+      fs.rmSync(jobPath(job.sessionId), { force: true });
+      removed += 1;
+    } catch {
+      /* keep going */
+    }
   }
   return removed;
 }
@@ -180,5 +198,9 @@ export function listDurableJobs() {
 }
 
 export function resetDurableJobsForTests() {
-  try { fs.rmSync(JOB_DIR, { recursive: true, force: true }); } catch { /* best effort */ }
+  try {
+    fs.rmSync(JOB_DIR, { recursive: true, force: true });
+  } catch {
+    /* best effort */
+  }
 }

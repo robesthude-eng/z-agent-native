@@ -69,7 +69,10 @@ function makeToolPairsCoherent(frames) {
  */
 export function compactFrames(input, options = {}) {
   const maxChars = Math.max(MIN_CONTEXT_CHARS, Number(options.maxChars || process.env.Z_AGENT_CONTEXT_CHARS) || DEFAULT_CONTEXT_CHARS);
-  const maxObservationChars = Math.max(4_000, Number(options.maxObservationChars || process.env.Z_AGENT_TOOL_OBSERVATION_CHARS) || DEFAULT_TOOL_OBSERVATION_CHARS);
+  const maxObservationChars = Math.max(
+    4_000,
+    Number(options.maxObservationChars || process.env.Z_AGENT_TOOL_OBSERVATION_CHARS) || DEFAULT_TOOL_OBSERVATION_CHARS,
+  );
   const frames = (Array.isArray(input) ? input : []).map((frame) => compactObservation(frame, maxObservationChars));
   // Картинки из view_media нужны модели на ближайших шагах; старые
   // просмотры оставляем только текстом, чтобы не пересылать их каждый шаг.
@@ -78,7 +81,11 @@ export function compactFrames(input, options = {}) {
     if (!frames[i]?.runtimeMedia || !frames[i]?.media?.length) continue;
     runtimeMediaSeen += 1;
     if (runtimeMediaSeen > KEEP_RUNTIME_MEDIA_FRAMES) {
-      frames[i] = { ...frames[i], media: [], content: `${frames[i].content} [images no longer attached; call view_media again if you need to look]` };
+      frames[i] = {
+        ...frames[i],
+        media: [],
+        content: `${frames[i].content} [images no longer attached; call view_media again if you need to look]`,
+      };
     }
   }
   const weight = frames.reduce((sum, frame) => sum + frameWeight(frame), 0);
@@ -137,7 +144,8 @@ const VERIFY_PATTERNS = [
 
 // Installing or removing packages changes the environment even when the
 // package is named like a checker (`pip install pytest`, `npm i -D eslint`).
-const INSTALL_SEGMENT_RE = /^\s*(?:sudo\s+)?(?:(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|ci|remove|rm|uninstall|update|upgrade|link)\b|(?:pip3?|pipx|poetry|pdm|conda|mamba)\s+(?:install|add|uninstall|remove)\b|uv\s+(?:pip\s+install|add|remove|sync)\b|python3?\s+-m\s+pip\s+(?:install|uninstall)\b|(?:apt(?:-get)?|apk|dnf|yum|brew|pacman|zypper)\s+\S|(?:cargo|go)\s+(?:install|get)\b|gem\s+install\b|composer\s+(?:install|require|update)\b)/i;
+const INSTALL_SEGMENT_RE =
+  /^\s*(?:sudo\s+)?(?:(?:npm|pnpm|yarn|bun)\s+(?:i|install|add|ci|remove|rm|uninstall|update|upgrade|link)\b|(?:pip3?|pipx|poetry|pdm|conda|mamba)\s+(?:install|add|uninstall|remove)\b|uv\s+(?:pip\s+install|add|remove|sync)\b|python3?\s+-m\s+pip\s+(?:install|uninstall)\b|(?:apt(?:-get)?|apk|dnf|yum|brew|pacman|zypper)\s+\S|(?:cargo|go)\s+(?:install|get)\b|gem\s+install\b|composer\s+(?:install|require|update)\b)/i;
 
 // Summary lines that mean the run failed even if the shell exit status says 0.
 const VERIFY_FAILURE_OUTPUT = [
@@ -168,7 +176,8 @@ const READ_ONLY_BASH_PATTERNS = [
 
 const STATIC_ASSET_EXTENSIONS = new Set(['html', 'htm', 'css', 'svg', 'md', 'txt', 'json', 'xml', 'csv']);
 
-const ONE_SHOT_MUTATION = /\b(?:writeFileSync|writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync|write_text|write_bytes|os\.(?:remove|unlink|rmdir|replace)|shutil|pathlib|sed\s+-i|\btee\b|open\s*\([^)]*['"](?:[wax]|r\+))/i;
+const ONE_SHOT_MUTATION =
+  /\b(?:writeFileSync|writeFile|appendFile|createWriteStream|mkdirSync|rmSync|unlinkSync|write_text|write_bytes|os\.(?:remove|unlink|rmdir|replace)|shutil|pathlib|sed\s+-i|\btee\b|open\s*\([^)]*['"](?:[wax]|r\+))/i;
 
 /** Split a command line into the individual commands it will actually run. */
 function bashSegments(text) {
@@ -274,7 +283,10 @@ function commandIsGitStatus(command) {
 /** Only git add/commit/status/stage bookkeeping (plus cd): records state, does not change code. */
 function commandIsGitBookkeeping(command) {
   const useful = bashSegments(command).filter((segment) => !/^\s*cd\b/i.test(segment));
-  return useful.length > 0 && useful.every((segment) => /^\s*git(?:\s+-c\s+(?:'[^']+'|"[^"]+"|\S+))*\s+(?:add|commit|status|stage)\b/i.test(segment));
+  return (
+    useful.length > 0 &&
+    useful.every((segment) => /^\s*git(?:\s+-c\s+(?:'[^']+'|"[^"]+"|\S+))*\s+(?:add|commit|status|stage)\b/i.test(segment))
+  );
 }
 
 /**
@@ -285,7 +297,10 @@ function verificationIsOnlyOneShot(command) {
   const text = String(command || '').trim();
   // A real test/build/lint/typecheck run outside the quoted script bodies settles it.
   if (bashSegments(stripQuotedStrings(text)).some((segment) => VERIFY_PATTERNS.some((rx) => rx.test(segment)))) return false;
-  return classifyOneShotSegment(text) === 'verification' || bashSegments(text).some((segment) => classifyOneShotSegment(segment) === 'verification');
+  return (
+    classifyOneShotSegment(text) === 'verification' ||
+    bashSegments(text).some((segment) => classifyOneShotSegment(segment) === 'verification')
+  );
 }
 
 function escapeRegExp(value) {
@@ -299,7 +314,13 @@ function escapeRegExp(value) {
  * of unknown scope) the binding cannot be checked, so the script is accepted.
  */
 function oneShotTouchesChangedPaths(command, changedPaths) {
-  const concrete = (changedPaths || []).map((item) => String(item || '').trim().replace(/\\/g, '/')).filter((item) => item && item !== '.');
+  const concrete = (changedPaths || [])
+    .map((item) =>
+      String(item || '')
+        .trim()
+        .replace(/\\/g, '/'),
+    )
+    .filter((item) => item && item !== '.');
   if (!concrete.length) return true;
   const text = String(command || '');
   return concrete.some((changed) => {
@@ -314,19 +335,24 @@ export function gitStatusLooksClean(content) {
   const text = String(content || '');
   if (/^Error:/i.test(text.trim()) || /not a git repository/i.test(text)) return false;
   if (/nothing to commit.*(?:working tree|working directory) clean|working tree clean/i.test(text)) return true;
-  const lines = text.split(/\r?\n/).map((line) => line.trim()).filter((line) => {
-    if (!line) return false;
-    if (/^exit=-?\d+$/i.test(line)) return false;
-    if (/^(?:stdout|stderr):$/i.test(line)) return false;
-    if (/^Environment hint:/i.test(line)) return false;
-    return true;
-  });
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => {
+      if (!line) return false;
+      if (/^exit=-?\d+$/i.test(line)) return false;
+      if (/^(?:stdout|stderr):$/i.test(line)) return false;
+      if (/^Environment hint:/i.test(line)) return false;
+      return true;
+    });
   if (!lines.length) return true;
   return lines.every((line) => line.startsWith('##'));
 }
 
 function isStaticAssetPath(value) {
-  const rel = String(value || '').trim().replace(/\\/g, '/');
+  const rel = String(value || '')
+    .trim()
+    .replace(/\\/g, '/');
   if (!rel || rel === '.' || rel.includes('..') || rel.endsWith('/')) return false;
   const base = rel.split('/').pop() || '';
   const dot = base.lastIndexOf('.');
@@ -348,7 +374,9 @@ export function shouldEnforceCompletionGate(strategy, reminders = 0) {
 
 export function createTurnStrategy(goal = '') {
   return {
-    goal: String(goal || '').trim().slice(0, 8_000),
+    goal: String(goal || '')
+      .trim()
+      .slice(0, 8_000),
     plan: [],
     changed: false,
     needsVerification: false,
@@ -437,7 +465,14 @@ function settleReadbacks(state, tool) {
     state.needsVerification = false;
     state.verificationUnavailable = true;
     state.verificationEpoch = state.mutationEpoch;
-    state.lastVerificationEvidence = { tool, detail: 'changed files read back; executable verification unavailable', ok: true, mutationEpoch: state.mutationEpoch, at: Date.now(), executable: false };
+    state.lastVerificationEvidence = {
+      tool,
+      detail: 'changed files read back; executable verification unavailable',
+      ok: true,
+      mutationEpoch: state.mutationEpoch,
+      at: Date.now(),
+      executable: false,
+    };
   } else if (staticAssetsVerified(state)) {
     noteVerification(state, { ok: true, tool, detail: 'static assets read back after the latest change' });
   }
@@ -481,7 +516,8 @@ export function observeTool(strategy, call, result) {
     const effect = classifyBash(command);
     if (effect === 'verification') {
       // An unrelated green one-liner is neither a mutation nor a check.
-      if (state.needsVerification && verificationIsOnlyOneShot(command) && !oneShotTouchesChangedPaths(command, state.changedPaths)) return state;
+      if (state.needsVerification && verificationIsOnlyOneShot(command) && !oneShotTouchesChangedPaths(command, state.changedPaths))
+        return state;
       noteVerification(state, { ok: verificationRunOk(command, result), tool: 'bash', detail: command });
       return state;
     }
@@ -512,7 +548,9 @@ export function observeTool(strategy, call, result) {
   }
 
   if (name === 'git') {
-    const action = String(call?.arguments?.action || '').trim().toLowerCase();
+    const action = String(call?.arguments?.action || '')
+      .trim()
+      .toLowerCase();
     const ok = !result?.isError && Number(result?.metadata?.git?.exit || 0) === 0;
     // Commit, branch and status change or describe Git metadata, not the
     // working tree, so they keep the verification state as it was.
@@ -539,7 +577,11 @@ export function observeTool(strategy, call, result) {
 
   if (name === 'diagnostics') {
     const ok = !result?.isError && result?.metadata?.diagnostics?.ok === true;
-    noteVerification(state, { ok, tool: 'diagnostics', detail: String(call?.arguments?.kinds?.join(', ') || call?.arguments?.kind || 'auto') });
+    noteVerification(state, {
+      ok,
+      tool: 'diagnostics',
+      detail: String(call?.arguments?.kinds?.join(', ') || call?.arguments?.kind || 'auto'),
+    });
     return state;
   }
 
@@ -555,7 +597,13 @@ export function observeTool(strategy, call, result) {
     state.visualEpoch = state.mutationEpoch;
     const consoleErrors = Boolean(result?.metadata?.visualCheck?.consoleErrors);
     const paths = Array.isArray(state.changedPaths) ? state.changedPaths : [];
-    const onlyFrontend = paths.length > 0 && paths.every((p) => /\.(html?|css|scss|sass|less|svg|png|jpe?g|webp|gif|ico|json|md|txt)$/i.test(String(p)) || /(^|\/)\.screenshots\//.test(String(p)));
+    const onlyFrontend =
+      paths.length > 0 &&
+      paths.every(
+        (p) =>
+          /\.(html?|css|scss|sass|less|svg|png|jpe?g|webp|gif|ico|json|md|txt)$/i.test(String(p)) ||
+          /(^|\/)\.screenshots\//.test(String(p)),
+      );
     if (state.needsVerification && onlyFrontend && !consoleErrors) {
       noteVerification(state, { ok: true, tool: 'visual_check', detail: String(call?.arguments?.url || 'index.html') });
     }
@@ -616,11 +664,25 @@ export function strategyGuidance(strategy) {
   if (strategy?.changedPaths?.length) lines.push(`Changed paths (latest tracked set): ${strategy.changedPaths.slice(-12).join(', ')}`);
   const misplaced = htmlPagesWithoutIndex(strategy);
   if (misplaced.length) {
-    lines.push(`The in-product Preview panel opens index.html at the root, or the newest root-level HTML when there is no index.html. You wrote several root pages (${misplaced.slice(-4).join(', ')}) — write or rename the main page to index.html so the preview shows the right one.`);
+    lines.push(
+      `The in-product Preview panel opens index.html at the root, or the newest root-level HTML when there is no index.html. You wrote several root pages (${misplaced.slice(-4).join(', ')}) — write or rename the main page to index.html so the preview shows the right one.`,
+    );
   }
-  if (strategy?.needsVerification && shellSandboxAvailable()) lines.push('Workspace state: changed since the last successful executable verification; verification is required before completion. Prefer a test/check that covers the changed paths above rather than an unrelated green command.');
-  else if (strategy?.needsVerification) lines.push('Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.');
-  else if (strategy?.changed && strategy?.lastVerificationOk) lines.push(`Workspace state: mutation epoch ${strategy.mutationEpoch ?? 0} has successful verification evidence${strategy.lastVerificationEvidence?.detail ? ` (${strategy.lastVerificationEvidence.tool}: ${strategy.lastVerificationEvidence.detail})` : ''}.`);
-  else if (strategy?.changed && strategy?.verificationUnavailable) lines.push('Workspace state: changed files were read back successfully; executable verification was unavailable and must be disclosed in the final answer.');
+  if (strategy?.needsVerification && shellSandboxAvailable())
+    lines.push(
+      'Workspace state: changed since the last successful executable verification; verification is required before completion. Prefer a test/check that covers the changed paths above rather than an unrelated green command.',
+    );
+  else if (strategy?.needsVerification)
+    lines.push(
+      'Workspace state: changed, but executable verification is unavailable in this runtime. Inspect the changed files with read/grep and report this verification limitation explicitly.',
+    );
+  else if (strategy?.changed && strategy?.lastVerificationOk)
+    lines.push(
+      `Workspace state: mutation epoch ${strategy.mutationEpoch ?? 0} has successful verification evidence${strategy.lastVerificationEvidence?.detail ? ` (${strategy.lastVerificationEvidence.tool}: ${strategy.lastVerificationEvidence.detail})` : ''}.`,
+    );
+  else if (strategy?.changed && strategy?.verificationUnavailable)
+    lines.push(
+      'Workspace state: changed files were read back successfully; executable verification was unavailable and must be disclosed in the final answer.',
+    );
   return lines.join('\n');
 }

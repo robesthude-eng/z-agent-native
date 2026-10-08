@@ -1,5 +1,15 @@
 import { emit } from '../events.mjs';
-import { clearTurn, completeAction, failAction, getChat, getTurn, listMessages, putMessage, reserveTurnCapacity, setTurn } from '../store.mjs';
+import {
+  clearTurn,
+  completeAction,
+  failAction,
+  getChat,
+  getTurn,
+  listMessages,
+  putMessage,
+  reserveTurnCapacity,
+  setTurn,
+} from '../store.mjs';
 import { clearDurableJob, listDurableJobs, markDurableJobResuming } from '../durable-jobs.mjs';
 import { acquireTurnLock, isClustered, releaseTurnLock } from '../cluster.mjs';
 import { assertTurnTransition } from '../turn-lifecycle.mjs';
@@ -142,16 +152,28 @@ export function startDurableRecovery() {
     }
     if (activeTurns.has(job.sessionId)) continue;
     if (isClustered() && !acquireTurnLock(job.sessionId).ok) continue;
-    const capacity = reserveTurnCapacity(job.sessionId, job.ownerId, { maxGlobal: MAX_ACTIVE_TURNS, maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER, ttlMs: TURN_CAPACITY_TTL_MS });
+    const capacity = reserveTurnCapacity(job.sessionId, job.ownerId, {
+      maxGlobal: MAX_ACTIVE_TURNS,
+      maxPerOwner: MAX_ACTIVE_TURNS_PER_OWNER,
+      ttlMs: TURN_CAPACITY_TTL_MS,
+    });
     if (!capacity.ok) {
-      if (isClustered()) { try { releaseTurnLock(job.sessionId); } catch {} }
+      if (isClustered()) {
+        try {
+          releaseTurnLock(job.sessionId);
+        } catch {}
+      }
       recordTurnCapacityRejection(capacity.reason);
       continue;
     }
 
     const controller = new AbortController();
     activeTurns.set(job.sessionId, { controller, turnId: job.turnId, ownerId: job.ownerId, recovered: true });
-    updateTurn(job.sessionId, { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' }, { allowRuntimeRestartRecovery: true });
+    updateTurn(
+      job.sessionId,
+      { turnId: job.turnId, lifecycle: 'running', since: Date.now(), reason: 'runtime_resume' },
+      { allowRuntimeRestartRecovery: true },
+    );
     const key = job.actionId ? `${job.sessionId}:${job.actionId}` : '';
     const promise = Promise.resolve()
       .then(() => resumeDurableJob(job, controller, assistant))

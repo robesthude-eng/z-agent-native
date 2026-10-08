@@ -29,18 +29,23 @@ const assistant = {
   id: assistantId,
   role: 'assistant',
   sessionID: sid,
-  parts: phase === 'created' ? [] : [{
-    id: 'part_existing_write',
-    type: 'tool',
-    tool: 'write',
-    callID: 'call_existing_write',
-    state: {
-      status: 'completed',
-      input: { path: 'already.txt', content: 'once\n' },
-      output: 'Wrote already.txt',
-      time: { start: Date.now() - 80, end: Date.now() - 70 },
-    },
-  }],
+  parts:
+    phase === 'created'
+      ? []
+      : [
+          {
+            id: 'part_existing_write',
+            type: 'tool',
+            tool: 'write',
+            callID: 'call_existing_write',
+            state: {
+              status: 'completed',
+              input: { path: 'already.txt', content: 'once\n' },
+              output: 'Wrote already.txt',
+              time: { start: Date.now() - 80, end: Date.now() - 70 },
+            },
+          },
+        ],
   time: { created: Date.now() - 90 },
   info: { role: 'assistant', model: 'fixture/coding-e2e', time: { created: Date.now() - 90 } },
 };
@@ -66,14 +71,34 @@ durable.createDurableJob({
   stepBudget: 12,
 });
 if (phase === 'after_tool') {
-  durable.checkpointDurableJob(sid, {
-    phase: 'after_tool',
-    stepsUsed: 1,
-    gateReminders: 0,
-    strategy: { goal: 'Resume safely after crash', changed: true, needsVerification: true, verificationAttempts: 0, lastVerificationOk: null, toolErrors: 0 },
-  }, { modelPlan: { candidates: [{ providerID: 'fixture', modelID: 'coding-e2e' }], explicit: true, expandOnFailure: false, goal: 'Resume safely after crash', generatedAt: Date.now() } });
+  durable.checkpointDurableJob(
+    sid,
+    {
+      phase: 'after_tool',
+      stepsUsed: 1,
+      gateReminders: 0,
+      strategy: {
+        goal: 'Resume safely after crash',
+        changed: true,
+        needsVerification: true,
+        verificationAttempts: 0,
+        lastVerificationOk: null,
+        toolErrors: 0,
+      },
+    },
+    {
+      modelPlan: {
+        candidates: [{ providerID: 'fixture', modelID: 'coding-e2e' }],
+        explicit: true,
+        expandOnFailure: false,
+        goal: 'Resume safely after crash',
+        generatedAt: Date.now(),
+      },
+    },
+  );
 }
-if (phase === 'finalizing') durable.markDurableJobFinalizing(sid, { status: 'completed', reason: 'verified', completedAt: assistant.time.completed });
+if (phase === 'finalizing')
+  durable.markDurableJobFinalizing(sid, { status: 'completed', reason: 'verified', completedAt: assistant.time.completed });
 
 // The point of this helper is process death without finally/cleanup handlers.
 process.kill(process.pid, 'SIGKILL');

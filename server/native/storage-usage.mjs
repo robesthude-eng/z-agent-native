@@ -28,12 +28,14 @@ export async function storageUsage(ownerId, { fresh = false } = {}) {
   const chats = listChats(ownerId);
   const dirs = chats.map((c) => workspaceFor(c.id));
   const sizes = await du(dirs);
-  const items = chats.map((c, i) => ({
-    id: c.id,
-    title: c.title,
-    updated: c.time?.updated || 0,
-    bytes: sizes.get(dirs[i]) ?? 0,
-  })).sort((a, b) => b.bytes - a.bytes);
+  const items = chats
+    .map((c, i) => ({
+      id: c.id,
+      title: c.title,
+      updated: c.time?.updated || 0,
+      bytes: sizes.get(dirs[i]) ?? 0,
+    }))
+    .sort((a, b) => b.bytes - a.bytes);
   const value = { total: items.reduce((s, x) => s + x.bytes, 0), chats: items, measuredAt: Date.now() };
   cache.set(ownerId, { at: Date.now(), value });
   return value;

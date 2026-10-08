@@ -12,13 +12,17 @@ import { TOOL_DEFINITIONS } from './definitions.mjs';
 import { createProgressLog } from './progress.mjs';
 import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
 import { executeEnsureEnvironment, executeEnvironmentStatus } from './environment.mjs';
-import {executeApplyPatch,executeEditFile, executeGlobFiles, executeGrepFiles, executeListFiles, 
-  executeReadFile, executeWriteFile, 
+import {
+  executeApplyPatch,
+  executeEditFile,
+  executeGlobFiles,
+  executeGrepFiles,
+  executeListFiles,
+  executeReadFile,
+  executeWriteFile,
 } from './filesystem.mjs';
 import { executeMediaAction, isMediaTool } from './media.mjs';
-import {
-  execBash, executeBashTool, externalSpawnIdentity, 
-} from './shell.mjs';
+import { execBash, executeBashTool, externalSpawnIdentity } from './shell.mjs';
 import { ToolArgumentsError, validateToolInput } from './validate.mjs';
 import { executeWebFetch, executeWebSearch } from './web.mjs';
 
@@ -57,26 +61,31 @@ export function createLiveOutput(onOutput, { intervalMs = LIVE_OUTPUT_INTERVAL_M
   let lastSent = 0;
   let stopped = false;
   const flush = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
     const text = pending;
     pending = null;
     if (stopped || text == null || text === sent) return;
     sent = text;
     lastSent = now();
-    try { onOutput(text); } catch {}
+    try {
+      onOutput(text);
+    } catch {}
   };
   return {
     // Leading edge: the first chunk after a quiet period is shown immediately;
     // a burst afterwards is coalesced into at most one update per interval and
     // the last state is always delivered (trailing edge).
     push(stdout, stderr) {
-      pending = [
-        stdout && `stdout:\n${liveTail(stdout)}`,
-        stderr && `stderr:\n${liveTail(stderr)}`,
-      ].filter(Boolean).join('\n');
+      pending = [stdout && `stdout:\n${liveTail(stdout)}`, stderr && `stderr:\n${liveTail(stderr)}`].filter(Boolean).join('\n');
       if (timer) return;
       const wait = intervalMs - (now() - lastSent);
-      if (wait <= 0) { flush(); return; }
+      if (wait <= 0) {
+        flush();
+        return;
+      }
       timer = setTimeout(flush, wait);
       timer.unref?.();
     },
@@ -165,12 +174,14 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'skill') return executeSkillTool(input, ctx);
   if (tool === 'websearch') return await withProgress(ctx, (c) => executeWebSearch(input, ctx.signal, c.progress));
   if (tool === 'cloud_sandbox') {
-    return await withProgress(ctx, (c) => executeCloudSandbox(root, input || {}, {
-      sessionId: ctx.sessionId,
-      signal: ctx.signal,
-      progress: c.progress,
-      chownToSession: ctx.sessionId ? (target) => syncSandboxOwnership(ctx.sessionId, root, target) : null,
-    }));
+    return await withProgress(ctx, (c) =>
+      executeCloudSandbox(root, input || {}, {
+        sessionId: ctx.sessionId,
+        signal: ctx.signal,
+        progress: c.progress,
+        chownToSession: ctx.sessionId ? (target) => syncSandboxOwnership(ctx.sessionId, root, target) : null,
+      }),
+    );
   }
   if (tool === 'webfetch') return await withProgress(ctx, (c) => executeWebFetch(input, ctx.signal, c.progress));
 

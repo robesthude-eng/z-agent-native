@@ -20,7 +20,9 @@ export function collectWorkspaceTree(root, { maxEntries = MAX_TREE_ENTRIES } = {
       }
       const full = path.join(dir, entry.name);
       let stat;
-      try { stat = fs.lstatSync(full); } catch (error) {
+      try {
+        stat = fs.lstatSync(full);
+      } catch (error) {
         // A concurrent deletion is harmless; other read failures must not be
         // disguised as an empty directory.
         if (error.code === 'ENOENT') continue;

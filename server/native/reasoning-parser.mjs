@@ -23,7 +23,7 @@ export function splitReasoningFromContent(rawText) {
     const prefix = text.slice(0, boundary).trim();
     const suffix = text.slice(boundary).trim();
     const latinChars = (prefix.match(/[a-zA-Z]/g) || []).length;
-    if (latinChars >= 25 && (latinChars / Math.max(1, prefix.length)) > 0.4 && suffix) {
+    if (latinChars >= 25 && latinChars / Math.max(1, prefix.length) > 0.4 && suffix) {
       return { reasoning: prefix, text: suffix };
     }
   }

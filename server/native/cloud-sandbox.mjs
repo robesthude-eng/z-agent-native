@@ -20,7 +20,19 @@ import { safeWorkspacePath } from './security.mjs';
 const API_URL = () => String(process.env.DAYTONA_API_URL || 'https://app.daytona.io/api').replace(/\/+$/, '');
 const API_KEY = () => String(process.env.DAYTONA_API_KEY || '').trim();
 export const REMOTE_ROOT = '/home/daytona/workspace';
-export const SYNC_EXCLUDES = ['node_modules', '.venv', 'venv', '__pycache__', '.gradle', '.next', '.cache', '.pnpm-store', '.m2', '.agent-home', '.turbo'];
+export const SYNC_EXCLUDES = [
+  'node_modules',
+  '.venv',
+  'venv',
+  '__pycache__',
+  '.gradle',
+  '.next',
+  '.cache',
+  '.pnpm-store',
+  '.m2',
+  '.agent-home',
+  '.turbo',
+];
 const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const MAX_SYNC_BYTES = 400 * 1024 * 1024;
 const MAX_OUTPUT = 60_000;
@@ -52,7 +64,7 @@ async function api(method, pathname, { body, base, raw = false, timeoutMs = 60_0
       ...(body !== undefined && !(body instanceof FormData) ? { 'content-type': 'application/json' } : {}),
       ...headers,
     },
-    body: body === undefined ? undefined : (body instanceof FormData ? body : JSON.stringify(body)),
+    body: body === undefined ? undefined : body instanceof FormData ? body : JSON.stringify(body),
     signal: signal ? AbortSignal.any([signal, t]) : t,
   });
   if (raw) {
@@ -62,7 +74,11 @@ async function api(method, pathname, { body, base, raw = false, timeoutMs = 60_0
   const text = await res.text();
   if (res.status === 404) return null;
   if (!res.ok) throw new Error(`Daytona ${method} ${pathname}: HTTP ${res.status} ${text.slice(0, 300)}`);
-  try { return text ? JSON.parse(text) : {}; } catch { return { text }; }
+  try {
+    return text ? JSON.parse(text) : {};
+  } catch {
+    return { text };
+  }
 }
 
 // Daytona refuses explicit resources together with a snapshot. Requests that
@@ -91,10 +107,18 @@ async function waitStarted(id, signal, timeoutMs = 900_000, onState = null) {
   for (;;) {
     const sb = await api('GET', `/sandbox/${id}`, { signal });
     if (!sb) throw new Error('Daytona sandbox disappeared');
-    if (onState && sb.state !== reported && sb.state !== 'started') { reported = sb.state; try { onState(sb.state); } catch { /* display only */ } }
+    if (onState && sb.state !== reported && sb.state !== 'started') {
+      reported = sb.state;
+      try {
+        onState(sb.state);
+      } catch {
+        /* display only */
+      }
+    }
     if (sb.state === 'started') return sb;
     // pending_build / building_snapshot / creating / starting: keep waiting
-    if (['error', 'build_failed', 'destroyed'].includes(sb.state)) throw new Error(`Daytona sandbox state: ${sb.state} ${sb.errorReason || ''}`.trim());
+    if (['error', 'build_failed', 'destroyed'].includes(sb.state))
+      throw new Error(`Daytona sandbox state: ${sb.state} ${sb.errorReason || ''}`.trim());
     if (['stopped', 'archived'].includes(sb.state)) await api('POST', `/sandbox/${id}/start`, { signal, timeoutMs: 120_000 });
     if (Date.now() > until) throw new Error(`Daytona sandbox did not start in time (state ${sb.state})`);
     await new Promise((r) => setTimeout(r, 1500));
@@ -130,7 +154,9 @@ async function ensureSandbox(sessionId, opts, signal, onState = null) {
   const base = `${String(toolbox).replace(/\/+$/, '')}/${sb.id}`;
   if (!entry || entry.id !== sb.id) entry = { id: sb.id, synced: new Map(), remoteReady: false };
   entry.base = base;
-  entry.cpu = sb.cpu; entry.memory = sb.memory; entry.disk = sb.disk;
+  entry.cpu = sb.cpu;
+  entry.memory = sb.memory;
+  entry.disk = sb.disk;
   sessions.set(sessionId, entry);
   return entry;
 }
@@ -141,7 +167,8 @@ async function exec(entry, command, { timeoutSec = 120, signal } = {}) {
   // create the workspace inside the command instead.
   const script = `mkdir -p ${REMOTE_ROOT} && cd ${REMOTE_ROOT} && ${command}`;
   const r = await api('POST', '/process/execute', {
-    base: entry.base, signal,
+    base: entry.base,
+    signal,
     timeoutMs: (timeoutSec + 30) * 1000,
     body: { command: `bash -lc ${shq(script)}`, cwd: '/', timeout: timeoutSec },
   });
@@ -156,14 +183,21 @@ export function localManifest(root) {
   const out = new Map();
   const walk = (dir, rel) => {
     let list;
-    try { list = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
+    try {
+      list = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const d of list) {
       if (SYNC_EXCLUDES.includes(d.name)) continue;
       const r = rel ? `${rel}/${d.name}` : d.name;
       const full = path.join(dir, d.name);
       if (d.isDirectory()) walk(full, r);
       else if (d.isFile()) {
-        try { const st = fs.statSync(full); out.set(r, `${st.size}:${Math.floor(st.mtimeMs)}`); } catch {}
+        try {
+          const st = fs.statSync(full);
+          out.set(r, `${st.size}:${Math.floor(st.mtimeMs)}`);
+        } catch {}
       }
     }
   };
@@ -207,7 +241,9 @@ function tarLocal(root, files) {
     const r = spawnSync('tar', ['-czf', '-', '-C', root, '--no-recursion', '-T', list], { maxBuffer: MAX_SYNC_BYTES + 1024 * 1024 });
     if (r.status !== 0) throw new Error(`tar failed: ${String(r.stderr || '').slice(0, 300)}`);
     return r.stdout;
-  } finally { fs.rmSync(list, { force: true }); }
+  } finally {
+    fs.rmSync(list, { force: true });
+  }
 }
 
 /** Only regular files and directories, no absolute or parent-relative names. */
@@ -235,14 +271,19 @@ function applyRemoteArchive(root, buf, removed, owner) {
       for (const d of fs.readdirSync(dir, { withFileTypes: true })) {
         const r = rel ? `${rel}/${d.name}` : d.name;
         const src = path.join(dir, d.name);
-        if (d.isDirectory()) { walk(src, r); continue; }
+        if (d.isDirectory()) {
+          walk(src, r);
+          continue;
+        }
         if (!d.isFile()) continue;
         const target = safeWorkspacePath(root, r);
         assertNoSymlinkOnPath(root, target);
         fs.mkdirSync(path.dirname(target), { recursive: true });
         fs.copyFileSync(src, target);
         const mode = fs.statSync(src).mode & 0o755;
-        try { fs.chmodSync(target, mode | 0o600); } catch {}
+        try {
+          fs.chmodSync(target, mode | 0o600);
+        } catch {}
         owner?.(target);
         written++;
       }
@@ -254,19 +295,27 @@ function applyRemoteArchive(root, buf, removed, owner) {
         const target = safeWorkspacePath(root, r);
         assertNoSymlinkOnPath(root, target);
         const st = fs.lstatSync(target);
-        if (st.isFile()) { fs.rmSync(target); deleted++; }
+        if (st.isFile()) {
+          fs.rmSync(target);
+          deleted++;
+        }
       } catch {}
     }
     return { written, deleted };
-  } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
 }
 
 function assertNoSymlinkOnPath(root, target) {
   const base = path.resolve(root);
   let cur = path.resolve(target);
   while (cur !== base && cur.startsWith(base + path.sep)) {
-    try { if (fs.lstatSync(cur).isSymbolicLink()) throw new Error(`refusing to write through symlink: ${path.relative(base, cur)}`); }
-    catch (e) { if (e.code !== 'ENOENT') throw e; }
+    try {
+      if (fs.lstatSync(cur).isSymbolicLink()) throw new Error(`refusing to write through symlink: ${path.relative(base, cur)}`);
+    } catch (e) {
+      if (e.code !== 'ENOENT') throw e;
+    }
     cur = path.dirname(cur);
   }
 }
@@ -279,7 +328,10 @@ async function pushLocal(root, entry, signal) {
   const skipped = [];
   for (const p of changed) {
     const size = Number(local.get(p).split(':')[0]);
-    if (size > MAX_FILE_BYTES || bytes + size > MAX_SYNC_BYTES) { skipped.push(p); continue; }
+    if (size > MAX_FILE_BYTES || bytes + size > MAX_SYNC_BYTES) {
+      skipped.push(p);
+      continue;
+    }
     bytes += size;
     upload.push(p);
   }
@@ -288,8 +340,16 @@ async function pushLocal(root, entry, signal) {
     const form = new FormData();
     form.append('file', new Blob([tgz]), 'sync.tgz');
     const remoteTgz = `/tmp/zcs-up-${crypto.randomUUID()}.tgz`;
-    await api('POST', `/files/upload-v2?path=${encodeURIComponent(remoteTgz)}`, { base: entry.base, body: form, signal, timeoutMs: 600_000 });
-    const r = await exec(entry, `mkdir -p ${REMOTE_ROOT} && tar -xzf ${remoteTgz} -C ${REMOTE_ROOT} && rm -f ${remoteTgz}`, { timeoutSec: 600, signal });
+    await api('POST', `/files/upload-v2?path=${encodeURIComponent(remoteTgz)}`, {
+      base: entry.base,
+      body: form,
+      signal,
+      timeoutMs: 600_000,
+    });
+    const r = await exec(entry, `mkdir -p ${REMOTE_ROOT} && tar -xzf ${remoteTgz} -C ${REMOTE_ROOT} && rm -f ${remoteTgz}`, {
+      timeoutSec: 600,
+      signal,
+    });
     if (r.code !== 0) throw new Error(`remote extract failed: ${r.output.slice(0, 300)}`);
   }
   if (removed.length && entry.remoteReady) {
@@ -308,7 +368,10 @@ async function pullRemote(root, entry, before, signal, owner) {
   let bytes = 0;
   for (const p of changed) {
     const size = Number(after.get(p).split(':')[0]);
-    if (size > MAX_FILE_BYTES || bytes + size > MAX_SYNC_BYTES) { skipped.push(p); continue; }
+    if (size > MAX_FILE_BYTES || bytes + size > MAX_SYNC_BYTES) {
+      skipped.push(p);
+      continue;
+    }
     bytes += size;
     take.push(p);
   }
@@ -320,22 +383,31 @@ async function pullRemote(root, entry, before, signal, owner) {
       const form = new FormData();
       form.append('file', new Blob([`${take.join('\n')}\n`]), 'list');
       await api('POST', `/files/upload-v2?path=${encodeURIComponent(`${listPath}.lst`)}`, { base: entry.base, body: form, signal });
-      const r = await exec(entry, `cd ${REMOTE_ROOT} && tar -czf ${listPath}.tgz --no-recursion -T ${listPath}.lst`, { timeoutSec: 600, signal });
+      const r = await exec(entry, `cd ${REMOTE_ROOT} && tar -czf ${listPath}.tgz --no-recursion -T ${listPath}.lst`, {
+        timeoutSec: 600,
+        signal,
+      });
       if (r.code !== 0) throw new Error(`remote archive failed: ${r.output.slice(0, 300)}`);
-      buf = await api('GET', `/files/download?path=${encodeURIComponent(`${listPath}.tgz`)}`, { base: entry.base, raw: true, signal, timeoutMs: 600_000 });
+      buf = await api('GET', `/files/download?path=${encodeURIComponent(`${listPath}.tgz`)}`, {
+        base: entry.base,
+        raw: true,
+        signal,
+        timeoutMs: 600_000,
+      });
       await exec(entry, `rm -f ${listPath}.lst ${listPath}.tgz`, { timeoutSec: 30, signal }).catch(() => {});
     }
-    result = take.length
-      ? applyRemoteArchive(root, buf, removed, owner)
-      : applyRemoteArchive(root, emptyTgz(), removed, owner);
+    result = take.length ? applyRemoteArchive(root, buf, removed, owner) : applyRemoteArchive(root, emptyTgz(), removed, owner);
   }
   return { ...result, skipped, changedPaths: [...take, ...removed] };
 }
 
 function emptyTgz() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'zcs-e-'));
-  try { return spawnSync('tar', ['-czf', '-', '-C', dir, '--files-from', '/dev/null']).stdout; }
-  finally { fs.rmSync(dir, { recursive: true, force: true }); }
+  try {
+    return spawnSync('tar', ['-czf', '-', '-C', dir, '--files-from', '/dev/null']).stdout;
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
 }
 
 function clip(text) {
@@ -379,21 +451,36 @@ export async function executeCloudSandbox(root, input = {}, ctx = {}) {
   try {
     entry = await ensureSandbox(ctx.sessionId, input, signal, (state) => progress?.step(`Состояние машины: ${state}`));
     stage?.(`Облачная машина готова · ${entry.cpu} vCPU / ${entry.memory} ГБ`);
-  } catch (err) { stage?.(`Не удалось подключить облачную машину: ${err?.message || err}`); throw err; }
+  } catch (err) {
+    stage?.(`Не удалось подключить облачную машину: ${err?.message || err}`);
+    throw err;
+  }
   stage = progress?.ticker('Синхронизирую файлы проекта на машину');
   let push;
-  try { push = await pushLocal(root, entry, signal); } finally { stage?.(); }
+  try {
+    push = await pushLocal(root, entry, signal);
+  } finally {
+    stage?.();
+  }
   progress?.step(`Загружено файлов: ${push.uploaded}${push.removed ? `, удалено: ${push.removed}` : ''}`);
   const before = await remoteManifest(entry, signal);
   const started = Date.now();
   stage = progress?.ticker(`Выполняю на машине: ${command.slice(0, 120)}`);
   let run;
-  try { run = await exec(entry, command, { timeoutSec, signal }); } finally { stage?.(); }
+  try {
+    run = await exec(entry, command, { timeoutSec, signal });
+  } finally {
+    stage?.();
+  }
   const seconds = ((Date.now() - started) / 1000).toFixed(1);
   progress?.step(`Команда завершена с кодом ${run.code} за ${seconds} с`);
   stage = progress?.ticker('Забираю изменённые файлы обратно');
   let pull;
-  try { pull = await pullRemote(root, entry, before, signal, ctx.chownToSession); } finally { stage?.(); }
+  try {
+    pull = await pullRemote(root, entry, before, signal, ctx.chownToSession);
+  } finally {
+    stage?.();
+  }
   entry.synced = localManifest(root);
 
   const notes = [];
@@ -405,7 +492,16 @@ export async function executeCloudSandbox(root, input = {}, ctx = {}) {
   return {
     output: `exit=${run.code}\noutput:\n${clip(run.output)}\n\n[exit ${run.code} · ${seconds}s · ${entry.cpu} vCPU / ${entry.memory} GB · ${notes.join(' · ')}]`,
     title: `Cloud sandbox: ${command.slice(0, 80)}`,
-    metadata: { exit: run.code, cloudSandbox: { exitCode: run.code, seconds: Number(seconds), uploaded: push.uploaded, downloaded: pull.written, deleted: pull.deleted } },
+    metadata: {
+      exit: run.code,
+      cloudSandbox: {
+        exitCode: run.code,
+        seconds: Number(seconds),
+        uploaded: push.uploaded,
+        downloaded: pull.written,
+        deleted: pull.deleted,
+      },
+    },
     mutatedPaths: pull.changedPaths,
   };
 }

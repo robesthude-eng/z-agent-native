@@ -71,7 +71,8 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     part.state = {
       ...part.state,
       status: 'error',
-      output: 'Blocked by durable-recovery safety: this exact mutating action may already have partially executed before the restart. Inspect current state first, then decide whether a new action is required.',
+      output:
+        'Blocked by durable-recovery safety: this exact mutating action may already have partially executed before the restart. Inspect current state first, then decide whether a new action is required.',
       metadata: { ...(part.state?.metadata || {}), restartGuardBlocked: true },
       time: { ...part.state.time, end: Date.now() },
     };
@@ -156,13 +157,19 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
       }
     }
     if (result?.kind === 'question') {
-      const q = await askQuestion(sessionId, result.questions, controller.signal, (id) => {
-        part.state = {
-          ...part.state,
-          metadata: { ...(part.state?.metadata || {}), questionId: id },
-        };
-        emitPart(assistant, part, { putMessage, emit });
-      }, updateTurn);
+      const q = await askQuestion(
+        sessionId,
+        result.questions,
+        controller.signal,
+        (id) => {
+          part.state = {
+            ...part.state,
+            metadata: { ...(part.state?.metadata || {}), questionId: id },
+          };
+          emitPart(assistant, part, { putMessage, emit });
+        },
+        updateTurn,
+      );
       part.state = {
         ...part.state,
         status: 'completed',
@@ -186,7 +193,13 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     if (result?.mutatedPaths?.length) emit(sessionId, 'file.edited', { paths: result.mutatedPaths });
     // Картинки для модели (view_media) идут отдельно от текста и в БД не пишутся.
     const visualMedia = Array.isArray(result?.visualMedia) ? result.visualMedia.filter((m) => m && typeof m.dataUrl === 'string') : [];
-    return { content: toolOutputText(result), isError: false, metadata: resultMetadata, mutatedPaths: result?.mutatedPaths || [], visualMedia };
+    return {
+      content: toolOutputText(result),
+      isError: false,
+      metadata: resultMetadata,
+      mutatedPaths: result?.mutatedPaths || [],
+      visualMedia,
+    };
   } catch (err) {
     part.state = {
       ...part.state,

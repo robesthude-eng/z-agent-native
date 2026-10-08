@@ -159,18 +159,26 @@ export const MIGRATIONS = [
     id: '20261004_009_installable_chat_skills',
     minReaderVersion: 1,
     up(db) {
-      const columns = new Set(db.prepare('PRAGMA table_info(agent_skills)').all().map((c) => c.name));
+      const columns = new Set(
+        db
+          .prepare('PRAGMA table_info(agent_skills)')
+          .all()
+          .map((c) => c.name),
+      );
       for (const [name, definition] of Object.entries({
-        enabled: 'INTEGER NOT NULL DEFAULT 1', auto_use: 'INTEGER NOT NULL DEFAULT 1',
-        source_json: "TEXT NOT NULL DEFAULT '{}'", package_json: "TEXT NOT NULL DEFAULT '{}'",
+        enabled: 'INTEGER NOT NULL DEFAULT 1',
+        auto_use: 'INTEGER NOT NULL DEFAULT 1',
+        source_json: "TEXT NOT NULL DEFAULT '{}'",
+        package_json: "TEXT NOT NULL DEFAULT '{}'",
         warnings_json: "TEXT NOT NULL DEFAULT '[]'",
-      })) if (!columns.has(name)) db.exec(`ALTER TABLE agent_skills ADD COLUMN ${name} ${definition}`);
+      }))
+        if (!columns.has(name)) db.exec(`ALTER TABLE agent_skills ADD COLUMN ${name} ${definition}`);
       db.exec(`CREATE TABLE IF NOT EXISTS chat_skill_settings (
         session_id TEXT PRIMARY KEY, settings_json TEXT NOT NULL,
         FOREIGN KEY(session_id) REFERENCES chats(id) ON DELETE CASCADE
       );`);
     },
-  }
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version || 0;
@@ -245,14 +253,23 @@ export function runMigrations(db) {
   const before = inspectSchemaCompatibility(db);
   if (before.currentVersion > LATEST_SCHEMA_VERSION) {
     if (!before.compatible) {
-      throw new Error(`Database schema ${before.currentVersion} is newer than code schema ${LATEST_SCHEMA_VERSION} and does not advertise backward compatibility`);
+      throw new Error(
+        `Database schema ${before.currentVersion} is newer than code schema ${LATEST_SCHEMA_VERSION} and does not advertise backward compatibility`,
+      );
     }
-    return { version: before.currentVersion, codeVersion: LATEST_SCHEMA_VERSION, applied: appliedRows.length, newerCompatible: true, minReaderVersion: before.minReaderVersion };
+    return {
+      version: before.currentVersion,
+      codeVersion: LATEST_SCHEMA_VERSION,
+      applied: appliedRows.length,
+      newerCompatible: true,
+      minReaderVersion: before.minReaderVersion,
+    };
   }
 
   for (const migration of MIGRATIONS) {
     const existing = applied.get(migration.version);
-    if (existing && existing !== migration.id) throw new Error(`Schema migration ${migration.version} identity mismatch: database=${existing}, code=${migration.id}`);
+    if (existing && existing !== migration.id)
+      throw new Error(`Schema migration ${migration.version} identity mismatch: database=${existing}, code=${migration.id}`);
     if (existing) continue;
     db.exec('BEGIN IMMEDIATE');
     try {
@@ -262,7 +279,9 @@ export function runMigrations(db) {
       db.exec('COMMIT');
       applied.set(migration.version, migration.id);
     } catch (error) {
-      try { db.exec('ROLLBACK'); } catch {}
+      try {
+        db.exec('ROLLBACK');
+      } catch {}
       throw new Error(`Migration ${migration.id} failed: ${error?.message || error}`, { cause: error });
     }
   }
@@ -270,7 +289,8 @@ export function runMigrations(db) {
   const version = Number(db.prepare('PRAGMA user_version').get()?.user_version || 0);
   if (version < LATEST_SCHEMA_VERSION) db.exec(`PRAGMA user_version=${LATEST_SCHEMA_VERSION}`);
   const finalVersion = Number(db.prepare('PRAGMA user_version').get()?.user_version || 0);
-  if (finalVersion !== LATEST_SCHEMA_VERSION) throw new Error(`Unexpected schema version ${finalVersion}; expected ${LATEST_SCHEMA_VERSION}`);
+  if (finalVersion !== LATEST_SCHEMA_VERSION)
+    throw new Error(`Unexpected schema version ${finalVersion}; expected ${LATEST_SCHEMA_VERSION}`);
   db.prepare(`
     INSERT INTO schema_compatibility(singleton,current_version,min_reader_version,updated_at)
     VALUES(1,?,?,?)
@@ -279,5 +299,11 @@ export function runMigrations(db) {
       min_reader_version=excluded.min_reader_version,
       updated_at=excluded.updated_at
   `).run(LATEST_SCHEMA_VERSION, SCHEMA_MIN_READER_VERSION, Date.now());
-  return { version: LATEST_SCHEMA_VERSION, codeVersion: LATEST_SCHEMA_VERSION, applied: applied.size, newerCompatible: false, minReaderVersion: SCHEMA_MIN_READER_VERSION };
+  return {
+    version: LATEST_SCHEMA_VERSION,
+    codeVersion: LATEST_SCHEMA_VERSION,
+    applied: applied.size,
+    newerCompatible: false,
+    minReaderVersion: SCHEMA_MIN_READER_VERSION,
+  };
 }

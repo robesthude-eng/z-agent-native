@@ -21,8 +21,12 @@ function seed(sid, turnId) {
   store.createChat(sid, ownerId, 'Settle');
   store.setTurn(sid, { turnId, lifecycle: 'running', verdict: null, reason: 'runtime_resume', since: Date.now() });
   const assistant = {
-    id: `msg_assistant${sid.slice(4)}`, role: 'assistant', sessionID: sid, parts: [],
-    time: { created: Date.now() }, info: { role: 'assistant', time: { created: Date.now() } },
+    id: `msg_assistant${sid.slice(4)}`,
+    role: 'assistant',
+    sessionID: sid,
+    parts: [],
+    time: { created: Date.now() },
+    info: { role: 'assistant', time: { created: Date.now() } },
   };
   store.putMessage(assistant);
   return assistant;

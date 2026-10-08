@@ -3,9 +3,7 @@
  * Modular implementations live in server/native/tools/*.
  */
 
-export {
-  executeBrowserAction,
-} from './tools/browser.mjs';
+export { executeBrowserAction } from './tools/browser.mjs';
 
 export {
   availableToolDefinitions,

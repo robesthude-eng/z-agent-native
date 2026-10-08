@@ -77,7 +77,10 @@ test('a final answer streamed only as reasoning is shown once, as the reply', as
   for (const message of [assistant, stored]) {
     assert.equal(copiesOf(message.parts, ANSWER), 1, 'the answer must not be repeated');
     assert.equal(message.parts.filter((p) => p.type === 'text').at(-1)?.text, ANSWER);
-    assert.equal(message.parts.some((p) => p.type === 'reasoning' && String(p.text || '').trim()), false);
+    assert.equal(
+      message.parts.some((p) => p.type === 'reasoning' && String(p.text || '').trim()),
+      false,
+    );
   }
 });
 
@@ -99,16 +102,22 @@ test('a reasoning-only final after tool work stays single when the summary reque
       streamCalls += 1;
       if (streamCalls === 1) {
         return sse([
-          { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_read', function: { name: 'read', arguments: JSON.stringify({ path: 'missing.txt' }) } }] } }] },
+          {
+            choices: [
+              {
+                delta: {
+                  tool_calls: [
+                    { index: 0, id: 'call_read', function: { name: 'read', arguments: JSON.stringify({ path: 'missing.txt' }) } },
+                  ],
+                },
+              },
+            ],
+          },
           { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
           '[DONE]',
         ]);
       }
-      return sse([
-        { choices: [{ delta: { reasoning_content: ANSWER } }] },
-        { choices: [{ delta: {}, finish_reason: 'stop' }] },
-        '[DONE]',
-      ]);
+      return sse([{ choices: [{ delta: { reasoning_content: ANSWER } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
     });
     assert.equal(streamCalls, 2);
     assert.equal(summaryCalls, 1);
@@ -185,11 +194,27 @@ test('a reconnect replays each part as it was published, so text is not doubled'
 
 test('testing a page key by key is not a loop; a click that changes nothing still is', () => {
   const guard = createLoopGuard();
-  const page = (display) => ({ isError: false, content: `url: about:blank\ninteractive elements:\n  - button :: =\n\n--- page text ---\n${display}` });
+  const page = (display) => ({
+    isError: false,
+    content: `url: about:blank\ninteractive elements:\n  - button :: =\n\n--- page text ---\n${display}`,
+  });
   const steps = [
-    ['press', 'Escape', '0'], ['press', '1', '1'], ['press', '2', '12'], ['press', '*', '12'], ['press', '1', '1'], ['press', 'Enter', '12'],
-    ['press', 'Escape', '0'], ['press', '8', '8'], ['press', '/', '8'], ['press', '0', '0'], ['press', 'Enter', 'Ошибка'],
-    ['press', 'Escape', '0'], ['press', '1', '1'], ['press', '+', '1'], ['press', '1', '1'], ['press', 'Enter', '2'],
+    ['press', 'Escape', '0'],
+    ['press', '1', '1'],
+    ['press', '2', '12'],
+    ['press', '*', '12'],
+    ['press', '1', '1'],
+    ['press', 'Enter', '12'],
+    ['press', 'Escape', '0'],
+    ['press', '8', '8'],
+    ['press', '/', '8'],
+    ['press', '0', '0'],
+    ['press', 'Enter', 'Ошибка'],
+    ['press', 'Escape', '0'],
+    ['press', '1', '1'],
+    ['press', '+', '1'],
+    ['press', '1', '1'],
+    ['press', 'Enter', '2'],
   ];
   for (const [action, key, display] of steps) {
     assert.equal(observeToolLoop(guard, { name: 'browser', arguments: { action, key } }, page(display)), null, `${action} ${key}`);
@@ -197,7 +222,8 @@ test('testing a page key by key is not a loop; a click that changes nothing stil
 
   const stuck = createLoopGuard();
   let stop = null;
-  for (let i = 0; i < 3 && !stop; i += 1) stop = observeToolLoop(stuck, { name: 'browser', arguments: { action: 'click', selector: '#broken' } }, page('0'));
+  for (let i = 0; i < 3 && !stop; i += 1)
+    stop = observeToolLoop(stuck, { name: 'browser', arguments: { action: 'click', selector: '#broken' } }, page('0'));
   assert.equal(stop?.code, 'repeated_tool_result');
 });
 
@@ -206,11 +232,21 @@ test('a loop stop after verified work still ends with a final answer, not a prog
   const html = '<!doctype html><title>t</title><p>ok</p>';
   let calls = 0;
   let finalRequestTools = null;
-  const tool = (index, name, args) => sse([
-    { choices: [{ delta: { content: index === 1 ? 'Создаю страницу.' : '', tool_calls: [{ index: 0, id: `call_${index}`, function: { name, arguments: JSON.stringify(args) } }] } }] },
-    { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
-    '[DONE]',
-  ]);
+  const tool = (index, name, args) =>
+    sse([
+      {
+        choices: [
+          {
+            delta: {
+              content: index === 1 ? 'Создаю страницу.' : '',
+              tool_calls: [{ index: 0, id: `call_${index}`, function: { name, arguments: JSON.stringify(args) } }],
+            },
+          },
+        ],
+      },
+      { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+      '[DONE]',
+    ]);
   // Read-back of a static page counts as verification only when a shell
   // sandbox exists; the development fallback provides one for this test.
   const previousShell = process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL;
@@ -218,8 +254,10 @@ test('a loop stop after verified work still ends with a final answer, not a prog
   process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = '1';
   process.env.Z_AGENT_ALLOW_ROOT_SHELL = '1';
   const restore = () => {
-    if (previousShell == null) delete process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL; else process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = previousShell;
-    if (previousRootShell == null) delete process.env.Z_AGENT_ALLOW_ROOT_SHELL; else process.env.Z_AGENT_ALLOW_ROOT_SHELL = previousRootShell;
+    if (previousShell == null) delete process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL;
+    else process.env.Z_AGENT_ALLOW_UNISOLATED_SHELL = previousShell;
+    if (previousRootShell == null) delete process.env.Z_AGENT_ALLOW_ROOT_SHELL;
+    else process.env.Z_AGENT_ALLOW_ROOT_SHELL = previousRootShell;
   };
   const { assistant } = await runWith('ses_loopfinal1', async (_url, init) => {
     calls += 1;
@@ -228,7 +266,10 @@ test('a loop stop after verified work still ends with a final answer, not a prog
     if (!tools.length) {
       finalRequestTools = tools;
       if (!body.stream) {
-        return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: FINAL }, finish_reason: 'stop' }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+        return new Response(JSON.stringify({ choices: [{ message: { role: 'assistant', content: FINAL }, finish_reason: 'stop' }] }), {
+          status: 200,
+          headers: { 'content-type': 'application/json' },
+        });
       }
       return sse([{ choices: [{ delta: { content: FINAL } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
     }

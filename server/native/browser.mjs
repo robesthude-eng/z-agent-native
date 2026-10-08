@@ -23,7 +23,9 @@ export const BROWSER_ACTIONS = ['open', 'snapshot', 'click', 'fill', 'type', 'pr
 export const BROWSER_ACTION_ALIASES = { key: 'press', content: 'snapshot', goto: 'open', navigate: 'open', input: 'fill' };
 
 export function normalizeBrowserInput(input = {}) {
-  const raw = String(input?.action || '').trim().toLowerCase();
+  const raw = String(input?.action || '')
+    .trim()
+    .toLowerCase();
   const action = BROWSER_ACTION_ALIASES[raw] || raw;
   const out = { ...input, action };
   // fill/type: значение может прийти как value или как text.
@@ -41,12 +43,16 @@ export function normalizeBrowserInput(input = {}) {
 // как workspace-документ.
 function assertNotLocalBrowserTarget(target) {
   let host;
-  try { host = new URL(String(target)).hostname; } catch { return; }
+  try {
+    host = new URL(String(target)).hostname;
+  } catch {
+    return;
+  }
   if (!isLoopbackOrPrivateHost(host)) return;
   throw Object.assign(
     new Error(
       `Local/private address ${host} is unreachable from the agent browser: the bash sandbox has no shared network with it, so dev servers (vite/npm run dev) cannot be previewed live. ` +
-      'Instead build the project (for example `npm run build` / `npx vite build`) and open the static output as a workspace document: {"action":"open","url":"dist/index.html"}.',
+        'Instead build the project (for example `npm run build` / `npx vite build`) and open the static output as a workspace document: {"action":"open","url":"dist/index.html"}.',
     ),
     { code: 'BROWSER_LOCAL_ADDRESS' },
   );
@@ -133,8 +139,16 @@ function timeoutFor(input) {
 }
 
 async function disposeSession(state) {
-  try { await state.context?.close(); } catch { /* context may already be gone */ }
-  try { await state.browser?.close(); } catch { /* browser may already be gone */ }
+  try {
+    await state.context?.close();
+  } catch {
+    /* context may already be gone */
+  }
+  try {
+    await state.browser?.close();
+  } catch {
+    /* browser may already be gone */
+  }
 }
 
 export async function closeBrowserSession(sessionId) {
@@ -210,7 +224,9 @@ export async function ensureBrowserSession(playwright, sessionId) {
       }
       await route.continue();
     } catch (error) {
-      state.console.push(`[blocked-request] ${request.method()} ${target.slice(0, 200)} :: ${String(error?.message || error).slice(0, 300)}`);
+      state.console.push(
+        `[blocked-request] ${request.method()} ${target.slice(0, 200)} :: ${String(error?.message || error).slice(0, 300)}`,
+      );
       if (state.console.length > MAX_CONSOLE_ENTRIES) state.console.shift();
       await route.abort('blockedbyclient').catch(() => {});
     }
@@ -251,9 +267,7 @@ function resolveLocator(page, input) {
 async function collectSnapshot(page) {
   const url = page.url();
   const title = await page.title().catch(() => '');
-  const text = await page
-    .evaluate(() => (document.body ? document.body.innerText : ''))
-    .catch(() => '');
+  const text = await page.evaluate(() => (document.body ? document.body.innerText : '')).catch(() => '');
   const controls = await page
     .evaluate((limit) => {
       const rows = [];
@@ -261,11 +275,8 @@ async function collectSnapshot(page) {
       for (let i = 0; i < nodes.length && rows.length < limit; i += 1) {
         const node = nodes[i];
         const tag = node.tagName.toLowerCase();
-        const raw = node.getAttribute('aria-label')
-          || node.getAttribute('placeholder')
-          || node.getAttribute('name')
-          || node.textContent
-          || '';
+        const raw =
+          node.getAttribute('aria-label') || node.getAttribute('placeholder') || node.getAttribute('name') || node.textContent || '';
         const label = raw.replace(/\s+/g, ' ').trim().slice(0, 80);
         const id = node.id ? `#${node.id}` : '';
         const type = node.getAttribute('type');
@@ -275,7 +286,9 @@ async function collectSnapshot(page) {
     }, MAX_CONTROLS)
     .catch(() => []);
 
-  const trimmed = String(text || '').replace(/\n{3,}/g, '\n\n').slice(0, MAX_SNAPSHOT_CHARS);
+  const trimmed = String(text || '')
+    .replace(/\n{3,}/g, '\n\n')
+    .slice(0, MAX_SNAPSHOT_CHARS);
   return { url, title, text: trimmed, controls };
 }
 
@@ -318,11 +331,18 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
   const target = String(input.url || '').trim();
   // Without html/url, render the page the session already has open (the
   // natural "open → screenshot" sequence) instead of failing the call.
-  const currentUrl = (() => { try { return page.url(); } catch { return ''; } })();
+  const currentUrl = (() => {
+    try {
+      return page.url();
+    } catch {
+      return '';
+    }
+  })();
   // A workspace document is loaded with setContent, so its URL stays
   // about:blank; remember that a real document is open so open → screenshot
   // and visual_check can render it.
-  const useCurrent = !html && !target && (/^https?:/i.test(currentUrl) || (state.workspaceDocOpen === true && currentUrl === 'about:blank'));
+  const useCurrent =
+    !html && !target && (/^https?:/i.test(currentUrl) || (state.workspaceDocOpen === true && currentUrl === 'about:blank'));
   if (!html && !target && !useCurrent) throw new Error(`${action} requires html or url (or open a page first)`);
 
   if (useCurrent) {
@@ -332,14 +352,14 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
     // напечататься с пустыми местами вместо иллюстраций.
     await page.setContent(html, { timeout, waitUntil: 'load' });
     state.workspaceDocOpen = true;
-    } else {
-      assertNotLocalBrowserTarget(target);
-      assertAgentNetworkUrl(target, { tool: 'browser' });
-      const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
-      if (!proxyServer) await assertSafeExternalUrl(target);
-      await page.goto(target, { timeout, waitUntil: 'load' });
-      state.workspaceDocOpen = false;
-    }
+  } else {
+    assertNotLocalBrowserTarget(target);
+    assertAgentNetworkUrl(target, { tool: 'browser' });
+    const proxyServer = String(process.env.Z_AGENT_BROWSER_PROXY || '').trim();
+    if (!proxyServer) await assertSafeExternalUrl(target);
+    await page.goto(target, { timeout, waitUntil: 'load' });
+    state.workspaceDocOpen = false;
+  }
 
   let buffer;
   try {
@@ -366,13 +386,19 @@ export async function renderPageArtifact(sessionId, action, input = {}, signal) 
     // Сессия переиспользуется следующими действиями: оставить её в print-режиме
     // значило бы отдавать потом снимки с чужой вёрсткой.
     if (action === 'pdf') {
-      try { await page.emulateMedia({ media: 'screen' }); } catch { /* страница могла закрыться */ }
+      try {
+        await page.emulateMedia({ media: 'screen' });
+      } catch {
+        /* страница могла закрыться */
+      }
     }
   }
 
   if (!buffer?.length) throw new Error(`${action} produced an empty artifact`);
   if (buffer.length > MAX_RENDER_BYTES) {
-    throw new Error(`${action} artifact is ${Math.round(buffer.length / (1024 * 1024))} MB, over the ${MAX_RENDER_BYTES / (1024 * 1024)} MB limit`);
+    throw new Error(
+      `${action} artifact is ${Math.round(buffer.length / (1024 * 1024))} MB, over the ${MAX_RENDER_BYTES / (1024 * 1024)} MB limit`,
+    );
   }
 
   return {
@@ -468,7 +494,11 @@ export async function executeBrowserTool({ sessionId, input: rawInput = {}, sign
     const actual = await locator.inputValue({ timeout: 2000 }).catch(() => null);
     const verb = action === 'fill' ? 'filled' : 'typed';
     const ok = actual !== null && (action === 'fill' ? actual === value : actual.endsWith(value));
-    extra.push(actual === null ? verb : `${verb}; field now contains ${actual.length} characters ${ok ? '(includes the requested text)' : '(does NOT contain the requested text — the page may have reset it; try type instead of fill, or click the field first)'}`);
+    extra.push(
+      actual === null
+        ? verb
+        : `${verb}; field now contains ${actual.length} characters ${ok ? '(includes the requested text)' : '(does NOT contain the requested text — the page may have reset it; try type instead of fill, or click the field first)'}`,
+    );
   } else if (action === 'wait') {
     if (String(input.selector || input.text || '').trim()) {
       await resolveLocator(page, input).waitFor({ state: 'visible', timeout });

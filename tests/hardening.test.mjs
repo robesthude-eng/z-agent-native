@@ -41,12 +41,20 @@ test('each chat receives its own sandbox uid', () => {
 
 test('a client supplied future timestamp cannot pin a message to the end of history', () => {
   store.putMessage({
-    id: 'msg_future', sessionID: 'ses_hardening1', role: 'user',
-    parts: [{ type: 'text', text: 'from the future' }], time: { created: Date.now() + 600_000 }, info: {},
+    id: 'msg_future',
+    sessionID: 'ses_hardening1',
+    role: 'user',
+    parts: [{ type: 'text', text: 'from the future' }],
+    time: { created: Date.now() + 600_000 },
+    info: {},
   });
   store.putMessage({
-    id: 'msg_now', sessionID: 'ses_hardening1', role: 'user',
-    parts: [{ type: 'text', text: 'now' }], time: { created: Date.now() }, info: {},
+    id: 'msg_now',
+    sessionID: 'ses_hardening1',
+    role: 'user',
+    parts: [{ type: 'text', text: 'now' }],
+    time: { created: Date.now() },
+    info: {},
   });
   const texts = store.listMessages('ses_hardening1').map((message) => message.parts[0].text);
   assert.deepEqual(texts, ['from the future', 'now']);
@@ -95,7 +103,10 @@ test('expired durable job files are pruned', () => {
   const dir = path.join(process.env.Z_AGENT_DATA_DIR, 'durable-jobs');
   fs.mkdirSync(dir, { recursive: true });
   const stale = Date.now() - 72 * 60 * 60 * 1000;
-  fs.writeFileSync(path.join(dir, 'ses_hardeningstale.json'), JSON.stringify({ version: 1, sessionId: 'ses_hardeningstale', createdAt: stale, updatedAt: stale, state: 'running' }));
+  fs.writeFileSync(
+    path.join(dir, 'ses_hardeningstale.json'),
+    JSON.stringify({ version: 1, sessionId: 'ses_hardeningstale', createdAt: stale, updatedAt: stale, state: 'running' }),
+  );
 
   assert.ok(durable.pruneExpiredDurableJobs(60 * 60 * 1000) >= 1);
   assert.ok(!durable.listDurableJobs().some((entry) => entry.sessionId === 'ses_hardeningstale'));
@@ -120,7 +131,12 @@ test('authentication sessions are stored as one-way token digests', () => {
   assert.equal(store.getAuthSession(token), null);
 });
 
-test('registration is closed once the bootstrap admin exists', { skip: (process.env.Z_AGENT_INVITE_CODE || process.env.Z_AGENT_ALLOW_OPEN_REGISTRATION === '1') ? 'invite code or open registration configured' : false }, () => {
+test('registration is closed once the bootstrap admin exists', {
+  skip:
+    process.env.Z_AGENT_INVITE_CODE || process.env.Z_AGENT_ALLOW_OPEN_REGISTRATION === '1'
+      ? 'invite code or open registration configured'
+      : false,
+}, () => {
   if (store.userCount() === 0) store.createUser('bootstrap@example.com', 'hash');
   assert.throws(() => auth.registerUser('intruder@example.com', 'password12345'), /закрыт/i);
 });
@@ -152,10 +168,7 @@ test('a catastrophic regex is cancelled by the grep deadline', async () => {
   const workspace = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-grep-'));
   fs.writeFileSync(path.join(workspace, 'big.txt'), `${'a'.repeat(4000)}b\n`);
   const ctx = { workspace, signal: new AbortController().signal };
-  await assert.rejects(
-    executeTool('grep', { path: '.', query: '(a+)+$', regex: true }, ctx),
-    /exceeded|cancelled/i,
-  );
+  await assert.rejects(executeTool('grep', { path: '.', query: '(a+)+$', regex: true }, ctx), /exceeded|cancelled/i);
   fs.rmSync(workspace, { recursive: true, force: true });
 });
 
@@ -200,7 +213,10 @@ test('production compose isolates autonomous execution in a networkless sibling 
 test('the automatically loaded compose override cannot weaken the hardened executor', () => {
   const override = fs.readFileSync(path.join(repoRoot, 'docker-compose.override.yml'), 'utf8');
   const trusted = fs.readFileSync(path.join(repoRoot, 'docker-compose.trusted.yml'), 'utf8');
-  assert.doesNotMatch(override, /Z_AGENT_TERMINAL_ENABLED|Z_AGENT_ALLOW_NETWORKED_INSTALLERS|network_mode:\s*!override\s+bridge|Z_AGENT_SSH_POLICY/);
+  assert.doesNotMatch(
+    override,
+    /Z_AGENT_TERMINAL_ENABLED|Z_AGENT_ALLOW_NETWORKED_INSTALLERS|network_mode:\s*!override\s+bridge|Z_AGENT_SSH_POLICY/,
+  );
   assert.match(trusted, /Z_AGENT_TERMINAL_ENABLED:\s*['"]?1['"]?/);
   assert.match(trusted, /Z_AGENT_ALLOW_NETWORKED_INSTALLERS:\s*['"]?1['"]?/);
   assert.match(trusted, /network_mode:\s*!override\s+bridge/);
@@ -248,7 +264,10 @@ test('public app and TLS proxy ship restrictive browser security headers', () =>
   assert.match(server, /APP_CONTENT_SECURITY_POLICY_BASE/);
   assert.match(server, /script-src 'self'/);
   assert.match(server, /object-src 'none'/);
-  assert.doesNotMatch(server.match(/const APP_CONTENT_SECURITY_POLICY = \[[\s\S]*?\]\.join\('; '\);/)?.[0] || '', /connect-src 'self' https:\s/);
+  assert.doesNotMatch(
+    server.match(/const APP_CONTENT_SECURITY_POLICY = \[[\s\S]*?\]\.join\('; '\);/)?.[0] || '',
+    /connect-src 'self' https:\s/,
+  );
 });
 
 test('readiness includes a persistent-volume free-space floor', () => {
@@ -263,7 +282,6 @@ test('12-character password policy does not lock out legacy-login passwords in t
   assert.match(login, /if \(isRegistering && password\.length < 12\)/);
   assert.doesNotMatch(login, /if \(!password \|\| password\.length < 12\)/);
 });
-
 
 test('production requires strict external encryption and audit keys', () => {
   const compose = fs.readFileSync(path.join(repoRoot, 'docker-compose.yml'), 'utf8');

@@ -9,7 +9,11 @@ const MAX_CANDIDATES = 5;
 let healthCache = null;
 
 function readJson(file, fallback) {
-  try { return JSON.parse(fs.readFileSync(file, 'utf8')); } catch { return fallback; }
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    return fallback;
+  }
 }
 
 function writeJsonAtomic(file, value) {
@@ -25,7 +29,11 @@ function healthState() {
 }
 
 function ownerKey(ownerId) {
-  return crypto.createHash('sha256').update(String(ownerId || '')).digest('hex').slice(0, 20);
+  return crypto
+    .createHash('sha256')
+    .update(String(ownerId || ''))
+    .digest('hex')
+    .slice(0, 20);
 }
 
 export function modelKey(model) {
@@ -60,7 +68,12 @@ function complexityHint(goal) {
   const text = String(goal || '').toLowerCase();
   if (!text) return 0;
   let score = Math.min(3, Math.floor(text.length / 1200));
-  if (/(архитект|architecture|миграц|migration|рефактор|refactor|end[- ]to[- ]end|полностью|whole project|весь проект|security|безопасност)/i.test(text)) score += 2;
+  if (
+    /(архитект|architecture|миграц|migration|рефактор|refactor|end[- ]to[- ]end|полностью|whole project|весь проект|security|безопасност)/i.test(
+      text,
+    )
+  )
+    score += 2;
   if (/(несколько файлов|multiple files|across the repo|во всём репозитории|production|продакш)/i.test(text)) score += 1;
   return Math.min(5, score);
 }
@@ -77,7 +90,8 @@ export function rankModelCandidates(models, requested = null, health = {}, confi
     const key = modelKey(candidate);
     if (!unique.has(key)) unique.set(key, { ...candidate, order: order++ });
   }
-  if (configuredCandidate && !unique.has(modelKey(configuredCandidate))) unique.set(modelKey(configuredCandidate), { ...configuredCandidate, order: order++ });
+  if (configuredCandidate && !unique.has(modelKey(configuredCandidate)))
+    unique.set(modelKey(configuredCandidate), { ...configuredCandidate, order: order++ });
   if (requestedModel && !unique.has(modelKey(requestedModel))) unique.set(modelKey(requestedModel), { ...requestedModel, order: order++ });
 
   const complex = complexityHint(goal);
@@ -131,7 +145,11 @@ function recordHealth(ownerId, model, ok, latencyMs, error = null) {
     lastFailureAt: ok ? Number(previous.lastFailureAt || 0) : now,
     lastError: ok ? '' : String(error?.message || error || '').slice(0, 500),
   };
-  try { writeJsonAtomic(HEALTH_FILE, state); } catch { /* health data must never break a turn */ }
+  try {
+    writeJsonAtomic(HEALTH_FILE, state);
+  } catch {
+    /* health data must never break a turn */
+  }
 }
 
 export async function buildModelPlan(ownerId, requested = null, goal = '') {
@@ -154,17 +172,24 @@ export async function buildModelPlan(ownerId, requested = null, goal = '') {
   const catalog = await buildCatalog(ownerId);
   const configured = configuredModel();
   const candidates = rankModelCandidates(catalog.models, null, ownerHealth(ownerId), configured, goal);
-  if (!candidates.length) throw Object.assign(new Error('Нет доступной модели. Добавьте API key в Настройки → Провайдеры.'), { statusCode: 400 });
+  if (!candidates.length)
+    throw Object.assign(new Error('Нет доступной модели. Добавьте API key в Настройки → Провайдеры.'), { statusCode: 400 });
   return { candidates, explicit: false, locked: false, expandOnFailure: false, goal: String(goal || ''), generatedAt: Date.now() };
 }
 
-const LOCKED_MODEL_HINT = 'Автовыбор выключен, потому что модель задана вручную. Выберите другую модель в списке сверху или переключитесь на «Авто» — тогда модель подберёт агент.';
+const LOCKED_MODEL_HINT =
+  'Автовыбор выключен, потому что модель задана вручную. Выберите другую модель в списке сверху или переключитесь на «Авто» — тогда модель подберёт агент.';
 
 /** Человеческая причина отказа конкретной модели — без брендов и ссылок. */
 export function modelFailureReason(error) {
   const status = Number(error?.statusCode) || 0;
   const text = `${error?.code || ''} ${error?.message || ''} ${JSON.stringify(error?.body || '')}`;
-  if (/insufficient (?:credits?|quota|balance)|payment required|credit(?:s)? (?:exhausted|exceeded)|billing|not enough balance|arrears/i.test(text) || status === 402) {
+  if (
+    /insufficient (?:credits?|quota|balance)|payment required|credit(?:s)? (?:exhausted|exceeded)|billing|not enough balance|arrears/i.test(
+      text,
+    ) ||
+    status === 402
+  ) {
     return 'на аккаунте провайдера нет баланса или исчерпана квота';
   }
   if (status === 401 || status === 403) return 'провайдер отклонил API key или не даёт доступ к этой модели';
@@ -229,10 +254,15 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       ...request,
       system: [request?.system, identity].filter(Boolean).join('\n\n'),
       ...(typeof originalDelta === 'function'
-        // Второй аргумент — род куска ('reasoning' | 'text'). Раньше обёртка
-        // его теряла, и всё, что присылал провайдер, доезжало до ленты
-        // без рода — карточка рассуждений появлялась только в конце хода.
-        ? { onTextDelta(delta, type) { emitted = true; originalDelta(delta, type); } }
+        ? // Второй аргумент — род куска ('reasoning' | 'text'). Раньше обёртка
+          // его теряла, и всё, что присылал провайдер, доезжало до ленты
+          // без рода — карточка рассуждений появлялась только в конце хода.
+          {
+            onTextDelta(delta, type) {
+              emitted = true;
+              originalDelta(delta, type);
+            },
+          }
         : {}),
     };
     try {
@@ -243,7 +273,11 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
     } catch (error) {
       lastError = error;
       // Cards drawn from a failed attempt's partial tool calls must not leak into the next model's answer.
-      try { request?.onToolCallsReset?.(); } catch { /* display aid only */ }
+      try {
+        request?.onToolCallsReset?.();
+      } catch {
+        /* display aid only */
+      }
       const attempt = { model: candidate, ok: false, latencyMs: Date.now() - startedAt, error };
       attempts.push(attempt);
       options.onAttempt?.(attempt);
@@ -257,7 +291,12 @@ export async function runFallbackPlan(plan, request, invoke, options = {}) {
       const strict = Boolean(locked || (plan?.explicit && index === 0));
       if (locked || emitted || index >= candidates.length - 1 || !fallbackEligible(error, { strict })) {
         error.autopilotEmitted = emitted;
-        error.autopilotAttempts = attempts.map((item) => ({ model: item.model, ok: item.ok, latencyMs: item.latencyMs, error: item.ok ? '' : String(item.error?.message || item.error || '') }));
+        error.autopilotAttempts = attempts.map((item) => ({
+          model: item.model,
+          ok: item.ok,
+          latencyMs: item.latencyMs,
+          error: item.ok ? '' : String(item.error?.message || item.error || ''),
+        }));
         throw error;
       }
     }
@@ -307,18 +346,16 @@ export async function callModelAutopilot(ownerId, plan, request) {
     return await runFallbackPlan(
       plan,
       request,
-      (candidate, wrappedRequest, index) => callProviderModel(ownerId, candidate, {
-        ...wrappedRequest,
-        failFastRateLimit: failFastRateLimitFor(plan, index),
-      }),
+      (candidate, wrappedRequest, index) =>
+        callProviderModel(ownerId, candidate, {
+          ...wrappedRequest,
+          failFastRateLimit: failFastRateLimitFor(plan, index),
+        }),
       healthRecorder(ownerId),
     );
   } catch (error) {
     const canExpand = Boolean(
-      plan?.expandOnFailure &&
-      !plan?.locked &&
-      !error?.autopilotEmitted &&
-      fallbackEligible(error, { strict: true }),
+      plan?.expandOnFailure && !plan?.locked && !error?.autopilotEmitted && fallbackEligible(error, { strict: true }),
     );
     if (!canExpand) throw error;
     const expanded = await expandedPlan(ownerId, plan);
@@ -328,10 +365,11 @@ export async function callModelAutopilot(ownerId, plan, request) {
     const fallback = await runFallbackPlan(
       expanded,
       request,
-      (candidate, wrappedRequest, index) => callProviderModel(ownerId, candidate, {
-        ...wrappedRequest,
-        failFastRateLimit: failFastRateLimitFor(expanded, index),
-      }),
+      (candidate, wrappedRequest, index) =>
+        callProviderModel(ownerId, candidate, {
+          ...wrappedRequest,
+          failFastRateLimit: failFastRateLimitFor(expanded, index),
+        }),
       healthRecorder(ownerId),
     );
     return {

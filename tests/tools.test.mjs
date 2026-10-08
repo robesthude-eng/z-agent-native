@@ -30,7 +30,11 @@ test('native file tools read/write/edit/grep/list inside one workspace', async (
 test('bash runs in workspace with no provider secrets injected', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-bash-'));
   process.env.OPENAI_API_KEY = 'must-not-leak';
-  const result = await executeTool('bash', { command: `pwd; printf "key=%s" "\${OPENAI_API_KEY:-}"` }, { workspace: root, signal: new AbortController().signal });
+  const result = await executeTool(
+    'bash',
+    { command: `pwd; printf "key=%s" "\${OPENAI_API_KEY:-}"` },
+    { workspace: root, signal: new AbortController().signal },
+  );
   assert.equal(result.metadata?.exit, 0);
   assert.match(result.output, new RegExp(root.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.match(result.output, /key=$/m);
@@ -41,10 +45,14 @@ test('bash abort escalates to SIGKILL when a child ignores SIGTERM', async () =>
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-bash-stop-'));
   const controller = new AbortController();
   const startedAt = Date.now();
-  const running = executeTool('bash', {
-    command: `node -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"`,
-    timeoutMs: 8000,
-  }, { workspace: root, signal: controller.signal });
+  const running = executeTool(
+    'bash',
+    {
+      command: `node -e "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"`,
+      timeoutMs: 8000,
+    },
+    { workspace: root, signal: controller.signal },
+  );
 
   await new Promise((resolve) => setTimeout(resolve, 150));
   controller.abort();
@@ -83,10 +91,16 @@ test('write maps /tmp into the workspace so a stray absolute path still lands in
 
 test('todowrite returns structured plan metadata without touching workspace', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-todo-'));
-  const result = await executeTool('todowrite', { todos: [
-    { content: 'Inspect project', status: 'completed' },
-    { content: 'Run tests', status: 'in_progress', priority: 'high' },
-  ] }, { workspace: root, signal: new AbortController().signal });
+  const result = await executeTool(
+    'todowrite',
+    {
+      todos: [
+        { content: 'Inspect project', status: 'completed' },
+        { content: 'Run tests', status: 'in_progress', priority: 'high' },
+      ],
+    },
+    { workspace: root, signal: new AbortController().signal },
+  );
   assert.match(result.output, /\[completed\] Inspect project/);
   assert.equal(result.metadata.todos[1].status, 'in_progress');
   assert.deepEqual(fs.readdirSync(root), []);

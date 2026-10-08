@@ -23,7 +23,11 @@ export const GIT_ACTIONS = ['status', 'log', 'diff', 'blame', 'show', 'branches'
 const MUTATING_ACTIONS = new Set(['create_branch', 'commit']);
 
 export function gitActionMutates(action) {
-  return MUTATING_ACTIONS.has(String(action || '').trim().toLowerCase());
+  return MUTATING_ACTIONS.has(
+    String(action || '')
+      .trim()
+      .toLowerCase(),
+  );
 }
 
 function gitEnv(root) {
@@ -138,7 +142,15 @@ async function runGit(root, identity, args, signal, timeoutMs, onOutput = null) 
   const budget = Math.min(Math.max(Number(timeoutMs) || DEFAULT_GIT_TIMEOUT_MS, 1000), MAX_GIT_TIMEOUT_MS);
   if (identity?.isolated) {
     const remote = await executeInExecutor({
-      workspace: root, uid: identity.uid, gid: identity.gid, file: 'git', args, env: gitEnv(root), timeoutMs: budget, signal, onOutput,
+      workspace: root,
+      uid: identity.uid,
+      gid: identity.gid,
+      file: 'git',
+      args,
+      env: gitEnv(root),
+      timeoutMs: budget,
+      signal,
+      onOutput,
     });
     if (remote) return { code: Number(remote.code) || 0, stdout: truncateGit(remote.stdout), stderr: truncateGit(remote.stderr) };
   }
@@ -160,7 +172,13 @@ async function runGit(root, identity, args, signal, timeoutMs, onOutput = null) 
       stderr = truncateGit(stderr + chunk.toString('utf8'));
       if (typeof onOutput === 'function') onOutput(stdout, stderr);
     });
-    const kill = () => { try { child.kill('SIGTERM'); } catch { /* already gone */ } };
+    const kill = () => {
+      try {
+        child.kill('SIGTERM');
+      } catch {
+        /* already gone */
+      }
+    };
     const timer = setTimeout(kill, budget);
     timer.unref?.();
     signal?.addEventListener('abort', kill, { once: true });
@@ -168,8 +186,14 @@ async function runGit(root, identity, args, signal, timeoutMs, onOutput = null) 
       clearTimeout(timer);
       signal?.removeEventListener('abort', kill);
     };
-    child.on('error', (err) => { cleanup(); reject(err); });
-    child.on('close', (code) => { cleanup(); resolve({ code: code ?? 1, stdout, stderr }); });
+    child.on('error', (err) => {
+      cleanup();
+      reject(err);
+    });
+    child.on('close', (code) => {
+      cleanup();
+      resolve({ code: code ?? 1, stdout, stderr });
+    });
   });
 }
 
@@ -184,7 +208,11 @@ export function findRepoDir(root, input = {}) {
   const candidates = [];
   for (const value of rawPaths) {
     let dir;
-    try { dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true })); } catch { continue; }
+    try {
+      dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true }));
+    } catch {
+      continue;
+    }
     while (true) {
       const rel = path.relative(root, dir);
       if (!rel || rel.startsWith('..')) break;
@@ -198,22 +226,47 @@ export function findRepoDir(root, input = {}) {
   // Сначала самые глубокие: для src/a/b.ts подпапка с .git важнее корня.
   const ordered = [...candidates].sort((a, b) => b.length - a.length);
   for (const dir of [root, ...ordered]) {
-    try { if (fs.statSync(path.join(dir, '.git')).isDirectory()) return dir; } catch { /* not a repo here */ }
+    try {
+      if (fs.statSync(path.join(dir, '.git')).isDirectory()) return dir;
+    } catch {
+      /* not a repo here */
+    }
   }
-  try { if (fs.statSync(path.join(root, '.git')).isFile()) return root; } catch { /* gitfile (.git "gitdir:…") редок, но валиден */ }
+  try {
+    if (fs.statSync(path.join(root, '.git')).isFile()) return root;
+  } catch {
+    /* gitfile (.git "gitdir:…") редок, но валиден */
+  }
   return root;
 }
 
 // Маркеры корня проекта: по ним решаем, ГДЕ делать git init, когда репозитория
 // нет вообще. Инициализировать в корне воркспейса неудобно — распакованный
 // архив почти всегда лежит в подпапке со своим package.json.
-const PROJECT_MARKERS = ['package.json', 'pyproject.toml', 'go.mod', 'Cargo.toml', 'pom.xml', 'build.gradle', 'build.gradle.kts', 'composer.json', 'Gemfile', 'CMakeLists.txt', '.gitignore', 'README.md', 'README.rst', 'README.txt'];
+const PROJECT_MARKERS = [
+  'package.json',
+  'pyproject.toml',
+  'go.mod',
+  'Cargo.toml',
+  'pom.xml',
+  'build.gradle',
+  'build.gradle.kts',
+  'composer.json',
+  'Gemfile',
+  'CMakeLists.txt',
+  '.gitignore',
+  'README.md',
+  'README.rst',
+  'README.txt',
+];
 
 function hasProjectMarker(dir) {
   try {
     const entries = fs.readdirSync(dir);
     return PROJECT_MARKERS.some((marker) => entries.includes(marker));
-  } catch { return false; }
+  } catch {
+    return false;
+  }
 }
 
 // Самый верхний каталог над первым path, похожий на корень проекта.
@@ -222,7 +275,11 @@ export function pickInitDir(root, input = {}) {
   const rawPaths = Array.isArray(input.paths) ? input.paths.slice(0, 20) : [];
   for (const value of rawPaths) {
     let dir;
-    try { dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true })); } catch { continue; }
+    try {
+      dir = path.dirname(safeWorkspacePath(root, String(value ?? ''), { allowMissing: true }));
+    } catch {
+      continue;
+    }
     let best = null;
     while (true) {
       const rel = path.relative(root, dir);
@@ -239,7 +296,9 @@ export function pickInitDir(root, input = {}) {
 
 export async function executeGitTool({ root, identity, input = {}, signal, sessionId = null, onOutput = null }) {
   ensureManagedHome(sessionId, root);
-  const action = String(input.action || '').trim().toLowerCase();
+  const action = String(input.action || '')
+    .trim()
+    .toLowerCase();
   if (!GIT_ACTIONS.includes(action)) {
     throw new Error(`Unsupported git action "${input.action}". Use one of: ${GIT_ACTIONS.join(', ')}`);
   }
@@ -258,7 +317,7 @@ export async function executeGitTool({ root, identity, input = {}, signal, sessi
   // Распакованный проект без .git — обычная ситуация, а не ошибка модели:
   // инициализируем репозиторий в каталоге проекта и повторяем команду. Первый
   // commit агент сделает сам, когда решит зафиксировать историю.
-  if (result.code !== 0 && /not a git repository/i.test((result.stderr || result.stdout || ''))) {
+  if (result.code !== 0 && /not a git repository/i.test(result.stderr || result.stdout || '')) {
     const initDir = repoDir !== root ? repoDir : pickInitDir(root, input);
     const init = await runGit(root, identity, gitArgsFor(initDir, ['init']), signal, input.timeoutMs, onOutput);
     if (init.code !== 0) {
@@ -275,8 +334,10 @@ export async function executeGitTool({ root, identity, input = {}, signal, sessi
       throw new Error('This workspace is not a git repository yet and git init failed; check the workspace for permission errors.');
     }
     // Пустой репозиторий — не ошибка модели: подсказываем, что нужен commit.
-    if (/does not have any commits|unknown revision|bad revision|fatal: your current branch/i.test(detail)
-      && ['log', 'show', 'blame', 'diff'].includes(action)) {
+    if (
+      /does not have any commits|unknown revision|bad revision|fatal: your current branch/i.test(detail) &&
+      ['log', 'show', 'blame', 'diff'].includes(action)
+    ) {
       throw new Error('The repository has no commits yet. Use action=commit first (it stages tracked files), then repeat this action.');
     }
     throw new Error(detail || `${plan.title} exited with code ${result.code}`);

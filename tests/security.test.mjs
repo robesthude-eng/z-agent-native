@@ -18,7 +18,8 @@ test('workspace resolver blocks traversal and symlink escapes', () => {
   const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-outside-'));
   fs.symlinkSync(outside, path.join(root, 'link'));
   assert.throws(() => safeWorkspacePath(root, 'link/x.txt'), /Symlink/i);
-  fs.rmSync(root, { recursive: true, force: true }); fs.rmSync(outside, { recursive: true, force: true });
+  fs.rmSync(root, { recursive: true, force: true });
+  fs.rmSync(outside, { recursive: true, force: true });
 });
 
 test('absolute /tmp paths are rewritten into the workspace instead of rejected', () => {

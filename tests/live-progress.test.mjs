@@ -92,7 +92,10 @@ test('background wait streams a live tail of the job log with a heartbeat header
     assert.ok(shown.length >= 3, `expected several live updates, got ${shown.length}`);
     assert.ok(shown.every((t) => t.startsWith('build: работает')));
     assert.ok(shown.some((t) => t.includes('compiling a') && !t.includes('compiling b')));
-    assert.ok(shown.some((t) => t.includes('compiling b')), 'new log lines show up while waiting');
+    assert.ok(
+      shown.some((t) => t.includes('compiling b')),
+      'new log lines show up while waiting',
+    );
     assert.ok(new Set(shown).size === shown.length, 'identical frames are not re-sent');
   } finally {
     fs.rmSync(root, { recursive: true, force: true });

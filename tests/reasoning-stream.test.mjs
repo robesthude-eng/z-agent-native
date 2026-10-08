@@ -23,8 +23,14 @@ function collect(chunks) {
 }
 
 test('помеченные провайдером мысли не попадают в ответ', () => {
-  const out = collect([['Need to open the file. ', 'reasoning'], ['Готово.', 'text']]);
-  assert.deepEqual(out.parts.map((p) => p.type), ['reasoning', 'text']);
+  const out = collect([
+    ['Need to open the file. ', 'reasoning'],
+    ['Готово.', 'text'],
+  ]);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['reasoning', 'text'],
+  );
   assert.equal(out.text, 'Готово.');
   assert.equal(out.reasoning, 'Need to open the file. ');
 });
@@ -36,7 +42,10 @@ test('каждая новая вспышка рассуждений — отде
     ['Now the second thought.', 'reasoning'],
     ['Правка готова.', 'text'],
   ]);
-  assert.deepEqual(out.parts.map((p) => p.type), ['reasoning', 'text', 'reasoning', 'text']);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['reasoning', 'text', 'reasoning', 'text'],
+  );
   assert.equal(out.parts[2].text, 'Now the second thought.');
   assert.equal(out.text, 'Смотрю конфиг.Правка готова.');
 });
@@ -48,7 +57,10 @@ test('тег think, разрезанный между чанками', () => {
     [' first.</thi', 'text'],
     ['nk>Файл прочитан.', 'text'],
   ]);
-  assert.deepEqual(out.parts.map((p) => p.type), ['reasoning', 'text']);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['reasoning', 'text'],
+  );
   assert.equal(out.parts[0].text, 'Let me read the file first.');
   assert.equal(out.text, 'Файл прочитан.');
   assert.ok(!out.text.includes('<think>'));
@@ -57,21 +69,34 @@ test('тег think, разрезанный между чанками', () => {
 test('варианты тегов thinking/thought/reasoning', () => {
   for (const tag of ['thinking', 'thought', 'reasoning']) {
     const out = collect([[`<${tag}>inner monologue</${tag}>Ответ готов.`, 'text']]);
-    assert.deepEqual(out.parts.map((p) => p.type), ['reasoning', 'text'], tag);
+    assert.deepEqual(
+      out.parts.map((p) => p.type),
+      ['reasoning', 'text'],
+      tag,
+    );
     assert.equal(out.reasoning, 'inner monologue', tag);
     assert.equal(out.text, 'Ответ готов.', tag);
   }
 });
 
 test('текст с угловой скобкой не теряется', () => {
-  const out = collect([['const ok = a <', 'text'], [' b;', 'text']]);
-  assert.deepEqual(out.parts.map((p) => p.type), ['text']);
+  const out = collect([
+    ['const ok = a <', 'text'],
+    [' b;', 'text'],
+  ]);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['text'],
+  );
   assert.equal(out.text, 'const ok = a < b;');
 });
 
 test('непомеченный английский монолог уезжает в карточку', () => {
   const out = collect(['The user asks about the card. ', 'I should answer in Russian. ', 'Привет! Всё готово.']);
-  assert.deepEqual(out.parts.map((p) => p.type), ['reasoning', 'text']);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['reasoning', 'text'],
+  );
   assert.ok(out.parts[0].text.startsWith('The user asks'));
   assert.ok(out.text.startsWith('Привет!'));
   assert.ok(!out.parts[0].text.includes('Привет'));
@@ -79,13 +104,19 @@ test('непомеченный английский монолог уезжае�
 
 test('непомеченный русский ответ никогда не становится карточкой', () => {
   const out = collect(['Привет! ', 'Сейчас проверю проект и отвечу.']);
-  assert.deepEqual(out.parts.map((p) => p.type), ['text']);
+  assert.deepEqual(
+    out.parts.map((p) => p.type),
+    ['text'],
+  );
   assert.equal(out.reasoning, '');
 });
 
 test('flush отдаёт придержанный хвост и незакрытый тег', () => {
   const unclosed = collect([['<think>thinking without the closing tag', 'text']]);
-  assert.deepEqual(unclosed.parts.map((p) => p.type), ['reasoning']);
+  assert.deepEqual(
+    unclosed.parts.map((p) => p.type),
+    ['reasoning'],
+  );
   assert.equal(unclosed.text, '');
 
   const dangling = collect([['Ответ готов <', 'text']]);

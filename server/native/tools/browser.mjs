@@ -10,30 +10,47 @@ import { agentNetworkPolicy, assertAgentNetworkUrl } from '../workspace-policy.m
 export function describeBrowserAction(action, payload = {}) {
   const target = String(payload.selector || payload.text || '').trim();
   switch (action) {
-    case 'open': return `Открываю ${String(payload.url || 'страницу').slice(0, 160)}`;
-    case 'snapshot': return 'Читаю текст страницы и интерактивные элементы';
-    case 'click': return `Кликаю: ${target || 'элемент'}`;
-    case 'fill': return `Заполняю поле ${target || ''}`.trim();
-    case 'type': return `Печатаю в поле ${target || ''}`.trim();
-    case 'press': return `Нажимаю ${String(payload.key || payload.value || 'клавишу')}${target ? ` в ${target}` : ''}`;
-    case 'wait': return target ? `Жду появления: ${target}` : `Жду ${Math.round((Number(payload.timeoutMs) || 0) / 100) / 10 || ''} с`.trim();
-    case 'screenshot': return `Снимаю скриншот${payload.width ? ` (ширина ${payload.width}px)` : ''}`;
-    case 'pdf': return 'Сохраняю страницу в PDF';
-    case 'console': return 'Читаю консоль и неудачные запросы страницы';
-    case 'close': return 'Закрываю браузер';
-    default: return `Браузер: ${action || 'действие'}`;
+    case 'open':
+      return `Открываю ${String(payload.url || 'страницу').slice(0, 160)}`;
+    case 'snapshot':
+      return 'Читаю текст страницы и интерактивные элементы';
+    case 'click':
+      return `Кликаю: ${target || 'элемент'}`;
+    case 'fill':
+      return `Заполняю поле ${target || ''}`.trim();
+    case 'type':
+      return `Печатаю в поле ${target || ''}`.trim();
+    case 'press':
+      return `Нажимаю ${String(payload.key || payload.value || 'клавишу')}${target ? ` в ${target}` : ''}`;
+    case 'wait':
+      return target ? `Жду появления: ${target}` : `Жду ${Math.round((Number(payload.timeoutMs) || 0) / 100) / 10 || ''} с`.trim();
+    case 'screenshot':
+      return `Снимаю скриншот${payload.width ? ` (ширина ${payload.width}px)` : ''}`;
+    case 'pdf':
+      return 'Сохраняю страницу в PDF';
+    case 'console':
+      return 'Читаю консоль и неудачные запросы страницы';
+    case 'close':
+      return 'Закрываю браузер';
+    default:
+      return `Браузер: ${action || 'действие'}`;
   }
 }
 
 export async function executeBrowserAction(root, input, ctx = {}) {
-  const action = String(input?.action || '').trim().toLowerCase();
+  const action = String(input?.action || '')
+    .trim()
+    .toLowerCase();
   let payload = input && typeof input === 'object' ? { ...input } : {};
   if (action === 'open') {
     const target = String(payload.url || '').trim();
     if (!target) throw new Error('open requires url');
     if (isPublicHttpUrl(target)) {
       if (agentNetworkPolicy() === 'off') {
-        throw Object.assign(new Error('browser is disabled by Z_AGENT_NETWORK_POLICY=off.'), { statusCode: 403, code: 'AGENT_NETWORK_BLOCKED' });
+        throw Object.assign(new Error('browser is disabled by Z_AGENT_NETWORK_POLICY=off.'), {
+          statusCode: 403,
+          code: 'AGENT_NETWORK_BLOCKED',
+        });
       }
       assertAgentNetworkUrl(target, { tool: 'browser' });
     } else {
@@ -85,7 +102,9 @@ function saveScreenshot(root, input, result, ctx) {
   fs.mkdirSync(path.dirname(full), { recursive: true });
   fs.writeFileSync(full, bytes);
   if (ctx?.sessionId) {
-    try { syncSandboxOwnership(ctx.sessionId, root, full); } catch {}
+    try {
+      syncSandboxOwnership(ctx.sessionId, root, full);
+    } catch {}
   }
   const target = path.relative(root, full).split(path.sep).join('/');
   const mime = /\.jpe?g$/i.test(target) ? 'image/jpeg' : 'image/png';
@@ -121,20 +140,26 @@ const VISUAL_VIEWPORTS = [
 export async function executeVisualCheck(root, input, ctx = {}) {
   const target = String(input?.url || 'index.html').trim();
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const wanted = Array.isArray(input?.viewports) && input.viewports.length
-    ? VISUAL_VIEWPORTS.filter((v) => input.viewports.includes(v.label))
-    : VISUAL_VIEWPORTS;
+  const wanted =
+    Array.isArray(input?.viewports) && input.viewports.length
+      ? VISUAL_VIEWPORTS.filter((v) => input.viewports.includes(v.label))
+      : VISUAL_VIEWPORTS;
   await executeBrowserAction(root, { action: 'open', url: target }, ctx);
-  if (input?.waitMs) await executeBrowserAction(root, { action: 'wait', timeoutMs: Math.min(10_000, Number(input.waitMs)) }, ctx).catch(() => null);
+  if (input?.waitMs)
+    await executeBrowserAction(root, { action: 'wait', timeoutMs: Math.min(10_000, Number(input.waitMs)) }, ctx).catch(() => null);
   const shots = [];
   for (const vp of wanted) {
-    const shot = await executeBrowserAction(root, {
-      action: 'screenshot',
-      width: vp.width,
-      height: vp.height,
-      fullPage: input?.fullPage !== false,
-      path: `.screenshots/visual-${stamp}-${vp.label}.png`,
-    }, ctx);
+    const shot = await executeBrowserAction(
+      root,
+      {
+        action: 'screenshot',
+        width: vp.width,
+        height: vp.height,
+        fullPage: input?.fullPage !== false,
+        path: `.screenshots/visual-${stamp}-${vp.label}.png`,
+      },
+      ctx,
+    );
     shots.push({ vp, shot });
   }
   let consoleText = '';
@@ -149,7 +174,9 @@ export async function executeVisualCheck(root, input, ctx = {}) {
   return {
     output: [
       `Visual check of ${target}: ${shots.map((s) => `${s.vp.label} ${s.vp.width}px → ${s.shot?.title || '?'}`).join('; ')}.`,
-      media.length ? 'Both screenshots are attached below. Inspect them critically: overlapping or cut-off elements, horizontal scroll on mobile, unreadable contrast, broken images, empty areas, misaligned grids, text overflow, missing content. Fix what is wrong and run visual_check again; if everything looks right, say so briefly.' : 'Screenshots were too large to attach; use view_media on the saved paths.',
+      media.length
+        ? 'Both screenshots are attached below. Inspect them critically: overlapping or cut-off elements, horizontal scroll on mobile, unreadable contrast, broken images, empty areas, misaligned grids, text overflow, missing content. Fix what is wrong and run visual_check again; if everything looks right, say so briefly.'
+        : 'Screenshots were too large to attach; use view_media on the saved paths.',
       `Console/network:\n${String(consoleText || '(empty)').slice(0, 4000)}`,
     ].join('\n\n'),
     title: `Проверка интерфейса: ${target}`,

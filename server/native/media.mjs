@@ -3,7 +3,6 @@
  * Modular implementations live in server/native/media/*.
  */
 
-
 export {
   isMediaTool,
   MEDIA_MUTATING_TOOLS,
@@ -22,9 +21,7 @@ export {
   winAnsiCode,
   wrapPlainText,
 } from './media/documents.mjs';
-export {
-  executeMediaTool,
-} from './media/executor.mjs';
+export { executeMediaTool } from './media/executor.mjs';
 export {
   audioEncoderArgs,
   buildClipConcatArgs,

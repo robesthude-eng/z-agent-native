@@ -25,14 +25,18 @@ export function formatElapsed(ms) {
 }
 
 export function clipLine(text, max = MAX_LINE_CHARS) {
-  const line = String(text ?? '').replace(/\s+/g, ' ').trim();
+  const line = String(text ?? '')
+    .replace(/\s+/g, ' ')
+    .trim();
   return line.length > max ? `${line.slice(0, max - 1)}…` : line;
 }
 
 const NOOP = Object.freeze({
   step() {},
   replaceLast() {},
-  ticker() { return () => {}; },
+  ticker() {
+    return () => {};
+  },
   stop() {},
   text: () => '',
   active: false,
@@ -54,25 +58,38 @@ export function createProgressLog(onOutput, { intervalMs = DEFAULT_INTERVAL_MS, 
       // Keep the newest lines; the card is a live tail, the full result comes at the end.
       let cut = lines.length;
       let size = 0;
-      while (cut > 0 && size + lines[cut - 1].length + 1 <= MAX_CHARS - 20) { cut -= 1; size += lines[cut].length + 1; }
+      while (cut > 0 && size + lines[cut - 1].length + 1 <= MAX_CHARS - 20) {
+        cut -= 1;
+        size += lines[cut].length + 1;
+      }
       text = `[…ранние шаги скрыты]\n${lines.slice(cut).join('\n')}`;
     }
     return text;
   };
 
   const flush = () => {
-    if (timer) { clearTimeout(timer); timer = null; }
+    if (timer) {
+      clearTimeout(timer);
+      timer = null;
+    }
     if (stopped || !dirty) return;
     dirty = false;
     lastSent = now();
-    try { onOutput(render()); } catch { /* display only */ }
+    try {
+      onOutput(render());
+    } catch {
+      /* display only */
+    }
   };
 
   const schedule = () => {
     dirty = true;
     if (timer || stopped) return;
     const wait = intervalMs - (now() - lastSent);
-    if (wait <= 0) { flush(); return; }
+    if (wait <= 0) {
+      flush();
+      return;
+    }
     timer = setTimeout(flush, wait);
     timer.unref?.();
   };
@@ -91,7 +108,8 @@ export function createProgressLog(onOutput, { intervalMs = DEFAULT_INTERVAL_MS, 
     replaceLast(text) {
       if (stopped) return;
       const line = `${stamp()} ${clipLine(text)}`;
-      if (lines.length) lines[lines.length - 1] = line; else lines.push(line);
+      if (lines.length) lines[lines.length - 1] = line;
+      else lines.push(line);
       schedule();
     },
     /**

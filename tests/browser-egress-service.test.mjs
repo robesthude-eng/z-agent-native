@@ -14,7 +14,7 @@ async function freePort() {
     server.once('error', reject);
     server.listen(0, '127.0.0.1', () => {
       const port = server.address().port;
-      server.close((error) => error ? reject(error) : resolve(port));
+      server.close((error) => (error ? reject(error) : resolve(port)));
     });
   });
 }
@@ -29,7 +29,10 @@ async function waitListening(child, timeoutMs = 3000) {
       resolve();
     };
     child.stdout.on('data', onData);
-    child.once('exit', (code) => { clearTimeout(timer); reject(new Error(`browser egress exited early: ${code}`)); });
+    child.once('exit', (code) => {
+      clearTimeout(timer);
+      reject(new Error(`browser egress exited early: ${code}`));
+    });
   });
 }
 
@@ -51,9 +54,14 @@ function connectAttempt(port, authority) {
     let data = '';
     socket.setTimeout(1500, () => socket.destroy(new Error('CONNECT timeout')));
     socket.on('connect', () => socket.write(`CONNECT ${authority} HTTP/1.1\r\nHost: ${authority}\r\n\r\n`));
-    socket.on('data', (chunk) => { data += chunk.toString('utf8'); if (data.includes('\r\n\r\n')) socket.end(); });
+    socket.on('data', (chunk) => {
+      data += chunk.toString('utf8');
+      if (data.includes('\r\n\r\n')) socket.end();
+    });
     socket.on('end', () => resolve(data));
-    socket.on('close', () => { if (data) resolve(data); });
+    socket.on('close', () => {
+      if (data) resolve(data);
+    });
     socket.on('error', reject);
   });
 }
@@ -62,7 +70,12 @@ test('browser egress service stays healthy while policy=off and denies CONNECT b
   const port = await freePort();
   const child = spawn(process.execPath, ['server/browser-egress.mjs'], {
     cwd: repoRoot,
-    env: { ...process.env, Z_AGENT_BROWSER_EGRESS_HOST: '127.0.0.1', Z_AGENT_BROWSER_EGRESS_PORT: String(port), Z_AGENT_NETWORK_POLICY: 'off' },
+    env: {
+      ...process.env,
+      Z_AGENT_BROWSER_EGRESS_HOST: '127.0.0.1',
+      Z_AGENT_BROWSER_EGRESS_PORT: String(port),
+      Z_AGENT_NETWORK_POLICY: 'off',
+    },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   try {

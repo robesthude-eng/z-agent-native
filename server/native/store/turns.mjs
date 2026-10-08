@@ -2,14 +2,25 @@ import { db } from './db.mjs';
 
 const parse = (value, fallback = null) => {
   if (value == null) return fallback;
-  try { return JSON.parse(value); } catch { return fallback; }
+  try {
+    return JSON.parse(value);
+  } catch {
+    return fallback;
+  }
 };
 
 export function setTurn(sessionId, turn) {
   db.prepare(`INSERT INTO turns(session_id,turn_id,lifecycle,verdict,reason,since,updated_at)
               VALUES(?,?,?,?,?,?,?)
-              ON CONFLICT(session_id) DO UPDATE SET turn_id=excluded.turn_id,lifecycle=excluded.lifecycle,verdict=excluded.verdict,reason=excluded.reason,since=excluded.since,updated_at=excluded.updated_at`)
-    .run(sessionId, turn.turnId, turn.lifecycle, turn.verdict ?? null, turn.reason ?? null, turn.since ?? Date.now(), Date.now());
+              ON CONFLICT(session_id) DO UPDATE SET turn_id=excluded.turn_id,lifecycle=excluded.lifecycle,verdict=excluded.verdict,reason=excluded.reason,since=excluded.since,updated_at=excluded.updated_at`).run(
+    sessionId,
+    turn.turnId,
+    turn.lifecycle,
+    turn.verdict ?? null,
+    turn.reason ?? null,
+    turn.since ?? Date.now(),
+    Date.now(),
+  );
 }
 
 export function getTurn(sessionId) {
@@ -40,20 +51,36 @@ export function reserveTurnCapacity(sessionId, ownerId, { maxGlobal = 32, maxPer
     const ownerCount = Number(db.prepare('SELECT COUNT(*) AS n FROM turn_capacity_leases WHERE owner_id=?').get(ownerId)?.n || 0);
     if (globalCount >= globalLimit || ownerCount >= ownerLimit) {
       db.exec('ROLLBACK');
-      return { ok: false, reason: globalCount >= globalLimit ? 'global_limit' : 'owner_limit', globalCount, ownerCount, maxGlobal: globalLimit, maxPerOwner: ownerLimit };
+      return {
+        ok: false,
+        reason: globalCount >= globalLimit ? 'global_limit' : 'owner_limit',
+        globalCount,
+        ownerCount,
+        maxGlobal: globalLimit,
+        maxPerOwner: ownerLimit,
+      };
     }
-    db.prepare('INSERT INTO turn_capacity_leases(session_id,owner_id,expires_at,updated_at) VALUES(?,?,?,?)').run(sessionId, ownerId, now + ttl, now);
+    db.prepare('INSERT INTO turn_capacity_leases(session_id,owner_id,expires_at,updated_at) VALUES(?,?,?,?)').run(
+      sessionId,
+      ownerId,
+      now + ttl,
+      now,
+    );
     db.exec('COMMIT');
     return { ok: true, existing: false, globalCount: globalCount + 1, ownerCount: ownerCount + 1 };
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
 }
 
 export function renewTurnCapacity(sessionId, { ttlMs = 120_000, now = Date.now() } = {}) {
   const ttl = Math.min(Math.max(Number(ttlMs) || 120_000, 30_000), 30 * 60 * 1000);
-  return db.prepare('UPDATE turn_capacity_leases SET expires_at=?,updated_at=? WHERE session_id=?').run(now + ttl, now, sessionId).changes > 0;
+  return (
+    db.prepare('UPDATE turn_capacity_leases SET expires_at=?,updated_at=? WHERE session_id=?').run(now + ttl, now, sessionId).changes > 0
+  );
 }
 
 export function releaseTurnCapacity(sessionId) {
@@ -75,44 +102,80 @@ export function recoverInterruptedRuntimeState(options = {}) {
   const interruptedLifecycles = "lifecycle IN ('running','waiting_permission','waiting_user_input')";
 
   const interrupted = db.prepare(`SELECT COUNT(*) c FROM turns WHERE ${interruptedLifecycles}${notSkipped}`).get(...skip).c;
-  db.prepare(`UPDATE turns SET lifecycle='failed',verdict='failed',reason='runtime_restart',updated_at=? WHERE ${interruptedLifecycles}${notSkipped}`).run(now, ...skip);
-  db.prepare(`UPDATE actions SET state='failed',result_json=?,updated_at=? WHERE state='running'${notSkipped}`).run(JSON.stringify({ error: 'Runtime restarted while action was running' }), now, ...skip);
+  db.prepare(
+    `UPDATE turns SET lifecycle='failed',verdict='failed',reason='runtime_restart',updated_at=? WHERE ${interruptedLifecycles}${notSkipped}`,
+  ).run(now, ...skip);
+  db.prepare(`UPDATE actions SET state='failed',result_json=?,updated_at=? WHERE state='running'${notSkipped}`).run(
+    JSON.stringify({ error: 'Runtime restarted while action was running' }),
+    now,
+    ...skip,
+  );
   db.prepare(`UPDATE questions SET status='rejected',resolved_at=? WHERE status='pending'${notSkipped}`).run(now, ...skip);
-  db.prepare(`UPDATE permissions SET status='rejected',response='reject',resolved_at=? WHERE status='pending'${notSkipped}`).run(now, ...skip);
+  db.prepare(`UPDATE permissions SET status='rejected',response='reject',resolved_at=? WHERE status='pending'${notSkipped}`).run(
+    now,
+    ...skip,
+  );
   return Number(interrupted) || 0;
 }
 
 export function createQuestion(id, sessionId, questions) {
-  db.prepare('INSERT INTO questions(id,session_id,questions_json,status,created_at) VALUES(?,?,?,?,?)')
-    .run(id, sessionId, JSON.stringify(questions), 'pending', Date.now());
+  db.prepare('INSERT INTO questions(id,session_id,questions_json,status,created_at) VALUES(?,?,?,?,?)').run(
+    id,
+    sessionId,
+    JSON.stringify(questions),
+    'pending',
+    Date.now(),
+  );
 }
 
 export function listPendingQuestions(sessionId) {
-  return db.prepare("SELECT * FROM questions WHERE session_id=? AND status='pending' ORDER BY created_at").all(sessionId).map((r) => ({ id: r.id, sessionID: r.session_id, questions: parse(r.questions_json, []) }));
+  return db
+    .prepare("SELECT * FROM questions WHERE session_id=? AND status='pending' ORDER BY created_at")
+    .all(sessionId)
+    .map((r) => ({ id: r.id, sessionID: r.session_id, questions: parse(r.questions_json, []) }));
 }
 
 export function resolveQuestion(id, answers, status = 'answered') {
-  db.prepare('UPDATE questions SET status=?,answers_json=?,resolved_at=? WHERE id=?').run(status, JSON.stringify(answers ?? []), Date.now(), id);
+  db.prepare('UPDATE questions SET status=?,answers_json=?,resolved_at=? WHERE id=?').run(
+    status,
+    JSON.stringify(answers ?? []),
+    Date.now(),
+    id,
+  );
 }
 
 export function getQuestion(id) {
   const r = db.prepare('SELECT * FROM questions WHERE id=?').get(id);
-  return r ? { id: r.id, sessionID: r.session_id, questions: parse(r.questions_json, []), answers: parse(r.answers_json, null), status: r.status } : null;
+  return r
+    ? { id: r.id, sessionID: r.session_id, questions: parse(r.questions_json, []), answers: parse(r.answers_json, null), status: r.status }
+    : null;
 }
 
 export function findQuestionForRecovery(sessionId, questions) {
-  const row = db.prepare('SELECT id FROM questions WHERE session_id=? AND questions_json=? ORDER BY created_at DESC LIMIT 1')
+  const row = db
+    .prepare('SELECT id FROM questions WHERE session_id=? AND questions_json=? ORDER BY created_at DESC LIMIT 1')
     .get(sessionId, JSON.stringify(questions || []));
   return row?.id ? getQuestion(row.id) : null;
 }
 
 export function createPermission(id, sessionId, tool, input) {
-  db.prepare('INSERT INTO permissions(id,session_id,tool,input_json,status,created_at) VALUES(?,?,?,?,?,?)')
-    .run(id, sessionId, tool, JSON.stringify(input ?? null), 'pending', Date.now());
+  db.prepare('INSERT INTO permissions(id,session_id,tool,input_json,status,created_at) VALUES(?,?,?,?,?,?)').run(
+    id,
+    sessionId,
+    tool,
+    JSON.stringify(input ?? null),
+    'pending',
+    Date.now(),
+  );
 }
 
 export function resolvePermission(id, response) {
-  db.prepare('UPDATE permissions SET status=?,response=?,resolved_at=? WHERE id=?').run(response === 'reject' ? 'rejected' : 'answered', response, Date.now(), id);
+  db.prepare('UPDATE permissions SET status=?,response=?,resolved_at=? WHERE id=?').run(
+    response === 'reject' ? 'rejected' : 'answered',
+    response,
+    Date.now(),
+    id,
+  );
 }
 
 export function getPermission(id) {

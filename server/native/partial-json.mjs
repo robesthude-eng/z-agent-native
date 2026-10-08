@@ -37,22 +37,17 @@ const TRAILING_COMMA = /,\s*$/;
 const PARTIAL_NUMBER = /[-+.eE]+$/;
 const PARTIAL_LITERAL = /(?:t|tr|tru|f|fa|fal|fals|n|nu|nul)$/;
 
-const TRIMS = [
-  (s) => s,
-  (s) => s.replace(TRAILING_COMMA, ''),
-  (s) => s.replace(PARTIAL_NUMBER, ''),
-  (s) => s.replace(PARTIAL_LITERAL, ''),
-];
-const DROPS = [
-  (s) => s,
-  (s) => s.replace(DANGLING_KEY_WITH_COLON, ''),
-  (s) => s.replace(DANGLING_STRING, ''),
-];
+const TRIMS = [(s) => s, (s) => s.replace(TRAILING_COMMA, ''), (s) => s.replace(PARTIAL_NUMBER, ''), (s) => s.replace(PARTIAL_LITERAL, '')];
+const DROPS = [(s) => s, (s) => s.replace(DANGLING_KEY_WITH_COLON, ''), (s) => s.replace(DANGLING_STRING, '')];
 
 export function parsePartialJson(raw) {
   const text = String(raw ?? '');
   if (!text.trim()) return null;
-  try { return JSON.parse(text); } catch { /* fall through to repair */ }
+  try {
+    return JSON.parse(text);
+  } catch {
+    /* fall through to repair */
+  }
 
   const { stack, inString, escaped } = scan(text);
   let base = text;
@@ -66,7 +61,11 @@ export function parsePartialJson(raw) {
   for (const trim of TRIMS) {
     for (const drop of DROPS) {
       const candidate = drop(trim(base));
-      try { return JSON.parse(candidate + closers); } catch { /* try the next repair */ }
+      try {
+        return JSON.parse(candidate + closers);
+      } catch {
+        /* try the next repair */
+      }
     }
   }
   return null;
@@ -95,7 +94,10 @@ export function toolArgsPreview(rawArgs) {
   let body = '';
   for (const key of BODY_KEYS) {
     const value = parsed[key];
-    if (typeof value === 'string' && value) { body = value; break; }
+    if (typeof value === 'string' && value) {
+      body = value;
+      break;
+    }
   }
   for (const [key, value] of Object.entries(parsed)) {
     if (BODY_KEYS.includes(key)) continue;

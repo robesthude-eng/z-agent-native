@@ -14,14 +14,18 @@ function bootstrapSandboxUids() {
   const current = Number(db.prepare("SELECT value FROM runtime_meta WHERE key='sandbox_uid_next'").get()?.value || 0);
   const floor = Number(db.prepare('SELECT MAX(sandbox_uid) max_uid FROM chats').get()?.max_uid || 19999) + 1;
   const wanted = Math.max(20000, floor, current);
-  db.prepare("INSERT INTO runtime_meta(key,value) VALUES('sandbox_uid_next',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(String(wanted));
+  db.prepare("INSERT INTO runtime_meta(key,value) VALUES('sandbox_uid_next',?) ON CONFLICT(key) DO UPDATE SET value=excluded.value").run(
+    String(wanted),
+  );
 }
 
 bootstrapSandboxUids();
 
 export function allocateSandboxUid() {
   db.prepare("INSERT OR IGNORE INTO runtime_meta(key,value) VALUES('sandbox_uid_next','20000')").run();
-  const row = db.prepare("UPDATE runtime_meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='sandbox_uid_next' RETURNING value").get();
+  const row = db
+    .prepare("UPDATE runtime_meta SET value=CAST(CAST(value AS INTEGER)+1 AS TEXT) WHERE key='sandbox_uid_next' RETURNING value")
+    .get();
   const uid = Number(row?.value) - 1;
   if (!Number.isInteger(uid) || uid < 20000 || uid > 2_000_000_000) throw new Error('Sandbox Unix identity space exhausted');
   return uid;
@@ -30,7 +34,9 @@ export function allocateSandboxUid() {
 export function workspaceFor(sessionId) {
   const root = path.join(WORKSPACES_DIR, sessionId);
   fs.mkdirSync(root, { recursive: true });
-  try { fs.chmodSync(root, 0o700); } catch {}
+  try {
+    fs.chmodSync(root, 0o700);
+  } catch {}
   return root;
 }
 
@@ -42,11 +48,20 @@ export function createChat(id, ownerId, title = 'Новый чат') {
   const now = Date.now();
   db.exec('BEGIN IMMEDIATE');
   try {
-    db.prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at,sandbox_uid) VALUES(?,?,?,?,?,?)').run(id, ownerId, title, now, now, allocateSandboxUid());
+    db.prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at,sandbox_uid) VALUES(?,?,?,?,?,?)').run(
+      id,
+      ownerId,
+      title,
+      now,
+      now,
+      allocateSandboxUid(),
+    );
     insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'chat.create', target: id });
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
   workspaceFor(id);
@@ -88,7 +103,9 @@ export function deleteChat(id, ownerId) {
     if (deleted) insertAuditEventInCurrentTransaction({ actor: ownerId, action: 'chat.delete', target: id });
     db.exec('COMMIT');
   } catch (error) {
-    try { db.exec('ROLLBACK'); } catch {}
+    try {
+      db.exec('ROLLBACK');
+    } catch {}
     throw error;
   }
   if (deleted) fs.rmSync(path.join(WORKSPACES_DIR, id), { recursive: true, force: true });

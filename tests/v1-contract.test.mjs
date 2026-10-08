@@ -13,9 +13,7 @@ const uiMessages = source('src/i18n/ru.ts');
 
 function renderUi(code) {
   return code.replace(/\bt\("([a-z0-9_.]+)"\)/g, (match, key) => {
-    const entry = uiMessages.match(
-      new RegExp(`"${key.replace(/\./g, '\\.')}":\\s*"([^"]*)"`),
-    );
+    const entry = uiMessages.match(new RegExp(`"${key.replace(/\./g, '\\.')}":\\s*"([^"]*)"`));
     return entry ? entry[1] : match;
   });
 }
@@ -24,7 +22,10 @@ test('native runtime has no browser permission-response protocol', () => {
   const agent = source('server/native/agent.mjs');
   const index = source('server/index.mjs');
 
-  assert.doesNotMatch(agent, /permissionWaiters|answerPermission|requestPermission|requiresPermission|createPermission|getPermission|resolvePermission/);
+  assert.doesNotMatch(
+    agent,
+    /permissionWaiters|answerPermission|requestPermission|requiresPermission|createPermission|getPermission|resolvePermission/,
+  );
   assert.doesNotMatch(index, /answerPermission|\/permissions\//);
 });
 
@@ -52,4 +53,3 @@ test('CI boots the production compose topology and requires readiness before dep
   assert.match(ci, /z-agent-executor[\s\S]*z-agent-browser[\s\S]*z-agent-browser-egress/);
   assert.match(ci, /docker compose down -v --remove-orphans/);
 });
-

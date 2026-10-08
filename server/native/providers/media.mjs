@@ -1,6 +1,12 @@
 import { resolveModel } from './catalog.mjs';
 import {
-  fetchJson, isTransientProviderError, providerAuth, providerError, providerFetch, routedProviderTarget, timeoutSignal,
+  fetchJson,
+  isTransientProviderError,
+  providerAuth,
+  providerError,
+  providerFetch,
+  routedProviderTarget,
+  timeoutSignal,
 } from './transport.mjs';
 
 export const MEDIA_UNSUPPORTED_KINDS = new Set(['anthropic', 'fixture']);
@@ -10,10 +16,7 @@ export const MEDIA_REQUEST_TIMEOUT_MS = 180_000;
 export function assertMediaCapableProvider(resolved, what = 'медиа-генерацию') {
   const kind = resolved?.spec?.kind || '';
   if (MEDIA_UNSUPPORTED_KINDS.has(kind)) {
-    throw Object.assign(
-      new Error(`Провайдер ${resolved?.spec?.name || kind} не поддерживает ${what}`),
-      { statusCode: 400 },
-    );
+    throw Object.assign(new Error(`Провайдер ${resolved?.spec?.name || kind} не поддерживает ${what}`), { statusCode: 400 });
   }
   if (!resolved?.spec?.baseURL) {
     throw Object.assign(new Error('У провайдера не настроен baseURL'), { statusCode: 400 });
@@ -35,21 +38,17 @@ export async function callProviderJson(ownerId, model, { path, body, signal, ret
   const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
   const url = mediaEndpointUrl(resolved, path);
   const target = await routedProviderTarget(url, resolved.trustedBaseURL);
-  return await fetchJson(
-    target,
-    { method: 'POST', headers: mediaHeaders(resolved), body: JSON.stringify(body ?? {}) },
-    signal,
-    { retries, timeoutMs },
-  );
+  return await fetchJson(target, { method: 'POST', headers: mediaHeaders(resolved), body: JSON.stringify(body ?? {}) }, signal, {
+    retries,
+    timeoutMs,
+  });
 }
 
-export async function callProviderBinary(ownerId, model, {
-  path,
-  body,
-  signal,
-  timeoutMs = MEDIA_REQUEST_TIMEOUT_MS,
-  maxBytes = MEDIA_MAX_RESPONSE_BYTES,
-} = {}) {
+export async function callProviderBinary(
+  ownerId,
+  model,
+  { path, body, signal, timeoutMs = MEDIA_REQUEST_TIMEOUT_MS, maxBytes = MEDIA_MAX_RESPONSE_BYTES } = {},
+) {
   const resolved = assertMediaCapableProvider(resolveModel(ownerId, model));
   const url = mediaEndpointUrl(resolved, path);
   const target = await routedProviderTarget(url, resolved.trustedBaseURL);
@@ -69,7 +68,9 @@ export async function callProviderBinary(ownerId, model, {
       if (!res.ok) {
         const text = await res.text().catch(() => '');
         let parsed = null;
-        try { parsed = text ? JSON.parse(text) : null; } catch {}
+        try {
+          parsed = text ? JSON.parse(text) : null;
+        } catch {}
         throw providerError(res, text, parsed);
       }
       const chunks = [];
@@ -78,14 +79,13 @@ export async function callProviderBinary(ownerId, model, {
         const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
         total += buf.length;
         if (total > maxBytes) {
-          throw Object.assign(
-            new Error(`Ответ провайдера больше лимита ${Math.round(maxBytes / (1024 * 1024))} МБ`),
-            { statusCode: 502 },
-          );
+          throw Object.assign(new Error(`Ответ провайдера больше лимита ${Math.round(maxBytes / (1024 * 1024))} МБ`), { statusCode: 502 });
         }
         chunks.push(buf);
       }
-      const mimeType = String(res.headers.get('content-type') || '').split(';')[0].trim();
+      const mimeType = String(res.headers.get('content-type') || '')
+        .split(';')[0]
+        .trim();
       return { bytes: Buffer.concat(chunks, total), mimeType: mimeType || 'application/octet-stream' };
     } catch (err) {
       lastError = err;

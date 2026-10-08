@@ -34,18 +34,25 @@ export function isPublicHttpUrl(value) {
 }
 
 function mimeFor(rel) {
-  const ext = path.posix.extname(String(rel || '')).slice(1).toLowerCase();
+  const ext = path.posix
+    .extname(String(rel || ''))
+    .slice(1)
+    .toLowerCase();
   return MIME[ext] || 'application/octet-stream';
 }
 
 function escapeHtml(value) {
-  return String(value || '').replace(/[&<>"']/g, (ch) => ({
-    '&': '&amp;',
-    '<': '&lt;',
-    '>': '&gt;',
-    '"': '&quot;',
-    "'": '&#39;',
-  }[ch]));
+  return String(value || '').replace(
+    /[&<>"']/g,
+    (ch) =>
+      ({
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#39;',
+      })[ch],
+  );
 }
 
 function inlineLocalAssets(root, htmlPath, html) {

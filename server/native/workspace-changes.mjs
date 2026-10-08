@@ -11,9 +11,30 @@ const IGNORED_ROOTS = new Set(['.agent-home', '.agent-skills', '.git']);
 // считался неполным, и любая неизвестная команда (java -version) снова
 // засчитывалась как правка. Изменения здесь — не правки исходников.
 const IGNORED_DIRS = new Set([
-  'node_modules', '.pnpm-store', '.npm', '.yarn', '.turbo', '.next', '.nuxt', '.svelte-kit',
-  '.venv', 'venv', '__pycache__', '.mypy_cache', '.pytest_cache', '.ruff_cache', '.tox',
-  '.gradle', '.cache', 'dist', 'build', 'target', 'coverage', '.dart_tool', 'Pods', '.screenshots',
+  'node_modules',
+  '.pnpm-store',
+  '.npm',
+  '.yarn',
+  '.turbo',
+  '.next',
+  '.nuxt',
+  '.svelte-kit',
+  '.venv',
+  'venv',
+  '__pycache__',
+  '.mypy_cache',
+  '.pytest_cache',
+  '.ruff_cache',
+  '.tox',
+  '.gradle',
+  '.cache',
+  'dist',
+  'build',
+  'target',
+  'coverage',
+  '.dart_tool',
+  'Pods',
+  '.screenshots',
 ]);
 
 export async function snapshotWorkspace(root, { maxEntries = 20_000, maxMs = 250 } = {}) {
@@ -23,7 +44,10 @@ export async function snapshotWorkspace(root, { maxEntries = 20_000, maxMs = 250
   let visited = 0;
   let complete = true;
   while (pending.length) {
-    if (visited >= maxEntries || performance.now() - started > maxMs) { complete = false; break; }
+    if (visited >= maxEntries || performance.now() - started > maxMs) {
+      complete = false;
+      break;
+    }
     const relative = pending.pop();
     try {
       const full = path.join(root, relative);
@@ -34,7 +58,10 @@ export async function snapshotWorkspace(root, { maxEntries = 20_000, maxMs = 250
         for (const name of await fs.readdir(full)) {
           if (name === '.git' || IGNORED_DIRS.has(name) || (!relative && IGNORED_ROOTS.has(name))) continue;
           pending.push(relative ? `${relative}/${name}` : name);
-          if (pending.length + visited > maxEntries) { complete = false; break; }
+          if (pending.length + visited > maxEntries) {
+            complete = false;
+            break;
+          }
         }
       } else {
         // lstat never follows a symlink. Include ctime so an overwritten file

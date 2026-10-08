@@ -1,9 +1,7 @@
 import { setTimeout as delay } from 'node:timers/promises';
 import { getProviderKey, listHiddenModels, listManualModels } from '../store.mjs';
 import { listProviderConfigs } from '../provider-configs.mjs';
-import {
-  assertSafeProviderUrl, fetchJson, providerAuth, publicProviderErrorMessage, wrapProviderUrl,
-} from './transport.mjs';
+import { assertSafeProviderUrl, fetchJson, providerAuth, publicProviderErrorMessage, wrapProviderUrl } from './transport.mjs';
 import { probeModel } from './caller.mjs';
 
 export const FIXTURE_PROVIDER_ID = 'fixture';
@@ -18,7 +16,10 @@ function fixtureToolCount(frames, name) {
 }
 
 function fixturePrompt(frames) {
-  return (Array.isArray(frames) ? frames : []).filter((frame) => frame?.role === 'user').map((frame) => String(frame?.content || '')).join('\n');
+  return (Array.isArray(frames) ? frames : [])
+    .filter((frame) => frame?.role === 'user')
+    .map((frame) => String(frame?.content || ''))
+    .join('\n');
 }
 
 export async function fixtureResponse(request) {
@@ -37,15 +38,35 @@ export async function fixtureResponse(request) {
   if (/FIXTURE_ASK_USER/i.test(prompt) && !questionDone) {
     response = {
       text: '',
-      toolCalls: [{ id: 'fixture_question_1', name: 'question', arguments: { questions: [{ header: 'Fixture', question: 'Continue the deterministic fixture turn?', options: [{ label: 'Continue' }] }] } }],
+      toolCalls: [
+        {
+          id: 'fixture_question_1',
+          name: 'question',
+          arguments: {
+            questions: [{ header: 'Fixture', question: 'Continue the deterministic fixture turn?', options: [{ label: 'Continue' }] }],
+          },
+        },
+      ],
       finish: 'tool_calls',
     };
   } else if (writeCount < 2) {
     response = {
       text: 'I will create a tiny module and its regression test, then execute the test.',
       toolCalls: [
-        { id: 'fixture_write_module', name: 'write', arguments: { path: 'hello.js', content: 'export const hello = () => "hello from fixture";\n' } },
-        { id: 'fixture_write_test', name: 'write', arguments: { path: 'hello.test.mjs', content: 'import assert from "node:assert/strict";\nimport fs from "node:fs";\nimport test from "node:test";\nconst source = fs.readFileSync(new URL("./hello.js", import.meta.url), "utf8");\ntest("fixture hello", () => assert.match(source, /hello from fixture/));\n' } },
+        {
+          id: 'fixture_write_module',
+          name: 'write',
+          arguments: { path: 'hello.js', content: 'export const hello = () => "hello from fixture";\n' },
+        },
+        {
+          id: 'fixture_write_test',
+          name: 'write',
+          arguments: {
+            path: 'hello.test.mjs',
+            content:
+              'import assert from "node:assert/strict";\nimport fs from "node:fs";\nimport test from "node:test";\nconst source = fs.readFileSync(new URL("./hello.js", import.meta.url), "utf8");\ntest("fixture hello", () => assert.match(source, /hello from fixture/));\n',
+          },
+        },
       ],
       finish: 'tool_calls',
     };
@@ -58,7 +79,13 @@ export async function fixtureResponse(request) {
   } else if (/FIXTURE_LIVE_TOOL_OUTPUT/i.test(prompt) && fixtureToolCount(frames, 'bash') === 0) {
     response = {
       text: 'Проверяю живой вывод команды.',
-      toolCalls: [{ id: 'fixture_stream_bash', name: 'bash', arguments: { command: 'sleep 1; printf "STREAM_FIRST\\n"; printf "STREAM_WARNING\\n" >&2; sleep 4; printf "STREAM_LAST\\n"' } }],
+      toolCalls: [
+        {
+          id: 'fixture_stream_bash',
+          name: 'bash',
+          arguments: { command: 'sleep 1; printf "STREAM_FIRST\\n"; printf "STREAM_WARNING\\n" >&2; sleep 4; printf "STREAM_LAST\\n"' },
+        },
+      ],
       finish: 'tool_calls',
     };
   } else {
@@ -70,11 +97,13 @@ export async function fixtureResponse(request) {
   }
 
   if (response.finish === 'stop' && /FIXTURE_READABLE_REPLY/i.test(prompt)) {
-    response.text = 'Готово: создан модуль `hello.js` и проверен регрессионным тестом.\n\n## Что сделано\n\n- **Модуль:** добавлена функция приветствия.\n- **Проверка:** тест читает созданный файл и проверяет его содержимое.\n- **Файлы:** доступны в рабочем пространстве рядом с чатом.\n\n## Как проверено\n\nВыполнена команда `node --test hello.test.mjs`. Тест завершился успешно.\n\n### Пример использования\n\n```js\nimport { hello } from "./hello.js";\nconsole.log(hello());\n```\n\n| Файл | Назначение |\n| --- | --- |\n| hello.js | Код модуля |\n| hello.test.mjs | Регрессионный тест |\n\nОткройте файл в воркспейсе, чтобы посмотреть код.';
+    response.text =
+      'Готово: создан модуль `hello.js` и проверен регрессионным тестом.\n\n## Что сделано\n\n- **Модуль:** добавлена функция приветствия.\n- **Проверка:** тест читает созданный файл и проверяет его содержимое.\n- **Файлы:** доступны в рабочем пространстве рядом с чатом.\n\n## Как проверено\n\nВыполнена команда `node --test hello.test.mjs`. Тест завершился успешно.\n\n### Пример использования\n\n```js\nimport { hello } from "./hello.js";\nconsole.log(hello());\n```\n\n| Файл | Назначение |\n| --- | --- |\n| hello.js | Код модуля |\n| hello.test.mjs | Регрессионный тест |\n\nОткройте файл в воркспейсе, чтобы посмотреть код.';
   }
 
   if (response.finish === 'stop' && /FIXTURE_PROVIDER_RESEARCH_REPLY/i.test(prompt)) {
-    response.text = '## Документация OpenCode\n\nСсылка в ответе должна отображаться, а не превращаться в ошибку: [opencode.ai](https://opencode.ai/docs/zen/).\n\nПример параметра запроса: `{"model":"example-model"}`.\n\nФраза `Model is unavailable` здесь — пример текста ошибки, а не ошибка этого ответа.';
+    response.text =
+      '## Документация OpenCode\n\nСсылка в ответе должна отображаться, а не превращаться в ошибку: [opencode.ai](https://opencode.ai/docs/zen/).\n\nПример параметра запроса: `{"model":"example-model"}`.\n\nФраза `Model is unavailable` здесь — пример текста ошибки, а не ошибка этого ответа.';
   }
 
   if (typeof request?.onTextDelta === 'function' && response.text) request.onTextDelta(response.text, 'text');
@@ -94,13 +123,18 @@ export async function fixtureResponse(request) {
 export const builtInSpecs = {};
 
 export function effectiveSpecs(ownerId) {
-  const specs = Object.fromEntries(Object.entries(builtInSpecs).map(([id, spec]) => [id, {
-    ...spec,
-    id,
-    enabled: true,
-    custom: false,
-    trustedBaseURL: true,
-  }]));
+  const specs = Object.fromEntries(
+    Object.entries(builtInSpecs).map(([id, spec]) => [
+      id,
+      {
+        ...spec,
+        id,
+        enabled: true,
+        custom: false,
+        trustedBaseURL: true,
+      },
+    ]),
+  );
   if (!ownerId) return specs;
   for (const config of listProviderConfigs(ownerId)) {
     const builtin = builtInSpecs[config.id];
@@ -153,7 +187,15 @@ export function providerList(ownerId = null) {
     models: {},
   }));
   if (fixtureProviderEnabled()) {
-    rows.unshift({ id: FIXTURE_PROVIDER_ID, name: 'Deterministic Fixture', protocol: 'fixture', baseURL: '', enabled: true, custom: false, models: {} });
+    rows.unshift({
+      id: FIXTURE_PROVIDER_ID,
+      name: 'Deterministic Fixture',
+      protocol: 'fixture',
+      baseURL: '',
+      enabled: true,
+      custom: false,
+      models: {},
+    });
   }
   return rows;
 }
@@ -204,7 +246,12 @@ export async function fetchModels(ownerId, providerId, { force = false } = {}) {
     const body = await fetchModelList(spec, key);
     let models = [];
     if (spec.kind === 'google') {
-      models = (body?.models || []).map((m) => ({ id: String(m.name || '').replace(/^models\//, ''), name: m.displayName || String(m.name || '').replace(/^models\//, '') })).filter((m) => m.id);
+      models = (body?.models || [])
+        .map((m) => ({
+          id: String(m.name || '').replace(/^models\//, ''),
+          name: m.displayName || String(m.name || '').replace(/^models\//, ''),
+        }))
+        .filter((m) => m.id);
     } else {
       const rows = Array.isArray(body?.data) ? body.data : Array.isArray(body?.models) ? body.models : [];
       models = rows.map((m) => ({ id: String(m.id || m.name || ''), name: m.display_name || m.name || m.id })).filter((m) => m.id);
@@ -233,7 +280,10 @@ function expandFinitePattern(pattern, limit = 64) {
     if (idx < 0) break;
     const current = values[idx];
     const m = /\{([^{}]+)\}/.exec(current);
-    const choices = m[1].split(',').map((x) => x.trim()).filter(Boolean);
+    const choices = m[1]
+      .split(',')
+      .map((x) => x.trim())
+      .filter(Boolean);
     const next = choices.map((c) => current.slice(0, m.index) + c + current.slice(m.index + m[0].length));
     values.splice(idx, 1, ...next);
     if (values.length > limit) throw new Error(`Pattern expands to more than ${limit} models`);
@@ -249,7 +299,9 @@ async function discoveredFromPattern(ownerId, providerId, pattern) {
   const found = [];
   for (let i = 0; i < candidates.length; i += 4) {
     const batch = candidates.slice(i, i + 4);
-    const results = await Promise.all(batch.map(async (modelId) => ({ modelId, result: await probeModel(ownerId, providerId, { modelId, baseUrl: pattern.base_url }) })));
+    const results = await Promise.all(
+      batch.map(async (modelId) => ({ modelId, result: await probeModel(ownerId, providerId, { modelId, baseUrl: pattern.base_url }) })),
+    );
     for (const x of results) if (x.result.available) found.push(x.modelId);
   }
   discoveryCache.set(ck, { at: Date.now(), models: found });
@@ -279,20 +331,38 @@ export async function buildCatalog(ownerId, { force = false } = {}) {
     const hidden = new Set(hiddenList);
     for (const model of found.models) {
       if (hidden.has(model.id)) continue;
-      models.push({ providerID: providerId, sourceProviderID: providerId, providerName: spec.name, modelID: model.id, modelName: model.name, free: false, source: 'catalog', status: found.status });
+      models.push({
+        providerID: providerId,
+        sourceProviderID: providerId,
+        providerName: spec.name,
+        modelID: model.id,
+        modelName: model.name,
+        free: false,
+        source: 'catalog',
+        status: found.status,
+      });
     }
     for (const manual of listManualModels(ownerId, providerId)) {
       if (!manual.enabled) continue;
       if (manual.pattern) {
         let discovered = [];
-        try { discovered = await discoveredFromPattern(ownerId, providerId, manual); } catch { discovered = []; }
+        try {
+          discovered = await discoveredFromPattern(ownerId, providerId, manual);
+        } catch {
+          discovered = [];
+        }
         for (const modelId of discovered) {
           if (hidden.has(modelId)) continue;
           models.push({
-            providerID: manualProviderId(providerId, manual), sourceProviderID: providerId,
+            providerID: manualProviderId(providerId, manual),
+            sourceProviderID: providerId,
             providerName: manual.base_url ? `${spec.name} · Custom` : spec.name,
-            modelID: modelId, modelName: modelId, free: manual.is_free, source: 'discovered',
-            endpoint: manual.base_url, status: 'live',
+            modelID: modelId,
+            modelName: modelId,
+            free: manual.is_free,
+            source: 'discovered',
+            endpoint: manual.base_url,
+            status: 'live',
           });
         }
         continue;
@@ -372,7 +442,11 @@ export function resolveModel(ownerId, model) {
       const manual = listManualModels(ownerId, sourceId).find((m) => {
         if (!m.enabled || manualProviderId(sourceId, m) !== providerID) return false;
         if (!m.pattern) return m.model_id === modelID;
-        try { return expandFinitePattern(m.model_id).includes(modelID); } catch { return false; }
+        try {
+          return expandFinitePattern(m.model_id).includes(modelID);
+        } catch {
+          return false;
+        }
       });
       if (manual) {
         return {

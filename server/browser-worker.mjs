@@ -15,29 +15,41 @@ function reply(payload) {
 let chain = Promise.resolve();
 const input = readline.createInterface({ input: process.stdin, crlfDelay: Infinity });
 input.on('line', (line) => {
-  chain = chain.then(async () => {
-    let message;
-    try { message = JSON.parse(line); }
-    catch { return; }
-    const id = String(message?.id || '');
-    if (!id) return;
-    try {
-      const result = await executeBrowserTool({ sessionId, input: message.input || {} });
-      reply({ id, ok: true, result });
-      if (String(message?.input?.action || '').toLowerCase() === 'close') process.exitCode = 0;
-    } catch (error) {
-      reply({ id, ok: false, error: error?.message || String(error), code: error?.code || 'BROWSER_WORKER_ERROR' });
-    }
-  }).catch(() => {});
+  chain = chain
+    .then(async () => {
+      let message;
+      try {
+        message = JSON.parse(line);
+      } catch {
+        return;
+      }
+      const id = String(message?.id || '');
+      if (!id) return;
+      try {
+        const result = await executeBrowserTool({ sessionId, input: message.input || {} });
+        reply({ id, ok: true, result });
+        if (String(message?.input?.action || '').toLowerCase() === 'close') process.exitCode = 0;
+      } catch (error) {
+        reply({ id, ok: false, error: error?.message || String(error), code: error?.code || 'BROWSER_WORKER_ERROR' });
+      }
+    })
+    .catch(() => {});
 });
 
 async function shutdown(code = 0) {
-  try { input.close(); } catch {}
+  try {
+    input.close();
+  } catch {}
   await closeAllBrowserSessions().catch(() => {});
   process.exit(code);
 }
-for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { shutdown(0).catch(() => process.exit(1)); });
-process.stdin.on('end', () => { chain.finally(() => shutdown(process.exitCode || 0)).catch(() => process.exit(1)); });
+for (const signal of ['SIGTERM', 'SIGINT'])
+  process.on(signal, () => {
+    shutdown(0).catch(() => process.exit(1));
+  });
+process.stdin.on('end', () => {
+  chain.finally(() => shutdown(process.exitCode || 0)).catch(() => process.exit(1));
+});
 
 // Crashing straight out of this process would skip closeAllBrowserSessions and
 // orphan the Chromium processes it spawned, which then survive as untracked
@@ -46,20 +58,26 @@ process.stdin.on('end', () => { chain.finally(() => shutdown(process.exitCode ||
 // carries the framed response protocol the controller parses.
 function fatal(kind, cause) {
   try {
-    console.error(JSON.stringify({
-      level: 'fatal',
-      service: 'browser-worker',
-      event: kind,
-      at: new Date().toISOString(),
-      sessionId,
-      message: String(cause?.message || cause),
-      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
-    }));
+    console.error(
+      JSON.stringify({
+        level: 'fatal',
+        service: 'browser-worker',
+        event: kind,
+        at: new Date().toISOString(),
+        sessionId,
+        message: String(cause?.message || cause),
+        stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+      }),
+    );
   } catch {
     console.error('[browser-worker]', kind, cause);
   }
   process.exitCode = 1;
   shutdown(1).catch(() => process.exit(1));
 }
-process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
-process.on('uncaughtException', (error) => { fatal('uncaughtException', error); });
+process.on('unhandledRejection', (reason) => {
+  fatal('unhandledRejection', reason);
+});
+process.on('uncaughtException', (error) => {
+  fatal('uncaughtException', error);
+});

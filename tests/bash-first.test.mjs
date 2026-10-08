@@ -21,7 +21,13 @@ const context = await import('../server/native/context.mjs');
 const ownerId = 'bash-first@example.com';
 const providerId = 'openai';
 store.createUser(ownerId, 'hash');
-providerConfigs.upsertProviderConfig(ownerId, { id: providerId, name: 'Bash First OpenAI', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', enabled: true });
+providerConfigs.upsertProviderConfig(ownerId, {
+  id: providerId,
+  name: 'Bash First OpenAI',
+  protocol: 'openai',
+  baseURL: 'https://1.1.1.1/v1',
+  enabled: true,
+});
 store.setProviderKey(ownerId, providerId, 'sk-bash-first');
 providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
@@ -41,7 +47,8 @@ test('bash-first replaces exploration tools with bash and keeps the editing tool
   assert.ok(names(all).includes('bash'));
   const tools = names(options.filterChatTools(all, { webSearch: true, bashFirst: true }));
   for (const gone of Object.keys(options.BASH_FIRST_REPLACED)) assert.ok(!tools.includes(gone), `${gone} should be hidden`);
-  for (const kept of ['bash', 'write', 'edit', 'apply_patch', 'todowrite', 'question', 'task']) assert.ok(tools.includes(kept), `${kept} should stay`);
+  for (const kept of ['bash', 'write', 'edit', 'apply_patch', 'todowrite', 'question', 'task'])
+    assert.ok(tools.includes(kept), `${kept} should stay`);
   assert.ok(tools.length < all.length);
   // off: nothing changes
   assert.deepEqual(names(options.filterChatTools(all, { webSearch: true, bashFirst: false })), names(all));
@@ -72,16 +79,31 @@ test('the bash-first prompt section is added only when asked for and bash exists
 
 test('reading a changed file back with cat/sed counts as the readback', () => {
   const strategy = context.createTurnStrategy('goal');
-  context.observeTool(strategy, { name: 'write', arguments: { path: 'app.js', content: 'x' } }, { isError: false, mutatedPaths: ['app.js'], content: 'ok' });
+  context.observeTool(
+    strategy,
+    { name: 'write', arguments: { path: 'app.js', content: 'x' } },
+    { isError: false, mutatedPaths: ['app.js'], content: 'ok' },
+  );
   assert.deepEqual(strategy.pendingReadbacks, ['app.js']);
-  context.observeTool(strategy, { name: 'bash', arguments: { command: 'ls app.js' } }, { isError: false, content: 'app.js', metadata: { workspaceChanges: { complete: true, paths: [] } } });
+  context.observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: 'ls app.js' } },
+    { isError: false, content: 'app.js', metadata: { workspaceChanges: { complete: true, paths: [] } } },
+  );
   assert.deepEqual(strategy.pendingReadbacks, ['app.js'], 'listing a file is not reading it');
-  context.observeTool(strategy, { name: 'bash', arguments: { command: "sed -n '1,40p' app.js" } }, { isError: false, content: 'x', metadata: { workspaceChanges: { complete: true, paths: [] } } });
+  context.observeTool(
+    strategy,
+    { name: 'bash', arguments: { command: "sed -n '1,40p' app.js" } },
+    { isError: false, content: 'x', metadata: { workspaceChanges: { complete: true, paths: [] } } },
+  );
   assert.deepEqual(strategy.pendingReadbacks, []);
 });
 
 function sse(items) {
-  return new Response(items.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+  return new Response(items.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
 }
 
 test('a bash-first turn sends the reduced toolset and answers a hidden-tool call with a hint', async () => {
@@ -97,14 +119,28 @@ test('a bash-first turn sends the reduced toolset and answers a hidden-tool call
     call += 1;
     if (call === 1) {
       return sse([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_read', function: { name: 'read', arguments: '{"path":"a.txt"}' } }] } }] },
-        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] }, '[DONE]',
+        {
+          choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_read', function: { name: 'read', arguments: '{"path":"a.txt"}' } }] } }],
+        },
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
       ]);
     }
-    return sse([{ choices: [{ delta: { content: 'Понял, использую bash.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
+    return sse([
+      { choices: [{ delta: { content: 'Понял, использую bash.' } }] },
+      { choices: [{ delta: {}, finish_reason: 'stop' }] },
+      '[DONE]',
+    ]);
   };
   try {
-    const assistant = await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'Покажи a.txt' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '', toolOptions: { webSearch: true, bashFirst: true } });
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Покажи a.txt' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+      toolOptions: { webSearch: true, bashFirst: true },
+    });
     assert.ok(!sent[0].tools.includes('read') && !sent[0].tools.includes('grep'));
     assert.ok(sent[0].tools.includes('bash') && sent[0].tools.includes('write'));
     assert.ok(sent[0].system.includes('Bash-first mode'));
@@ -117,7 +153,14 @@ test('a bash-first turn sends the reduced toolset and answers a hidden-tool call
     // same chat, option off: the full toolset is back
     call = 99;
     sent.length = 0;
-    await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'ещё' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '', toolOptions: { webSearch: true, bashFirst: false } });
+    await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'ещё' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+      toolOptions: { webSearch: true, bashFirst: false },
+    });
     assert.ok(sent[0].tools.includes('read') && sent[0].tools.includes('grep'));
     assert.ok(!sent[0].system.includes('Bash-first mode'));
   } finally {

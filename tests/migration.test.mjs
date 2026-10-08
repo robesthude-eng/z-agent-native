@@ -33,8 +33,12 @@ legacy.exec(`
   );
 `);
 legacy.prepare('INSERT INTO users(email,password_hash,role,created_at) VALUES(?,?,?,?)').run('legacy@example.com', 'hash', 'admin', 1);
-legacy.prepare('INSERT INTO provider_keys(owner_id,provider_id,api_key,updated_at) VALUES(?,?,?,?)').run('legacy@example.com', 'openai', 'legacy-plaintext-key', 1);
-legacy.prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)').run('ses_legacy1', 'legacy@example.com', 'Legacy', 1, 1);
+legacy
+  .prepare('INSERT INTO provider_keys(owner_id,provider_id,api_key,updated_at) VALUES(?,?,?,?)')
+  .run('legacy@example.com', 'openai', 'legacy-plaintext-key', 1);
+legacy
+  .prepare('INSERT INTO chats(id,owner_id,title,created_at,updated_at) VALUES(?,?,?,?,?)')
+  .run('ses_legacy1', 'legacy@example.com', 'Legacy', 1, 1);
 legacy.close();
 
 process.env.Z_AGENT_DATA_DIR = data;
@@ -53,7 +57,9 @@ test('legacy chats schema migrates to persistent sandbox identities without losi
 test.after(() => {
   store.closeStore();
   const verify = new DatabaseSync(dbPath);
-  const encrypted = verify.prepare("SELECT api_key FROM provider_keys WHERE owner_id='legacy@example.com' AND provider_id='openai'").get().api_key;
+  const encrypted = verify
+    .prepare("SELECT api_key FROM provider_keys WHERE owner_id='legacy@example.com' AND provider_id='openai'")
+    .get().api_key;
   assert.match(encrypted, /^enc:v2:[0-9a-f]{16}:/);
   assert.doesNotMatch(encrypted, /legacy-plaintext-key/);
   verify.close();

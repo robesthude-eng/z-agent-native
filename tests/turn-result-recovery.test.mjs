@@ -57,5 +57,8 @@ test('dangling Result snapshot stays open while a persisted turn is recoverable'
   const result = results.getTurnResult(sid, assistantId);
   assert.equal(result.turnId, turnId);
   assert.equal(result.changeCount, 1);
-  assert.deepEqual(result.changes.map((change) => change.path), ['file.txt']);
+  assert.deepEqual(
+    result.changes.map((change) => change.path),
+    ['file.txt'],
+  );
 });

@@ -1,15 +1,26 @@
 import crypto from 'node:crypto';
 import { ALLOW_OPEN_REGISTRATION, INVITE_CODE, SECURE_COOKIES, SESSION_TTL_MS } from './config.mjs';
 import {
-  createAuthSession, createRegistrationUser, deleteAuthSession,
-  getAuthSession, getUser, pruneAuthSessions, updatePassword, updatePasswordAndRevokeSessions, userCount,
+  createAuthSession,
+  createRegistrationUser,
+  deleteAuthSession,
+  getAuthSession,
+  getUser,
+  pruneAuthSessions,
+  updatePassword,
+  updatePasswordAndRevokeSessions,
+  userCount,
 } from './store.mjs';
 
 const SESSION_COOKIE = SECURE_COOKIES ? '__Host-z_agent_session' : 'z_agent_session';
 const CSRF_COOKIE = SECURE_COOKIES ? '__Host-z_agent_csrf' : 'z_agent_csrf';
 
-function b64url(buffer) { return Buffer.from(buffer).toString('base64url'); }
-function unb64(value) { return Buffer.from(value, 'base64url'); }
+function b64url(buffer) {
+  return Buffer.from(buffer).toString('base64url');
+}
+function unb64(value) {
+  return Buffer.from(value, 'base64url');
+}
 
 // Comparing tokens with === leaks their prefix through response timing.
 function safeEqual(a, b) {
@@ -41,7 +52,18 @@ function passwordHashParams(encoded) {
   const N = Number(parts[2]);
   const r = Number(parts[3]);
   const p = Number(parts[4]);
-  if (!Number.isInteger(N) || !Number.isInteger(r) || !Number.isInteger(p) || N < 16384 || N > 1_048_576 || r < 1 || r > 32 || p < 1 || p > 16) return null;
+  if (
+    !Number.isInteger(N) ||
+    !Number.isInteger(r) ||
+    !Number.isInteger(p) ||
+    N < 16384 ||
+    N > 1_048_576 ||
+    r < 1 ||
+    r > 32 ||
+    p < 1 ||
+    p > 16
+  )
+    return null;
   // maxmem is deliberately bounded independently of values stored in the DB so
   // a corrupt/malicious password_hash row cannot turn login into memory DoS.
   const required = 128 * N * r + 16 * 1024 * 1024;
@@ -51,7 +73,13 @@ function passwordHashParams(encoded) {
 
 export function passwordHashNeedsUpgrade(encoded) {
   const params = passwordHashParams(encoded);
-  return !params || params.version !== PASSWORD_VERSION || params.N < PASSWORD_SCRYPT.N || params.r < PASSWORD_SCRYPT.r || params.p < PASSWORD_SCRYPT.p;
+  return (
+    !params ||
+    params.version !== PASSWORD_VERSION ||
+    params.N < PASSWORD_SCRYPT.N ||
+    params.r < PASSWORD_SCRYPT.r ||
+    params.p < PASSWORD_SCRYPT.p
+  );
 }
 
 export function verifyPassword(password, encoded) {
@@ -62,7 +90,12 @@ export function verifyPassword(password, encoded) {
     if (expected.length < 32 || expected.length > 128) return false;
     const salt = unb64(params.saltText);
     if (salt.length < 16 || salt.length > 64) return false;
-    const actual = crypto.scryptSync(String(password), salt, expected.length, { N: params.N, r: params.r, p: params.p, maxmem: params.maxmem });
+    const actual = crypto.scryptSync(String(password), salt, expected.length, {
+      N: params.N,
+      r: params.r,
+      p: params.p,
+      maxmem: params.maxmem,
+    });
     return expected.length === actual.length && crypto.timingSafeEqual(expected, actual);
   } catch {
     return false;
@@ -77,8 +110,11 @@ function parseCookies(req) {
     const k = part.slice(0, i).trim();
     const v = part.slice(i + 1).trim();
     if (k) {
-      try { out[k] = decodeURIComponent(v); }
-      catch { /* malformed cookies are ignored instead of turning auth into 500 */ }
+      try {
+        out[k] = decodeURIComponent(v);
+      } catch {
+        /* malformed cookies are ignored instead of turning auth into 500 */
+      }
     }
   }
   return out;
@@ -163,9 +199,12 @@ export function checkCsrf(req, res, auth = null) {
 }
 
 export function registerUser(email, password, inviteCode = '') {
-  const clean = String(email || '').trim().toLowerCase();
+  const clean = String(email || '')
+    .trim()
+    .toLowerCase();
   const passwordText = String(password || '');
-  if (!clean.includes('@') || passwordText.length < 12) throw Object.assign(new Error('Введите корректный email и пароль минимум из 12 символов.'), { statusCode: 400 });
+  if (!clean.includes('@') || passwordText.length < 12)
+    throw Object.assign(new Error('Введите корректный email и пароль минимум из 12 символов.'), { statusCode: 400 });
   const bootstrapHint = userCount() === 0;
   // Fast-fail the normal closed-registration path, then repeat the authorization
   // decision inside an IMMEDIATE SQLite transaction. The second check is what
@@ -173,10 +212,14 @@ export function registerUser(email, password, inviteCode = '') {
   if (!bootstrapHint && !INVITE_CODE && !ALLOW_OPEN_REGISTRATION) {
     throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
   }
-  if (INVITE_CODE && !safeEqual(String(inviteCode ?? '').trim(), INVITE_CODE)) throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
+  if (INVITE_CODE && !safeEqual(String(inviteCode ?? '').trim(), INVITE_CODE))
+    throw Object.assign(new Error('Неверный код приглашения.'), { statusCode: 403 });
   if (getUser(clean)) throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
-  const result = createRegistrationUser(clean, hashPassword(passwordText), { allowAdditional: Boolean(INVITE_CODE || ALLOW_OPEN_REGISTRATION) });
-  if (result.status === 'closed') throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
+  const result = createRegistrationUser(clean, hashPassword(passwordText), {
+    allowAdditional: Boolean(INVITE_CODE || ALLOW_OPEN_REGISTRATION),
+  });
+  if (result.status === 'closed')
+    throw Object.assign(new Error('Регистрация закрыта. Обратитесь к администратору за кодом приглашения.'), { statusCode: 403 });
   if (result.status === 'exists') throw Object.assign(new Error('Пользователь уже существует.'), { statusCode: 409 });
   return getUser(clean);
 }
@@ -187,14 +230,17 @@ export function registerUser(email, password, inviteCode = '') {
 let decoyPasswordHash = null;
 
 export function loginUser(email, password) {
-  const clean = String(email || '').trim().toLowerCase();
+  const clean = String(email || '')
+    .trim()
+    .toLowerCase();
   const user = getUser(clean);
   if (!user) {
     decoyPasswordHash ??= hashPassword(crypto.randomBytes(18).toString('base64url'));
     verifyPassword(password || '', decoyPasswordHash);
     throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
   }
-  if (!verifyPassword(password || '', user.password_hash)) throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
+  if (!verifyPassword(password || '', user.password_hash))
+    throw Object.assign(new Error('Неверный email или пароль.'), { statusCode: 401 });
   // Opportunistic rehash keeps long-lived self-hosted accounts on the current
   // password KDF without forcing a fleet-wide reset. Verification happens
   // first, so only the legitimate password can trigger migration.
@@ -202,11 +248,15 @@ export function loginUser(email, password) {
   return getUser(clean) || user;
 }
 
-export function logoutToken(token) { if (token) deleteAuthSession(token); }
+export function logoutToken(token) {
+  if (token) deleteAuthSession(token);
+}
 
 export function changePassword(email, currentPassword, newPassword, keepToken) {
   const user = getUser(email);
-  if (!user || !verifyPassword(currentPassword || '', user.password_hash)) throw Object.assign(new Error('Текущий пароль неверен.'), { statusCode: 400 });
-  if (String(newPassword || '').length < 12) throw Object.assign(new Error('Новый пароль должен содержать минимум 12 символов.'), { statusCode: 400 });
+  if (!user || !verifyPassword(currentPassword || '', user.password_hash))
+    throw Object.assign(new Error('Текущий пароль неверен.'), { statusCode: 400 });
+  if (String(newPassword || '').length < 12)
+    throw Object.assign(new Error('Новый пароль должен содержать минимум 12 символов.'), { statusCode: 400 });
   return updatePasswordAndRevokeSessions(email, hashPassword(newPassword), keepToken);
 }

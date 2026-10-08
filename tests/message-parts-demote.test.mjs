@@ -9,7 +9,12 @@ function setup(parts) {
   return {
     assistant,
     events,
-    deps: { putMessage: () => { saved += 1; }, emit: (...args) => events.push(args) },
+    deps: {
+      putMessage: () => {
+        saved += 1;
+      },
+      emit: (...args) => events.push(args),
+    },
     saves: () => saved,
   };
 }

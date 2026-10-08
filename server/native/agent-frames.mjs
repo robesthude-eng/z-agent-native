@@ -12,8 +12,11 @@ const BASH_FIRST_FILE = new URL('../system-instruction-bash-first.txt', import.m
 const cache = new Map();
 function readPromptFile(url) {
   if (!cache.has(url.href)) {
-    try { cache.set(url.href, fs.readFileSync(url, 'utf8').trim()); }
-    catch { cache.set(url.href, ''); }
+    try {
+      cache.set(url.href, fs.readFileSync(url, 'utf8').trim());
+    } catch {
+      cache.set(url.href, '');
+    }
   }
   return cache.get(url.href);
 }
@@ -63,7 +66,9 @@ function attachmentContext(message) {
   const refs = attachmentRefs(message);
   if (!refs.length) return '';
   const lines = refs.map((ref) => `- ${ref.name} -> ${ref.path}${ref.note ? ` (${ref.note})` : ''}`);
-  return ['[User attachments already present in this chat workspace]', ...lines, 'Use workspace tools with these relative paths.'].join('\n');
+  return ['[User attachments already present in this chat workspace]', ...lines, 'Use workspace tools with these relative paths.'].join(
+    '\n',
+  );
 }
 
 function messageMedia(message, workspace) {
@@ -78,7 +83,9 @@ function messageMedia(message, workspace) {
       const mime = String(part.mime || (part.kind === 'pdf' ? 'application/pdf' : 'application/octet-stream'));
       const dataUrl = `data:${mime};base64,${fs.readFileSync(full).toString('base64')}`;
       out.push({ name: String(part.name || path.basename(full)), kind: String(part.kind), dataUrl });
-    } catch { /* attachment may have been removed after the message was sent */ }
+    } catch {
+      /* attachment may have been removed after the message was sent */
+    }
   }
   return out;
 }
@@ -111,8 +118,16 @@ export function framesFromMessages(messages, workspace) {
       continue;
     }
     if (msg.role !== 'assistant') continue;
-    const content = (msg.parts || []).filter((part) => part?.type === 'text' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
-    const reasoning = (msg.parts || []).filter((part) => part?.type === 'reasoning' && typeof part.text === 'string').map((part) => part.text).join('\n\n').trim();
+    const content = (msg.parts || [])
+      .filter((part) => part?.type === 'text' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n\n')
+      .trim();
+    const reasoning = (msg.parts || [])
+      .filter((part) => part?.type === 'reasoning' && typeof part.text === 'string')
+      .map((part) => part.text)
+      .join('\n\n')
+      .trim();
     const tools = (msg.parts || []).filter((part) => part?.type === 'tool' && part.callID && part.tool && part.tool !== 'review');
     const toolCalls = tools.map((part) => ({
       id: String(part.callID),
@@ -167,11 +182,17 @@ export function userPartsFromPrompt(parts, workspace) {
         mime: String(part.mime || 'application/octet-stream'),
         ...(typeof part.note === 'string' && part.note ? { note: part.note.slice(0, 300) } : {}),
       });
-    } catch { /* forged/stale path is not accepted into the chat record */ }
+    } catch {
+      /* forged/stale path is not accepted into the chat record */
+    }
   }
   return ui;
 }
 
 export function promptText(parts) {
-  return (Array.isArray(parts) ? parts : []).filter((p) => p?.type === 'text' && typeof p.text === 'string').map((p) => p.text).join('\n\n').trim();
+  return (Array.isArray(parts) ? parts : [])
+    .filter((p) => p?.type === 'text' && typeof p.text === 'string')
+    .map((p) => p.text)
+    .join('\n\n')
+    .trim();
 }

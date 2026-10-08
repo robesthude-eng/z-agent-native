@@ -21,7 +21,11 @@ function isHtmlFile(dir, name) {
 }
 
 function mtimeOf(file) {
-  try { return fs.statSync(file).mtimeMs; } catch { return 0; }
+  try {
+    return fs.statSync(file).mtimeMs;
+  } catch {
+    return 0;
+  }
 }
 
 // Исходный index.html из Vite/CRA-проекта без сборки — не страница, а заглушка:
@@ -87,7 +91,11 @@ export function previewDocument(workspace) {
   for (const name of names) {
     if (name.startsWith('.') || SKIP_DIRS.has(name)) continue;
     const dir = path.join(root, name);
-    try { if (!fs.statSync(dir).isDirectory()) continue; } catch { continue; }
+    try {
+      if (!fs.statSync(dir).isDirectory()) continue;
+    } catch {
+      continue;
+    }
     consider(dir, `${name}/`);
     for (const build of BUILD_DIRS) consider(path.join(dir, build), `${name}/${build}/`);
   }
@@ -217,8 +225,9 @@ window.EventSource = FakeEventSource;
 
 export function injectPreviewShims(html) {
   const doc = String(html);
-  const isZAgent = /<meta\s+[^>]*name=["']app-version["'][^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*>/i.test(doc)
-    || /<meta\s+[^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*name=["']app-version["'][^>]*>/i.test(doc);
+  const isZAgent =
+    /<meta\s+[^>]*name=["']app-version["'][^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*>/i.test(doc) ||
+    /<meta\s+[^>]*content=["']z-agent-native(?:-[^"']*)?["'][^>]*name=["']app-version["'][^>]*>/i.test(doc);
   const shims = [
     ...(doc.includes('__pv_probe') ? [] : [PREVIEW_STORAGE_SHIM]),
     ...(isZAgent && !doc.includes('__previewMock') ? [PREVIEW_API_MOCK_SHIM] : []),

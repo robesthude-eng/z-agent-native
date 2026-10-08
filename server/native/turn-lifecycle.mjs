@@ -8,7 +8,9 @@ const ALLOWED = new Map([
   ['cancelled', new Set(['cancelled'])],
 ]);
 
-export function isTerminalTurnLifecycle(value) { return TERMINAL.has(String(value || '')); }
+export function isTerminalTurnLifecycle(value) {
+  return TERMINAL.has(String(value || ''));
+}
 
 /**
  * Validate the persisted lifecycle as a state machine scoped to one turn ID.
@@ -29,10 +31,12 @@ export function assertTurnTransition(previous, next, options = {}) {
     return true;
   }
   const from = String(previous.lifecycle || '');
-  const explicitRestartRecovery = options.allowRuntimeRestartRecovery === true
-    && from === 'failed'
-    && String(previous.reason || '') === 'runtime_restart'
-    && nextLifecycle === 'running';
-  if (!explicitRestartRecovery && !ALLOWED.get(from)?.has(nextLifecycle)) throw new Error(`Invalid turn lifecycle transition: ${from} -> ${nextLifecycle}`);
+  const explicitRestartRecovery =
+    options.allowRuntimeRestartRecovery === true &&
+    from === 'failed' &&
+    String(previous.reason || '') === 'runtime_restart' &&
+    nextLifecycle === 'running';
+  if (!explicitRestartRecovery && !ALLOWED.get(from)?.has(nextLifecycle))
+    throw new Error(`Invalid turn lifecycle transition: ${from} -> ${nextLifecycle}`);
   return true;
 }

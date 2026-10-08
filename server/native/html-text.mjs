@@ -7,10 +7,37 @@
 // code blocks and links.
 
 const NAMED_ENTITIES = {
-  amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', ndash: '–', mdash: '—', hellip: '…',
-  laquo: '«', raquo: '»', ldquo: '“', rdquo: '”', lsquo: '‘', rsquo: '’', bull: '•', middot: '·',
-  copy: '©', reg: '®', trade: '™', deg: '°', times: '×', euro: '€', larr: '←', rarr: '→', shy: '',
-  zwj: '', zwnj: '', thinsp: ' ', ensp: ' ', emsp: ' ',
+  amp: '&',
+  lt: '<',
+  gt: '>',
+  quot: '"',
+  apos: "'",
+  nbsp: ' ',
+  ndash: '–',
+  mdash: '—',
+  hellip: '…',
+  laquo: '«',
+  raquo: '»',
+  ldquo: '“',
+  rdquo: '”',
+  lsquo: '‘',
+  rsquo: '’',
+  bull: '•',
+  middot: '·',
+  copy: '©',
+  reg: '®',
+  trade: '™',
+  deg: '°',
+  times: '×',
+  euro: '€',
+  larr: '←',
+  rarr: '→',
+  shy: '',
+  zwj: '',
+  zwnj: '',
+  thinsp: ' ',
+  ensp: ' ',
+  emsp: ' ',
 };
 
 export function decodeHtmlEntities(value) {
@@ -42,15 +69,18 @@ function absoluteHref(href, baseUrl) {
 }
 
 function inlineText(html) {
-  return decodeHtmlEntities(String(html || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim();
+  return decodeHtmlEntities(String(html || '').replace(/<[^>]*>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function htmlToReadableText(html, { baseUrl = '', maxLinks = 200 } = {}) {
   let source = String(html || '');
   const title = inlineText((/<title\b[^>]*>([\s\S]*?)<\/title>/i.exec(source) || [])[1] || '');
-  const descriptionTag = /<meta\b[^>]*\bname\s*=\s*["']?description["']?[^>]*>/i.exec(source)?.[0]
-    || /<meta\b[^>]*\bproperty\s*=\s*["']?og:description["']?[^>]*>/i.exec(source)?.[0]
-    || '';
+  const descriptionTag =
+    /<meta\b[^>]*\bname\s*=\s*["']?description["']?[^>]*>/i.exec(source)?.[0] ||
+    /<meta\b[^>]*\bproperty\s*=\s*["']?og:description["']?[^>]*>/i.exec(source)?.[0] ||
+    '';
   const description = descriptionTag ? attr(descriptionTag, 'content') : '';
 
   source = source
@@ -60,13 +90,16 @@ export function htmlToReadableText(html, { baseUrl = '', maxLinks = 200 } = {}) 
     .replace(/<(?:script|style|link|meta|input|source|track)\b[^>]*>/gi, ' ');
 
   // Prefer the main content when the page marks it.
-  const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(source)?.[1]
-    || /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(source)?.[1];
+  const main = /<main\b[^>]*>([\s\S]*?)<\/main>/i.exec(source)?.[1] || /<article\b[^>]*>([\s\S]*?)<\/article>/i.exec(source)?.[1];
   if (main && inlineText(main).length >= 200) source = main;
 
   const codeBlocks = [];
   source = source.replace(/<pre\b[^>]*>([\s\S]*?)<\/pre>/gi, (_, body) => {
-    const code = decodeHtmlEntities(String(body).replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]*>/g, '')).replace(/^\n+|\s+$/g, '');
+    const code = decodeHtmlEntities(
+      String(body)
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<[^>]*>/g, ''),
+    ).replace(/^\n+|\s+$/g, '');
     if (!code.trim()) return '\n';
     codeBlocks.push(code);
     return `\n\n\uE000CODE${codeBlocks.length - 1}\uE000\n\n`;
@@ -94,7 +127,10 @@ export function htmlToReadableText(html, { baseUrl = '', maxLinks = 200 } = {}) 
     .replace(/<li\b[^>]*>/gi, '\n- ')
     .replace(/<\/(?:td|th)\s*>/gi, ' | ')
     .replace(/<br\s*\/?>/gi, '\n')
-    .replace(/<\/?(?:p|div|section|article|main|header|footer|nav|aside|ul|ol|dl|dt|dd|table|thead|tbody|tfoot|tr|blockquote|figure|figcaption|form|fieldset|details|summary|hr)\b[^>]*>/gi, '\n')
+    .replace(
+      /<\/?(?:p|div|section|article|main|header|footer|nav|aside|ul|ol|dl|dt|dd|table|thead|tbody|tfoot|tr|blockquote|figure|figcaption|form|fieldset|details|summary|hr)\b[^>]*>/gi,
+      '\n',
+    )
     .replace(/<[^>]*>/g, ' ');
 
   let text = decodeHtmlEntities(source)

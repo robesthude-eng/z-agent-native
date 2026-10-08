@@ -1,6 +1,4 @@
-import {
-  abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle,
-} from '../native/agent.mjs';
+import { abortTurn, answerQuestion, clearAgentSessionState, rejectQuestion, submitTurn, waitForTurnIdle } from '../native/agent.mjs';
 import { closeBrowserSessionRemote } from '../native/browser-client.mjs';
 import { destroyCloudSandboxForSession } from '../native/cloud-sandbox.mjs';
 import { MAX_JSON_BYTES } from '../native/config.mjs';
@@ -13,21 +11,54 @@ import { revokePreviewTokens } from '../native/preview-tokens.mjs';
 import { forgetPreparedSandbox, killSandboxProcesses, shellSandboxAvailable } from '../native/sandbox.mjs';
 import { invalidateStorageUsage, storageUsage } from '../native/storage-usage.mjs';
 import {
-  addMemory, clearChatMemory,
-  createChat, createChatShare, deleteChat, deleteChatShare, deleteMessagesFrom, deleteSkill, dequeueAction, enqueueAction, getChat, getChatShare, getPrefs, getSandboxUid,getTurn,listChatShares,
-  listChats, listMemory, listMessages, listPendingQuestions, listQueue, listSkills, ownsChat, putMessage, removeMemory, renameChat, saveSkill, setPrefs, updateMemory,workspaceFor,
+  addMemory,
+  clearChatMemory,
+  createChat,
+  createChatShare,
+  deleteChat,
+  deleteChatShare,
+  deleteMessagesFrom,
+  deleteSkill,
+  dequeueAction,
+  enqueueAction,
+  getChat,
+  getChatShare,
+  getPrefs,
+  getSandboxUid,
+  getTurn,
+  listChatShares,
+  listChats,
+  listMemory,
+  listMessages,
+  listPendingQuestions,
+  listQueue,
+  listSkills,
+  ownsChat,
+  putMessage,
+  removeMemory,
+  renameChat,
+  saveSkill,
+  setPrefs,
+  updateMemory,
+  workspaceFor,
 } from '../native/store.mjs';
 import { terminalEnabled } from '../native/terminal.mjs';
 import { closeWorkspaceWatcher, ensureWorkspaceWatcher } from '../native/watcher.mjs';
 
 function sanitizeTitle(raw) {
-  const t = String(raw || '').trim().replace(/[\r\n\t]+/g, ' ').slice(0, 80);
+  const t = String(raw || '')
+    .trim()
+    .replace(/[\r\n\t]+/g, ' ')
+    .slice(0, 80);
   return t || 'Новый чат';
 }
 
 function decodePathPart(part) {
-  try { return decodeURIComponent(part); }
-  catch { return part; }
+  try {
+    return decodeURIComponent(part);
+  } catch {
+    return part;
+  }
 }
 
 function sessionFromPath(pathname) {
@@ -97,7 +128,11 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       // Каждый шаг очистки — по отдельности: сбой одного (браузер/executor
       // недоступен) не должен оставлять в базе и на диске остальное.
       const step = async (name, fn) => {
-        try { await fn(); } catch (error) { console.warn(`[session.delete] ${sid} ${name}: ${error?.message || error}`); }
+        try {
+          await fn();
+        } catch (error) {
+          console.warn(`[session.delete] ${sid} ${name}: ${error?.message || error}`);
+        }
       };
       const sandboxUid = getSandboxUid(sid);
       await step('sandbox', () => killSandboxProcesses(sid));
@@ -119,9 +154,19 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       return true;
     }
     if (p === `/api/session/${sid}/share`) {
-      if (req.method === 'GET') { sendJson(res, 200, { share: getChatShare(sid, ownerId) }); return true; }
-      if (req.method === 'POST') { sendJson(res, 200, { share: createChatShare(sid, ownerId) }); return true; }
-      if (req.method === 'DELETE') { deleteChatShare(sid, ownerId); sendJson(res, 204, null); return true; }
+      if (req.method === 'GET') {
+        sendJson(res, 200, { share: getChatShare(sid, ownerId) });
+        return true;
+      }
+      if (req.method === 'POST') {
+        sendJson(res, 200, { share: createChatShare(sid, ownerId) });
+        return true;
+      }
+      if (req.method === 'DELETE') {
+        deleteChatShare(sid, ownerId);
+        sendJson(res, 204, null);
+        return true;
+      }
     }
     if (p === `/api/session/${sid}/message` && req.method === 'GET') {
       sendJson(res, 200, listMessages(sid));
@@ -181,11 +226,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
       }
       const carried = cutIndex >= 0 ? history.slice(0, cutIndex) : history;
       const source = getChat(sid, ownerId);
-      const chat = createChat(
-        sessionId(),
-        ownerId,
-        sanitizeTitle(body.title || `${source?.title || 'Чат'} — ветка`),
-      );
+      const chat = createChat(sessionId(), ownerId, sanitizeTitle(body.title || `${source?.title || 'Чат'} — ветка`));
       for (const message of carried) {
         const copyId = messageId();
         putMessage({
@@ -227,9 +268,7 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
     if (p === `/api/session/${sid}/queue` && req.method === 'POST') {
       const body = await readJson(req, 128 * 1024);
       const actionId = assertActionId(body.actionId);
-      const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload)
-        ? body.payload
-        : {};
+      const payload = body.payload && typeof body.payload === 'object' && !Array.isArray(body.payload) ? body.payload : {};
       if (typeof payload.text !== 'string' || (payload.attachments !== undefined && !Array.isArray(payload.attachments))) {
         sendJson(res, 400, { error: 'Invalid queue payload' });
         return true;
@@ -281,7 +320,14 @@ export async function handleSessionRoutes(req, res, p, url, ownerId) {
 
   if (p === '/api/user/memory' && req.method === 'GET') {
     const titles = new Map(listChats(ownerId).map((c) => [c.id, c.title]));
-    sendJson(res, 200, listMemory(ownerId, { includeAllChats: true }).map((m) => ({ ...m, chatTitle: m.scope === 'global' ? null : titles.get(m.scope) || null })));
+    sendJson(
+      res,
+      200,
+      listMemory(ownerId, { includeAllChats: true }).map((m) => ({
+        ...m,
+        chatTitle: m.scope === 'global' ? null : titles.get(m.scope) || null,
+      })),
+    );
     return true;
   }
   if (p === '/api/user/memory' && req.method === 'POST') {

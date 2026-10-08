@@ -5,7 +5,9 @@ const reqTimeout = 30_000;
 const MAX_SSE_BUFFER_CHARS = 32 * 1024 * 1024;
 
 export function normalizeRelayBase(raw) {
-  const value = String(raw || '').trim().replace(/\/+$/, '');
+  const value = String(raw || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!value) return '';
   let parsed;
   try {
@@ -22,7 +24,9 @@ export function normalizeRelayBase(raw) {
     console.warn('[providers] Z_AGENT_RELAY_URL points at a local/private host; relay disabled.');
     return '';
   }
-  console.warn('[providers] Provider traffic is routed through Z_AGENT_RELAY_URL. That host will observe provider API keys and prompt bodies.');
+  console.warn(
+    '[providers] Provider traffic is routed through Z_AGENT_RELAY_URL. That host will observe provider API keys and prompt bodies.',
+  );
   return value;
 }
 
@@ -68,14 +72,19 @@ export function idleTimeoutSignal({ idleMs, hardMs, outerSignal, pollMs = 2_000 
   const started = Date.now();
   const onAbort = () => controller.abort();
   outerSignal?.addEventListener('abort', onAbort, { once: true });
-  const timer = setInterval(() => {
-    const now = Date.now();
-    if (now - started >= hardMs || now - lastActivity >= idleMs) controller.abort();
-  }, Math.max(20, Number(pollMs) || 2_000));
+  const timer = setInterval(
+    () => {
+      const now = Date.now();
+      if (now - started >= hardMs || now - lastActivity >= idleMs) controller.abort();
+    },
+    Math.max(20, Number(pollMs) || 2_000),
+  );
   timer.unref?.();
   return {
     signal: controller.signal,
-    touch() { lastActivity = Date.now(); },
+    touch() {
+      lastActivity = Date.now();
+    },
     cleanup() {
       clearInterval(timer);
       outerSignal?.removeEventListener('abort', onAbort);
@@ -118,7 +127,8 @@ export function transientStatus(status) {
   return status === 408 || status === 409 || status === 429 || status >= 500;
 }
 
-export const RATE_LIMIT_RE = /rate limit|too many requests|try again later|temporarily overloaded|overloaded|error from provider \(console\)|free tier can only be used|in-flight requests settle/i;
+export const RATE_LIMIT_RE =
+  /rate limit|too many requests|try again later|temporarily overloaded|overloaded|error from provider \(console\)|free tier can only be used|in-flight requests settle/i;
 export const RATE_LIMIT_BACKOFF_MS = [5_000, 15_000, 30_000, 45_000, 60_000, 60_000];
 export const RATE_LIMIT_EXTRA_RETRIES = 4;
 export const RATE_LIMIT_MAX_WAIT_MS = 60_000;
@@ -129,7 +139,8 @@ export function isRateLimitProviderError(err) {
   return RATE_LIMIT_RE.test(message);
 }
 
-export const NETWORK_TRANSPORT_RE = /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|EPROTO|UND_ERR|ERR_SSL|ERR_SOCKET|socket hang up|network error|fetch failed|terminated|other side closed|disconnected before secure TLS|TLS connection was established|ssl routines|handshake failure/i;
+export const NETWORK_TRANSPORT_RE =
+  /ECONNRESET|ETIMEDOUT|EAI_AGAIN|ECONNREFUSED|EPIPE|EPROTO|UND_ERR|ERR_SSL|ERR_SOCKET|socket hang up|network error|fetch failed|terminated|other side closed|disconnected before secure TLS|TLS connection was established|ssl routines|handshake failure/i;
 export const NETWORK_EXTRA_RETRIES = 2;
 
 export function isNetworkTransportError(err) {
@@ -137,7 +148,8 @@ export function isNetworkTransportError(err) {
   return NETWORK_TRANSPORT_RE.test(message);
 }
 
-export const MODEL_UNAVAILABLE_RE = /promotion has ended|no longer available|model.{0,40}(?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go|upstream request failed|\{\s*"model"\s*:/i;
+export const MODEL_UNAVAILABLE_RE =
+  /promotion has ended|no longer available|model.{0,40}(?:not found|does not exist|unavailable|has been (?:disabled|retired|removed|deprecated))|unknown model|not a valid model|payment required|insufficient (?:credits?|quota|balance)|credit(?:s)? (?:exhausted|exceeded)|subscribe to |billing|opencode go|upstream request failed|\{\s*"model"\s*:/i;
 export const PROVIDER_SALES_RE = /opencode\.ai|opencode\s+go|free promotion has ended/i;
 export const PUBLIC_MODEL_UNAVAILABLE = 'Эта модель сейчас недоступна у провайдера.';
 
@@ -174,7 +186,8 @@ export function rateLimitMessage(err) {
   return `${PUBLIC_RATE_LIMITED} Это ограничение частоты, а не исчерпанный баланс: повторите чуть позже.`;
 }
 
-export const PROVIDER_AUTH_RE = /invalid (?:api[ _-]?)?key|incorrect api key|api[ _-]?key (?:is )?(?:invalid|missing|not valid|required)|unauthori[sz]ed|authentication (?:failed|required|error)|invalid[ _]token|no auth credentials/i;
+export const PROVIDER_AUTH_RE =
+  /invalid (?:api[ _-]?)?key|incorrect api key|api[ _-]?key (?:is )?(?:invalid|missing|not valid|required)|unauthori[sz]ed|authentication (?:failed|required|error)|invalid[ _]token|no auth credentials/i;
 
 export function isProviderAuthError(err) {
   if (Number(err?.statusCode) === 401) return true;
@@ -217,7 +230,7 @@ export function retrySleepMs(err, attempt) {
     const wait = Number.isFinite(hinted) && hinted >= 0 ? hinted : fallback;
     return Math.min(RATE_LIMIT_MAX_WAIT_MS, wait);
   }
-  return Math.min(2000, 250 * (2 ** attempt) + Math.floor(Math.random() * 150));
+  return Math.min(2000, 250 * 2 ** attempt + Math.floor(Math.random() * 150));
 }
 
 export function grantRateLimitRetry(err, state) {
@@ -238,13 +251,19 @@ export function grantNetworkRetry(err, state) {
 export function sleep(ms, signal) {
   return new Promise((resolve, reject) => {
     const cleanup = () => signal?.removeEventListener('abort', onAbort);
-    const timer = setTimeout(() => { cleanup(); resolve(); }, ms);
+    const timer = setTimeout(() => {
+      cleanup();
+      resolve();
+    }, ms);
     const onAbort = () => {
       clearTimeout(timer);
       cleanup();
       reject(Object.assign(new Error('Request aborted'), { name: 'AbortError' }));
     };
-    if (signal?.aborted) { onAbort(); return; }
+    if (signal?.aborted) {
+      onAbort();
+      return;
+    }
     signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
@@ -277,7 +296,9 @@ export async function fetchJson(target, init, outerSignal, { retries = 2, failFa
       const res = await providerFetch(current, { ...init, signal: t.signal });
       const text = await res.text();
       let body = null;
-      try { body = text ? JSON.parse(text) : null; } catch {}
+      try {
+        body = text ? JSON.parse(text) : null;
+      } catch {}
       if (!res.ok) throw providerError(res, text, body);
       if (body === null && text) throw new Error('Provider returned non-JSON response');
       return body;
@@ -327,7 +348,9 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
       if (!res.ok) {
         const text = await res.text();
         let body = null;
-        try { body = text ? JSON.parse(text) : null; } catch {}
+        try {
+          body = text ? JSON.parse(text) : null;
+        } catch {}
         throw providerError(res, text, body);
       }
       if (!res.body) throw new Error('Provider returned an empty streaming response');
@@ -359,15 +382,20 @@ export async function fetchSse(target, init, outerSignal, onEvent, { retries = 2
         buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
         // A provider that never sends a newline / blank line must not be able
         // to grow these buffers without bound.
-        if (buffer.length > MAX_SSE_BUFFER_CHARS) throw Object.assign(new Error('Provider stream line exceeds the size limit'), { code: 'ESTREAMSIZE' });
+        if (buffer.length > MAX_SSE_BUFFER_CHARS)
+          throw Object.assign(new Error('Provider stream line exceeds the size limit'), { code: 'ESTREAMSIZE' });
         for (let idx = buffer.indexOf('\n'); idx >= 0; idx = buffer.indexOf('\n')) {
           let line = buffer.slice(0, idx);
           buffer = buffer.slice(idx + 1);
           if (line.endsWith('\r')) line = line.slice(0, -1);
-          if (!line) { flush(); continue; }
+          if (!line) {
+            flush();
+            continue;
+          }
           if (line.startsWith('data:')) {
             eventBytes += line.length;
-            if (eventBytes > MAX_SSE_BUFFER_CHARS) throw Object.assign(new Error('Provider stream event exceeds the size limit'), { code: 'ESTREAMSIZE' });
+            if (eventBytes > MAX_SSE_BUFFER_CHARS)
+              throw Object.assign(new Error('Provider stream event exceeds the size limit'), { code: 'ESTREAMSIZE' });
             eventData.push(line.slice(5).trimStart());
           }
         }

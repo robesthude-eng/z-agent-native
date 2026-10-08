@@ -9,11 +9,11 @@ export async function executeWebSearch(input, signal, progress = null) {
   const done = progress?.ticker(`Ищу в интернете: «${String(input?.query || '').slice(0, 120)}»`);
   try {
     return await runWebSearch({
-    query: input?.query,
-    count: input?.count,
-    signal,
-    apiKey,
-    searxngUrl: process.env.Z_AGENT_SEARXNG_URL,
+      query: input?.query,
+      count: input?.count,
+      signal,
+      apiKey,
+      searxngUrl: process.env.Z_AGENT_SEARXNG_URL,
     });
   } finally {
     done?.();
@@ -45,9 +45,11 @@ export async function executeWebFetch(input, signal, progress = null) {
   const parts = [page.title ? `# ${page.title}` : '', page.description ? `> ${page.description}` : '', page.text].filter(Boolean);
   let output = parts.join('\n\n');
   if (page.text.length < 300 && res.text.length > 5_000) {
-    output += '\n\n[webfetch: almost no text in the HTML — the page is probably rendered by JavaScript. Use the browser tool to read it, or format="html" for the raw markup.]';
+    output +=
+      '\n\n[webfetch: almost no text in the HTML — the page is probably rendered by JavaScript. Use the browser tool to read it, or format="html" for the raw markup.]';
   }
-  if (output.length > maxChars) output = `${output.slice(0, maxChars)}\n\n[webfetch: text truncated at ${maxChars} characters; raise maxChars to read further.]`;
+  if (output.length > maxChars)
+    output = `${output.slice(0, maxChars)}\n\n[webfetch: text truncated at ${maxChars} characters; raise maxChars to read further.]`;
   return { output, title: page.title || String(res.url) };
 }
 

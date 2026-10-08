@@ -23,7 +23,6 @@ function parseKeyMaterial(value, { strict = false } = {}) {
   return crypto.createHash('sha256').update(raw, 'utf8').digest();
 }
 
-
 function readConfiguredKeyFile(filePath, { strict = false } = {}) {
   const configured = String(filePath || '').trim();
   if (!configured) return null;
@@ -52,13 +51,17 @@ function createKeyFile() {
   const generated = crypto.randomBytes(32);
   try {
     fs.writeFileSync(KEY_FILE, generated, { mode: 0o600, flag: 'wx' });
-    try { fs.chmodSync(KEY_FILE, 0o600); } catch {}
+    try {
+      fs.chmodSync(KEY_FILE, 0o600);
+    } catch {}
     return generated;
   } catch (error) {
     if (error?.code !== 'EEXIST') throw error;
     const existing = readKeyFile();
     if (!existing) throw error;
-    try { fs.chmodSync(KEY_FILE, 0o600); } catch {}
+    try {
+      fs.chmodSync(KEY_FILE, 0o600);
+    } catch {}
     return existing;
   }
 }
@@ -67,7 +70,11 @@ function configuredExtras(strict) {
   const raw = String(process.env.Z_AGENT_SECRET_KEYS_JSON || '').trim();
   if (!raw) return [];
   let parsed;
-  try { parsed = JSON.parse(raw); } catch { throw new Error('Z_AGENT_SECRET_KEYS_JSON must be a JSON array'); }
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    throw new Error('Z_AGENT_SECRET_KEYS_JSON must be a JSON array');
+  }
   if (!Array.isArray(parsed) || parsed.length > 8) throw new Error('Z_AGENT_SECRET_KEYS_JSON must contain at most 8 keys');
   return parsed.map((value) => parseKeyMaterial(value, { strict })).filter(Boolean);
 }
@@ -94,7 +101,13 @@ function keyRing() {
     entries.push({ id, key });
   }
   if (!entries.length) throw new Error('No encryption key is available');
-  cachedRing = { entries, primary: entries[0], configured: Boolean(configuredPrimary), strict, source: envPrimary ? 'env-keyring' : filePrimary ? 'secret-file' : 'data-file' };
+  cachedRing = {
+    entries,
+    primary: entries[0],
+    configured: Boolean(configuredPrimary),
+    strict,
+    source: envPrimary ? 'env-keyring' : filePrimary ? 'secret-file' : 'data-file',
+  };
   return cachedRing;
 }
 
@@ -111,7 +124,9 @@ function decryptV1(parts) {
       const decipher = crypto.createDecipheriv('aes-256-gcm', entry.key, Buffer.from(ivText, 'base64url'), GCM_DECIPHER_OPTIONS);
       decipher.setAuthTag(Buffer.from(tagText, 'base64url'));
       return Buffer.concat([decipher.update(Buffer.from(cipherText, 'base64url')), decipher.final()]).toString('utf8');
-    } catch (error) { lastError = error; }
+    } catch (error) {
+      lastError = error;
+    }
   }
   throw new Error('Encrypted secret cannot be decrypted by the configured keyring', { cause: lastError });
 }
@@ -178,4 +193,6 @@ export function secretStoreReadinessCheck() {
   return { ok: true, source: ring.source, activeKeyId: ring.primary.id, keyCount: ring.entries.length, strict: ring.strict };
 }
 
-export function resetSecretKeyCacheForTests() { cachedRing = null; }
+export function resetSecretKeyCacheForTests() {
+  cachedRing = null;
+}

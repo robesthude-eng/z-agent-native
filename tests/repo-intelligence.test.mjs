@@ -13,17 +13,30 @@ function fixture() {
   fs.mkdirSync(path.join(root, 'src', 'feature'), { recursive: true });
   fs.mkdirSync(path.join(root, 'tests'), { recursive: true });
   fs.mkdirSync(path.join(root, 'node_modules', 'noise'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'package.json'), JSON.stringify({
-    name: 'fixture-app',
-    type: 'module',
-    packageManager: 'npm@10',
-    scripts: { test: 'node --test', build: 'tsc -b' },
-    dependencies: { react: '^19.0.0' },
-    devDependencies: { typescript: '^7.0.0' },
-  }, null, 2));
+  fs.writeFileSync(
+    path.join(root, 'package.json'),
+    JSON.stringify(
+      {
+        name: 'fixture-app',
+        type: 'module',
+        packageManager: 'npm@10',
+        scripts: { test: 'node --test', build: 'tsc -b' },
+        dependencies: { react: '^19.0.0' },
+        devDependencies: { typescript: '^7.0.0' },
+      },
+      null,
+      2,
+    ),
+  );
   fs.writeFileSync(path.join(root, 'tsconfig.json'), '{}\n');
-  fs.writeFileSync(path.join(root, 'src', 'index.ts'), "import { helper } from './lib/helper';\nexport function start() { return helper(); }\n");
-  fs.writeFileSync(path.join(root, 'src', 'feature', 'run.ts'), "import { helper } from '../lib/helper';\nexport const run = () => helper();\n");
+  fs.writeFileSync(
+    path.join(root, 'src', 'index.ts'),
+    "import { helper } from './lib/helper';\nexport function start() { return helper(); }\n",
+  );
+  fs.writeFileSync(
+    path.join(root, 'src', 'feature', 'run.ts'),
+    "import { helper } from '../lib/helper';\nexport const run = () => helper();\n",
+  );
   fs.writeFileSync(path.join(root, 'src', 'lib', 'helper.ts'), 'export function helper() { return 1; }\n');
   fs.writeFileSync(path.join(root, 'tests', 'helper.test.ts'), "import { helper } from '../src/lib/helper';\nvoid helper();\n");
   fs.writeFileSync(path.join(root, 'node_modules', 'noise', 'index.js'), 'export const shouldNotAppear = true;\n');

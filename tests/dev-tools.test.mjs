@@ -155,10 +155,7 @@ test('git auto-initializes a missing repository and reports status', async () =>
 
 test('git explains that an empty repository needs a first commit', async () => {
   const root = tempRoot();
-  await assert.rejects(
-    () => executeGitTool({ root, identity: { isolated: false }, input: { action: 'log' } }),
-    /no commits yet/i,
-  );
+  await assert.rejects(() => executeGitTool({ root, identity: { isolated: false }, input: { action: 'log' } }), /no commits yet/i);
 });
 
 /* ------------------------------ test runner ----------------------------- */
@@ -209,7 +206,13 @@ test('test report states PASSED only on a zero exit code', () => {
   const passed = formatTestReport({ command: 'npm test', framework: 'node', source: 's', exitCode: 0, output: '# pass 4\n# fail 0' });
   assert.match(passed.text, /status: PASSED/);
 
-  const failed = formatTestReport({ command: 'npm test', framework: 'node', source: 's', exitCode: 1, output: 'not ok 1 - broke\n# fail 1' });
+  const failed = formatTestReport({
+    command: 'npm test',
+    framework: 'node',
+    source: 's',
+    exitCode: 1,
+    output: 'not ok 1 - broke\n# fail 1',
+  });
   assert.match(failed.text, /status: FAILED/);
   assert.match(failed.text, /broke/);
 });
@@ -247,11 +250,9 @@ test('diagnostics parses tsc, eslint and gcc-style output', () => {
 });
 
 test('diagnostics ignores note lines and de-duplicates repeats', () => {
-  const parsed = parseDiagnostics([
-    'a.ts(1,1): error TS1005: missing token',
-    'a.ts(1,1): error TS1005: missing token',
-    'a.ts:2:1: note: see declaration',
-  ].join('\n'));
+  const parsed = parseDiagnostics(
+    ['a.ts(1,1): error TS1005: missing token', 'a.ts(1,1): error TS1005: missing token', 'a.ts:2:1: note: see declaration'].join('\n'),
+  );
   assert.equal(parsed.length, 1);
 });
 
@@ -261,24 +262,28 @@ test('diagnostics report is CLEAN only with a zero exit and no findings', () => 
   assert.equal(clean.errorCount, 0);
   assert.equal(clean.ok, true);
 
-  const dirty = formatDiagnosticsReport([{
-    kind: 'typecheck',
-    command: 'tsc --noEmit',
-    exitCode: 2,
-    output: 'src/a.ts(3,3): error TS2322: Type error',
-  }]);
+  const dirty = formatDiagnosticsReport([
+    {
+      kind: 'typecheck',
+      command: 'tsc --noEmit',
+      exitCode: 2,
+      output: 'src/a.ts(3,3): error TS2322: Type error',
+    },
+  ]);
   assert.match(dirty.text, /status: ISSUES/);
   assert.equal(dirty.errorCount, 1);
   assert.equal(dirty.ok, false);
 });
 
 test('a checker that failed to start is not reported as clean', () => {
-  const report = formatDiagnosticsReport([{
-    kind: 'lint',
-    command: 'npx eslint .',
-    exitCode: 127,
-    output: 'sh: eslint: command not found',
-  }]);
+  const report = formatDiagnosticsReport([
+    {
+      kind: 'lint',
+      command: 'npx eslint .',
+      exitCode: 127,
+      output: 'sh: eslint: command not found',
+    },
+  ]);
   assert.match(report.text, /status: ISSUES/);
   assert.match(report.text, /may have failed to start/);
   assert.equal(report.ok, false);
@@ -300,7 +305,10 @@ test('diagnostics planning detects config and fails loudly otherwise', () => {
 
 test('browser refuses unknown actions and sessionless use', async () => {
   await assert.rejects(() => executeBrowserTool({ sessionId: 's1', input: { action: 'exploit' } }), /Unsupported browser action/);
-  await assert.rejects(() => executeBrowserTool({ sessionId: '', input: { action: 'open', url: 'https://example.com' } }), /session sandbox/);
+  await assert.rejects(
+    () => executeBrowserTool({ sessionId: '', input: { action: 'open', url: 'https://example.com' } }),
+    /session sandbox/,
+  );
 });
 
 test('closing a browser that was never opened is a no-op, not a crash', async () => {
@@ -415,7 +423,17 @@ test('process-spawning tools are gated and classified', () => {
 test('ssh_tool builds structured argv instead of a shell string', () => {
   const plan = buildSshArgs('/tmp', 'exec', { host: '158.160.149.54', user: 'casano', command: 'uptime' });
   assert.deepEqual(plan.args, [
-    'exec', '--host', '158.160.149.54', '--user', 'casano', '--port', '22', '--timeout', '60', '--cmd', 'uptime',
+    'exec',
+    '--host',
+    '158.160.149.54',
+    '--user',
+    'casano',
+    '--port',
+    '22',
+    '--timeout',
+    '60',
+    '--cmd',
+    'uptime',
   ]);
 });
 

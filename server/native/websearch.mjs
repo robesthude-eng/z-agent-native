@@ -31,7 +31,9 @@ function decodeHtml(value) {
 }
 
 function stripTags(value) {
-  return decodeHtml(String(value || '').replace(/<[^>]+>/g, ' ')).replace(/\s+/g, ' ').trim();
+  return decodeHtml(String(value || '').replace(/<[^>]+>/g, ' '))
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 export function decodeDuckDuckGoHref(href) {
@@ -78,11 +80,16 @@ export function parseBraveResults(body, count = 5) {
   const rows = [];
   const seen = new Set();
   for (const row of body?.web?.results || []) {
-    pushRow(rows, seen, {
-      title: row?.title || row?.url,
-      url: row?.url,
-      snippet: row?.description || '',
-    }, limit);
+    pushRow(
+      rows,
+      seen,
+      {
+        title: row?.title || row?.url,
+        url: row?.url,
+        snippet: row?.description || '',
+      },
+      limit,
+    );
   }
   return rows;
 }
@@ -102,7 +109,8 @@ export function parseDuckDuckGoInstant(body, count = 5) {
   const walk = (topics) => {
     for (const topic of topics || []) {
       if (rows.length >= limit) return;
-      if (topic?.FirstURL) pushRow(rows, seen, { title: topic.Text || topic.FirstURL, url: topic.FirstURL, snippet: topic.Text || '' }, limit);
+      if (topic?.FirstURL)
+        pushRow(rows, seen, { title: topic.Text || topic.FirstURL, url: topic.FirstURL, snippet: topic.Text || '' }, limit);
       if (Array.isArray(topic?.Topics)) walk(topic.Topics);
     }
   };
@@ -152,7 +160,7 @@ export function parseSearxngResults(body, count = 5) {
   const seen = new Set();
   const answers = [];
   for (const a of body?.answers || []) {
-    const text = typeof a === 'string' ? a : (a?.answer || '');
+    const text = typeof a === 'string' ? a : a?.answer || '';
     if (text) answers.push(String(text).trim());
   }
   for (const box of body?.infoboxes || []) {
@@ -160,18 +168,25 @@ export function parseSearxngResults(body, count = 5) {
     if (url && box?.content) pushRow(rows, seen, { title: box.infobox || url, url, snippet: String(box.content).slice(0, 500) }, limit);
   }
   for (const row of body?.results || []) {
-    pushRow(rows, seen, {
-      title: stripTags(row?.title || row?.url),
-      url: row?.url,
-      snippet: stripTags(row?.content || '').slice(0, 500),
-    }, limit);
+    pushRow(
+      rows,
+      seen,
+      {
+        title: stripTags(row?.title || row?.url),
+        url: row?.url,
+        snippet: stripTags(row?.content || '').slice(0, 500),
+      },
+      limit,
+    );
   }
   if (answers.length && rows.length) rows[0] = { ...rows[0], snippet: [answers.join(' '), rows[0].snippet].filter(Boolean).join(' — ') };
   return rows;
 }
 
 function searxngBase(value) {
-  const raw = String(value || '').trim().replace(/\/+$/, '');
+  const raw = String(value || '')
+    .trim()
+    .replace(/\/+$/, '');
   if (!raw) return '';
   try {
     const url = new URL(raw);
@@ -201,16 +216,22 @@ async function searchSearxng(base, q, n, signal, fetchImpl = fetch) {
   const text = await res.text();
   if (res.status < 200 || res.status >= 300) throw new Error(`SearXNG HTTP ${res.status}`);
   let body;
-  try { body = JSON.parse(text); } catch { throw new Error('SearXNG returned invalid JSON'); }
+  try {
+    body = JSON.parse(text);
+  } catch {
+    throw new Error('SearXNG returned invalid JSON');
+  }
   return parseSearxngResults(body, n);
 }
 
 export function formatSearchRows(rows) {
-  return (Array.isArray(rows) ? rows : []).map((row, i) => {
-    const lines = [`${i + 1}. ${row.title || row.url}`, row.url];
-    if (row.snippet) lines.push(row.snippet);
-    return lines.join('\n');
-  }).join('\n\n');
+  return (Array.isArray(rows) ? rows : [])
+    .map((row, i) => {
+      const lines = [`${i + 1}. ${row.title || row.url}`, row.url];
+      if (row.snippet) lines.push(row.snippet);
+      return lines.join('\n');
+    })
+    .join('\n\n');
 }
 
 /** Policy refusals are configuration outcomes, not source failures. */
@@ -258,7 +279,9 @@ function queryVariants(query) {
   const q = String(query || '').trim();
   const out = [];
   const push = (value) => {
-    const next = String(value || '').replace(/\s+/g, ' ').trim();
+    const next = String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim();
     if (next && !out.includes(next)) out.push(next);
   };
   push(q);
@@ -294,7 +317,11 @@ async function collectPublicResults(q, n, fetchUrl, signal) {
     maxBytes: 2 * 1024 * 1024,
   });
   if (instant.status >= 200 && instant.status < 300) {
-    try { merge(parseDuckDuckGoInstant(JSON.parse(String(instant.text || '{}')), n)); } catch { /* fall through */ }
+    try {
+      merge(parseDuckDuckGoInstant(JSON.parse(String(instant.text || '{}')), n));
+    } catch {
+      /* fall through */
+    }
   }
 
   if (rows.length < n) {
@@ -315,7 +342,11 @@ async function collectPublicResults(q, n, fetchUrl, signal) {
         maxBytes: 2 * 1024 * 1024,
       });
       if (wiki.status >= 200 && wiki.status < 300) {
-        try { merge(parseWikipediaOpensearch(JSON.parse(String(wiki.text || '[]')), n)); } catch { /* ignore */ }
+        try {
+          merge(parseWikipediaOpensearch(JSON.parse(String(wiki.text || '[]')), n));
+        } catch {
+          /* ignore */
+        }
       }
     }
   }
@@ -341,7 +372,15 @@ function emptyResult(q, variants, notes) {
   };
 }
 
-export async function runWebSearch({ query, count, signal, apiKey = '', searxngUrl = '', searxngFetch, request = safeExternalRequest } = {}) {
+export async function runWebSearch({
+  query,
+  count,
+  signal,
+  apiKey = '',
+  searxngUrl = '',
+  searxngFetch,
+  request = safeExternalRequest,
+} = {}) {
   const q = String(query || '').trim();
   if (!q) throw new Error('query must not be empty');
   const n = boundedCount(count);
@@ -360,11 +399,16 @@ export async function runWebSearch({ query, count, signal, apiKey = '', searxngU
     const text = String(res?.text || '');
     if (res.status < 200 || res.status >= 300) throw new Error(`Brave Search HTTP ${res.status}: ${text.slice(0, 500)}`);
     let body;
-    try { body = JSON.parse(text); } catch { throw new Error('Brave Search returned invalid JSON'); }
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error('Brave Search returned invalid JSON');
+    }
     const rows = parseBraveResults(body, n);
     // Пустой ответ платного источника — повод доиграть запрос на бесплатных,
     // а не отказывать всему инструменту.
-    if (rows.length) return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
+    if (rows.length)
+      return { output: formatSearchRows(rows), title: q, metadata: { websearch: { provider: 'brave', count: rows.length } } };
   }
 
   const variants = queryVariants(q);
@@ -376,14 +420,19 @@ export async function runWebSearch({ query, count, signal, apiKey = '', searxngU
   let source = '';
   for (const variant of variants) {
     const steps = [
-      ...(searxDown ? [] : [{
-        name: 'searxng',
-        run: () => searchSearxng(searx, variant, n, signal, searxngFetch).catch((error) => {
-          // Не ждём таймаут недоступного сервиса на каждом варианте запроса.
-          searxDown = true;
-          throw error;
-        }),
-      }]),
+      ...(searxDown
+        ? []
+        : [
+            {
+              name: 'searxng',
+              run: () =>
+                searchSearxng(searx, variant, n, signal, searxngFetch).catch((error) => {
+                  // Не ждём таймаут недоступного сервиса на каждом варианте запроса.
+                  searxDown = true;
+                  throw error;
+                }),
+            },
+          ]),
       { name: 'duckduckgo-html', run: () => searchDuckDuckGoHtml(variant, n, fetchUrl, signal) },
       { name: 'duckduckgo-instant+wikipedia', run: () => collectPublicResults(variant, n, fetchUrl, signal) },
     ];

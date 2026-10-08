@@ -84,11 +84,7 @@ test('runtime auto-approves tool calls and still forces executable verification 
       ]);
     }
 
-    return sse([
-      { choices: [{ delta: { content: 'Проверено.' } }] },
-      { choices: [{ delta: {}, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sse([{ choices: [{ delta: { content: 'Проверено.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
   };
 
   try {
@@ -141,11 +137,7 @@ test('static HTML read-back lets a simple page task finish without a shell check
         '[DONE]',
       ]);
     }
-    return sse([
-      { choices: [{ delta: { content: 'Игра готова.' } }] },
-      { choices: [{ delta: {}, finish_reason: 'stop' }] },
-      '[DONE]',
-    ]);
+    return sse([{ choices: [{ delta: { content: 'Игра готова.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
   };
 
   try {
@@ -204,7 +196,10 @@ test('repeating a successful check is a completed turn, not a loop failure', asy
     });
     assert.equal(assistant.info?.outcome?.status, 'completed');
     assert.equal(assistant.info.strategy?.lastVerificationOk, true);
-    const note = assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+    const note = assistant.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
     assert.doesNotMatch(note, /остановлена, чтобы не продолжать цикл/);
     assert.doesNotMatch(note, /без нового результата/);
     assert.ok(streamCall >= 4);

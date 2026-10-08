@@ -9,9 +9,7 @@ import { listDurableJobs, pruneExpiredDurableJobs } from './native/durable-jobs.
 import { readJson, sendJson } from './native/json.mjs';
 import { assertRuntimeSecretsPrivate } from './native/sandbox.mjs';
 import { rescanBackgroundJobs } from './native/background-jobs.mjs';
-import {
-  ownsChat, recoverInterruptedRuntimeState,
-} from './native/store.mjs';
+import { ownsChat, recoverInterruptedRuntimeState } from './native/store.mjs';
 import { initTerminal } from './native/terminal.mjs';
 import { recoverDanglingTurnResults } from './native/turn-results.mjs';
 import { sweepOrphanSessionData } from './native/orphan-sweep.mjs';
@@ -33,13 +31,17 @@ let SHUTTING_DOWN = false;
 const SHUTDOWN_GRACE_MS = Math.min(Math.max(Number(process.env.Z_AGENT_SHUTDOWN_GRACE_MS) || 60_000, 5_000), 10 * 60 * 1000);
 pruneExpiredDurableJobs();
 
-const RESUMABLE_SESSIONS = listDurableJobs().map((job) => String(job.sessionId || '')).filter(Boolean);
+const RESUMABLE_SESSIONS = listDurableJobs()
+  .map((job) => String(job.sessionId || ''))
+  .filter(Boolean);
 recoverInterruptedRuntimeState({ skipSessionIds: RESUMABLE_SESSIONS });
 const RECOVERED_TURNS = startDurableRecovery();
 try {
   const watchedJobs = rescanBackgroundJobs();
   if (watchedJobs) console.log(`[background-jobs] watching ${watchedJobs} unfinished job(s)`);
-} catch (err) { console.warn('[background-jobs] rescan failed', err?.message || err); }
+} catch (err) {
+  console.warn('[background-jobs] rescan failed', err?.message || err);
+}
 recoverDanglingTurnResults();
 try {
   const swept = sweepOrphanSessionData();
@@ -95,7 +97,10 @@ function appSecurityHeaders(req) {
   const rawHost = String(req?.headers?.host || '').trim();
   const host = /^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$/.test(rawHost) ? rawHost : '';
   const sockets = host ? ` ws://${host} wss://${host}` : '';
-  const csp = [...APP_CONTENT_SECURITY_POLICY_BASE, `connect-src 'self'${sockets} https://*.ingest.sentry.io https://*.ingest.us.sentry.io`].join('; ');
+  const csp = [
+    ...APP_CONTENT_SECURITY_POLICY_BASE,
+    `connect-src 'self'${sockets} https://*.ingest.sentry.io https://*.ingest.us.sentry.io`,
+  ].join('; ');
   return {
     'x-content-type-options': 'nosniff',
     'referrer-policy': 'no-referrer',
@@ -107,11 +112,16 @@ function appSecurityHeaders(req) {
 
 function serveStatic(req, res, pathname) {
   let decoded;
-  try { decoded = decodeURIComponent(pathname); } catch { return sendJson(res, 400, { error: 'Bad request' }); }
+  try {
+    decoded = decodeURIComponent(pathname);
+  } catch {
+    return sendJson(res, 400, { error: 'Bad request' });
+  }
   if (decoded.includes('\0')) return sendJson(res, 400, { error: 'Bad request' });
   const relative = decoded === '/' ? 'index.html' : decoded.replace(/^\/+/, '');
   let full = path.resolve(DIST_DIR, relative);
-  if (!full.startsWith(path.resolve(DIST_DIR) + path.sep) && full !== path.resolve(DIST_DIR, 'index.html')) return sendJson(res, 403, { error: 'Forbidden' });
+  if (!full.startsWith(path.resolve(DIST_DIR) + path.sep) && full !== path.resolve(DIST_DIR, 'index.html'))
+    return sendJson(res, 403, { error: 'Forbidden' });
   if (!fs.existsSync(full) || fs.statSync(full).isDirectory()) full = path.resolve(DIST_DIR, 'index.html');
   if (!fs.existsSync(full)) return sendJson(res, 503, { error: 'Frontend is not built. Run npm run build.' });
   const st = fs.statSync(full);
@@ -207,7 +217,9 @@ const server = http.createServer((req, res) => {
 assertRuntimeSecretsPrivate();
 await initTerminal(server);
 server.listen(PORT, '0.0.0.0', () => {
-  console.log(`Z Agent Native listening on http://0.0.0.0:${PORT}${RECOVERED_TURNS ? ` · resumed ${RECOVERED_TURNS} durable turn(s)` : ''}`);
+  console.log(
+    `Z Agent Native listening on http://0.0.0.0:${PORT}${RECOVERED_TURNS ? ` · resumed ${RECOVERED_TURNS} durable turn(s)` : ''}`,
+  );
 });
 
 async function shutdown(signal = 'SIGTERM', { graceMs = SHUTDOWN_GRACE_MS } = {}) {
@@ -223,29 +235,49 @@ async function shutdown(signal = 'SIGTERM', { graceMs = SHUTDOWN_GRACE_MS } = {}
   const forced = activeTurnCount() > 0;
   if (forced) console.warn(`[shutdown] grace expired with ${activeTurnCount()} turn(s); durable recovery will resume them`);
   closeAllWorkspaceWatchers();
-  try { server.closeIdleConnections?.(); } catch {}
-  try { server.closeAllConnections?.(); } catch {}
+  try {
+    server.closeIdleConnections?.();
+  } catch {}
+  try {
+    server.closeAllConnections?.();
+  } catch {}
   process.exit(forced ? 1 : 0);
 }
-process.on('SIGTERM', () => { shutdown('SIGTERM').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
-process.on('SIGINT', () => { shutdown('SIGINT').catch((err) => { console.error('[shutdown]', err); process.exit(1); }); });
+process.on('SIGTERM', () => {
+  shutdown('SIGTERM').catch((err) => {
+    console.error('[shutdown]', err);
+    process.exit(1);
+  });
+});
+process.on('SIGINT', () => {
+  shutdown('SIGINT').catch((err) => {
+    console.error('[shutdown]', err);
+    process.exit(1);
+  });
+});
 
 const FATAL_GRACE_MS = Math.min(SHUTDOWN_GRACE_MS, 5_000);
 function fatal(kind, cause) {
   try {
-    console.error(JSON.stringify({
-      level: 'fatal',
-      event: kind,
-      at: new Date().toISOString(),
-      activeTurns: activeTurnCount(),
-      message: String(cause?.message || cause),
-      stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
-    }));
+    console.error(
+      JSON.stringify({
+        level: 'fatal',
+        event: kind,
+        at: new Date().toISOString(),
+        activeTurns: activeTurnCount(),
+        message: String(cause?.message || cause),
+        stack: typeof cause?.stack === 'string' ? cause.stack.slice(0, 4000) : undefined,
+      }),
+    );
   } catch {
     console.error('[fatal]', kind, cause);
   }
   shutdown(kind, { graceMs: FATAL_GRACE_MS }).catch(() => process.exit(1));
   setTimeout(() => process.exit(1), FATAL_GRACE_MS + 2_000).unref();
 }
-process.on('unhandledRejection', (reason) => { fatal('unhandledRejection', reason); });
-process.on('uncaughtException', (err) => { fatal('uncaughtException', err); });
+process.on('unhandledRejection', (reason) => {
+  fatal('unhandledRejection', reason);
+});
+process.on('uncaughtException', (err) => {
+  fatal('uncaughtException', err);
+});

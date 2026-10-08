@@ -52,7 +52,7 @@ npm run format:check    # то, что запускает CI
 ```
 
 CI требует, чтобы `lint:ci` и `format:check` были зелёными. Если правили `.json` —
-прогоните `npm run format`, biome сам поправит отступы.
+прогоните `npm run format`, biome сам поправит отступы. Форматтер охватывает и `server/**`, `tests/**` (одинарные кавычки, ширина строки 140 — см. `overrides` в `biome.json`); `evals/**`, `e2e/**` и `cloudflare/**` исключены.
 
 ### Коммит и отправка
 

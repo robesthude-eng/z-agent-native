@@ -44,7 +44,9 @@ test('executor stream preserves spawn failure and tolerates UI callback errors',
   const failed = createExecutorStreamParser();
   failed.push(frame({ type: 'error', error: 'spawn failed', code: 'SPAWN_FAILED' }));
   assert.throws(() => failed.finish(), { message: 'spawn failed', code: 'SPAWN_FAILED' });
-  const parser = createExecutorStreamParser(() => { throw new Error('UI failure'); });
+  const parser = createExecutorStreamParser(() => {
+    throw new Error('UI failure');
+  });
   parser.push(frame({ type: 'output', stdout: 'hello', stderr: '' }));
   parser.push(frame(done));
   assert.deepEqual(parser.finish(), done.result);

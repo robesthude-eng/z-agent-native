@@ -36,8 +36,11 @@ export function buildUserSettingsPrompt(settings = {}) {
 
 export function userSettingsPrompt(ownerId) {
   if (!ownerId) return '';
-  try { return buildUserSettingsPrompt(userSettingsFrom(getPrefs(ownerId))); }
-  catch { return ''; }
+  try {
+    return buildUserSettingsPrompt(userSettingsFrom(getPrefs(ownerId)));
+  } catch {
+    return '';
+  }
 }
 
 /** Переключатели возможностей агента из настроек; по умолчанию всё включено. */
@@ -53,6 +56,9 @@ export function agentFeatureFlags(settings = {}) {
 }
 
 export function agentFeatures(ownerId) {
-  try { return agentFeatureFlags(userSettingsFrom(getPrefs(ownerId))); }
-  catch { return agentFeatureFlags({}); }
+  try {
+    return agentFeatureFlags(userSettingsFrom(getPrefs(ownerId)));
+  } catch {
+    return agentFeatureFlags({});
+  }
 }

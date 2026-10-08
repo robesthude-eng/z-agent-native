@@ -71,7 +71,11 @@ function deliver(sessionId, event) {
   state.frames.push(frame);
   if (state.frames.length > EVENT_RING_SIZE) state.frames.splice(0, state.frames.length - EVENT_RING_SIZE);
   for (const listener of listenersFor(sessionId)) {
-    try { listener(frame); } catch { /* subscriber owns its socket */ }
+    try {
+      listener(frame);
+    } catch {
+      /* subscriber owns its socket */
+    }
   }
   return frame.id;
 }
@@ -87,14 +91,22 @@ export function emit(sessionId, type, properties = {}) {
   // Snapshot observation is synchronous on purpose: the initial `busy` event
   // happens before the first tool can mutate the workspace, so the baseline is
   // guaranteed to describe the exact state before this turn.
-  try { observeTurnResultEvent(sessionId, type, properties); } catch { /* result capture must never break realtime delivery */ }
+  try {
+    observeTurnResultEvent(sessionId, type, properties);
+  } catch {
+    /* result capture must never break realtime delivery */
+  }
 
   const event = { type, properties: { ...properties, sessionID: properties.sessionID || sessionId } };
   const id = deliver(sessionId, event);
   // No-op on a single node. On a cluster the other replicas replay this frame
   // to their own subscribers, so an SSE stream is no longer pinned to the
   // process that happened to serve the request.
-  try { publishEvent(sessionId, event); } catch { /* local delivery already happened */ }
+  try {
+    publishEvent(sessionId, event);
+  } catch {
+    /* local delivery already happened */
+  }
   return id;
 }
 
@@ -109,9 +121,7 @@ export function subscribe(sessionId, onFrame, lastEventId = 0) {
   // A different epoch means the caller survived a process restart. Replay the
   // complete retained ring; using its old sequence would silently drop every
   // new frame whose number has not caught up yet.
-  const last = suppliedEpoch === EVENT_EPOCH && Number.isFinite(suppliedSeq)
-    ? suppliedSeq
-    : 0;
+  const last = suppliedEpoch === EVENT_EPOCH && Number.isFinite(suppliedSeq) ? suppliedSeq : 0;
   for (const frame of state.frames) {
     if (frame.seq > last) onFrame(frame);
   }
@@ -159,7 +169,11 @@ export function openSse(req, res, sessionId, lastEventId = 0) {
 
   const drop = () => {
     close();
-    try { res.destroy(); } catch { /* already gone */ }
+    try {
+      res.destroy();
+    } catch {
+      /* already gone */
+    }
   };
 
   const write = (frame) => {

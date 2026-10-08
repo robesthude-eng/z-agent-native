@@ -35,7 +35,11 @@ function sse(events) {
 
 function toolStream(index, name, args) {
   return sse([
-    { choices: [{ delta: { tool_calls: [{ index: 0, id: `call_${name}_${index}`, function: { name, arguments: JSON.stringify(args) } }] } }] },
+    {
+      choices: [
+        { delta: { tool_calls: [{ index: 0, id: `call_${name}_${index}`, function: { name, arguments: JSON.stringify(args) } }] } },
+      ],
+    },
     { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
     '[DONE]',
   ]);
@@ -71,7 +75,13 @@ test('repeated identical tool observations stop the turn before the global step 
     assert.equal(providerCalls, 6);
     assert.equal(assistant.info?.outcome?.status, 'partial');
     assert.equal(assistant.info?.outcome?.label, 'Частично выполнено');
-    assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /повторил одно и то же действие/i);
+    assert.match(
+      assistant.parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n'),
+      /повторил одно и то же действие/i,
+    );
 
     const repeated = await agent.submitTurn({
       sessionId: sid,
@@ -101,7 +111,15 @@ test('truncated tool arguments are not executed', async () => {
     providerCalls += 1;
     if (providerCalls === 1) {
       return sse([
-        { choices: [{ delta: { tool_calls: [{ index: 0, id: 'call_bad', function: { name: 'bash', arguments: '{"command":"printf hacked > PWNED.txt' } }] } }] },
+        {
+          choices: [
+            {
+              delta: {
+                tool_calls: [{ index: 0, id: 'call_bad', function: { name: 'bash', arguments: '{"command":"printf hacked > PWNED.txt' } }],
+              },
+            },
+          ],
+        },
         { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
         '[DONE]',
       ]);
@@ -184,7 +202,8 @@ test('a transient webfetch failure is retried once inside the same tool call', a
   } finally {
     setExternalTransportForTests(null);
     globalThis.fetch = original;
-    if (previousNetworkPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY; else process.env.Z_AGENT_NETWORK_POLICY = previousNetworkPolicy;
+    if (previousNetworkPolicy == null) delete process.env.Z_AGENT_NETWORK_POLICY;
+    else process.env.Z_AGENT_NETWORK_POLICY = previousNetworkPolicy;
     agent.resetAgentStateForTests();
   }
 });
@@ -192,11 +211,7 @@ test('a transient webfetch failure is retried once inside the same tool call', a
 test.after(() => providers.setProviderTransportForTests(null));
 
 function textStream(text, finish = 'stop') {
-  return sse([
-    { choices: [{ delta: { content: text } }] },
-    { choices: [{ delta: {}, finish_reason: finish }] },
-    '[DONE]',
-  ]);
+  return sse([{ choices: [{ delta: { content: text } }] }, { choices: [{ delta: {}, finish_reason: finish }] }, '[DONE]']);
 }
 
 function interruptedTextStream(text) {
@@ -234,7 +249,10 @@ test('a provider stream cut mid-answer continues the same turn instead of closin
   try {
     const assistant = await runTrustTurn('ses_trustcut1', 'act_stream_cut');
     assert.equal(providerCalls, 2, 'interrupted stream must be continued, not treated as final');
-    const text = assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n');
+    const text = assistant.parts
+      .filter((part) => part.type === 'text')
+      .map((part) => part.text)
+      .join('\n');
     assert.match(text, /Задача выполнена/);
     assert.equal(assistant.info?.finish, 'stop');
   } finally {
@@ -255,7 +273,13 @@ test('a response cut by the output token limit is continued', async () => {
   try {
     const assistant = await runTrustTurn('ses_trustlen1', 'act_length_cut');
     assert.equal(providerCalls, 2);
-    assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /Конец ответа/);
+    assert.match(
+      assistant.parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n'),
+      /Конец ответа/,
+    );
   } finally {
     globalThis.fetch = original;
     agent.resetAgentStateForTests();
@@ -269,14 +293,24 @@ test('a transient provider 5xx between steps is retried inside the turn', async 
   globalThis.fetch = async () => {
     providerCalls += 1;
     // Транспорт сам повторяет 5xx; здесь сбой длиннее его бюджета повторов.
-    if (providerCalls <= 4) return new Response(JSON.stringify({ error: { message: 'upstream internal error' } }), { status: 503, headers: { 'content-type': 'application/json' } });
+    if (providerCalls <= 4)
+      return new Response(JSON.stringify({ error: { message: 'upstream internal error' } }), {
+        status: 503,
+        headers: { 'content-type': 'application/json' },
+      });
     return textStream('Готово после сбоя.');
   };
   try {
     const assistant = await runTrustTurn('ses_trust5xx1', 'act_transient_5xx');
     assert.ok(providerCalls >= 5);
     assert.equal(assistant.info?.finish, 'stop');
-    assert.match(assistant.parts.filter((part) => part.type === 'text').map((part) => part.text).join('\n'), /Готово после сбоя/);
+    assert.match(
+      assistant.parts
+        .filter((part) => part.type === 'text')
+        .map((part) => part.text)
+        .join('\n'),
+      /Готово после сбоя/,
+    );
   } finally {
     globalThis.fetch = original;
     agent.resetAgentStateForTests();
@@ -287,7 +321,12 @@ test('the model cannot stop while its own todo plan still has unfinished items',
   agent.resetAgentStateForTests();
   const original = globalThis.fetch;
   let providerCalls = 0;
-  const todos = (status) => ({ todos: [{ content: 'Шаг 1', status: 'completed', priority: 'high' }, { content: 'Шаг 2', status, priority: 'high' }] });
+  const todos = (status) => ({
+    todos: [
+      { content: 'Шаг 1', status: 'completed', priority: 'high' },
+      { content: 'Шаг 2', status, priority: 'high' },
+    ],
+  });
   globalThis.fetch = async () => {
     providerCalls += 1;
     if (providerCalls === 1) return toolStream(1, 'todowrite', todos('pending'));
@@ -311,7 +350,10 @@ test('a provider auth failure is shown once, in plain words, and is not replayed
   let providerCalls = 0;
   globalThis.fetch = async () => {
     providerCalls += 1;
-    return new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), { status: 401, headers: { 'content-type': 'application/json' } });
+    return new Response(JSON.stringify({ error: { message: 'Invalid API key' } }), {
+      status: 401,
+      headers: { 'content-type': 'application/json' },
+    });
   };
   try {
     const assistant = await runTrustTurn('ses_trustauth1', 'act_auth_401');

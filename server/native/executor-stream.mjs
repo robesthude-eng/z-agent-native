@@ -17,10 +17,18 @@ export function createExecutorStreamParser(onOutput) {
       if (Buffer.byteLength(line) > MAX_FRAME_BYTES) throw new Error('Executor stream frame exceeded 4 MiB');
       if (terminal) throw new Error('Executor stream continued after terminal result');
       let frame;
-      try { frame = JSON.parse(line); } catch { throw new Error('Executor returned invalid stream JSON'); }
+      try {
+        frame = JSON.parse(line);
+      } catch {
+        throw new Error('Executor returned invalid stream JSON');
+      }
       if (frame?.type === 'output') {
         if (typeof frame.stdout !== 'string' || typeof frame.stderr !== 'string') throw new Error('Invalid executor output frame');
-        try { onOutput?.(frame.stdout, frame.stderr); } catch { /* UI consumer cannot fail execution. */ }
+        try {
+          onOutput?.(frame.stdout, frame.stderr);
+        } catch {
+          /* UI consumer cannot fail execution. */
+        }
       } else if (frame?.type === 'result') {
         if (!frame.result || !Number.isInteger(frame.result.code)) throw new Error('Invalid executor terminal result');
         terminal = frame;
@@ -31,12 +39,15 @@ export function createExecutorStreamParser(onOutput) {
     if (Buffer.byteLength(pending) > MAX_FRAME_BYTES) throw new Error('Executor stream frame exceeded 4 MiB');
   };
   return {
-    push(chunk) { read(decoder.write(chunk)); },
+    push(chunk) {
+      read(decoder.write(chunk));
+    },
     finish() {
       read(decoder.end());
       if (pending.trim()) throw new Error('Executor stream ended with an incomplete frame');
       if (!terminal) throw new Error('Executor stream ended without a terminal result');
-      if (terminal.type === 'error') throw Object.assign(new Error(terminal.error || 'Executor execution failed'), { code: terminal.code || 'EXECUTOR_ERROR' });
+      if (terminal.type === 'error')
+        throw Object.assign(new Error(terminal.error || 'Executor execution failed'), { code: terminal.code || 'EXECUTOR_ERROR' });
       return terminal.result;
     },
   };

@@ -11,7 +11,11 @@ test('filesystem errors map to client statuses without leaking container paths',
 });
 
 test('explicit statusCode and abort errors are preserved', () => {
-  assert.deepEqual(publicErrorInfo(Object.assign(new Error('Конфликт'), { statusCode: 409, code: 'X' })), { status: 409, message: 'Конфликт', code: 'X' });
+  assert.deepEqual(publicErrorInfo(Object.assign(new Error('Конфликт'), { statusCode: 409, code: 'X' })), {
+    status: 409,
+    message: 'Конфликт',
+    code: 'X',
+  });
   assert.equal(publicErrorInfo(Object.assign(new Error('a'), { name: 'AbortError' })).status, 499);
 });
 

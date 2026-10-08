@@ -6,9 +6,36 @@ export function evenDimension(value, fallback) {
 }
 
 export function videoEncoderArgs(ext, { crf = 20, fps = 30 } = {}) {
-  if (ext === 'webm') return ['-c:v', 'libvpx-vp9', '-b:v', '0', '-crf', String(Math.round(clampNumber(crf + 10, 0, 63, 32))), '-row-mt', '1', '-pix_fmt', 'yuv420p', '-r', String(fps)];
+  if (ext === 'webm')
+    return [
+      '-c:v',
+      'libvpx-vp9',
+      '-b:v',
+      '0',
+      '-crf',
+      String(Math.round(clampNumber(crf + 10, 0, 63, 32))),
+      '-row-mt',
+      '1',
+      '-pix_fmt',
+      'yuv420p',
+      '-r',
+      String(fps),
+    ];
   if (ext === 'gif') return ['-r', String(fps)];
-  return ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(Math.round(clampNumber(crf, 0, 51, 20))), '-pix_fmt', 'yuv420p', '-movflags', '+faststart', '-r', String(fps)];
+  return [
+    '-c:v',
+    'libx264',
+    '-preset',
+    'veryfast',
+    '-crf',
+    String(Math.round(clampNumber(crf, 0, 51, 20))),
+    '-pix_fmt',
+    'yuv420p',
+    '-movflags',
+    '+faststart',
+    '-r',
+    String(fps),
+  ];
 }
 
 export function audioEncoderArgs(ext, { bitrateKbps = 192 } = {}) {
@@ -73,8 +100,15 @@ export function buildSlideshowArgs({
 export function buildClipConcatArgs({ listFile, output, ext, width = 1280, height = 720, fit = 'contain', crf = 20, fps = 30 }) {
   const rate = Math.round(clampNumber(fps, 1, 60, 30));
   return [
-    '-y', '-f', 'concat', '-safe', '0', '-i', listFile,
-    '-vf', `${scaleFilter(width, height, { fit })},format=yuv420p`,
+    '-y',
+    '-f',
+    'concat',
+    '-safe',
+    '0',
+    '-i',
+    listFile,
+    '-vf',
+    `${scaleFilter(width, height, { fit })},format=yuv420p`,
     ...videoEncoderArgs(ext, { crf, fps: rate }),
     ...audioEncoderArgs(ext),
     output,
@@ -113,7 +147,8 @@ export function buildConvertArgs({ operation, input, output, outputExt, startMs,
 
   if (kind === 'image') {
     args.push('-frames:v', '1');
-    if (outputExt === 'jpg' || outputExt === 'jpeg' || outputExt === 'webp') args.push('-q:v', String(Math.round(clampNumber(quality, 1, 31, 3))));
+    if (outputExt === 'jpg' || outputExt === 'jpeg' || outputExt === 'webp')
+      args.push('-q:v', String(Math.round(clampNumber(quality, 1, 31, 3))));
     args.push(output);
     return args;
   }
@@ -125,7 +160,13 @@ export function buildConvertArgs({ operation, input, output, outputExt, startMs,
 
   if (outputExt === 'gif') {
     const rate = Math.round(clampNumber(fps, 1, 30, 12));
-    args.push('-filter_complex', `fps=${rate},${scaleFilter(width || 640, height || 360, { fit: fit || 'contain' })},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer`, '-loop', '0', output);
+    args.push(
+      '-filter_complex',
+      `fps=${rate},${scaleFilter(width || 640, height || 360, { fit: fit || 'contain' })},split[a][b];[a]palettegen=stats_mode=diff[p];[b][p]paletteuse=dither=bayer`,
+      '-loop',
+      '0',
+      output,
+    );
     return args;
   }
 
@@ -137,7 +178,13 @@ export function buildCropArgs({ input, output, x = 0, y = 0, width, height, outp
   const w = Math.round(clampNumber(width, 1, 16_384, 0));
   const h = Math.round(clampNumber(height, 1, 16_384, 0));
   if (!w || !h) throw new Error('crop requires width and height');
-  const args = ['-y', '-i', input, '-vf', `crop=${w}:${h}:${Math.round(clampNumber(x, 0, 16_384, 0))}:${Math.round(clampNumber(y, 0, 16_384, 0))}`];
+  const args = [
+    '-y',
+    '-i',
+    input,
+    '-vf',
+    `crop=${w}:${h}:${Math.round(clampNumber(x, 0, 16_384, 0))}:${Math.round(clampNumber(y, 0, 16_384, 0))}`,
+  ];
   if (MEDIA_TYPES[outputExt]?.kind === 'image') args.push('-frames:v', '1');
   else args.push(...videoEncoderArgs(outputExt, {}));
   args.push(output);
@@ -151,7 +198,11 @@ export function buildProbeArgs(input) {
 export function summarizeProbe(raw) {
   let parsed = raw;
   if (typeof raw === 'string') {
-    try { parsed = JSON.parse(raw); } catch { throw new Error('ffprobe returned output that is not JSON'); }
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      throw new Error('ffprobe returned output that is not JSON');
+    }
   }
   const streams = Array.isArray(parsed?.streams) ? parsed.streams : [];
   const video = streams.find((stream) => stream?.codec_type === 'video') || null;
@@ -177,7 +228,9 @@ export function summarizeProbe(raw) {
     info.frameRate ? `frame rate: ${info.frameRate}` : '',
     durationMs !== null ? `duration: ${(durationMs / 1000).toFixed(2)}s` : '',
     info.videoCodec ? `video codec: ${info.videoCodec}` : '',
-    info.audioCodec ? `audio codec: ${info.audioCodec}${info.channels ? ` (${info.channels}ch` : ''}${info.sampleRate ? `, ${info.sampleRate} Hz)` : info.channels ? ')' : ''}` : '',
+    info.audioCodec
+      ? `audio codec: ${info.audioCodec}${info.channels ? ` (${info.channels}ch` : ''}${info.sampleRate ? `, ${info.sampleRate} Hz)` : info.channels ? ')' : ''}`
+      : '',
     info.bitrate ? `bitrate: ${Math.round(info.bitrate / 1000)} kbps` : '',
     info.bytes ? `size: ${info.bytes} bytes` : '',
   ].filter(Boolean);

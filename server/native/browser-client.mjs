@@ -1,6 +1,11 @@
 import fs from 'node:fs';
 import http from 'node:http';
-import { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, executeBrowserTool as executeBrowserToolLocal, normalizeBrowserInput } from './browser.mjs';
+import {
+  BROWSER_ACTIONS,
+  BROWSER_RENDER_ACTIONS,
+  executeBrowserTool as executeBrowserToolLocal,
+  normalizeBrowserInput,
+} from './browser.mjs';
 
 export { BROWSER_ACTIONS, BROWSER_RENDER_ACTIONS, normalizeBrowserInput };
 
@@ -13,7 +18,11 @@ const SOCKET_PATH = process.env.Z_AGENT_BROWSER_SOCKET || '/run/z-agent-browser/
 const REQUIRED = process.env.Z_AGENT_BROWSER_REQUIRED === '1';
 
 export function browserServiceAvailable() {
-  try { return fs.statSync(SOCKET_PATH).isSocket(); } catch { return false; }
+  try {
+    return fs.statSync(SOCKET_PATH).isSocket();
+  } catch {
+    return false;
+  }
 }
 
 function remote(payload, signal, timeoutMs = 130_000, maxBytes = MAX_RESPONSE_BYTES) {
@@ -26,21 +35,39 @@ function remote(payload, signal, timeoutMs = 130_000, maxBytes = MAX_RESPONSE_BY
       signal?.removeEventListener('abort', abort);
       fn(value);
     };
-    const req = http.request({ socketPath: SOCKET_PATH, path: '/browser', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': String(body.length) } }, (res) => {
-      const chunks = []; let size = 0;
-      res.on('data', (chunk) => {
-        size += chunk.length;
-        if (size > maxBytes) req.destroy(new Error('Browser service response too large'));
-        else chunks.push(chunk);
-      });
-      res.on('end', () => {
-        let parsed;
-        try { parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}'); }
-        catch { return finish(reject, new Error('Browser service returned invalid JSON')); }
-        if ((res.statusCode || 500) >= 400) return finish(reject, Object.assign(new Error(parsed.error || `Browser service HTTP ${res.statusCode}`), { code: parsed.code || 'BROWSER_SERVICE_ERROR' }));
-        finish(resolve, parsed.result);
-      });
-    });
+    const req = http.request(
+      {
+        socketPath: SOCKET_PATH,
+        path: '/browser',
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'content-length': String(body.length) },
+      },
+      (res) => {
+        const chunks = [];
+        let size = 0;
+        res.on('data', (chunk) => {
+          size += chunk.length;
+          if (size > maxBytes) req.destroy(new Error('Browser service response too large'));
+          else chunks.push(chunk);
+        });
+        res.on('end', () => {
+          let parsed;
+          try {
+            parsed = JSON.parse(Buffer.concat(chunks).toString('utf8') || '{}');
+          } catch {
+            return finish(reject, new Error('Browser service returned invalid JSON'));
+          }
+          if ((res.statusCode || 500) >= 400)
+            return finish(
+              reject,
+              Object.assign(new Error(parsed.error || `Browser service HTTP ${res.statusCode}`), {
+                code: parsed.code || 'BROWSER_SERVICE_ERROR',
+              }),
+            );
+          finish(resolve, parsed.result);
+        });
+      },
+    );
     const timer = setTimeout(() => req.destroy(new Error('Browser service IPC timeout')), timeoutMs);
     timer.unref?.();
     req.on('close', () => clearTimeout(timer));
@@ -53,7 +80,11 @@ function remote(payload, signal, timeoutMs = 130_000, maxBytes = MAX_RESPONSE_BY
 }
 
 export async function executeBrowserTool({ sessionId, uid = null, input = {}, signal }) {
-  const isRender = BROWSER_RENDER_ACTIONS.includes(String(input?.action || '').trim().toLowerCase());
+  const isRender = BROWSER_RENDER_ACTIONS.includes(
+    String(input?.action || '')
+      .trim()
+      .toLowerCase(),
+  );
   if (browserServiceAvailable()) {
     return await remote(
       { sessionId, uid, input },
@@ -62,7 +93,10 @@ export async function executeBrowserTool({ sessionId, uid = null, input = {}, si
       isRender ? MAX_RENDER_RESPONSE_BYTES : MAX_RESPONSE_BYTES,
     );
   }
-  if (REQUIRED) throw Object.assign(new Error(`Secure browser service is required but unavailable at ${SOCKET_PATH}`), { code: 'BROWSER_SERVICE_UNAVAILABLE' });
+  if (REQUIRED)
+    throw Object.assign(new Error(`Secure browser service is required but unavailable at ${SOCKET_PATH}`), {
+      code: 'BROWSER_SERVICE_UNAVAILABLE',
+    });
   return await executeBrowserToolLocal({ sessionId, input, signal });
 }
 
@@ -79,11 +113,20 @@ export async function closeBrowserSessionRemote(sessionId, uid = null) {
 export async function probeBrowserService() {
   if (!browserServiceAvailable()) return { ok: false, reason: 'socket_missing' };
   return await new Promise((resolve) => {
-    const req = http.request({ socketPath: SOCKET_PATH, path: '/health', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '2' } }, (res) => {
-      const chunks = [];
-      res.on('data', (c) => chunks.push(c));
-      res.on('end', () => { try { resolve(JSON.parse(Buffer.concat(chunks).toString('utf8'))); } catch { resolve({ ok: false, reason: 'invalid_json' }); } });
-    });
+    const req = http.request(
+      { socketPath: SOCKET_PATH, path: '/health', method: 'POST', headers: { 'content-type': 'application/json', 'content-length': '2' } },
+      (res) => {
+        const chunks = [];
+        res.on('data', (c) => chunks.push(c));
+        res.on('end', () => {
+          try {
+            resolve(JSON.parse(Buffer.concat(chunks).toString('utf8')));
+          } catch {
+            resolve({ ok: false, reason: 'invalid_json' });
+          }
+        });
+      },
+    );
     req.on('error', (error) => resolve({ ok: false, reason: error?.message || String(error) }));
     req.setTimeout(2000, () => req.destroy());
     req.end('{}');

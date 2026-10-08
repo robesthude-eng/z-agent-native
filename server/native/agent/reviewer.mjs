@@ -8,7 +8,8 @@ import { safeWorkspacePath } from '../security.mjs';
 
 const MAX_FILE_CHARS = 14_000;
 const MAX_TOTAL_CHARS = 70_000;
-const SKIP_PATH = /(^|\/)(\.screenshots|\.agent-home|\.agent-skills|node_modules|dist|build|\.git)(\/|$)|\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|mp[34]|wav|woff2?|ttf|lock)$/i;
+const SKIP_PATH =
+  /(^|\/)(\.screenshots|\.agent-home|\.agent-skills|node_modules|dist|build|\.git)(\/|$)|\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|mp[34]|wav|woff2?|ttf|lock)$/i;
 
 export function reviewablePaths(strategy) {
   const paths = Array.isArray(strategy?.changedPaths) ? strategy.changedPaths : [];
@@ -30,7 +31,10 @@ function readChanged(workspace, paths) {
       const full = safeWorkspacePath(workspace, rel, { allowMissing: false });
       const st = fs.statSync(full);
       if (!st.isFile()) continue;
-      if (st.size > 2_000_000) { out.push(`=== ${rel} (${st.size} bytes, too large to show) ===`); continue; }
+      if (st.size > 2_000_000) {
+        out.push(`=== ${rel} (${st.size} bytes, too large to show) ===`);
+        continue;
+      }
       text = fs.readFileSync(full, 'utf8');
     } catch {
       out.push(`=== ${rel} (deleted or unreadable) ===`);
@@ -38,10 +42,19 @@ function readChanged(workspace, paths) {
     }
     if (text.includes('\u0000')) continue;
     const budget = Math.min(MAX_FILE_CHARS, MAX_TOTAL_CHARS - used);
-    if (budget <= 500) { out.push(`=== ${rel} (omitted: review budget exhausted) ===`); continue; }
-    const clipped = text.length > budget ? `${text.slice(0, Math.floor(budget * 0.7))}\n…[${text.length - budget} chars omitted]…\n${text.slice(-Math.floor(budget * 0.3))}` : text;
+    if (budget <= 500) {
+      out.push(`=== ${rel} (omitted: review budget exhausted) ===`);
+      continue;
+    }
+    const clipped =
+      text.length > budget
+        ? `${text.slice(0, Math.floor(budget * 0.7))}\n…[${text.length - budget} chars omitted]…\n${text.slice(-Math.floor(budget * 0.3))}`
+        : text;
     used += clipped.length;
-    const numbered = clipped.split('\n').map((line, i) => `${String(i + 1).padStart(4)}| ${line}`).join('\n');
+    const numbered = clipped
+      .split('\n')
+      .map((line, i) => `${String(i + 1).padStart(4)}| ${line}`)
+      .join('\n');
     out.push(`=== ${rel} ===\n${numbered}`);
   }
   return out.join('\n\n');
@@ -49,7 +62,7 @@ function readChanged(workspace, paths) {
 
 const REVIEW_SYSTEM = [
   'You are a strict senior code reviewer checking another AI agent\'s work right before it reports "done" to the user.',
-  'You see the user\'s goal, the final content of the files it changed, its verification evidence and its draft final answer.',
+  "You see the user's goal, the final content of the files it changed, its verification evidence and its draft final answer.",
   'Find only REAL problems that matter to the user: bugs, broken or missing parts of what was asked, syntax errors, wrong file paths, security issues (secrets in code, injection, dangerous commands), obvious UI breakage, unverified claims in the draft answer, or work the draft claims but the files do not show.',
   'Ignore style nits, naming preferences and optional improvements. If the work is fine, say so — do not invent issues.',
   'Reply with ONLY a JSON object, no prose, no code fences:',
@@ -82,7 +95,12 @@ export function parseReview(text) {
 }
 
 export function formatIssues(review) {
-  return review.issues.map((i, n) => `${n + 1}. [${i.severity}] ${i.file ? `${i.file}${i.line ? `:${i.line}` : ''} — ` : ''}${i.problem}${i.fix ? `\n   Как исправить: ${i.fix}` : ''}`).join('\n');
+  return review.issues
+    .map(
+      (i, n) =>
+        `${n + 1}. [${i.severity}] ${i.file ? `${i.file}${i.line ? `:${i.line}` : ''} — ` : ''}${i.problem}${i.fix ? `\n   Как исправить: ${i.fix}` : ''}`,
+    )
+    .join('\n');
 }
 
 export async function reviewTurn({ ownerId, modelPlan, goal, strategy, workspace, draft, signal }) {
@@ -91,7 +109,9 @@ export async function reviewTurn({ ownerId, modelPlan, goal, strategy, workspace
   if (!files.trim()) return null;
   const evidence = strategy?.lastVerificationEvidence
     ? `${strategy.lastVerificationEvidence.ok ? 'OK' : 'FAILED'} via ${strategy.lastVerificationEvidence.tool}: ${strategy.lastVerificationEvidence.detail}`
-    : strategy?.needsVerification ? 'No successful verification after the latest change.' : 'none recorded';
+    : strategy?.needsVerification
+      ? 'No successful verification after the latest change.'
+      : 'none recorded';
   const plan = (strategy?.plan || []).map((t) => `- [${t.status}] ${t.content}`).join('\n');
   const content = [
     `# User goal\n${String(goal || '').slice(0, 6000)}`,
@@ -99,7 +119,9 @@ export async function reviewTurn({ ownerId, modelPlan, goal, strategy, workspace
     `# Verification evidence\n${evidence}`,
     `# Changed files (final content)\n${files}`,
     `# Draft final answer\n${String(draft || '(empty)').slice(0, 6000)}`,
-  ].filter(Boolean).join('\n\n');
+  ]
+    .filter(Boolean)
+    .join('\n\n');
   const response = await callModelAutopilot(ownerId, modelPlan, {
     system: REVIEW_SYSTEM,
     frames: [{ role: 'user', content }],

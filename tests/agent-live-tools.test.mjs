@@ -17,12 +17,22 @@ const providerConfigs = await import('../server/native/provider-configs.mjs');
 const ownerId = 'live-tools@example.com';
 const providerId = 'openai';
 store.createUser(ownerId, 'hash');
-providerConfigs.upsertProviderConfig(ownerId, { id: providerId, name: 'Live Tools OpenAI', protocol: 'openai', baseURL: 'https://1.1.1.1/v1', enabled: true });
+providerConfigs.upsertProviderConfig(ownerId, {
+  id: providerId,
+  name: 'Live Tools OpenAI',
+  protocol: 'openai',
+  baseURL: 'https://1.1.1.1/v1',
+  enabled: true,
+});
 store.setProviderKey(ownerId, providerId, 'sk-live-tools');
 providers.setProviderTransportForTests((url, init) => globalThis.fetch(url, init));
 test.after(() => fs.rmSync(root, { recursive: true, force: true }));
 
-const sse = (items) => new Response(items.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), { status: 200, headers: { 'content-type': 'text/event-stream' } });
+const sse = (items) =>
+  new Response(items.map((e) => `data: ${typeof e === 'string' ? e : JSON.stringify(e)}\n\n`).join(''), {
+    status: 200,
+    headers: { 'content-type': 'text/event-stream' },
+  });
 // Delivers the events one by one with a pause, like a model that is still typing.
 const slowSse = (items, gapMs = 100) => {
   const encoder = new TextEncoder();
@@ -62,11 +72,25 @@ test('tool cards are drawn while the model writes the call and stay one card per
     return sse([{ choices: [{ delta: { content: 'Готово.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const assistant = await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'Запиши файл' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '' });
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Запиши файл' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
     const tools = assistant.parts.filter((p) => p.type === 'tool' && p.tool !== 'review');
-    assert.deepEqual(tools.map((p) => [p.tool, p.state.status, p.callID]), [['write', 'completed', 'call_w'], ['read', 'completed', 'call_r']]);
+    assert.deepEqual(
+      tools.map((p) => [p.tool, p.state.status, p.callID]),
+      [
+        ['write', 'completed', 'call_w'],
+        ['read', 'completed', 'call_r'],
+      ],
+    );
 
-    const updates = frames.filter((e) => e.type === 'message.part.updated' && e.properties.part?.type === 'tool').map((e) => e.properties.part);
+    const updates = frames
+      .filter((e) => e.type === 'message.part.updated' && e.properties.part?.type === 'tool')
+      .map((e) => e.properties.part);
     const writeId = tools[0].id;
     const history = updates.filter((p) => p.id === writeId).map((p) => p.state.status + (p.state.metadata?.streamingArgs ? '*' : ''));
     // streamed while the arguments arrive -> queued -> running -> completed, all on the same card
@@ -83,7 +107,13 @@ test('tool cards are drawn while the model writes the call and stay one card per
     const readQueued = updates.findIndex((p) => p.id === tools[1].id && p.state.status === 'pending');
     assert.ok(readQueued !== -1 && readQueued < firstCompleted);
 
-    assert.equal(store.listMessages(sid).at(-1).parts.filter((p) => p.type === 'tool' && p.tool !== 'review').length, 2);
+    assert.equal(
+      store
+        .listMessages(sid)
+        .at(-1)
+        .parts.filter((p) => p.type === 'tool' && p.tool !== 'review').length,
+      2,
+    );
     assert.ok(!frames.some((e) => e.type === 'message.part.removed'), 'nothing had to be discarded');
   } finally {
     unsubscribe();
@@ -111,7 +141,13 @@ test('a call cut off by a dropped stream ends as a failed card, never as a spinn
     return sse([{ choices: [{ delta: { content: 'Повторю короче.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const assistant = await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'Запиши' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '' });
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Запиши' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
     const tools = assistant.parts.filter((p) => p.type === 'tool');
     assert.equal(tools.length, 1);
     assert.equal(tools[0].state.status, 'error');
@@ -136,26 +172,46 @@ test('a task card shows the subagent timeline while it works', async () => {
   const original = globalThis.fetch;
   let subagentCalls = 0;
   let mainCalls = 0;
-  const json = (message, finish) => new Response(JSON.stringify({ choices: [{ message, finish_reason: finish }] }), { status: 200, headers: { 'content-type': 'application/json' } });
+  const json = (message, finish) =>
+    new Response(JSON.stringify({ choices: [{ message, finish_reason: finish }] }), {
+      status: 200,
+      headers: { 'content-type': 'application/json' },
+    });
   globalThis.fetch = async (_url, init) => {
     const body = JSON.parse(init.body);
     if (!body.stream) {
       subagentCalls += 1;
       await new Promise((r) => setTimeout(r, 150));
       if (subagentCalls === 1) {
-        return json({ content: 'Сначала посмотрю файлы.', tool_calls: [{ id: 'sub_list', type: 'function', function: { name: 'list', arguments: '{}' } }] }, 'tool_calls');
+        return json(
+          {
+            content: 'Сначала посмотрю файлы.',
+            tool_calls: [{ id: 'sub_list', type: 'function', function: { name: 'list', arguments: '{}' } }],
+          },
+          'tool_calls',
+        );
       }
       return json({ content: 'Отчёт подагента: всё найдено.' }, 'stop');
     }
     mainCalls += 1;
     if (mainCalls === 1) {
       const args = JSON.stringify({ description: 'Inspect', prompt: 'Посмотри структуру.' });
-      return sse([toolDelta(0, { name: 'task', arguments: args }, 'call_task'), { choices: [{ delta: {}, finish_reason: 'tool_calls' }] }, '[DONE]']);
+      return sse([
+        toolDelta(0, { name: 'task', arguments: args }, 'call_task'),
+        { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
+        '[DONE]',
+      ]);
     }
     return sse([{ choices: [{ delta: { content: 'Готово.' } }] }, { choices: [{ delta: {}, finish_reason: 'stop' }] }, '[DONE]']);
   };
   try {
-    const assistant = await agent.runTurn({ sessionId: sid, ownerId, parts: [{ type: 'text', text: 'Изучи' }], model: { providerID: providerId, modelID: 'gpt-test' }, system: '' });
+    const assistant = await agent.runTurn({
+      sessionId: sid,
+      ownerId,
+      parts: [{ type: 'text', text: 'Изучи' }],
+      model: { providerID: providerId, modelID: 'gpt-test' },
+      system: '',
+    });
     const task = assistant.parts.find((p) => p.type === 'tool' && p.tool === 'task');
     assert.equal(task.state.status, 'completed');
     const timeline = frames
