@@ -348,6 +348,8 @@ These are normally set by `docker-compose.yml`, the Dockerfiles or the tooling i
 | `Z_AGENT_LIGHT_MODEL` | empty (auto) | Model for cheap background work such as the instincts observer, as `provider/model`. Empty picks a light model by name (mini/nano/lite/flash/haiku/small/instant/3-8B) from the **same provider** as the chat; `off` always uses the chat model. |
 | `Z_AGENT_PROJECT_INSTRUCTIONS` | `1` | `0` stops the agent from reading `AGENTS.md` (or `CLAUDE.md`) from the workspace root into its system prompt. |
 | `Z_AGENT_TOOL_SPILL_CHARS` | `32000` | Tool output longer than this keeps only head and tail in the model context; the full text is saved to `.agent-home/tool-output/` for grep/read. `0` disables. |
+| `Z_AGENT_PRUNE_PROTECT_CHARS` | `120000` | Tool results older than the newest ~120k characters are replaced by a short stub in the model context (cleared in 40k batches so prompt caches stay valid; errors and skill/question/task/memory results are kept). `0` disables. |
+| `Z_AGENT_SYNTAX_CHECK` | `1` | `0` stops the runtime from parsing `.js/.mjs/.cjs/.json/.py` files after `write`/`edit` and appending a warning when they no longer parse (parse-only, nothing is executed). |
 | `Z_AGENT_DEBUG_INSTINCTS` | `0` | `1` logs why a background instinct observation was skipped or failed (never the transcript). |
 | `Z_AGENT_ENABLE_FIXTURE_PROVIDER` | `0` | `1` enables the deterministic fixture provider used by evals/E2E. Never enable in production. |
 | `Z_AGENT_RESTORE_REQUIRE_MANIFEST` | `0` | `1` makes `db:restore-verify` fail without a valid backup manifest (see `OPERATIONS.md`). |

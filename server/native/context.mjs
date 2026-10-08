@@ -67,13 +67,57 @@ function makeToolPairsCoherent(frames) {
  * Tool observations are compacted independently before oldest context is
  * dropped. Provider tool-call/result coherence is preserved.
  */
+// Pruning of old tool output. The idea (keep the newest ~40k tokens of tool
+// results, clear older ones in batches) is taken from opencode's session
+// compaction (https://github.com/sst/opencode, MIT License, Copyright (c) 2025
+// opencode); this is an independent implementation. Clearing is quantised by
+// cumulative size from the START of the history, so the set of cleared frames
+// only changes every PRUNE_CHUNK_CHARS of growth and prompt-prefix caches stay valid between.
+const DEFAULT_PRUNE_PROTECT_CHARS = 120_000;
+const PRUNE_CHUNK_CHARS = 40_000;
+const PRUNE_MIN_FRAME_CHARS = 1_200;
+const PRUNE_STUB_HEAD_CHARS = 300;
+const PRUNE_KEEP_TOOLS = new Set(['skill', 'question', 'task', 'council', 'todowrite', 'memory']);
+
+export function pruneProtectChars(env = process.env) {
+  const n = Number(env.Z_AGENT_PRUNE_PROTECT_CHARS ?? DEFAULT_PRUNE_PROTECT_CHARS);
+  return Number.isFinite(n) && n >= 0 ? Math.floor(n) : DEFAULT_PRUNE_PROTECT_CHARS;
+}
+
+export function pruneOldObservations(input, { protectChars = pruneProtectChars() } = {}) {
+  const frames = Array.isArray(input) ? input : [];
+  if (!protectChars) return frames;
+  const isPrunable = (frame) =>
+    frame?.role === 'tool' &&
+    !frame.isError &&
+    !PRUNE_KEEP_TOOLS.has(frame.name) &&
+    String(frame.content || '').length >= PRUNE_MIN_FRAME_CHARS;
+  let total = 0;
+  for (const frame of frames) if (isPrunable(frame)) total += String(frame.content).length;
+  const limit = Math.floor((total - protectChars) / PRUNE_CHUNK_CHARS) * PRUNE_CHUNK_CHARS;
+  if (limit <= 0) return frames;
+  let seen = 0;
+  return frames.map((frame) => {
+    if (!isPrunable(frame)) return frame;
+    const text = String(frame.content);
+    seen += text.length;
+    if (seen > limit) return frame;
+    const file = text.match(/\.agent-home\/tool-output\/[\w.-]+\.txt/)?.[0];
+    const where = file ? ` The full text is still saved in ${file}.` : '';
+    return {
+      ...frame,
+      content: `${text.slice(0, PRUNE_STUB_HEAD_CHARS)}\n[… old tool output cleared to save context (${text.length} chars).${where} Re-run the command or re-read the file if you still need it.]`,
+    };
+  });
+}
+
 export function compactFrames(input, options = {}) {
   const maxChars = Math.max(MIN_CONTEXT_CHARS, Number(options.maxChars || process.env.Z_AGENT_CONTEXT_CHARS) || DEFAULT_CONTEXT_CHARS);
   const maxObservationChars = Math.max(
     4_000,
     Number(options.maxObservationChars || process.env.Z_AGENT_TOOL_OBSERVATION_CHARS) || DEFAULT_TOOL_OBSERVATION_CHARS,
   );
-  const frames = (Array.isArray(input) ? input : []).map((frame) => compactObservation(frame, maxObservationChars));
+  const frames = pruneOldObservations(input).map((frame) => compactObservation(frame, maxObservationChars));
   // Картинки из view_media нужны модели на ближайших шагах; старые
   // просмотры оставляем только текстом, чтобы не пересылать их каждый шаг.
   let runtimeMediaSeen = 0;
