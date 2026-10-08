@@ -7,6 +7,15 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Ideas and code from opencode (edit matching, AGENTS.md, tool-output files)
+
+Studied [sst/opencode](https://github.com/sst/opencode) (MIT) at architecture, loop and code level and ported its most useful parts; the MIT notice is in `THIRD_PARTY_NOTICES.md`.
+
+- **Tolerant `edit`** (`server/native/tools/edit-match.mjs`, ported from opencode's `tool/edit.ts`): when `oldText` is not byte-exact, the tool now tries line-trimmed, block-anchor (Levenshtein), whitespace-normalized, indentation-flexible, escape-normalized, trimmed-boundary and context-aware matching and replaces the file's own text. Disproportionately large fuzzy matches are refused. **Behaviour change:** an exact `oldText` that occurs several times without `all=true` is now an error asking for more context (it used to silently replace the first one). The result says when a tolerant strategy was used.
+- **`AGENTS.md` / `CLAUDE.md`** in the workspace root are added to the system prompt (first existing file wins, 12k chars max, read through the verified-descriptor workspace reader so symlinks outside the workspace are ignored). Framed as project conventions that never override safety rules. `Z_AGENT_PROJECT_INSTRUCTIONS=0` turns it off.
+- **Oversized tool output** (> `Z_AGENT_TOOL_SPILL_CHARS`, default 32000) no longer loses its middle: the model gets head + tail and the path of a file in `.agent-home/tool-output/` holding the full text (latest 40 files, 3 days), to be searched with grep/read. `0` disables.
+- Tests: `tests/edit-match.test.mjs`, `tests/project-instructions.test.mjs`.
+
 ## Light observer model and optional model council
 
 - The instincts observer now runs on a light model: a cheap model of the **same provider** as the chat picked by name (mini/nano/lite/flash/haiku/small/instant/3–8B; reasoning, "pro/opus/sonnet/large", image/audio/embedding models excluded), with the chat model as fallback. `Z_AGENT_LIGHT_MODEL=provider/model` overrides it, `off` disables it. Providers publish no price tier, so this is a documented heuristic.

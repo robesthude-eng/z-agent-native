@@ -4,6 +4,7 @@ import { emit } from '../events.mjs';
 import { isIncompleteToolCall } from '../providers.mjs';
 import { putMessage, workspaceFor } from '../store.mjs';
 import { runSubagent } from '../subagent-runner.mjs';
+import { spillLargeOutput } from '../tool-output-spill.mjs';
 import { assertValidToolInput, executeTool, toolOutputText } from '../tools.mjs';
 import { createProgressLog } from '../tools/progress.mjs';
 import { retryDelayMs, shouldRetryToolCall } from '../turn-trust.mjs';
@@ -227,10 +228,18 @@ export async function executeCall(sessionId, assistant, call, controller, runtim
     observeFileTool(sessionId, call, result);
     // Картинки для модели (view_media) идут отдельно от текста и в БД не пишутся.
     const visualMedia = Array.isArray(result?.visualMedia) ? result.visualMedia.filter((m) => m && typeof m.dataUrl === 'string') : [];
+    const fullText = toolOutputText(result);
+    const spilled = spillLargeOutput({
+      workspace: workspaceFor(sessionId),
+      sessionId,
+      callId: call.id,
+      toolName: call.name,
+      text: fullText,
+    });
     return {
-      content: toolOutputText(result),
+      content: spilled ? spilled.content : fullText,
       isError: false,
-      metadata: resultMetadata,
+      metadata: spilled ? { ...resultMetadata, outputFile: spilled.file } : resultMetadata,
       mutatedPaths: result?.mutatedPaths || [],
       visualMedia,
     };
