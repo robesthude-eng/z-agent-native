@@ -95,7 +95,7 @@ For production:
 - `no-new-privileges` is enabled. Each service drops all capabilities and adds back only the minimum it needs: the API needs workspace ownership/identity capabilities; executor/browser controllers need only identity switching and process termination. Untrusted children are launched with supplementary groups cleared.
 - `pids_limit`, `mem_limit`, `memswap_limit`, `cpus` and ulimits bound runaway services; the executor additionally applies per-command RLIMITs and global/per-UID concurrency caps. Browser workers/proxy connections and shared model turns also have bounded global/per-owner/session capacity. Caps must fit the host.
 - Network recon tooling (`netcat`, `ping`, `dig`, `psql`) is not installed in the runtime image.
-- If you automate deployment over SSH, verify the server against a pinned host key; `ssh-keyscan` at deploy time trusts whatever answers on the network. (The repository's former Deploy workflow, which used a `DEPLOY_SSH_HOST_KEY` secret, was removed.)
+- If you automate deployment over SSH, verify the server against a pinned host key; `ssh-keyscan` at deploy time trusts whatever answers on the network. The manual `deploy.yml` workflow does this with the `DEPLOY_SSH_HOST_KEY` secret and refuses to run without it.
 - `Z_AGENT_CLUSTER=1` is off by default. Turn it on only when every replica mounts the same `/data` and `/workspaces` volumes and shares the same provider-encryption keyring **and audit key**. Without a shared disk the lock is global but the files are not.
 
 ## Toolchain integrity
