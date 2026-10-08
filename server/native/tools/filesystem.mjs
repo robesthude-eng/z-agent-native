@@ -10,6 +10,7 @@ import { safeWorkspacePath } from '../security.mjs';
 import { openWorkspaceFile, readFd, replaceFdContent, writeWorkspaceFile } from '../workspace-fs.mjs';
 import { assertAgentReadablePath, isSensitiveWorkspacePath } from '../workspace-policy.mjs';
 import { truncate } from './dispatcher.mjs';
+import { findEditMatch } from './edit-match.mjs';
 import { externalSpawnIdentity } from './shell.mjs';
 
 export const MAX_READ_BYTES = 512 * 1024;
@@ -373,20 +374,25 @@ export function executeEditFile(root, input, sessionId = null) {
   let occurrences;
   let replaced;
   let firstIndex;
+  let strategy = 'exact';
   try {
     if (handle.stat.size > MAX_READ_BYTES)
       throw new Error(`File is too large for whole-file editing (${handle.stat.size} bytes); use read with offset/limit to inspect it`);
     const buf = readFd(handle.fd, handle.stat.size);
     if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
     before = buf.toString('utf8');
-    oldText = String(input?.oldText ?? '');
-    if (!oldText) throw new Error('oldText must not be empty');
-    if (!before.includes(oldText)) throw new Error('oldText was not found in file');
+    const requested = String(input?.oldText ?? '');
+    if (!requested) throw new Error('oldText must not be empty');
     newText = String(input?.newText ?? '');
-    occurrences = before.split(oldText).length - 1;
+    const match = findEditMatch(before, requested, { all: Boolean(input?.all) });
+    oldText = match.search;
+    strategy = match.strategy;
+    occurrences = match.occurrences;
     replaced = input?.all ? occurrences : 1;
-    firstIndex = before.indexOf(oldText);
-    after = input?.all ? before.split(oldText).join(newText) : before.replace(oldText, () => newText);
+    firstIndex = match.index;
+    after = input?.all
+      ? before.split(oldText).join(newText)
+      : before.slice(0, firstIndex) + newText + before.slice(firstIndex + oldText.length);
     replaceFdContent(handle.fd, after);
   } finally {
     fs.closeSync(handle.fd);
@@ -400,9 +406,9 @@ export function executeEditFile(root, input, sessionId = null) {
   const endLine = startLine + Math.max(added, 1) - 1;
   const snippetEnd = Math.min(endLine + SNIPPET_CONTEXT, startLine - SNIPPET_CONTEXT + SNIPPET_MAX_LINES);
   const notes = [];
-  if (!input?.all && occurrences > 1)
+  if (strategy !== 'exact')
     notes.push(
-      `Note: oldText occurs ${occurrences} times; only the first one (line ${startLine}) was replaced. Pass all=true to replace every occurrence, or include more surrounding text to target another one.`,
+      `Note: oldText differed from the file in whitespace/indentation/escapes (matched by ${strategy}); the file's own text was replaced. Check the result below.`,
     );
   return {
     output: [

@@ -87,7 +87,7 @@ export const TOOL_DEFINITIONS = [
   {
     name: 'edit',
     description:
-      'Replace exact text in a UTF-8 workspace file. Safer than rewriting the whole file. The result reports the line number, -/+ line counts and the edited region with line numbers.',
+      'Replace text in a UTF-8 workspace file. Safer than rewriting the whole file. Small whitespace/indentation differences are tolerated, but oldText must be unique in the file (add surrounding lines) unless all=true. The result reports the line number, -/+ line counts and the edited region with line numbers.',
     inputSchema: object(
       {
         path: { type: 'string', description: 'Relative file path' },

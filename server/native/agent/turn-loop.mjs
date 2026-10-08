@@ -22,6 +22,7 @@ import { executorNetworkless, executorRequired, probeExecutor } from '../executo
 import { partId } from '../ids.mjs';
 import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
+import { loadProjectInstructions } from '../project-instructions.mjs';
 import { isTransientProviderError } from '../providers/transport.mjs';
 import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
@@ -526,6 +527,7 @@ export async function executeTurnLifecycle({
       councilCalls: 0,
       modelPlan: job?.modelPlan?.candidates?.length ? job.modelPlan : await buildModelPlan(ownerId, requestedModel, goal),
       projectContext: await getProjectContext(sessionId, workspaceFor(sessionId), controller.signal),
+      projectInstructions: loadProjectInstructions(workspaceFor(sessionId)),
       stepsUsed: Math.max(0, Number(job?.checkpoint?.stepsUsed) || 0),
       gateReminders: Math.max(0, Number(job?.checkpoint?.gateReminders) || 0),
       intentNudges: Math.max(0, Number(job?.checkpoint?.intentNudges) || 0),
@@ -616,6 +618,7 @@ export async function executeTurnLifecycle({
             mediaPrompt,
             ownerPrompt,
             runtime.projectContext,
+            runtime.projectInstructions,
             system || '',
           ]
             .filter(Boolean)
