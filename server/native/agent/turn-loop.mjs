@@ -23,6 +23,8 @@ import { partId } from '../ids.mjs';
 import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
 import { loadProjectInstructions } from '../project-instructions.mjs';
+import { isContextOverflowMessage } from '../providers/overflow.mjs';
+import { jittered } from '../providers/retry-policy.mjs';
 import { isTransientProviderError } from '../providers/transport.mjs';
 import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
@@ -82,9 +84,8 @@ function resetLoopGuardCounters(guard) {
 
 // Провайдер отказал из-за длины запроса («Prompt exceeds max length»,
 // context_length_exceeded и т.п.). Это не повод заканчивать ход: история
-// сжимается сильнее и шаг повторяется.
-const CONTEXT_OVERFLOW_RE =
-  /prompt (?:exceeds|is too long)|exceeds (?:the )?max(?:imum)? (?:length|context|tokens?)|context[_ ](?:length|window)(?:[_ ]exceeded)?|maximum context length|too many (?:input )?tokens|input (?:is )?too long|request too large|reduce the length/i;
+// сжимается сильнее и шаг повторяется. Формулировки провайдеров распознаёт
+// providers/overflow.mjs.
 const MIN_CONTEXT_BUDGET = 24_000;
 const MAX_OVERFLOW_RETRIES = 4;
 // Запоминаем сработавший бюджет для модели, чтобы следующие ходы не
@@ -93,9 +94,8 @@ const learnedContextBudget = new Map();
 
 export function isContextOverflowError(err) {
   const status = Number(err?.statusCode || err?.status) || 0;
-  const text = `${err?.message || ''} ${err?.body ? JSON.stringify(err.body) : ''}`;
-  if (status === 413) return true;
-  return CONTEXT_OVERFLOW_RE.test(text);
+  if (status === 413 || err?.body?.error?.code === 'context_length_exceeded') return true;
+  return isContextOverflowMessage(`${err?.message || ''} ${err?.body ? JSON.stringify(err.body) : ''}`);
 }
 
 function overflowError(err) {
@@ -649,7 +649,8 @@ export async function executeTurnLifecycle({
         }
         if (retryableModelError(err, controller.signal) && modelStepRetries < MAX_MODEL_STEP_RETRIES) {
           const hinted = Number(err?.retryAfterMs);
-          const base = MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)];
+          // Jitter keeps parallel turns from hitting a throttled provider again at the same moment; a provider hint is used as given.
+          const base = jittered(MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)]);
           modelStepRetries += 1;
           live.finish();
           await waitForRetry(Number.isFinite(hinted) && hinted > 0 ? Math.min(60_000, Math.max(base, hinted)) : base, controller.signal);

@@ -4,7 +4,7 @@ Parts of this project are adapted from the following open-source software.
 
 ## opencode (https://github.com/sst/opencode)
 
-Used in: `server/native/tools/edit-match.mjs` (replacer cascade ported from `packages/opencode/src/tool/edit.ts`); ideas for `server/native/project-instructions.mjs`, `server/native/tool-output-spill.mjs` and context pruning.
+Used in: `server/native/tools/edit-match.mjs` (replacer cascade ported from `packages/opencode/src/tool/edit.ts`); `server/native/tools/line-endings.mjs` (line-ending and BOM helpers from `packages/opencode/src/tool/edit.ts` and `src/util/bom.ts`); `server/native/providers/overflow.mjs` (context-overflow patterns from `packages/llm/src/provider-error.ts`); `server/native/providers/retry-policy.mjs` (retryable-message patterns and jitter from `packages/opencode/src/session/retry.ts`); ideas for `server/native/project-instructions.mjs`, `server/native/tool-output-spill.mjs` and context pruning.
 
 ```
 MIT License

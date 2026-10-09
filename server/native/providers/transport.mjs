@@ -1,5 +1,6 @@
 import { PROVIDER_STREAM_HARD_MS, PROVIDER_STREAM_IDLE_MS } from '../config.mjs';
 import { assertSafeExternalUrl, isLoopbackOrPrivateHost, safeExternalFetch } from '../security.mjs';
+import { matchesRetryableMessage } from './retry-policy.mjs';
 
 const reqTimeout = 30_000;
 const MAX_SSE_BUFFER_CHARS = 32 * 1024 * 1024;
@@ -103,6 +104,12 @@ export function classifyWatchdogAbort(err, watchdog, outerSignal) {
 }
 
 export function parseRetryAfterMs(res) {
+  // `retry-after-ms` (sent by OpenAI/Azure and read by their SDKs) is exact to the millisecond and wins over `retry-after`.
+  const rawMs = res?.headers?.get?.('retry-after-ms');
+  if (rawMs != null) {
+    const ms = Number.parseFloat(rawMs);
+    if (Number.isFinite(ms) && ms >= 0) return Math.round(ms);
+  }
   const raw = res?.headers?.get?.('retry-after');
   if (raw == null || String(raw).trim() === '') return null;
   const seconds = Number(raw);
@@ -220,7 +227,9 @@ export function isTransientProviderError(err, outerSignal) {
   if (transientStatus(Number(err?.statusCode))) return true;
   if (Number(err?.statusCode) > 0) return false;
   if (isNetworkTransportError(err)) return true;
-  return err?.name === 'AbortError';
+  if (err?.name === 'AbortError') return true;
+  // No HTTP status (typically an error event inside a 200 stream): judge by wording, e.g. "server_error", "retry your request".
+  return matchesRetryableMessage(err?.message) || matchesRetryableMessage(err?.body ? JSON.stringify(err.body) : '');
 }
 
 export function retrySleepMs(err, attempt) {

@@ -152,7 +152,8 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'write') return await withSyntaxCheck(root, executeWriteFile(root, input, ctx.sessionId));
   if (tool === 'edit') return await withSyntaxCheck(root, executeEditFile(root, input, ctx.sessionId));
   if (tool === 'apply_patch') {
-    const result = await executeApplyPatch(root, input?.patch, ctx.sessionId, ctx.signal);
+    // applyGitPatch(root, patchText, signal, ctx): the session id travels inside ctx.
+    const result = await executeApplyPatch(root, input?.patch, ctx.signal, ctx);
     return { ...result, mutatedPaths: ['.'] };
   }
 
