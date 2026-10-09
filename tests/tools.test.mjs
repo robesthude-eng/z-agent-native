@@ -77,6 +77,21 @@ test('apply_patch changes workspace files and rejects traversal paths', async ()
   fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('apply_patch passes the abort signal and session context through to git apply', async () => {
+  // Regression: the dispatcher used to call applyGitPatch(root, patch, sessionId, signal) although the function takes
+  // (root, patch, signal, ctx). Any real agent call (which always carries a sessionId and an AbortSignal) then failed with
+  // "signal?.addEventListener is not a function" - or, without the unisolated-shell flag, "requires a session sandbox".
+  fs.mkdirSync(process.env.Z_AGENT_WORKSPACES_DIR, { recursive: true });
+  const root = fs.mkdtempSync(path.join(process.env.Z_AGENT_WORKSPACES_DIR, 'patch-session-'));
+  fs.writeFileSync(path.join(root, 'a.txt'), 'hello\n');
+  const ctx = { workspace: root, sessionId: 'ses_patchtest', signal: new AbortController().signal };
+  const patch = `diff --git a/a.txt b/a.txt\n--- a/a.txt\n+++ b/a.txt\n@@ -1 +1 @@\n-hello\n+session\n`;
+  const result = await executeTool('apply_patch', { patch }, ctx);
+  assert.deepEqual(result.mutatedPaths, ['.']);
+  assert.equal(fs.readFileSync(path.join(root, 'a.txt'), 'utf8'), 'session\n');
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('write maps /tmp into the workspace so a stray absolute path still lands in the project', async () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-tmpwrite-'));
   const ctx = { workspace: root, signal: new AbortController().signal };
