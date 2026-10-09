@@ -24,6 +24,7 @@ import { mediaChannelsPrompt } from '../media-generation.mjs';
 import { getProjectContext, rememberProjectTurn } from '../project-context.mjs';
 import { loadProjectInstructions } from '../project-instructions.mjs';
 import { isContextOverflowMessage } from '../providers/overflow.mjs';
+import { jittered } from '../providers/retry-policy.mjs';
 import { isTransientProviderError } from '../providers/transport.mjs';
 import { isModelUnavailableError, isNetworkTransportError, publicProviderErrorMessage } from '../providers.mjs';
 import { splitReasoningFromContent } from '../reasoning-parser.mjs';
@@ -648,7 +649,8 @@ export async function executeTurnLifecycle({
         }
         if (retryableModelError(err, controller.signal) && modelStepRetries < MAX_MODEL_STEP_RETRIES) {
           const hinted = Number(err?.retryAfterMs);
-          const base = MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)];
+          // Jitter keeps parallel turns from hitting a throttled provider again at the same moment; a provider hint is used as given.
+          const base = jittered(MODEL_STEP_RETRY_DELAYS_MS[Math.min(modelStepRetries, MODEL_STEP_RETRY_DELAYS_MS.length - 1)]);
           modelStepRetries += 1;
           live.finish();
           await waitForRetry(Number.isFinite(hinted) && hinted > 0 ? Math.min(60_000, Math.max(base, hinted)) : base, controller.signal);
