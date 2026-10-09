@@ -7,6 +7,16 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## More from opencode: overflow detection, retries, CRLF-safe `edit`; `apply_patch` fix
+
+A second pass over [sst/opencode](https://github.com/sst/opencode) (MIT; notice in `THIRD_PARTY_NOTICES.md`).
+
+- **Fixed: `apply_patch` failed in every real turn.** The dispatcher passed `(sessionId, signal)` where `applyGitPatch` takes `(signal, ctx)`. Without `Z_AGENT_ALLOW_UNISOLATED_SHELL` the call died with "External tool execution requires a session sandbox", with it with `signal?.addEventListener is not a function` (leaving a `git apply -` child waiting on stdin). The old test only passed because its context had no `sessionId`.
+- **More context-overflow wordings are recognised** (`providers/overflow.mjs`, opencode's `provider-error.ts`): Gemini, xAI, GitHub Copilot, llama.cpp, Kimi, MiniMax, Mistral, `request_too_large`, `Request Entity Too Large`, `token limit exceeded` and others now take the existing "compact harder and retry the step" path instead of ending the turn. Rate-limit, `Throttling error:` and `Service Unavailable:` messages never count as overflow. The previous expression is kept, `body.error.code === 'context_length_exceeded'` is honoured, and opencode's bare "400/413 (no body)" rule is deliberately not ported (an ordinary empty-bodied 400 would shrink the learned context budget of a healthy model).
+- **Retries** (`providers/retry-policy.mjs`, opencode's `session/retry.ts`): `retry-after-ms` is read before `retry-after`; errors *without* an HTTP status (typically an error event inside a 200 stream, such as OpenAI's "server_error … You can retry your request") are retried when their message or body matches opencode's list of retryable wordings, while errors with a status are still judged by the status; the turn-level step retry delay (1/3/8/15 s) gets +25 % jitter so parallel turns do not retry a throttled provider in lockstep.
+- **`edit` keeps CRLF and the BOM** (`tools/line-endings.mjs`, opencode's `tool/edit.ts` and `util/bom.ts`): `oldText`/`newText` are given the file's own (dominant) line ending, so a multi-line edit of a CRLF file matches exactly instead of splicing bare LFs into it, a tolerant match keeps the line's `\r`, and the BOM is stripped for matching and written back. **Behaviour change:** a CRLF typed into an LF file is normalised to LF.
+- Tests: `tests/context-overflow.test.mjs`, `tests/retry-policy.test.mjs`, `tests/edit-line-endings.test.mjs`, and a regression test in `tests/tools.test.mjs`.
+
 ## Ideas and code from opencode (edit matching, AGENTS.md, tool-output files)
 
 Studied [sst/opencode](https://github.com/sst/opencode) (MIT) at architecture, loop and code level and ported its most useful parts; the MIT notice is in `THIRD_PARTY_NOTICES.md`.
