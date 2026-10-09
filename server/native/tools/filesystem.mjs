@@ -11,6 +11,7 @@ import { openWorkspaceFile, readFd, replaceFdContent, writeWorkspaceFile } from 
 import { assertAgentReadablePath, isSensitiveWorkspacePath } from '../workspace-policy.mjs';
 import { truncate } from './dispatcher.mjs';
 import { findEditMatch } from './edit-match.mjs';
+import { convertToLineEnding, detectLineEnding, joinBom, normalizeLineEndings, splitBom } from './line-endings.mjs';
 import { externalSpawnIdentity } from './shell.mjs';
 
 export const MAX_READ_BYTES = 512 * 1024;
@@ -380,20 +381,32 @@ export function executeEditFile(root, input, sessionId = null) {
       throw new Error(`File is too large for whole-file editing (${handle.stat.size} bytes); use read with offset/limit to inspect it`);
     const buf = readFd(handle.fd, handle.stat.size);
     if (buf.includes(0)) throw new Error('Binary file: use bash or a specialized tool instead');
-    before = buf.toString('utf8');
-    const requested = String(input?.oldText ?? '');
-    if (!requested) throw new Error('oldText must not be empty');
-    newText = String(input?.newText ?? '');
+    const source = splitBom(buf.toString('utf8'));
+    before = source.text;
+    const rawOld = String(input?.oldText ?? '');
+    if (!rawOld) throw new Error('oldText must not be empty');
+    // The model writes "\n": give its text the file's own line ending so a CRLF file stays CRLF. A BOM copied from `read`
+    // output belongs to the file, not to the text; it is put back when the file is written.
+    const ending = detectLineEnding(before);
+    const fit = (text) => convertToLineEnding(source.bom ? splitBom(text).text : text, ending);
+    const requested = fit(rawOld);
+    newText = fit(String(input?.newText ?? ''));
     const match = findEditMatch(before, requested, { all: Boolean(input?.all) });
     oldText = match.search;
     strategy = match.strategy;
     occurrences = match.occurrences;
+    // The line-based tolerant matchers cut at "\n", so on a CRLF file the matched span ends with that line's "\r". Leave it
+    // in place: replacing it would turn the line break after the edit into a bare LF.
+    if (strategy !== 'exact' && ending === '\r\n' && oldText.endsWith('\r') && !newText.endsWith('\r')) {
+      oldText = oldText.slice(0, -1);
+      if (input?.all) occurrences = before.split(oldText).length - 1;
+    }
     replaced = input?.all ? occurrences : 1;
     firstIndex = match.index;
     after = input?.all
       ? before.split(oldText).join(newText)
       : before.slice(0, firstIndex) + newText + before.slice(firstIndex + oldText.length);
-    replaceFdContent(handle.fd, after);
+    replaceFdContent(handle.fd, joinBom(after, source.bom || splitBom(after).bom));
   } finally {
     fs.closeSync(handle.fd);
   }
@@ -414,7 +427,7 @@ export function executeEditFile(root, input, sessionId = null) {
     output: [
       `Edited ${target}: replaced ${replaced} occurrence${replaced === 1 ? '' : 's'} at line ${startLine} (-${removed} +${added} lines). File now has ${lineCount(after)} lines.`,
       ...notes,
-      `Result around the edit:\n${numberedSnippet(after, startLine - SNIPPET_CONTEXT, snippetEnd)}`,
+      `Result around the edit:\n${numberedSnippet(normalizeLineEndings(after), startLine - SNIPPET_CONTEXT, snippetEnd)}`,
     ].join('\n'),
     title: target,
     metadata: { fileChange: { kind: 'edit', startLine, added: added * replaced, removed: removed * replaced, replacements: replaced } },
