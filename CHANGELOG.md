@@ -9,6 +9,9 @@ made on top of it.
 
 ## Branch consolidation and dependency maintenance
 
+- Aligned `@types/react` and `@types/react-dom` at 19.3 for the pinned Node Docker image's npm peer validation.
+- Added a manual-only, read-only server inspection workflow using existing pinned SSH secrets; no environment files, credentials, application logs, deployment or restart actions are read or performed.
+
 - Consolidated the Codex-format patch implementation and its tests onto `main`; the old `fix/apply-patch-args-opencode-ports` tree was already identical to `main` after PR #113.
 - Updated GitHub Actions pins (setup-node 7.1.0, upload-artifact 7.0.2), Biome 2.5.15, Radix UI, Testing Library, jsdom 30, Vite 8.3 and its React plugin. Kept React and React DOM on the same release; adapted the route error component to the router's unknown error type.
 - Kept Vitest and coverage-v8 together on 4.1.12. The standalone Vitest 5 PR leaves coverage-v8 on the v4 major and has a failing production-container check; it is not included.

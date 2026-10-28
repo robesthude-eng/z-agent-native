@@ -1,0 +1,72 @@
+name: Inspect server (read-only)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect:
+    name: Read-only production diagnostics
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: production
+    steps:
+      - name: Inspect host using existing pinned SSH configuration
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_SSH_HOST_KEY: ${{ secrets.DEPLOY_SSH_HOST_KEY }}
+        run: |
+          set -euo pipefail
+          for name in DEPLOY_HOST DEPLOY_USER DEPLOY_SSH_KEY DEPLOY_SSH_HOST_KEY; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing $name"
+              exit 1
+            fi
+          done
+          umask 077
+          mkdir -p "$HOME/.ssh"
+          KEY="$HOME/.ssh/inspect_key"
+          HOSTS="$HOME/.ssh/inspect_known_hosts"
+          trap 'rm -f "$KEY" "$HOSTS"' EXIT
+          printf '%s\n' "$DEPLOY_SSH_KEY" > "$KEY"
+          printf '%s\n' "$DEPLOY_SSH_HOST_KEY" > "$HOSTS"
+          ssh -i "$KEY" -o BatchMode=yes -o ConnectTimeout=15 \
+            -o StrictHostKeyChecking=yes -o UserKnownHostsFile="$HOSTS" \
+            "$DEPLOY_USER@$DEPLOY_HOST" 'bash -s' <<'REMOTE'
+          set -u
+          echo '=== Uptime ==='
+          uptime
+          echo '=== Disk ==='
+          df -h / /var/lib/docker 2>/dev/null || true
+          echo '=== Memory ==='
+          free -h || true
+          echo '=== Docker service ==='
+          systemctl is-active docker 2>/dev/null || true
+          if command -v docker >/dev/null 2>&1; then
+            echo '=== Containers (all) ==='
+            docker ps -a --format 'table {{.Names}}\t{{.Status}}\t{{.Image}}' || true
+            echo '=== Running container resource usage ==='
+            docker stats --no-stream --format 'table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' || true
+          fi
+          echo '=== Production checkout ==='
+          if [ -d "$HOME/z-agent-native" ]; then
+            cd "$HOME/z-agent-native"
+            git rev-parse --short HEAD 2>/dev/null || true
+            if [ -f .env ]; then echo '.env exists (contents not read)'; fi
+            docker compose ps -a 2>/dev/null || true
+            echo '=== Running release SHA ==='
+            docker compose exec -T z-agent printenv Z_AGENT_RELEASE_SHA 2>/dev/null || true
+          else
+            echo 'Expected ~/z-agent-native checkout not found'
+          fi
+          echo '=== Local readiness probes ==='
+          for port in 3002 3000; do
+            printf 'Port %s: ' "$port"
+            curl --max-time 8 -sS -w '\nHTTP %{http_code}\n' "http://127.0.0.1:$port/health/ready" 2>&1 | head -c 3000
+            printf '\n'
+          done
+          REMOTE
