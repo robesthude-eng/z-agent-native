@@ -100,7 +100,7 @@
     "tailwindcss": "^4.1.14",
     "typescript": "7.0.2",
     "vite": "^8.3.5",
-    "vitest": "4.1.12"
+    "vitest": "5.0.5"
   },
   "overrides": {
     "postcss-selector-parser": "^7.1.6"
