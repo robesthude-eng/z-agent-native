@@ -24,6 +24,7 @@ Z Agent Native is an autonomous agent execution environment. Tool calls are appr
 - Every chat has one workspace root.
 - Path traversal and symlink escape are rejected before file operations.
 - Uploads, downloads, previews and agent file tools all resolve inside that root.
+- `apply_patch` has two routes. A `*** Begin Patch` patch is applied by the orchestrator itself through the same verified-descriptor workspace primitives as `write`/`edit` (no subprocess; every file is read and checked before the first write, and the files are restored if a write fails). A unified diff goes to `git apply` in the executor, see below.
 - Runtime data (`/data` in Docker) is separate from agent workspaces.
 
 ## External process boundary

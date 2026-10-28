@@ -2,6 +2,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  type ErrorComponentProps,
   Outlet,
   redirect,
   useNavigate,
@@ -464,7 +465,7 @@ function PanelCrash({ message }: { message: string }) {
  * «Something went wrong!» с кнопкой «Show Error»: текст исключения спрятан
  * за лишним нажатием, а стиль не имеет ничего общего с остальным UI.
  */
-function RouteCrash({ error }: { error: Error }) {
+function RouteCrash({ error }: ErrorComponentProps) {
   return (
     <div className="flex min-h-dvh items-center justify-center bg-background p-6">
       <div className="w-full max-w-md space-y-3 rounded-xl border border-border bg-card p-6 text-center">

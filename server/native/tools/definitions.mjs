@@ -104,8 +104,29 @@ export const TOOL_DEFINITIONS = [
   },
   {
     name: 'apply_patch',
-    description: 'Apply a unified diff to files in the current workspace. Paths must be relative and stay inside the workspace.',
-    inputSchema: object({ patch: { type: 'string', description: 'Unified diff / git diff text' } }, ['patch']),
+    description: [
+      'Change several files, or several places in one file, with one patch. All changes are applied together or not at all. Paths are relative to the workspace.',
+      'Format:',
+      '*** Begin Patch',
+      '*** Add File: path/new.txt',
+      '+every line of the new file starts with +',
+      '*** Update File: path/existing.txt',
+      '*** Move to: path/renamed.txt   (optional: rename the file)',
+      '@@ optional line (a function or class header) that locates the change',
+      ' unchanged line: starts with a space',
+      '-line to remove',
+      '+line to add',
+      ' unchanged line',
+      '*** Delete File: path/old.txt',
+      '*** End Patch',
+      'Show about 3 unchanged lines before and after each change, copied exactly from the file, so the spot is unambiguous. List the changes of one file in the order they appear in it, each hunk starting with @@. Put *** End of File after a hunk that changes the end of the file. Add File fails when the file exists (use Update File). A unified diff / git diff is also accepted.',
+    ].join('\n'),
+    inputSchema: object(
+      {
+        patch: { type: 'string', description: 'The whole patch, from "*** Begin Patch" to "*** End Patch" (or a unified diff / git diff)' },
+      },
+      ['patch'],
+    ),
   },
   {
     name: 'todowrite',

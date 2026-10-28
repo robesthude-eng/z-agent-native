@@ -97,6 +97,43 @@ export function addWorkspacePath(paths: Set<string>, raw: unknown) {
   if (path) paths.add(path);
 }
 
+const CODEX_PATCH_HEADER =
+  /^\*\*\* (Add File|Update File|Move to|Delete File):\s*(.*?)\s*$/;
+
+/**
+ * Файлы, которые остаются после патча из `apply_patch`. Формат Codex
+ * (`*** Begin Patch`): добавленные, изменённые и переименованные; удалённые и
+ * прежнее имя переименованного файла не показываем — открыть их уже нельзя.
+ * Иначе unified diff: пути из строк `+++`.
+ */
+export function patchChangedFiles(patch: string): string[] {
+  const files: string[] = [];
+  if (/^\*\*\* Begin Patch\s*$/m.test(patch)) {
+    let updated: string | null = null;
+    for (const line of patch.split("\n")) {
+      const header = CODEX_PATCH_HEADER.exec(line.replace(/\r$/, ""));
+      if (header?.[1] === "Move to" && header[2]) {
+        updated = null;
+        files.push(header[2]);
+        continue;
+      }
+      if (updated) files.push(updated);
+      updated = null;
+      if (header?.[1] === "Add File" && header[2]) files.push(header[2]);
+      else if (header?.[1] === "Update File" && header[2]) updated = header[2];
+    }
+    if (updated) files.push(updated);
+    return files;
+  }
+  for (const line of patch.split("\n")) {
+    if (!line.startsWith("+++ ")) continue;
+    const path = line.slice(4).trim().split("\t")[0] || "";
+    if (!path || path === "/dev/null") continue;
+    files.push(path.replace(/^b\//, ""));
+  }
+  return files;
+}
+
 export function assistantTurnSummary(messages: Message[]) {
   let startedAt: number | null = null;
   let completedAt: number | null = null;
@@ -154,11 +191,7 @@ export function assistantTurnSummary(messages: Message[]) {
       if (tool === "apply_patch" || tool === "applypatch" || tool === "patch") {
         const patch = input.patch;
         if (typeof patch === "string") {
-          for (const line of patch.split("\n")) {
-            if (!line.startsWith("+++ ")) continue;
-            let path = line.slice(4).trim().split("\t")[0] || "";
-            if (!path || path === "/dev/null") continue;
-            path = path.replace(/^b\//, "");
+          for (const path of patchChangedFiles(patch)) {
             addWorkspacePath(changedFiles, path);
           }
         }

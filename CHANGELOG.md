@@ -7,6 +7,19 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## `apply_patch` takes the `*** Begin Patch` format
+
+Ported from [sst/opencode](https://github.com/sst/opencode) (MIT; notice in `THIRD_PARTY_NOTICES.md`), whose patch format comes from OpenAI Codex.
+
+- **Added: `*** Begin Patch … *** End Patch` patches** (`tools/codex-patch.mjs`, `tools/apply-codex-patch.mjs`). One call adds, updates, moves and deletes several files. A hunk is located by its unchanged lines (and an optional `@@` line such as a function header), not by line numbers, so it still applies after earlier edits of the same turn. Matching goes from exact to trailing-whitespace-, whitespace- and typographic-punctuation-insensitive (curly quotes, dashes, no-break spaces), and the file keeps its own text outside the removed and added lines. A unified diff / git diff is still accepted and goes to `git apply` as before.
+- **All or nothing, in-process.** Every file is read and every hunk applied in memory first; nothing is written unless the whole patch works. Writes use the verified-descriptor helpers (no symlink is followed, nothing leaves the workspace), a file that changed on disk since it was read is not overwritten, and if a write fails the files already written are restored ("The patch was rolled back"). No git child and no shell sandbox are involved, so this format also works where `git apply` cannot run.
+- **Strict parser, actionable errors.** An unknown line, a missing `*** End Patch` (a cut-off tool call) or a line without ` `, `-` or `+` in an update hunk is rejected with its line number. A hunk that cannot be placed lists the lines it expected and says when they exist earlier in the file (hunks out of order). Hunks may repeat each other's unchanged lines; blank context lines at the end of a hunk and an `@@` line repeated as the first unchanged line are tolerated.
+- **Line endings.** CRLF files stay CRLF, a BOM is kept, and a file without a final newline stays that way unless the patch changes its last line.
+- **Behaviour notes.** `*** Add File` fails when the file already exists (use `*** Update File`, or delete it first, so a patch cannot silently clobber a file). A hunk with only added lines goes to the end of the file (the Codex/opencode rule) and says so when it carried an `@@` line. Binary files, files that are not valid UTF-8 and files over 512 KB are refused. The result lists `A/M/R/D path (+n -m, line N)` and reports the exact `mutatedPaths`; the unified-diff route still reports `.`.
+- `workspace-fs.mjs` gains `deleteWorkspaceFile` (parents walked through descriptors, `lstat` + `unlink` of the last component, symlinks refused).
+- The list of changed files at the end of a turn (`turnSummary.ts`) reads paths from both patch formats.
+- Tests: `tests/codex-patch.test.mjs`, `tests/apply-codex-patch.test.mjs`, `tests/workspace-fs.test.mjs` (delete), `src/components/message/turnSummary.test.ts`.
+
 ## More from opencode: overflow detection, retries, CRLF-safe `edit`; `apply_patch` fix
 
 A second pass over [sst/opencode](https://github.com/sst/opencode) (MIT; notice in `THIRD_PARTY_NOTICES.md`).

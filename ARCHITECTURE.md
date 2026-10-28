@@ -95,6 +95,7 @@ A study of [opencode](https://github.com/sst/opencode) (MIT, see `THIRD_PARTY_NO
 - `tool-output-spill.mjs` — `executeCall` keeps head + tail of an oversized result in the model frame and writes the full text to `.agent-home/tool-output/` (not tracked as a workspace change, hidden from the file tree).
 - `context.mjs` `pruneOldObservations` — clears old tool results (stub + saved-file path) outside the newest ~120k chars, quantised so the cleared set changes only every 40k chars of growth. Runs before the char-budget trimming in `compactFrames`; the task dossier still handles the long-chat summary.
 - `tools/syntax-check.mjs` — parse-only check of the file after `write`/`edit` (dispatcher `withSyntaxCheck`); silent on success, a warning plus `metadata.syntaxError` on failure.
+- `tools/codex-patch.mjs`, `tools/apply-codex-patch.mjs` — `apply_patch` accepts the `*** Begin Patch` format (Add / Update / Move to / Delete File, `@@` lines, ` `/`-`/`+` hunk lines). The parser is strict (errors name the line); hunks are located by their unchanged lines in four passes (exact, trailing whitespace, both ends, Unicode punctuation), file text outside the changed lines is kept, CRLF and BOM are preserved. The apply step is in-process and all-or-nothing: every file is read and patched in memory, then written through `workspace-fs` descriptors with rollback on failure (`deleteWorkspaceFile` for removals); `Add File` never overwrites. A unified diff still goes through `git apply`, which is why the tool stays in the execution group below.
 
 ## Learned instincts
 

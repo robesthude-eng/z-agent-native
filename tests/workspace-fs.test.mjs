@@ -4,7 +4,13 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { executeEditFile, executeReadFile, executeWriteFile } from '../server/native/tools/filesystem.mjs';
-import { contentVersion, openWorkspaceFile, readWorkspaceFile, writeWorkspaceFile } from '../server/native/workspace-fs.mjs';
+import {
+  contentVersion,
+  deleteWorkspaceFile,
+  openWorkspaceFile,
+  readWorkspaceFile,
+  writeWorkspaceFile,
+} from '../server/native/workspace-fs.mjs';
 
 function sandbox(t) {
   const base = fs.mkdtempSync(path.join(os.tmpdir(), 'z-agent-wsfs-'));
@@ -89,4 +95,34 @@ test('a write guard runs before the file is created or truncated', (t) => {
   };
   assert.throws(() => writeWorkspaceFile(root, 'kept.txt', 'stale draft', { guard }), /conflict/);
   assert.equal(fs.readFileSync(path.join(root, 'kept.txt'), 'utf8'), 'fresh work');
+});
+
+test('deleteWorkspaceFile removes a regular file and nothing else', (t) => {
+  const { root } = sandbox(t);
+  fs.mkdirSync(path.join(root, 'a/b'), { recursive: true });
+  fs.writeFileSync(path.join(root, 'a/b/c.txt'), 'x');
+  fs.writeFileSync(path.join(root, 'a/b/keep.txt'), 'y');
+  assert.deepEqual(deleteWorkspaceFile(root, 'a/b/c.txt').rel, 'a/b/c.txt');
+  assert.equal(fs.existsSync(path.join(root, 'a/b/c.txt')), false);
+  assert.equal(fs.readFileSync(path.join(root, 'a/b/keep.txt'), 'utf8'), 'y');
+  assert.throws(() => deleteWorkspaceFile(root, 'a/b/c.txt'), { code: 'ENOENT' });
+  assert.throws(() => deleteWorkspaceFile(root, 'a/b'), /not a file/);
+  assert.throws(() => deleteWorkspaceFile(root, '.'), /not a file/);
+  assert.throws(() => deleteWorkspaceFile(root, '../outside/secret.txt'), /за пределы workspace/);
+  assert.equal(fs.existsSync(path.join(root, 'a/b')), true);
+});
+
+test('deleteWorkspaceFile never follows or removes through a symlink', (t) => {
+  const { root, outside } = sandbox(t);
+  fs.symlinkSync(path.join(outside, 'secret.txt'), path.join(root, 'link.txt'));
+  fs.symlinkSync(outside, path.join(root, 'sub'));
+  assert.throws(() => deleteWorkspaceFile(root, 'link.txt'), /Symlink/);
+  assert.throws(() => deleteWorkspaceFile(root, 'sub/secret.txt'), /Symlink/);
+  assert.equal(fs.lstatSync(path.join(root, 'link.txt')).isSymbolicLink(), true);
+
+  // The path check is fooled (the links appear after it ran): the walk through descriptors still stays inside.
+  hideSymlinksFromLstat(t);
+  assert.throws(() => deleteWorkspaceFile(root, 'sub/secret.txt'));
+  assert.throws(() => deleteWorkspaceFile(root, 'link.txt'));
+  assert.equal(fs.readFileSync(path.join(outside, 'secret.txt'), 'utf8'), 'OUTSIDE_MARKER\n');
 });

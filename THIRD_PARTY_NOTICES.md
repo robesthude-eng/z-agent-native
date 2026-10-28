@@ -4,7 +4,7 @@ Parts of this project are adapted from the following open-source software.
 
 ## opencode (https://github.com/sst/opencode)
 
-Used in: `server/native/tools/edit-match.mjs` (replacer cascade ported from `packages/opencode/src/tool/edit.ts`); `server/native/tools/line-endings.mjs` (line-ending and BOM helpers from `packages/opencode/src/tool/edit.ts` and `src/util/bom.ts`); `server/native/providers/overflow.mjs` (context-overflow patterns from `packages/llm/src/provider-error.ts`); `server/native/providers/retry-policy.mjs` (retryable-message patterns and jitter from `packages/opencode/src/session/retry.ts`); ideas for `server/native/project-instructions.mjs`, `server/native/tool-output-spill.mjs` and context pruning.
+Used in: `server/native/tools/edit-match.mjs` (replacer cascade ported from `packages/opencode/src/tool/edit.ts`); `server/native/tools/line-endings.mjs` (line-ending and BOM helpers from `packages/opencode/src/tool/edit.ts` and `src/util/bom.ts`); `server/native/tools/codex-patch.mjs` and `server/native/tools/apply-codex-patch.mjs` (patch parser, four-pass line matching and verify-before-write flow adapted from `packages/opencode/src/patch/index.ts` and `src/tool/apply_patch.ts`; the patch format itself comes from the apply-patch tool of OpenAI Codex, https://github.com/openai/codex, Apache License 2.0); `server/native/providers/overflow.mjs` (context-overflow patterns from `packages/llm/src/provider-error.ts`); `server/native/providers/retry-policy.mjs` (retryable-message patterns and jitter from `packages/opencode/src/session/retry.ts`); ideas for `server/native/project-instructions.mjs`, `server/native/tool-output-spill.mjs` and context pruning.
 
 ```
 MIT License

@@ -7,7 +7,9 @@ import { safeWorkspacePath } from '../security.mjs';
 import { executeSshTool } from '../ssh-tool.mjs';
 import { executeMemoryTool, executeSkillTool } from '../agent-memory.mjs';
 import { executeBackgroundTool } from '../background-jobs.mjs';
+import { executeCodexPatch } from './apply-codex-patch.mjs';
 import { executeBrowserAction, executeVisualCheck } from './browser.mjs';
+import { isCodexPatch } from './codex-patch.mjs';
 import { TOOL_DEFINITIONS } from './definitions.mjs';
 import { createProgressLog } from './progress.mjs';
 import { executeDiagnostics, executeRunTests } from './diagnostics.mjs';
@@ -152,6 +154,9 @@ export async function executeTool(name, input, ctx = {}) {
   if (tool === 'write') return await withSyntaxCheck(root, executeWriteFile(root, input, ctx.sessionId));
   if (tool === 'edit') return await withSyntaxCheck(root, executeEditFile(root, input, ctx.sessionId));
   if (tool === 'apply_patch') {
+    // "*** Begin Patch" is applied in-process (all-or-nothing, no git child, no shell sandbox); anything else is a
+    // unified diff for `git apply`.
+    if (isCodexPatch(input?.patch)) return await withSyntaxCheck(root, executeCodexPatch(root, input.patch, ctx.sessionId));
     // applyGitPatch(root, patchText, signal, ctx): the session id travels inside ctx.
     const result = await executeApplyPatch(root, input?.patch, ctx.signal, ctx);
     return { ...result, mutatedPaths: ['.'] };

@@ -155,6 +155,34 @@ export function openWorkspaceFile(root, input, { write = false, create = false, 
   }
 }
 
+/**
+ * Remove a regular file from the workspace. The parents are walked through the descriptor chain; the last
+ * component is checked with lstat and unlinked in the same directory, so a symlink swapped in at any point is
+ * either refused or removed itself (unlink never follows it) and nothing outside the workspace is touched.
+ */
+export function deleteWorkspaceFile(root, input) {
+  const { full, base, rel, segments } = resolveInside(root, input, false);
+  if (!segments.length) throw notFileError();
+  const name = segments[segments.length - 1];
+  if (procFdUsable()) {
+    const dirFd = walkParents(base, segments.slice(0, -1), false);
+    try {
+      const target = `${PROC_FD}/${dirFd}/${name}`;
+      const stat = fs.lstatSync(target);
+      if (stat.isSymbolicLink()) throw symlinkError();
+      if (!stat.isFile()) throw notFileError();
+      fs.unlinkSync(target);
+    } finally {
+      fs.closeSync(dirFd);
+    }
+  } else {
+    // Без /proc: openWorkspaceFile отвергает symlink и подмену inode, затем удаляем по проверенному пути.
+    fs.closeSync(openWorkspaceFile(root, input).fd);
+    fs.unlinkSync(full);
+  }
+  return { full, rel: rel.split(path.sep).join('/') };
+}
+
 /** Create a directory (and missing parents) inside the workspace without following symlinks. */
 export function mkdirWorkspaceDir(root, input) {
   const { full, base, segments } = resolveInside(root, input, true);
