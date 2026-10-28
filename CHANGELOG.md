@@ -9,6 +9,8 @@ made on top of it.
 
 ## Branch consolidation and dependency maintenance
 
+- Fixed release provenance and deployment references to select the exact pushed GHCR repository digest, not the first local `RepoDigests` alias. Added regression tests for local-first aliases, lookalike repositories, missing/malformed/ambiguous digests and duplicates.
+
 - Aligned `@types/react` and `@types/react-dom` at 19.3 for the pinned Node Docker image's npm peer validation.
 - Added a manual-only, read-only server inspection workflow using existing pinned SSH secrets; no environment files, credentials, application logs, deployment or restart actions are read or performed.
 

@@ -223,8 +223,8 @@ jobs:
           # RepoDigests array, while a pull of the exact commit tag does.
           docker pull "$API_TAG"
           docker pull "$BROWSER_TAG"
-          API_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$API_TAG")"
-          BROWSER_DIGEST="$(docker inspect --format='{{index .RepoDigests 0}}' "$BROWSER_TAG")"
+          API_DIGEST="$(docker inspect --format='{{json .RepoDigests}}' "$API_TAG" | node scripts/resolve-image-digest.mjs "$REGISTRY_REPO/z-agent-api")"
+          BROWSER_DIGEST="$(docker inspect --format='{{json .RepoDigests}}' "$BROWSER_TAG" | node scripts/resolve-image-digest.mjs "$REGISTRY_REPO/z-agent-browser")"
           test -n "$API_DIGEST" && test -n "$BROWSER_DIGEST"
           API_SUBJECT="${API_DIGEST%@*}"
           API_SUBJECT_DIGEST="${API_DIGEST#*@}"
