@@ -476,7 +476,7 @@ function RouteCrash({ error }: ErrorComponentProps) {
           {t("router.perezagruzite_stranicu")}
         </p>
         <pre className="max-h-48 overflow-auto rounded-lg bg-muted/40 p-3 text-left text-[11px] leading-relaxed whitespace-pre-wrap text-muted-foreground">
-          {error?.message ?? ""}
+          {error instanceof Error ? error.message : String(error ?? "")}
         </pre>
         <Button type="button" onClick={() => window.location.reload()}>
           {t("router.perezagruzit")}

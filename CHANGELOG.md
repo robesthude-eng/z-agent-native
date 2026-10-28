@@ -7,6 +7,14 @@ All notable changes to this project are documented here. The format follows
 `1.0.0` predates this file and is the baseline; entries below describe changes
 made on top of it.
 
+## Branch consolidation and dependency maintenance
+
+- Consolidated the Codex-format patch implementation and its tests onto `main`; the old `fix/apply-patch-args-opencode-ports` tree was already identical to `main` after PR #113.
+- Updated GitHub Actions pins (setup-node 7.1.0, upload-artifact 7.0.2), Biome 2.5.15, Radix UI, Testing Library, jsdom 30, Vite 8.3 and its React plugin. Kept React and React DOM on the same release; adapted the route error component to the router's unknown error type.
+- Kept Vitest and coverage-v8 together on 4.1.12. The standalone Vitest 5 PR leaves coverage-v8 on the v4 major and has a failing production-container check; it is not included.
+- Generate the CycloneDX inventory from the complete canonical lock graph (`npm sbom --package-lock-only`), including platform-specific optional dependencies. The installed-tree npm SBOM resolver incorrectly resolves Vite's nested lightningcss 1.33 musl binary against Tailwind's top-level 1.32 binary on Linux; the lock graph contains both correct versions. No dependencies or CI checks are excluded.
+- Applied Biome's updated formatting to three existing tests without changing assertions.
+
 ## `apply_patch` takes the `*** Begin Patch` format
 
 Ported from [sst/opencode](https://github.com/sst/opencode) (MIT; notice in `THIRD_PARTY_NOTICES.md`), whose patch format comes from OpenAI Codex.

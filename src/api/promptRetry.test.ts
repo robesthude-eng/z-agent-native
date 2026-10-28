@@ -44,14 +44,12 @@ describe("isNetworkishError", () => {
     expect(isNetworkishError("EConnReset")).toBe(true);
   });
 
-  it.each([
-    "Unauthorized",
-    "Invalid JSON body.",
-    "session not found",
-    "",
-  ])("не сетевая: %s", (message) => {
-    expect(isNetworkishError(message)).toBe(false);
-  });
+  it.each(["Unauthorized", "Invalid JSON body.", "session not found", ""])(
+    "не сетевая: %s",
+    (message) => {
+      expect(isNetworkishError(message)).toBe(false);
+    },
+  );
 });
 
 describe("поздний обрыв считается доставкой", () => {

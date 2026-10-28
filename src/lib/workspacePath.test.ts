@@ -33,15 +33,12 @@ describe("toWorkspaceRelPath", () => {
     expect(toWorkspaceRelPath(input)).toBe(expected);
   });
 
-  it.each([
-    "",
-    "   ",
-    "..",
-    "../etc/passwd",
-    "src/../../etc/passwd",
-  ])("rejects %s", (input) => {
-    expect(toWorkspaceRelPath(input)).toBeNull();
-  });
+  it.each(["", "   ", "..", "../etc/passwd", "src/../../etc/passwd"])(
+    "rejects %s",
+    (input) => {
+      expect(toWorkspaceRelPath(input)).toBeNull();
+    },
+  );
 
   it("rejects remote URLs", () => {
     expect(toWorkspaceRelPath("https://example.com/a.js")).toBeNull();

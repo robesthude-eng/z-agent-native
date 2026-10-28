@@ -50,12 +50,12 @@ describe("что делать интерфейсу", () => {
     expect(dispositionOf(turn({ lifecycle }))).toBe(expected);
   });
 
-  it.each([
-    "waiting_permission",
-    "waiting_user_input",
-  ] as const)("«%s» — ход ждёт человека", (lifecycle) => {
-    expect(dispositionOf(turn({ lifecycle }))).toBe("waiting");
-  });
+  it.each(["waiting_permission", "waiting_user_input"] as const)(
+    "«%s» — ход ждёт человека",
+    (lifecycle) => {
+      expect(dispositionOf(turn({ lifecycle }))).toBe("waiting");
+    },
+  );
 
   it("завершение и отмена освобождают интерфейс", () => {
     expect(dispositionOf(turn({ lifecycle: "completed" }))).toBe("settled");
